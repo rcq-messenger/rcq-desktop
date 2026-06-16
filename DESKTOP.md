@@ -138,12 +138,19 @@ Then upload `RCQ.app.tar.gz` to `https://rcq.app/desktop/` and write
 
 (Bump `version` in `tauri.conf.json` for each release.)
 
-## Follow-ups (not in v1)
+## Status / follow-ups
 
-1. Native notifications, tray icon, background run, auto-update
-   (`@tauri-apps/plugin-notification`, tray API, updater plugin).
-2. Embedded `sing-box` in the Rust shell for desktop circumvention
-   (mirrors the iOS/Android transport).
-3. Code signing + notarization (macOS — we have an Apple dev account),
-   Linux AppImage/deb, Windows signing.
-4. Linux + Windows packaging (same codebase, `tauri build` per OS / CI).
+Done:
+- ✅ Desktop chrome: native notifications, tray icon, run-in-background, dock
+  badge, auto-update (stage 2).
+- ✅ macOS, Linux, and Windows packaging — CI builds all three (`tauri build`
+  per OS on GitHub runners).
+
+Remaining:
+1. **Notarization** (macOS) so the build runs on other Macs without a
+   Gatekeeper warning — we have an Apple Developer account. Until then,
+   right-click → Open.
+2. **Windows code signing** (avoid the SmartScreen warning) and a host for the
+   auto-update manifest.
+3. Embedded `sing-box` in the Rust shell for desktop circumvention (mirrors the
+   iOS/Android transport).

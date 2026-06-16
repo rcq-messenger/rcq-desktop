@@ -42,6 +42,17 @@ html.dark {
   --c-bubble-other: 38 40 47;
 }
 
+/* Desktop (Tauri) only: a true-black ("AMOLED") dark theme. The `desktop`
+   class is added on <html> at startup when running inside Tauri (main.tsx);
+   the web build never gets it, so chat.rcq.app keeps the grey dark theme.
+   Only the background tokens go black — foreground/accent are unchanged. */
+html.dark.desktop {
+  --c-surface-dim: 0 0 0;      /* page / large-area background → true black */
+  --c-surface: 20 20 23;       /* panels, cards, composer — lifted off black */
+  --c-line: 38 40 47;          /* borders read against pure black */
+  --c-bubble-other: 32 32 37;  /* incoming bubbles */
+}
+
 html, body, #root {
   height: 100%;
 }

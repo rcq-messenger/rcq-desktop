@@ -1,0 +1,11 @@
+node_modules
+dist
+*.local
+.env.local
+.DS_Store
+tsconfig.tsbuildinfo
+
+# Dev scratch / large local-only dirs (not needed to build the app)
+crypto-wasm-spike/
+.mh-test/
+.claude/

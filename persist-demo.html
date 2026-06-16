@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>RCQ web-chat — device persistence (IndexedDB)</title>
+    <style>
+      body { font: 13px ui-monospace, monospace; background: #0b0b0c; color: #e7e7e7; padding: 20px; }
+      .pass { color: #36d399; } .fail { color: #f87272; } #log .step { color: #6ea8fe; } #log div { margin: 3px 0; }
+      #done { font-size: 15px; margin-top: 12px; }
+    </style>
+  </head>
+  <body>
+    <h1 style="font-size:14px">RCQ web-chat device persistence — serialize → IndexedDB → restore, then keep decrypting (survives F5)</h1>
+    <div id="log"></div>
+    <div id="done"></div>
+    <script type="module" src="/src/persist-demo.ts"></script>
+  </body>
+</html>

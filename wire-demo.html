@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>RCQ web-chat — v=2 OVER THE WIRE (local backend)</title>
+    <style>
+      body { font: 13px ui-monospace, monospace; background: #0b0b0c; color: #e7e7e7; padding: 20px; }
+      h1 { font-size: 14px; }
+      .row { display: flex; gap: 16px; margin-top: 12px; }
+      .col { flex: 1; background: #151517; border: 1px solid #26262b; border-radius: 12px; padding: 12px; }
+      .col h2 { font-size: 11px; color: #8a8a93; text-transform: uppercase; letter-spacing: .15em; margin: 0 0 8px; }
+      .bubble { background: #232329; border-radius: 10px; padding: 7px 10px; margin: 6px 0; }
+      .bubble.in { background: #1b3a2b; }
+      .bubble .meta { font-size: 10px; color: #8a8a93; }
+      .pass { color: #36d399; } .fail { color: #f87272; }
+      #log div { margin: 2px 0; } #log .step { color: #6ea8fe; }
+      #done { font-size: 15px; margin-top: 12px; }
+    </style>
+  </head>
+  <body>
+    <h1>RCQ web-chat v=2 over the wire — register → provision web device → fan-out send → queue receive → decrypt (real local backend :8000)</h1>
+    <div class="row">
+      <div class="col"><h2>Alice inbox</h2><div id="alice"></div></div>
+      <div class="col"><h2>Bob (web device) inbox</h2><div id="bob"></div></div>
+    </div>
+    <div id="log" style="margin-top:12px"></div>
+    <div id="done"></div>
+    <script type="module" src="/src/wire-demo.ts"></script>
+  </body>
+</html>

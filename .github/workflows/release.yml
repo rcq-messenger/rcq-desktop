@@ -1,0 +1,71 @@
+# Builds the RCQ desktop app on macOS (Apple Silicon) and Linux (x86_64).
+#
+# Runs on a `v*` tag push or manually (workflow_dispatch). Uses the CI config
+# override (src-tauri/tauri.conf.ci.json) so no signing/updater secrets are
+# required: macOS is ad-hoc signed and updater artifacts are skipped. Produces
+# installers (.dmg on macOS, .AppImage + .deb on Linux) as a draft GitHub
+# release.
+#
+# To produce a SIGNED + auto-updatable macOS release, build locally instead
+# (see DESKTOP.md), or add the Developer ID cert + updater key as repo secrets
+# and drop the --config override for macOS.
+
+name: Release build
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+          - platform: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            libxdo-dev \
+            patchelf \
+            build-essential \
+            file
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install JS dependencies
+        run: npm ci
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || format('ci-{0}', github.run_number) }}
+          releaseName: 'RCQ Desktop ${{ github.ref_type == ''tag'' && github.ref_name || github.run_number }}'
+          releaseDraft: true
+          prerelease: false
+          args: --target ${{ matrix.target }} --config src-tauri/tauri.conf.ci.json

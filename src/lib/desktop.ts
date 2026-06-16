@@ -1,0 +1,76 @@
+// Desktop (Tauri) integration helpers.
+//
+// web-chat ships to BOTH a normal browser (chat.rcq.app) and the Tauri desktop
+// shell. Every Tauri API here is lazy-imported so the plain web build never
+// loads desktop-only code, and every export no-ops in a browser. Detection:
+// Tauri v2 injects `__TAURI_INTERNALS__` on window.
+
+export function isTauri(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+}
+
+// Resolve the OS notification permission once (the first request shows the
+// system prompt on macOS). Cached so we don't re-ask per message.
+let permission: Promise<boolean> | null = null
+async function ensurePermission(): Promise<boolean> {
+  if (!permission) {
+    permission = (async () => {
+      const n = await import('@tauri-apps/plugin-notification')
+      let granted = await n.isPermissionGranted()
+      if (!granted) granted = (await n.requestPermission()) === 'granted'
+      return granted
+    })().catch(() => false)
+  }
+  return permission
+}
+
+/// Fire an OS notification. No-op off desktop or without permission.
+export async function notifyDesktop(title: string, body: string): Promise<void> {
+  if (!isTauri()) return
+  try {
+    if (!(await ensurePermission())) return
+    const n = await import('@tauri-apps/plugin-notification')
+    n.sendNotification({ title, body })
+  } catch {
+    /* notification plugin unavailable — ignore */
+  }
+}
+
+/// Set the app (dock / taskbar) badge to the unread count; 0 clears it.
+/// App-wide, not per-window. No-op off desktop.
+export async function setDesktopBadge(count: number): Promise<void> {
+  if (!isTauri()) return
+  try {
+    const { getCurrentWindow } = await import('@tauri-apps/api/window')
+    await getCurrentWindow().setBadgeCount(count > 0 ? count : undefined)
+  } catch {
+    /* window API unavailable — ignore */
+  }
+}
+
+// Check the update endpoint once per launch; if a newer signed build is
+// published, ask the user and (on yes) download, install, and relaunch.
+// No-op off desktop / when the endpoint is unreachable.
+let updateChecked = false
+export async function checkForUpdatesOnLaunch(): Promise<void> {
+  if (!isTauri() || updateChecked) return
+  updateChecked = true
+  try {
+    const { check } = await import('@tauri-apps/plugin-updater')
+    const update = await check()
+    if (!update) return
+    const { ask } = await import('@tauri-apps/plugin-dialog')
+    const go = await ask(`RCQ ${update.version} is available. Install and restart now?`, {
+      title: 'Update RCQ',
+      kind: 'info',
+      okLabel: 'Install',
+      cancelLabel: 'Later',
+    })
+    if (!go) return
+    await update.downloadAndInstall()
+    const { relaunch } = await import('@tauri-apps/plugin-process')
+    await relaunch()
+  } catch {
+    /* no update / endpoint unreachable / not yet hosted — ignore */
+  }
+}

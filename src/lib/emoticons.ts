@@ -50,6 +50,16 @@ const RAW: Array<[string, string, string[]]> = [
   ['sad', 'Sad', []], ['cray', 'Crying', []], ['pardon', 'Pardon', []], ['sorry', 'Sorry', []],
   ['mad', 'Angry', []], ['ireful', 'Furious', []], ['shout', 'Shouting', []], ['bad', 'Sick', []],
   ['diablo', 'Devil', []], ['bomb', 'Bomb', []], ['girl_angel', 'Angel', []], ['hang1', 'Hang', []],
+  // 20 "extra" koloboks — the SAME set the iOS/Android clients added (40→60),
+  // appended in native order. asset == display name; wire code is `:asset:`.
+  // Filename casing is load-bearing (case-sensitive on the deploy server).
+  ['Cherna_01', 'Cherna_01', []], ['FinouCat_02', 'FinouCat_02', []], ['Koshechka_06', 'Koshechka_06', []],
+  ['Laie_74', 'Laie_74', []], ['Mauridia_02', 'Mauridia_02', []], ['Rulezzz_03', 'Rulezzz_03', []],
+  ['WhiteVoid_1', 'WhiteVoid_1', []], ['d_clock', 'd_clock', []], ['kirtsun_05', 'kirtsun_05', []],
+  ['l_girl_kiss', 'l_girl_kiss', []], ['l_lovers', 'l_lovers', []], ['l_teddy', 'l_teddy', []],
+  ['snoozer_likelinux_man', 'snoozer_likelinux_man', []], ['viannen_03', 'viannen_03', []], ['viannen_06', 'viannen_06', []],
+  ['viannen_09', 'viannen_09', []], ['viannen_35', 'viannen_35', []], ['viannen_48', 'viannen_48', []],
+  ['viannen_76', 'viannen_76', []], ['viannen_88', 'viannen_88', []],
 ]
 
 interface PackManifest {
@@ -137,6 +147,28 @@ export const PALETTE: PaletteEntry[] = (() => {
   }
   return out
 })()
+
+/// Default six quick reactions — byte-identical to iOS
+/// `EmoticonStore.defaultReactions` / Android `DEFAULT_REACTION_EMOJIS`.
+/// Used ONLY when the stored reactions key is ABSENT; a stored `[]` is an
+/// intentional empty set and is respected (see emoticon-choices.ts).
+export const DEFAULT_REACTIONS: readonly string[] = [
+  'good', 'give_heart', 'biggrin', 'shok', 'cray', 'mad',
+] as const
+
+/// Caps: the composer panel holds up to 40 emoticons, reactions up to 6
+/// (matches the native picker).
+export const PANEL_CAP = 40
+export const REACTION_CAP = 6
+
+/// Map chosen asset names → PaletteEntry[] preserving the user's pick order
+/// (unknown assets are skipped). Renders the user's chosen composer panel.
+export function panelPaletteFor(assets: string[]): PaletteEntry[] {
+  const byAsset = new Map(PALETTE.map((p) => [p.asset, p]))
+  return assets
+    .map((a) => byAsset.get(a))
+    .filter((p): p is PaletteEntry => p != null)
+}
 
 /// True when the kindID corresponds to a registered smiley pack.
 /// Used by the chat composer to filter the inventory's equipped

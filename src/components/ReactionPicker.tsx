@@ -1,28 +1,29 @@
-// Reaction picker — KOLOBOK "set 14" GIFs served from /emoticons/. Same 12 the
-// iOS/Android clients offer (MessageActionSheet.reactionAssets / Emoticon.kt
-// `reactions`), in the same order, so a reaction renders identically on every
-// client. Tap one to fire the parent's `onPick(asset)`; tap the current one
-// again to clear it. Two rows of six under a chat bubble.
+// Reaction picker — the user's OWN chosen quick reactions (curated in the
+// emoticon config sheet; defaults to the historical six until customised).
+// KOLOBOK GIFs served from /emoticons/. A reaction sends an asset name, so any
+// chosen kolobok (incl. the new extras) renders identically on iOS/Android.
+// Tap one to fire the parent's `onPick(asset)`; tap the current one again to
+// clear it.
 
-const ASSETS = [
-  'good', 'give_heart', 'biggrin', 'rofl', 'shok', 'cray',
-  'mad', 'diablo', 'cool', 'kiss', 'give_rose', 'man_in_love',
-] as const
-
-export type ReactionAsset = (typeof ASSETS)[number]
+import { useReactionAssets } from '../lib/emoticon-choices'
+import { emoticonAssetURL } from '../lib/emoticons'
 
 export function ReactionPicker({
+  uin,
   current,
   onPick,
 }: {
-  /// The asset currently set on the target message, if any. Tapping
-  /// the same asset toggles it off (sends `null` upstream).
+  /// The viewer's UIN — selects their chosen reaction set.
+  uin: number
+  /// The asset currently set on the target message, if any. Tapping the
+  /// same asset toggles it off (sends `null` upstream).
   current: string | null
   onPick: (asset: string | null) => void
 }) {
+  const assets = useReactionAssets(uin)
   return (
     <div className="grid grid-cols-6 gap-1 rounded-lg border border-line bg-surface px-2 py-1.5 shadow-sm">
-      {ASSETS.map((a) => {
+      {assets.map((a) => {
         const selected = current === a
         return (
           <button
@@ -35,7 +36,7 @@ export function ReactionPicker({
             aria-label={a}
           >
             <img
-              src={`/emoticons/${a}.gif`}
+              src={emoticonAssetURL(a)}
               alt={a}
               className="h-6 w-6 select-none"
               draggable={false}

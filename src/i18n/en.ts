@@ -385,6 +385,14 @@ export const en: Record<string, string> = {
   // Chat — emoticon picker
   'chat.emoticons': 'Emoticons',
   'chat.picker.section.base': 'Kolobok',
+  'chat.picker.empty.hint': 'Choose emoticons for your panel',
+  'chat.picker.empty.choose': 'Choose',
+  'chat.picker.edit': 'Edit',
+  'chat.picker.config.title': 'Your emoticons',
+  'chat.picker.tab.panel': 'Panel',
+  'chat.picker.tab.reactions': 'Reactions',
+  'chat.picker.hint.panel': 'Tap to add emoticons to your composer panel (up to 40).',
+  'chat.picker.hint.reactions': 'Tap to choose your quick reactions (up to 6).',
 
   // Contacts header — inventory link
   'contacts.inventory': 'Inventory',

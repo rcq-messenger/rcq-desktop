@@ -1104,6 +1104,7 @@ export function Chat() {
                       )}
                       {showReactionPicker && (
                         <ReactionPicker
+                          uin={identity!.uin}
                           current={reactionsForTarget(m.id)?.get(identity!.uin) ?? null}
                           onPick={(asset) => void toggleReaction(m.id, asset)}
                         />
@@ -1343,6 +1344,7 @@ export function Chat() {
                   )}
                   {showReactionPicker && (
                     <ReactionPicker
+                      uin={identity!.uin}
                       current={reactionsForTarget(row.id)?.get(identity!.uin) ?? null}
                       onPick={(asset) => void toggleReaction(row.id, asset)}
                     />
@@ -1369,6 +1371,7 @@ export function Chat() {
               {showPicker && (
                 <EmoticonPicker
                   key="picker"
+                  uin={identity!.uin}
                   onPick={(code) => setInput((prev) => prev + code)}
                 />
               )}

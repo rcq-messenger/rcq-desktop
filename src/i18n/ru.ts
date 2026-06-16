@@ -384,6 +384,14 @@ export const ru: Record<string, string> = {
   // Чат — пикер смайликов
   'chat.emoticons': 'Смайлики',
   'chat.picker.section.base': 'Kolobok',
+  'chat.picker.empty.hint': 'Выберите эмотиконы для панели',
+  'chat.picker.empty.choose': 'Выбрать',
+  'chat.picker.edit': 'Изменить',
+  'chat.picker.config.title': 'Ваши эмотиконы',
+  'chat.picker.tab.panel': 'Панель',
+  'chat.picker.tab.reactions': 'Реакции',
+  'chat.picker.hint.panel': 'Нажмите, чтобы добавить эмотиконы в панель (до 40).',
+  'chat.picker.hint.reactions': 'Нажмите, чтобы выбрать быстрые реакции (до 6).',
 
   // Шапка контактов — ссылка на инвентарь
   'contacts.inventory': 'Инвентарь',

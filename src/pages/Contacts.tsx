@@ -118,12 +118,17 @@ export function Contacts() {
   const ws = useWS()
   const navigate = useNavigate()
 
-  const [contacts, setContacts] = useState<Contact[]>([])
-  const [groups, setGroups] = useState<RCQGroup[]>([])
-  const [pending, setPending] = useState<PendingRequest[]>([])
-  const [me, setMe] = useState<UserInfo | null>(null)
+  // Lazy-init from the module cache so RETURNING to the list paints the
+  // last-known contacts on the FIRST render — no "Загружаем" spinner flash
+  // between the initial (empty) render and the effect that reads the cache.
+  // A silent background refresh still runs to pick up changes in place.
+  const _cachedAtMount = identity ? _contactsCache.get(identity.uin) : undefined
+  const [contacts, setContacts] = useState<Contact[]>(() => _cachedAtMount?.contacts ?? [])
+  const [groups, setGroups] = useState<RCQGroup[]>(() => _cachedAtMount?.groups ?? [])
+  const [pending, setPending] = useState<PendingRequest[]>(() => _cachedAtMount?.pending ?? [])
+  const [me, setMe] = useState<UserInfo | null>(() => _cachedAtMount?.me ?? null)
   const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(() => !_cachedAtMount)
   const [showCreateGroup, setShowCreateGroup] = useState(false)
 
   const favorites = useFavorites()

@@ -183,6 +183,64 @@ export function aggregateReactions(targetId: string, viewerUin: number): Reactio
     .map(([asset, count]) => ({ asset, count, mine: inner.get(viewerUin) === asset }))
 }
 
+// ── Delete-for-everyone tombstones ──────────────────────────────────
+// A delete envelope only carries the target message id, not which log holds
+// it, and web keeps two logs (incoming + outgoing). So we tombstone the id:
+// both render paths hide a tombstoned id, and the set is persisted so a
+// reload / carbon can't bring it back. Removing from the incoming log too
+// keeps memory tidy.
+const deletedIds = new Set<string>()
+let deletedVersion = 0
+const deletedListeners = new Set<() => void>()
+
+function emitDeleted() {
+  deletedVersion++
+  for (const l of deletedListeners) l()
+}
+
+export function isDeleted(targetId: string): boolean {
+  return deletedIds.has(targetId)
+}
+
+/// Retract a message for everyone locally. `senderUin` (when the delete came
+/// from a peer) gates the incoming removal to that sender's OWN message, so a
+/// peer can't delete someone else's message; `fromSelf` (our own delete, or a
+/// carbon of it) also lets it retract an OUTGOING row (hidden via the filter).
+export function markDeleted(targetId: string, opts?: { senderUin?: number; fromSelf?: boolean }): void {
+  if (deletedIds.has(targetId)) return
+  let removed = false
+  const drop = (map: Map<number, IncomingRow[]>) => {
+    for (const [key, rows] of map) {
+      const next = rows.filter((r) => !(r.id === targetId && (opts?.senderUin == null || r.from === opts.senderUin)))
+      if (next.length !== rows.length) {
+        map.set(key, next)
+        removed = true
+      }
+    }
+  }
+  drop(byPeer)
+  drop(byGroup)
+  // Only tombstone when we either removed the sender's own incoming message or
+  // it's our own delete — never let a peer tombstone (and thus hide) a message
+  // that wasn't theirs.
+  if (!removed && !opts?.fromSelf) return
+  deletedIds.add(targetId)
+  if (reactionsByTarget.delete(targetId)) emitReactions()
+  persist()
+  emit()
+  emitDeleted()
+}
+
+export function useDeletedVersion(): number {
+  return useSyncExternalStore(
+    (cb) => {
+      deletedListeners.add(cb)
+      return () => deletedListeners.delete(cb)
+    },
+    () => deletedVersion,
+  )
+}
+
 function subscribeReactions(cb: () => void): () => void {
   reactionListeners.add(cb)
   return () => {
@@ -232,6 +290,9 @@ interface Persisted {
   // targetID -> (reactorUIN-as-string -> asset). Optional for back-compat
   // with blobs written before reactions were persisted.
   reactions?: Record<string, Record<string, string>>
+  // Message ids retracted by delete-for-everyone. Persisted so a reload /
+  // carbon can't resurrect a deleted message. Optional for back-compat.
+  deleted?: string[]
 }
 
 function emit() {
@@ -341,6 +402,7 @@ function persist() {
     peers: Object.fromEntries(byPeer),
     groups: Object.fromEntries(byGroup),
     reactions,
+    deleted: [...deletedIds],
   }
   void idbSet(histKey(_activeUin), blob).catch(() => {})
 }
@@ -376,6 +438,7 @@ export async function hydrateIncoming(uin: number): Promise<void> {
     for (const [u, a] of Object.entries(m)) inner.set(Number(u), a)
     if (inner.size) reactionsByTarget.set(t, inner)
   }
+  for (const id of saved.deleted ?? []) deletedIds.add(id)
   emit()
   emitReactions()
 }
@@ -402,8 +465,15 @@ export function addIncoming(from: number, env: Envelope): void {
     applyEditTo(byPeer, from, env.targetID, env.text)
     return
   }
+  if (env.kind === 'delete') {
+    // 1:1 delete-for-everyone: honor only the sender's OWN message (author
+    // rule), unless it's our own delete carboned from another device.
+    markDeleted(env.targetID, from === _activeUin ? { fromSelf: true } : { senderUin: from })
+    return
+  }
   const row = rowFromEnvelope(from, env)
   if (!row) return
+  if (deletedIds.has(row.id)) return
   const key = `p:${from}:${row.id}`
   if (seen.has(key)) return
   seen.add(key)
@@ -426,8 +496,15 @@ export function addGroupIncoming(groupId: number, from: number, env: Envelope): 
     applyEditTo(byGroup, groupId, env.targetID, env.text)
     return
   }
+  if (env.kind === 'delete') {
+    // Group delete: the sender is the author OR a moderator (the native
+    // clients re-check moderator caps; the web honors the author's own).
+    markDeleted(env.targetID, from === _activeUin ? { fromSelf: true } : { senderUin: from })
+    return
+  }
   const row = rowFromEnvelope(from, env)
   if (!row) return
+  if (deletedIds.has(row.id)) return
   const key = `g:${groupId}:${row.id}`
   if (seen.has(key)) return
   seen.add(key)

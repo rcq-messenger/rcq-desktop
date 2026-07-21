@@ -182,6 +182,14 @@ export interface EditEnvelope {
   text: string
 }
 
+/// Delete-for-everyone (iOS/Android kind "delete"): the author retracts the
+/// message `targetID` for all recipients. Honored only for the author's own
+/// message (1:1) or a group moderator; recipients re-check on receipt.
+export interface DeleteEnvelope {
+  kind: 'delete'
+  targetID: string
+}
+
 /// Home-island record self-push (federation gossip B1, kind "homerec"): the
 /// sender hands a contact their own signed home-island record so the contact
 /// caches where to reach them even if the sender's island later dies. `rec` is
@@ -225,6 +233,7 @@ export type Envelope =
   | CarbonEnvelope
   | PollEnvelope
   | EditEnvelope
+  | DeleteEnvelope
   | HomeRecordEnvelope
   | SkdmEnvelope
   | SknackEnvelope
@@ -337,6 +346,8 @@ export function envelopeToObject(env: Envelope): Record<string, unknown> {
   } else if (env.kind === 'edit') {
     obj.targetID = env.targetID
     obj.text = env.text
+  } else if (env.kind === 'delete') {
+    obj.targetID = env.targetID
   } else if (env.kind === 'homerec') {
     obj.rec = env.rec
   } else if (env.kind === 'skdm') {

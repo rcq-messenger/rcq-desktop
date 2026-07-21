@@ -15,7 +15,7 @@ export const ru: Record<string, string> = {
   'login.tagline': 'Та же душа, современная криптография.',
   'login.mode.create': 'Новый аккаунт',
   'login.mode.recover': 'Восстановить',
-  'login.mode.link': 'Подключить телефон',
+  'login.mode.link': 'Телефон',
   'login.recover.body':
     'Введите свою фразу восстановления из 24 слов, чтобы восстановить аккаунт в этом браузере, включая аккаунт, который вы сначала создали на телефоне.',
   'login.recover.placeholder': 'слово1 слово2 слово3 … слово24',
@@ -134,6 +134,7 @@ export const ru: Record<string, string> = {
   'chat.actions.forward': 'переслать',
   'chat.actions.react': 'реакция',
   'chat.actions.edit': 'изменить',
+  'chat.actions.delete': 'удалить',
   'chat.actions.copy': 'копировать',
   'chat.actions.pin': 'закрепить',
   'chat.pin.attachment': '📎 Вложение',

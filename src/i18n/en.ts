@@ -135,6 +135,7 @@ export const en: Record<string, string> = {
   'chat.actions.forward': 'forward',
   'chat.actions.react': 'react',
   'chat.actions.edit': 'edit',
+  'chat.actions.delete': 'delete',
   'chat.actions.copy': 'copy',
   'chat.actions.pin': 'pin',
   'chat.pin.attachment': '📎 Attachment',

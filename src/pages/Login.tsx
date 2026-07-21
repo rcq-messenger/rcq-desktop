@@ -73,7 +73,7 @@ function ModeSwitch({ onDone }: { onDone: (id: WebIdentity) => void }) {
   const tab = (m: typeof mode, label: string) => (
     <button
       onClick={() => setMode(m)}
-      className={`h-9 rounded-md transition-colors ${mode === m ? 'bg-accent text-white' : 'text-fg-secondary hover:text-fg'}`}
+      className={`h-9 rounded-md transition-colors whitespace-nowrap px-1 ${mode === m ? 'bg-accent text-white' : 'text-fg-secondary hover:text-fg'}`}
     >
       {label}
     </button>

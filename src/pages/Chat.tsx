@@ -29,6 +29,9 @@ import {
   reactionsForTarget,
   aggregateReactions,
   useReactionsVersion,
+  markDeleted,
+  isDeleted,
+  useDeletedVersion,
   type PollRow,
 } from '../lib/incoming-store'
 import { sendV2 } from '../lib/signal-device'
@@ -42,6 +45,7 @@ import {
   type CarbonEnvelope,
   type Envelope,
   type EditEnvelope,
+  type DeleteEnvelope,
   type ReactionEnvelope,
   type ReplyContext,
   type TextEnvelope,
@@ -71,7 +75,7 @@ import { playSound } from '../lib/sounds'
 /// Envelope kinds `shipEnvelopeToCurrentThread` is allowed to encrypt + send.
 /// (Carbons take a separate path; this gates the in-thread sends.) `edit` was
 /// missing here, which silently rejected edit propagation to the peer.
-const SHIPPABLE_KINDS = new Set<Envelope['kind']>(['text', 'reaction', 'photo', 'video', 'file', 'edit'])
+const SHIPPABLE_KINDS = new Set<Envelope['kind']>(['text', 'reaction', 'photo', 'video', 'file', 'edit', 'delete'])
 
 /// Message kinds we mirror to the user's other devices via a carbon
 /// (NOT reactions — those sync through their own self-echo).
@@ -198,6 +202,9 @@ export function Chat() {
   // Re-render this view whenever ANY reaction changes (received or our own
   // optimistic toggle); the per-row chips read the store directly.
   useReactionsVersion()
+  // Re-render when a message is deleted-for-everyone (ours or a received
+  // delete) so the tombstone filter drops it live.
+  useDeletedVersion()
 
   const myNickname = useMemo<string>(
     () => myInfo?.nickname ?? t('chat.you'),
@@ -381,12 +388,14 @@ export function Chat() {
     // wire for a send to self. The optimistic row is the message; no delivery,
     // no carbon (the row already persists to this device's localStorage log).
     if (isSelf) return { ok: true }
+    // The server ships this as the ws packet `type` to the recipient (so a web
+    // receiver routes a control envelope live) and gates owner_only posts +
+    // pushes on it. Reaction/edit/delete carry their own type; content is
+    // "message".
+    const etype =
+      envelope.kind === 'reaction' ? 'reaction' : envelope.kind === 'edit' ? 'edit' : envelope.kind === 'delete' ? 'delete' : 'message'
     try {
       if (isGroup && group && gctx) {
-        // Carry the real outer type so the server's owner_only post-gate sees
-        // a reaction/edit as NOT a post (members keep reacting in broadcast
-        // groups); plain content stays "message".
-        const etype = envelope.kind === 'reaction' ? 'reaction' : envelope.kind === 'edit' ? 'edit' : 'message'
         // Sender-keys dual-send (only for a LOCAL group — cross-island groups
         // keep the legacy per-member path in v1; their capability lookup +
         // broadcast endpoint live on the foreign island we have no token for).
@@ -440,10 +449,10 @@ export function Chat() {
         // (reached === 0 — e.g. a Stage-2-only account), fall back to the
         // v=1 ECIES envelope so the message still goes through.
         try {
-          const reached = await sendV2(identity, peer.uin, envelope).catch(() => 0)
+          const reached = await sendV2(identity, peer.uin, envelope, etype).catch(() => 0)
           if (reached === 0) {
             const wireB64 = encryptV1(envelope, identity, peerBundleFrom(peer))
-            await Api.sendSealed(identity, peer.uin, wireB64)
+            await Api.sendSealed(identity, peer.uin, wireB64, etype)
           }
           // Multihoming v1: best-effort sealed copy into the peer's OTHER home
           // islands; no-op (and no extra traffic beyond a cached record lookup)
@@ -577,6 +586,20 @@ export function Chat() {
     setInput('')
     setOutgoing((rows) => rows.map((r) => (r.id === target.id ? { ...r, text: trimmed, edited: true } : r)))
     const env: EditEnvelope = { kind: 'edit', targetID: target.id, text: trimmed }
+    const res = await shipEnvelopeToCurrentThread(env)
+    if (!res.ok) setTransientNotice(t('chat.error.send_failed'))
+  }
+
+  /// Delete one of MY messages for everyone: send a `delete` envelope, remove
+  /// the row locally (from state + the persisted log) and tombstone its id so a
+  /// carbon / reload can't resurrect it. Recipients re-check the author rule and
+  /// drop it too.
+  async function deleteForEveryone(row: OutgoingRow) {
+    if (!identity) return
+    setActionsForRowId(null)
+    markDeleted(row.id, { fromSelf: true }) // hide across both logs + persist tombstone
+    setOutgoing((rows) => rows.filter((r) => r.id !== row.id))
+    const env: DeleteEnvelope = { kind: 'delete', targetID: row.id }
     const res = await shipEnvelopeToCurrentThread(env)
     if (!res.ok) setTransientNotice(t('chat.error.send_failed'))
   }
@@ -997,6 +1020,7 @@ export function Chat() {
             ...outgoing.map((row) => ({ at: row.sentAt, kind: 'out' as const, row })),
             ...incoming.map((m) => ({ at: m.at, kind: 'in' as const, msg: m })),
           ]
+            .filter((it) => !isDeleted(it.kind === 'out' ? it.row.id : it.msg.id))
             .sort((a, b) => a.at - b.at)
             .map((item) => {
               if (item.kind === 'in') {
@@ -1340,6 +1364,7 @@ export function Chat() {
                         label={t('chat.actions.react')}
                         icon="☺"
                       />
+                      <ActionButton onClick={() => void deleteForEveryone(row)} label={t('chat.actions.delete')} icon="🗑" danger />
                     </div>
                   )}
                   {showReactionPicker && (
@@ -1560,11 +1585,15 @@ export function Chat() {
   )
 }
 
-function ActionButton({ onClick, label, icon }: { onClick: () => void; label: string; icon: string }) {
+function ActionButton({ onClick, label, icon, danger }: { onClick: () => void; label: string; icon: string; danger?: boolean }) {
   return (
     <button
       onClick={onClick}
-      className="flex items-center gap-1 rounded px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-fg-secondary hover:bg-surface-dim hover:text-ink-black transition-colors"
+      className={`flex items-center gap-1 rounded px-2 py-1 font-mono text-[10px] uppercase tracking-wider transition-colors ${
+        danger
+          ? 'text-red-500 hover:bg-red-50 hover:text-red-600'
+          : 'text-fg-secondary hover:bg-surface-dim hover:text-ink-black'
+      }`}
     >
       <span>{icon}</span>
       <span>{label}</span>

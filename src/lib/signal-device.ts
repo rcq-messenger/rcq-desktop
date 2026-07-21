@@ -105,7 +105,7 @@ const _peerTargets = new Map<number, Array<{ deviceId: number; outerPub: Uint8Ar
 
 /// Send an envelope to a peer over v=2, fanning out one ciphertext per device.
 /// Returns the number of devices reached.
-export async function sendV2(identity: WebIdentity, peerUin: number, env: Envelope): Promise<number> {
+export async function sendV2(identity: WebIdentity, peerUin: number, env: Envelope, envelopeType = 'message'): Promise<number> {
   const dev = await getDevice(identity)
 
   let targets = _peerTargets.get(peerUin)
@@ -128,7 +128,7 @@ export async function sendV2(identity: WebIdentity, peerUin: number, env: Envelo
     const res = await fetch(`${identity.apiBase}/messages/sealed`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ to_uin: peerUin, envelope_type: 'message', payload }),
+      body: JSON.stringify({ to_uin: peerUin, envelope_type: envelopeType, payload }),
     })
     if (res.ok) sent++
   }

@@ -199,16 +199,28 @@ export function MessageReceiver() {
     }
   }, [identity])
 
-  // Live sealed messages pushed over the socket.
+  // Live sealed envelopes pushed over the socket. The server ships each with
+  // ws packet `type` = its envelope_type, so a control envelope arrives as
+  // `reaction`/`delete`/`edit`/`read`/… — NOT `message`. Subscribing only to
+  // `message` meant a reaction/delete/edit sent from the phone was dropped
+  // live and only applied on the next reload's queue drain (which reads every
+  // row regardless of type). Subscribe to the full sealed-envelope set so live
+  // delivery matches the drain. `gmsg` has its own handler below; other control
+  // ws packets (presence/typing/pong/contact_*/account_burned) are not in this
+  // list, so they're untouched.
   useEffect(() => {
     if (!identity) return
-    return on('message', (ev) => {
+    const handle = (ev: Parameters<Parameters<typeof on>[1]>[0]) => {
       const payload = ev.payload as string | undefined
       if (!payload) return
       void decryptIncoming(identity, payload).then((got) => {
         if (got) route(got.senderUIN, got.senderHost, got.envelope, ev.group_id, identity.uin, hostOf(identity.apiBase), got.senderSigningKey, identity)
       })
-    })
+    }
+    // Every sealed 1:1 envelope_type a peer / our own other device can push.
+    const SEALED_WS_TYPES = ['message', 'reaction', 'delete', 'edit', 'read', 'system', 'secscreen', 'visit', 'bounce', 'carbon', 'homerec']
+    const offs = SEALED_WS_TYPES.map((tp) => on(tp, handle))
+    return () => offs.forEach((off) => off())
   }, [identity, on])
 
   // Live sender-keys broadcasts pushed over the socket (server pkt type "gmsg").

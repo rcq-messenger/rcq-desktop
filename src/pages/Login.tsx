@@ -22,6 +22,7 @@ import {
   suggestNickname,
 } from '../lib/auth'
 import { defaultHome } from '../lib/routing'
+import { isTauri } from '../lib/desktop'
 import { bytesToB64, newLinkEphemeral, openLinkSeal, type WebIdentity } from '../lib/crypto'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
@@ -189,8 +190,12 @@ function LinkPane({ onDone }: { onDone: (id: WebIdentity) => void }) {
     crypto.getRandomValues(tokenBytes)
     const token = Array.from(tokenBytes, (b) => b.toString(16).padStart(2, '0')).join('')
     // The phone parses this: a one-time relay token + the web's ephemeral
-    // X25519 pubkey to seal the account to.
-    const payload = `rcq://link?t=${token}&k=${encodeURIComponent(bytesToB64(eph.pub))}`
+    // X25519 pubkey to seal the account to + `c` = the client kind, so the
+    // phone's Linked-devices list can label this session "Desktop" vs "Web"
+    // (it hardcoded "Web" before, since the QR carried no hint). Old phones
+    // ignore `c` and keep the "Web" fallback — backward compatible.
+    const client = isTauri() ? 'Desktop' : 'Web'
+    const payload = `rcq://link?t=${token}&k=${encodeURIComponent(bytesToB64(eph.pub))}&c=${client}`
     void QRCode.toDataURL(payload, { width: 240, margin: 1, errorCorrectionLevel: 'M' }).then((u) => {
       if (!cancelled) setQr(u)
     })

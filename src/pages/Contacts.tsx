@@ -8,6 +8,7 @@
 
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { BypassShield } from '../components/BypassShield'
 import { ContactActionsMenu } from '../components/ContactActionsMenu'
 import { GroupActionsMenu } from '../components/GroupActionsMenu'
 import { CreateGroupSheet } from '../components/CreateGroupSheet'
@@ -319,6 +320,8 @@ export function Contacts() {
                 </span>
                 <span className="font-mono text-[10px] text-fg-dim">#{me.uin}</span>
               </Link>
+              {/* Desktop only, and only while a relay is actually carrying us. */}
+              <BypassShield />
             </>
           )}
           <div className="ml-auto flex items-center gap-0.5">

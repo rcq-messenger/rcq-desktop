@@ -17,6 +17,7 @@ import {
   appVersion,
   bypassStatus,
   checkForUpdatesNow,
+  desktopPlatform,
   isTauri,
   relaunchApp,
   setBypassEnabled,
@@ -76,6 +77,8 @@ export function Settings() {
   const [updateNote, setUpdateNote] = useState<string | null>(null)
   // Desktop only: the bundled sing-box. `bypass` null off desktop.
   const [bypass, setBypass] = useState<BypassStatus | null>(null)
+  // 'macos' | 'windows' | 'linux', null in a browser — About names the build.
+  const [platform, setPlatform] = useState<string | null>(null)
 
   // Seed the HoF toggle + avatar from the server (owner-self echoes both).
   useEffect(() => {
@@ -96,6 +99,7 @@ export function Settings() {
   useEffect(() => {
     void appVersion().then(setDesktopVersion)
     void bypassStatus().then(setBypass)
+    void desktopPlatform().then(setPlatform)
   }, [])
 
   async function toggleBypass(enabled: boolean) {
@@ -716,6 +720,12 @@ export function Settings() {
                   ` · ${t('settings.bypass.list_version', { version: bypass.relay_config_version })}`}
               </p>
             )}
+            <Link
+              to="/diagnostics"
+              className="block text-xs font-medium text-accent hover:underline"
+            >
+              {t('diag.title')}
+            </Link>
           </section>
         )}
 
@@ -730,7 +740,11 @@ export function Settings() {
               <div className="text-xs text-fg-dim">{t('login.tagline')}</div>
             </div>
           </div>
-          <p className="text-xs text-fg-secondary leading-relaxed">{t('settings.about.body')}</p>
+          {/* The desktop is not the web client and shouldn't say it is; each
+              build names its own OS. */}
+          <p className="text-xs text-fg-secondary leading-relaxed">
+            {t(platform ? `settings.about.body_${platform}` : 'settings.about.body')}
+          </p>
           {isTauri() && (
             <>
               <div className="flex items-center justify-between text-xs pt-1">

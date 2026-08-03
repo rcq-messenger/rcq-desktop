@@ -53,6 +53,31 @@ fn bypass_set(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
     bypass::set_enabled(&app, enabled)
 }
 
+/// Probe the island directly and over the current route. Blocking work, so it
+/// goes to the blocking pool rather than stalling a runtime worker for the
+/// seconds a censored network takes to time out.
+#[cfg(desktop)]
+#[tauri::command]
+async fn network_diagnostics(app: tauri::AppHandle, host: String) -> bypass::Diagnostics {
+    tauri::async_runtime::spawn_blocking(move || bypass::diagnostics(&app, &host))
+        .await
+        .unwrap_or_default()
+}
+
+/// Which desktop this is, so the app can name itself correctly instead of
+/// calling itself the web client.
+#[cfg(desktop)]
+#[tauri::command]
+fn desktop_platform() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "macos"
+    } else if cfg!(target_os = "windows") {
+        "windows"
+    } else {
+        "linux"
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default();
@@ -70,7 +95,12 @@ pub fn run() {
             .plugin(tauri_plugin_process::init())
             .plugin(tauri_plugin_dialog::init())
             .plugin(tauri_plugin_shell::init())
-            .invoke_handler(tauri::generate_handler![bypass_status, bypass_set]);
+            .invoke_handler(tauri::generate_handler![
+                bypass_status,
+                bypass_set,
+                network_diagnostics,
+                desktop_platform
+            ]);
     }
 
     let app = builder

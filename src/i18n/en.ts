@@ -183,6 +183,40 @@ export const en: Record<string, string> = {
   'settings.section.about': 'About',
   'settings.about.body':
     'RCQ is an anonymous, end-to-end encrypted messenger — no phone number, no email. This is the web client; it runs its own account in this browser.',
+  // Desktop builds name their own OS — this is not the web client.
+  'settings.about.body_macos':
+    'RCQ is an anonymous, end-to-end encrypted messenger — no phone number, no email. This is the macOS app; its account lives on this Mac.',
+  'settings.about.body_windows':
+    'RCQ is an anonymous, end-to-end encrypted messenger — no phone number, no email. This is the Windows app; its account lives on this computer.',
+  'settings.about.body_linux':
+    'RCQ is an anonymous, end-to-end encrypted messenger — no phone number, no email. This is the Linux app; its account lives on this computer.',
+
+  // Connection diagnostics, the phones' ConnectionDiagnostics.
+  'diag.title': 'Connection diagnostics',
+  'diag.route': 'Route',
+  'diag.mode_tunnel': 'Relay (obfuscated)',
+  'diag.mode_direct': 'Direct',
+  'diag.island_direct': 'Island, direct',
+  'diag.island_route': 'Island, current route',
+  'diag.island': 'Island',
+  'diag.ws': 'Real-time channel',
+  'diag.relays': 'Relays',
+  'diag.reachable': 'Reachable',
+  'diag.blocked': 'Blocked',
+  'diag.unreachable': 'Unreachable',
+  'diag.connected': 'Connected',
+  'diag.disconnected': 'Disconnected',
+  'diag.relays_signed': '{count} relays · signed v{version}',
+  'diag.relays_bundled': '{count} relays · bundled',
+  'diag.running': 'Checking…',
+  'diag.run_again': 'Run again',
+  'diag.footer':
+    'If the island is blocked directly but reachable on the current route, the relay is doing its job. If both fail, your network is blocking everything we can reach.',
+
+  // The header shield, shown only while a relay is carrying the app.
+  'bypass.shield.verified': 'Going through a relay, and it is getting through',
+  'bypass.shield.unverified': 'Going through a relay, but nothing has come back yet',
+
   // Desktop build only — circumvention through the bundled sing-box.
   'settings.section.bypass': 'Getting through blocks',
   'settings.bypass.toggle': 'Route this app through RCQ relays',

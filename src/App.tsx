@@ -14,6 +14,7 @@ import { AddContact } from './pages/AddContact'
 import { Profile } from './pages/Profile'
 import { GroupInfo } from './pages/GroupInfo'
 import { JoinGroup } from './pages/JoinGroup'
+import { Diagnostics } from './pages/Diagnostics'
 import { Privacy } from './pages/Privacy'
 import { Market } from './pages/Market'
 import { defaultHome, isMarketHost } from './lib/routing'
@@ -148,6 +149,14 @@ export default function App() {
                 element={
                   <Authed>
                     <Privacy />
+                  </Authed>
+                }
+              />
+              <Route
+                path="/diagnostics"
+                element={
+                  <Authed>
+                    <Diagnostics />
                   </Authed>
                 }
               />

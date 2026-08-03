@@ -94,6 +94,41 @@ export async function setBypassEnabled(enabled: boolean): Promise<boolean> {
   }
 }
 
+/// What the diagnostics screen reports, mirroring the phones'. The two probes
+/// together say whether the network is blocking us and whether the relay is
+/// doing its job.
+export interface NetworkDiagnostics {
+  tunnel: boolean
+  direct_ok: boolean
+  route_ok: boolean
+  relay_count: number
+  relay_config_version: number | null
+}
+
+/// `host` is a bare hostname, not a URL. Takes seconds on a censored network:
+/// each probe waits the timeout out three times before calling it blocked.
+export async function networkDiagnostics(host: string): Promise<NetworkDiagnostics | null> {
+  if (!isTauri()) return null
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    return await invoke<NetworkDiagnostics>('network_diagnostics', { host })
+  } catch {
+    return null
+  }
+}
+
+/// 'macos' | 'windows' | 'linux', or null in a browser. Used so the app names
+/// itself correctly rather than calling itself the web client.
+export async function desktopPlatform(): Promise<string | null> {
+  if (!isTauri()) return null
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    return await invoke<string>('desktop_platform')
+  } catch {
+    return null
+  }
+}
+
 export async function relaunchApp(): Promise<void> {
   if (!isTauri()) return
   try {

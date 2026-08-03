@@ -12,7 +12,7 @@ use serde_json::{json, Value};
 use std::io::Write;
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager};
@@ -34,6 +34,10 @@ static CORE: Mutex<Option<CommandChild>> = Mutex::new(None);
 // "you flipped this and haven't restarted yet" apart from "we tried to start
 // the core and it didn't come up", which read identically otherwise.
 static TRIED_AT_STARTUP: AtomicBool = AtomicBool::new(false);
+
+// The port the core listens on this session, 0 when it isn't up. Needed after
+// startup so the diagnostics can probe through the same route the webview uses.
+static PORT: AtomicU16 = AtomicU16::new(0);
 
 #[derive(Default, Serialize, Deserialize)]
 struct Persisted {
@@ -123,13 +127,22 @@ pub fn start(app: &AppHandle) -> Option<u16> {
         stop();
         return None;
     }
+    PORT.store(port, Ordering::Relaxed);
     log::info!("bypass up on 127.0.0.1:{port}, {} relays", config.relays.len());
     Some(port)
 }
 
 pub fn stop() {
+    PORT.store(0, Ordering::Relaxed);
     if let Some(child) = CORE.lock().unwrap().take() {
         let _ = child.kill();
+    }
+}
+
+fn proxy_url() -> Option<String> {
+    match PORT.load(Ordering::Relaxed) {
+        0 => None,
+        port => Some(format!("socks5h://127.0.0.1:{port}")),
     }
 }
 
@@ -164,6 +177,63 @@ pub fn refresh_relays_in_background(app: &AppHandle, proxy_port: Option<u16>) {
 pub fn current_config(app: &AppHandle) -> Option<RelayConfig> {
     let cache_dir = app.path().app_config_dir().ok()?;
     relay::load(&cache_dir)
+}
+
+/// What the diagnostics screen reports, mirroring the phones' connection
+/// diagnostics: is the island reachable at all, and is it reachable the way we
+/// are currently routing? Those two answers together say whether the network
+/// is blocking us and whether the relay is doing its job.
+#[derive(Default, Serialize)]
+pub struct Diagnostics {
+    /// Whether traffic is going through a relay right now.
+    pub tunnel: bool,
+    /// The island answered a request that deliberately ignored the tunnel.
+    pub direct_ok: bool,
+    /// The island answered over the route the app is actually using.
+    pub route_ok: bool,
+    pub relay_count: usize,
+    pub relay_config_version: Option<i64>,
+}
+
+/// Probe both paths. Blocking on purpose: the caller runs it off the UI thread,
+/// and each probe has to actually wait out a censored network to be worth
+/// anything.
+pub fn diagnostics(app: &AppHandle, host: &str) -> Diagnostics {
+    let config = current_config(app);
+    Diagnostics {
+        tunnel: is_running(),
+        direct_ok: probe(host, None),
+        route_ok: probe(host, proxy_url().as_deref()),
+        relay_count: config.as_ref().map(|c| c.relays.len()).unwrap_or(0),
+        relay_config_version: config.and_then(|c| c.version),
+    }
+}
+
+// Three attempts before calling a network blocked. A cold first connection can
+// blow the budget on DNS plus a TLS handshake without anything censoring it,
+// and on the phones a single-shot probe misreading that was exactly the
+// "bypass turns itself on when it shouldn't" report. Real DPI keeps timing out.
+fn probe(host: &str, proxy: Option<&str>) -> bool {
+    let mut builder = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .danger_accept_invalid_certs(false);
+    if let Some(url) = proxy {
+        match reqwest::Proxy::all(url) {
+            Ok(p) => builder = builder.proxy(p),
+            Err(e) => log::error!("bad proxy url for probe: {e}"),
+        }
+    } else {
+        builder = builder.no_proxy();
+    }
+    let Ok(client) = builder.build() else { return false };
+    let url = format!("https://{host}/health");
+    (0..3).any(|_| {
+        client
+            .get(&url)
+            .send()
+            .map(|r| r.status().is_success())
+            .unwrap_or(false)
+    })
 }
 
 // Ask the OS for a free port by binding and immediately dropping. Something

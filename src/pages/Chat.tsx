@@ -956,7 +956,16 @@ export function Chat() {
       : peer ? (peer.host ? `/profile/${peer.uin}?i=${encodeURIComponent(peer.host)}` : `/profile/${peer.uin}`) : '#'
 
   return (
-    <div className="h-[100dvh] flex flex-col bg-surface-dim overflow-hidden">
+    // h-screen FIRST, dvh second: `100dvh` is an enhancement (it accounts for
+    // mobile browser chrome sliding away), but a WebView that does not know the
+    // unit DROPS the declaration entirely. With only `h-[100dvh]` that leaves
+    // the shell at height:auto, so it grows to the length of the conversation,
+    // `overflow-hidden` stops applying, and the page itself scrolls — taking
+    // this header, and the back button in it, off screen. Which is exactly
+    // what desktop Windows reported: scroll the whole sheet down to read, then
+    // all the way back up to find the way out. `h-screen` is the floor that
+    // survives, `dvh` wins wherever it is understood.
+    <div className="h-screen [height:100dvh] flex flex-col bg-surface-dim overflow-hidden">
       <header className="flex-none bg-surface border-b border-line z-10">
         <div className="max-w-2xl mx-auto px-4 h-14 flex items-center gap-3">
           <Link to="/contacts" className="text-fg-secondary hover:text-fg-primary px-2">
@@ -1100,6 +1109,7 @@ export function Chat() {
                       ) : (
                         <button
                           onClick={() => toggleActions(m.id)}
+                          onContextMenu={(e) => { e.preventDefault(); toggleActions(m.id) }}
                           className="rounded-lg px-3 py-2 text-sm text-left bg-surface-dim border border-line hover:bg-line/40 transition-colors"
                         >
                           <EmoticonText text={m.text} emoticonSize={18} />
@@ -1309,6 +1319,13 @@ export function Chat() {
                   )}
                   <button
                     onClick={() => toggleActions(row.id)}
+                    // Right-click opens the same actions. On a phone, tapping a
+                    // bubble to get reply/edit/delete is the obvious gesture; on
+                    // a desktop it is not, and a right-click just produced the
+                    // browser's own menu — so desktop Windows reported that
+                    // deleting a note "is still not there" when it had been
+                    // there all along, one left-click away.
+                    onContextMenu={(e) => { e.preventDefault(); toggleActions(row.id) }}
                     className={`rounded-lg px-3 py-2 text-sm text-left transition-colors ${
                       row.state === 'failed'
                         ? 'bg-red-50 border border-red-200'

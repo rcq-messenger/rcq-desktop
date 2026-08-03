@@ -229,9 +229,28 @@ export interface UinSuggestion {
   price_display: string
 }
 
+/// Superset of the old {new_uin, token}: the server fills those in exactly
+/// when it was asked to switch the account onto the number, and `owned` is
+/// the collection afterwards. Taking a number and BECOMING it are two calls
+/// now (`/uin/purchase` with switch=false, then `/uin/activate`).
 export interface UinPurchaseResult {
-  new_uin: number
-  token: string
+  new_uin?: number | null
+  token?: string | null
+  switched?: boolean
+  owned?: number[]
+}
+
+/// One number held but not in use.
+export interface OwnedUin {
+  uin: number
+  length: number
+  acquired_at: string
+}
+
+export interface MyUins {
+  /// The number this account answers as right now.
+  active: number
+  owned: OwnedUin[]
 }
 
 // -----------------------------------------------------------
@@ -447,11 +466,28 @@ export const Api = {
     return request<UinSuggestion[]>(id, 'GET', `/uin/suggestions?count=${count}`)
   },
 
-  /// Buy a UIN and migrate the account onto it. Returns the new UIN + a
-  /// fresh JWT (the old UIN is released; libsignal sessions reset, peers
-  /// re-handshake). `receipt` is a mock IAP token today.
-  uinPurchase(id: WebIdentity, uin: number, receipt: string): Promise<UinPurchaseResult> {
-    return request<UinPurchaseResult>(id, 'POST', '/uin/purchase', { uin, receipt })
+  /// Take a UIN. `switch` false (the default) puts it in the collection and
+  /// leaves the account answering as it is; true migrates onto it right away
+  /// and comes back with the new UIN + a fresh JWT.
+  ///
+  /// The old `receipt` argument is gone: the server never validated it, and a
+  /// field that looks like a payment check but is not is worse than none.
+  uinPurchase(id: WebIdentity, uin: number, switchNow = false): Promise<UinPurchaseResult> {
+    return request<UinPurchaseResult>(id, 'POST', '/uin/purchase', { uin, switch: switchNow })
+  },
+
+  /// Everything this account holds plus the number it answers as. Answers
+  /// whether or not the island runs a shop: closing a shop stops new sales,
+  /// it does not hide from people what they already own.
+  uinMine(id: WebIdentity): Promise<MyUins> {
+    return request<MyUins>(id, 'GET', '/uin/mine')
+  },
+
+  /// Answer as a number already in the collection. The number in use goes
+  /// into the collection in its place, so this is reversible and never loses
+  /// one. Migrates, hence the fresh {new_uin, token}.
+  uinActivate(id: WebIdentity, uin: number): Promise<UinPurchaseResult> {
+    return request<UinPurchaseResult>(id, 'POST', '/uin/activate', { uin })
   },
 }
 

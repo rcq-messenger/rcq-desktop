@@ -3,9 +3,9 @@
 // through Login → Contacts → Chat. Components that need the
 // identity grab it via `useIdentity()`.
 
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { WebIdentity } from './crypto'
-import { clearIdentity, loadStoredIdentity, wipeLocalAccountData } from './auth'
+import { adoptMigratedUin, clearIdentity, loadStoredIdentity, wipeLocalAccountData } from './auth'
 import { setUnauthorizedHandler } from './api'
 import { idbClearAll } from './signal-persist'
 
@@ -13,6 +13,15 @@ interface IdentityCtx {
   identity: WebIdentity | null
   setIdentity: (id: WebIdentity | null) => void
   signOut: () => void
+  /// Call BEFORE asking the server to change this account's UIN, and pair it
+  /// with endMigration() if the request fails. It shields the browser from
+  /// its own migration — see the `migrating` ref below.
+  beginMigration: () => void
+  endMigration: () => void
+  /// Adopt a server-confirmed UIN migration (took a number and moved onto it,
+  /// or switched to one already held) and hard-reload under it. Use this
+  /// rather than setIdentity + a reload of your own.
+  adoptMigration: (newUin: number, token: string, to?: string) => void
 }
 
 const Ctx = createContext<IdentityCtx | undefined>(undefined)
@@ -28,13 +37,32 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
     setHydrated(true)
   }, [])
 
-  // Any 401 from an authed API call means this web session was revoked
+  // A UIN migration by THIS tab is in flight. Two things arrive during it
+  // that otherwise read as "this session is over", and both would throw away
+  // an account that is perfectly alive on the server:
+  //
+  //  * 401 — every token for the OLD number is retired the moment the swap
+  //    commits, so any request still in the air comes back unauthorized.
+  //  * `account_burned` over the websocket — the migration deliberately fans
+  //    that out to the old UIN so the user's OTHER devices tear down their
+  //    stale state (app/routers/migrate.py). This tab is not another device:
+  //    it is the one doing the migrating, and it is about to reload under the
+  //    new number. Acting on it here ran the full sign-out — local data wiped,
+  //    IndexedDB cleared, back to the login screen with the account gone
+  //    unless the user had written down their recovery phrase.
+  //
+  // The flag is set before the request goes out (the broadcast can beat the
+  // HTTP response) and is never cleared on success: the page reloads.
+  const migrating = useRef(false)
+
+  // Any other 401 from an authed API call means this web session was revoked
   // (the phone unlinked it) or expired. Drop the identity so the app
   // routes straight back to login instead of showing a raw
   // "401: device revoked" error — both live (on the next request after
   // an unlink) and on a hard reload with a now-dead token.
   useEffect(() => {
     setUnauthorizedHandler(() => {
+      if (migrating.current) return
       clearIdentity()
       setIdentity(null)
     })
@@ -53,11 +81,26 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
       // URLs) so a freshly created account starts truly clean. Without
       // this a new account inherited the old one's messages.
       signOut: () => {
+        if (migrating.current) return
         clearIdentity()
         wipeLocalAccountData()
         void idbClearAll().finally(() => {
           window.location.assign('/')
         })
+      },
+      beginMigration: () => {
+        migrating.current = true
+      },
+      endMigration: () => {
+        migrating.current = false
+      },
+      adoptMigration: (newUin: number, token: string, to = '/') => {
+        if (!identity) return
+        migrating.current = true
+        setIdentity(adoptMigratedUin(identity, newUin, token))
+        // Hard reload, not a route change: every module-level cache is keyed
+        // by the old uin/jwt (ws socket, libsignal device, incoming store).
+        window.location.assign(to)
       },
     }),
     [identity],

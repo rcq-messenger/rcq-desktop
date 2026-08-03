@@ -607,14 +607,27 @@ export const en: Record<string, string> = {
   'uin_market.info.what.title': 'What is a UIN',
   'uin_market.info.what.body':
     'Your UIN is your handle on RCQ, the number people add to reach you. A shorter one is easier to share and remember.',
-  'uin_market.info.migrate.title': 'What happens when you buy',
+  'uin_market.info.migrate.title': 'Taking a number does not change who you are',
   'uin_market.info.migrate.body':
-    'Your account moves to the new UIN. Your profile and contacts come with you; secure sessions reset, so chats re-handshake on the next message. The old UIN is released.',
+    'The number joins your collection and you keep answering as you do now. Moving onto it is a separate step under Your numbers, and it is reversible: the number you leave stays yours too, so nobody else can take it.',
   'uin_market.confirm.body':
-    'Your account will move to this UIN. Profile and contacts stay; secure sessions reset and re-handshake automatically. The old UIN is released.',
+    'The number joins your collection. You keep answering as you do now, and you can move onto it whenever you like.',
   'uin_market.confirm.cta': 'Confirm',
   'uin_market.bought.title': 'Done',
-  'uin_market.bought.body': 'You now own {uin}.',
+  'uin_market.bought.body': 'You now hold {uin}.',
+  'uin_market.switched.body': 'You now answer as {uin}.',
+  'uin_market.mine.label': 'Your numbers',
+  'uin_market.mine.active': 'You answer as',
+  'uin_market.mine.empty': 'Nothing held yet. Numbers you take without moving onto them show up here.',
+  'uin_market.mine.use': 'Switch',
+  'uin_market.mine.note': 'While you answer as one number, the rest are simply reserved for you. Nobody else can take them.',
+  'uin_market.mine.confirm.body':
+    'Contacts, groups and your profile move onto this number. {prev} stays yours and stays on this screen, so you can move back whenever you like. Secure sessions reset and re-handshake on the next message.',
+  'uin_market.mine.confirm.cta': 'Switch',
+  'uin_market.held.body':
+    'It is in your collection and you still answer as {prev}. Move onto it now, or later from Your numbers.',
+  'uin_market.held.now': 'Move onto it',
+  'uin_market.held.later': 'Later',
   'uin_market.error.taken': 'That UIN was just taken. Try another.',
   'uin_market.error.cooldown': 'You changed your UIN recently. Please wait a bit before changing again.',
   'uin_market.error.generic': 'Something went wrong. Please try again.',

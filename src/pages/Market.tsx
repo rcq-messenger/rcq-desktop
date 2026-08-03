@@ -8,17 +8,19 @@
 // only for MEANING — availability and the primary action. No gradient slabs,
 // no glows: those read as noise, not value.
 //
-// Functionally it mirrors iOS `UINShopView`: type a 3-9 digit handle, see live
-// availability + price, buy, and the account migrates onto it. Payments are
-// mock today (the backend accepts any receipt); the price is real (a function
-// of digit count). Real card/crypto checkout is the next layer.
+// Functionally: type a 3-9 digit handle, see live availability + price, take
+// it. Taking it does NOT change who the account answers as — the number lands
+// in the collection (Your numbers, below the field) and moving onto it is a
+// second, deliberate step, the same split the Android client and the server
+// (POST /uin/purchase{switch:false} then /uin/activate) use. Payments do not
+// exist yet; the price is real (a function of digit count) and checkout is
+// gated off. Real card/crypto checkout is the next layer.
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
-import { Api, ApiError, type UinQuote, type UinSuggestion } from '../lib/api'
+import { Api, ApiError, type MyUins, type UinQuote, type UinSuggestion } from '../lib/api'
 import { Logo } from '../components/Logo'
-import { adoptMigratedUin } from '../lib/auth'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
 
@@ -33,6 +35,9 @@ const PRICE_CENTS_BY_LENGTH: Record<number, number> = {
 }
 const TIER_LENGTHS = [3, 4, 5, 6, 7, 8, 9]
 const JUST_BOUGHT_KEY = 'rcq.web.uin.justBought'
+/// Set right before the reload that follows a switch, so the banner can say
+/// "you now answer as N" rather than "you now hold N".
+const JUST_SWITCHED_KEY = 'rcq.web.uin.justSwitched'
 
 // Checkout gate. The buy path works end-to-end (backend accepts a mock
 // receipt + migrates the account), but on the PUBLIC web that would let
@@ -58,7 +63,7 @@ function sanitize(raw: string): string {
 }
 
 export function Market() {
-  const { identity, setIdentity } = useIdentity()
+  const { identity, adoptMigration, beginMigration, endMigration } = useIdentity()
   const { t } = useI18n()
   const navigate = useNavigate()
   const inputRef = useRef<HTMLInputElement>(null)
@@ -72,12 +77,23 @@ export function Market() {
   const [suggestions, setSuggestions] = useState<UinSuggestion[]>([])
   const [loadingSuggestions, setLoadingSuggestions] = useState(true)
   const [justBought, setJustBought] = useState<number | null>(null)
+  const [justSwitched, setJustSwitched] = useState(false)
+  // The collection. `null` = not loaded (or the island is too old to know
+  // /uin/mine), which hides the whole section rather than showing an empty one.
+  const [mine, setMine] = useState<MyUins | null>(null)
+  // A number just taken: "it is yours, move onto it now or later?"
+  const [held, setHeld] = useState<number | null>(null)
+  // The held number the user tapped Switch on, awaiting confirmation.
+  const [switchTarget, setSwitchTarget] = useState<number | null>(null)
+  const [switching, setSwitching] = useState(false)
 
   useEffect(() => {
     const v = sessionStorage.getItem(JUST_BOUGHT_KEY)
     if (v) {
       setJustBought(Number(v))
+      setJustSwitched(sessionStorage.getItem(JUST_SWITCHED_KEY) === '1')
       sessionStorage.removeItem(JUST_BOUGHT_KEY)
+      sessionStorage.removeItem(JUST_SWITCHED_KEY)
       const h = setTimeout(() => setJustBought(null), 6000)
       return () => clearTimeout(h)
     }
@@ -138,6 +154,21 @@ export function Market() {
     void loadSuggestions()
   }, [loadSuggestions])
 
+  const loadMine = useCallback(async () => {
+    try {
+      setMine(await Api.uinMine(id))
+    } catch {
+      // An island that predates the vault 404s here; the section stays hidden
+      // rather than claiming the account holds nothing.
+      setMine(null)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id.uin])
+
+  useEffect(() => {
+    void loadMine()
+  }, [loadMine])
+
   function pick(uin: number) {
     setTyped(sanitize(String(uin)))
     setError(null)
@@ -145,18 +176,23 @@ export function Market() {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
+  /// Take the number into the collection. It does NOT change who the account
+  /// answers as — that is the separate step below, offered right away in the
+  /// "it is yours" dialog for whoever wants it now.
   async function doPurchase() {
     if (!canBuy) return
     const target = Number(typed)
     setBuying(true)
     setError(null)
     try {
-      const receipt = `mock-iap-web-${Date.now()}`
-      const res = await Api.uinPurchase(id, target, receipt)
-      const next = adoptMigratedUin(id, res.new_uin, res.token)
-      setIdentity(next)
-      sessionStorage.setItem(JUST_BOUGHT_KEY, String(res.new_uin))
-      window.location.assign('/market')
+      await Api.uinPurchase(id, target, false)
+      // Close the confirm sheet by its own flag only. Clearing `typed` here
+      // too pulled the price/CTA block out from under the exit animation and
+      // left both dialogs on screen at once; the field is cleared when the
+      // "it is yours" dialog closes instead.
+      setConfirming(false)
+      setHeld(target)
+      await loadMine()
     } catch (e) {
       setConfirming(false)
       if (e instanceof ApiError) {
@@ -168,6 +204,34 @@ export function Market() {
       } else setError(t('uin_market.error.generic'))
     } finally {
       setBuying(false)
+    }
+  }
+
+  /// Answer as a number already held. This IS a migration: the JWT changes and
+  /// libsignal sessions reset, so the page reloads under the new identity the
+  /// same way a purchase-with-switch used to.
+  async function doSwitch(target: number) {
+    setSwitching(true)
+    setError(null)
+    // Before the request: the server's account_burned broadcast to the old
+    // number can arrive over the websocket before the HTTP response does.
+    beginMigration()
+    try {
+      const res = await Api.uinActivate(id, target)
+      if (!res.new_uin || !res.token) throw new Error('no token')
+      sessionStorage.setItem(JUST_BOUGHT_KEY, String(res.new_uin))
+      sessionStorage.setItem(JUST_SWITCHED_KEY, '1')
+      // Reloads under the new number. Market lives at the root of its own
+      // host, so '/' is this page.
+      adoptMigration(res.new_uin, res.token, '/')
+    } catch (e) {
+      endMigration()
+      setSwitching(false)
+      setSwitchTarget(null)
+      setHeld(null)
+      if (e instanceof ApiError && e.status === 429) setError(t('uin_market.error.cooldown'))
+      else setError(t('uin_market.error.generic'))
+      void loadMine()
     }
   }
 
@@ -233,7 +297,11 @@ export function Market() {
               <CheckCircle />
               <div className="text-sm leading-tight">
                 <div className="font-semibold text-accent">{t('uin_market.bought.title')}</div>
-                <div className="text-fg-secondary">{t('uin_market.bought.body', { uin: `#${justBought}` })}</div>
+                <div className="text-fg-secondary">
+                  {justSwitched
+                    ? t('uin_market.switched.body', { uin: `#${justBought}` })
+                    : t('uin_market.bought.body', { uin: `#${justBought}` })}
+                </div>
               </div>
             </motion.div>
           )}
@@ -351,6 +419,49 @@ export function Market() {
             )}
           </AnimatePresence>
         </section>
+
+        {/* YOUR NUMBERS — the collection, and which one is answering. Hidden
+            entirely on an island too old to answer /uin/mine. */}
+        {mine && (
+          <section className="mt-11">
+            <h2 className="text-[13px] font-semibold uppercase tracking-wider text-fg-secondary mb-3">
+              {t('uin_market.mine.label')}
+            </h2>
+
+            <div className="rounded-2xl bg-fg-primary/[0.04] px-5 py-4">
+              <div className="text-[11px] uppercase tracking-wider text-fg-dim">{t('uin_market.mine.active')}</div>
+              <div className="mt-1 font-mono text-3xl font-semibold tracking-tight tabular-nums">#{mine.active}</div>
+            </div>
+
+            {mine.owned.length === 0 ? (
+              <p className="mt-3 text-sm text-fg-dim">{t('uin_market.mine.empty')}</p>
+            ) : (
+              <div className="mt-2.5 space-y-2">
+                {mine.owned.map((o) => (
+                  <div
+                    key={o.uin}
+                    className="flex items-center justify-between rounded-2xl bg-fg-primary/[0.035] px-4 py-3"
+                  >
+                    <div className="min-w-0">
+                      <div className="font-mono text-lg font-semibold tracking-tight tabular-nums truncate">#{o.uin}</div>
+                      <div className="text-xs text-fg-dim">{t('uin_market.tiers.digits', { n: o.length })}</div>
+                    </div>
+                    <button
+                      onClick={() => setSwitchTarget(o.uin)}
+                      disabled={switching}
+                      className="shrink-0 h-9 px-4 rounded-xl text-sm font-semibold text-accent bg-accent/10
+                                 hover:bg-accent/[0.18] active:scale-[0.98] disabled:opacity-40 transition"
+                    >
+                      {t('uin_market.mine.use')}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <p className="mt-3 text-xs text-fg-dim">{t('uin_market.mine.note')}</p>
+          </section>
+        )}
 
         {/* AVAILABLE NOW — discovery from the live suggestions endpoint. */}
         <section className="mt-11">
@@ -522,7 +633,103 @@ export function Market() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* It is yours — the offer to move onto it now. "Later" leaves the
+          account exactly as it was and the number safely held. */}
+      <AnimatePresence>
+        {held != null && (
+          <Modal
+            onDismiss={() => {
+              if (switching) return
+              setHeld(null)
+              setTyped('')
+            }}
+          >
+            <div className="text-center">
+              <div className="font-mono text-4xl font-bold tracking-tight">#{held}</div>
+            </div>
+            <p className="mt-4 text-sm text-fg-secondary leading-relaxed text-center">
+              {t('uin_market.held.body', { prev: `#${id.uin}` })}
+            </p>
+            <div className="mt-6 flex gap-2.5">
+              <button
+                onClick={() => {
+                  setHeld(null)
+                  setTyped('')
+                }}
+                disabled={switching}
+                className="flex-1 h-11 rounded-xl text-sm font-medium text-fg-secondary bg-fg-primary/[0.05] hover:bg-fg-primary/[0.09] active:scale-[0.99] transition"
+              >
+                {t('uin_market.held.later')}
+              </button>
+              <button
+                onClick={() => void doSwitch(held)}
+                disabled={switching}
+                className="flex-1 h-11 rounded-xl text-sm font-semibold text-white bg-accent hover:bg-accent-dim active:scale-[0.99] transition flex items-center justify-center gap-2"
+              >
+                {switching ? <Spinner light /> : t('uin_market.held.now')}
+              </button>
+            </div>
+          </Modal>
+        )}
+      </AnimatePresence>
+
+      {/* Switch — names the number being left, because it is the one everybody
+          currently knows this account by. */}
+      <AnimatePresence>
+        {switchTarget != null && (
+          <Modal onDismiss={() => !switching && setSwitchTarget(null)}>
+            <div className="text-center">
+              <div className="font-mono text-4xl font-bold tracking-tight">#{switchTarget}</div>
+            </div>
+            <p className="mt-4 text-sm text-fg-secondary leading-relaxed text-center">
+              {t('uin_market.mine.confirm.body', { prev: `#${mine?.active ?? id.uin}` })}
+            </p>
+            <div className="mt-6 flex gap-2.5">
+              <button
+                onClick={() => setSwitchTarget(null)}
+                disabled={switching}
+                className="flex-1 h-11 rounded-xl text-sm font-medium text-fg-secondary bg-fg-primary/[0.05] hover:bg-fg-primary/[0.09] active:scale-[0.99] transition"
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                onClick={() => void doSwitch(switchTarget)}
+                disabled={switching}
+                className="flex-1 h-11 rounded-xl text-sm font-semibold text-white bg-accent hover:bg-accent-dim active:scale-[0.99] transition flex items-center justify-center gap-2"
+              >
+                {switching ? <Spinner light /> : t('uin_market.mine.confirm.cta')}
+              </button>
+            </div>
+          </Modal>
+        )}
+      </AnimatePresence>
     </div>
+  )
+}
+
+/// The page's one modal shell: dimmed backdrop, weighted entrance, neutral
+/// surface. Both UIN dialogs use it so they cannot drift apart.
+function Modal({ onDismiss, children }: { onDismiss: () => void; children: ReactNode }) {
+  return (
+    <motion.div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-fg-primary/30 backdrop-blur-md"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={onDismiss}
+    >
+      <motion.div
+        initial={{ opacity: 0, y: 16, scale: 0.97 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 16, scale: 0.97 }}
+        transition={SPRING}
+        className="w-full max-w-sm rounded-3xl bg-surface p-6 shadow-[0_24px_70px_-20px_rgba(0,0,0,0.4)]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {children}
+      </motion.div>
+    </motion.div>
   )
 }
 

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Merged into the generated bundle Info.plist (Tauri picks this file up by
+  name, from the directory holding tauri.conf.json).
+
+  These two strings are what macOS shows in its own permission dialog the
+  first time a call asks for a device. They are not optional decoration: an
+  app that touches a capture device with no usage description is TERMINATED
+  by the system, not merely refused.
+-->
+<plist version="1.0">
+  <dict>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>RCQ needs the microphone so you can be heard on calls. Audio goes directly to the person you called and is end-to-end encrypted.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>RCQ needs the camera for video calls. Video goes directly to the person you called and is end-to-end encrypted.</string>
+  </dict>
+</plist>

@@ -140,7 +140,50 @@ pub fn run() {
                         Err(e) => log::error!("bad proxy url {url}: {e}"),
                     }
                 }
-                window.build()?;
+                let main_window = window.build()?;
+
+                // Calls need a microphone, and only ONE of the three webviews
+                // hands one over by itself.
+                //
+                // macOS: wry answers the WKUIDelegate capture request with
+                // `Grant`, so the page gets the device as soon as the OS has
+                // granted it to the app (Info.plist + entitlements, below).
+                // Windows: WebView2 asks the user with its own prompt.
+                // Linux: WebKitGTK ships the media stream switched OFF, so
+                // `navigator.mediaDevices` does not even exist, and it denies
+                // any permission request nobody handles. Both are ours to turn
+                // on, and this is the only place they can be turned on from.
+                #[cfg(target_os = "linux")]
+                {
+                    use webkit2gtk::glib::prelude::ObjectExt;
+                    use webkit2gtk::{
+                        PermissionRequestExt, SettingsExt, UserMediaPermissionRequest, WebViewExt,
+                    };
+
+                    if let Err(e) = main_window.with_webview(|webview| {
+                        let view = webview.inner();
+                        if let Some(settings) = WebViewExt::settings(&view) {
+                            settings.set_enable_media_stream(true);
+                            settings.set_enable_webrtc(true);
+                        }
+                        view.connect_permission_request(|_, request| {
+                            // Camera and microphone only. The webview never
+                            // navigates off our own page, so there is no third
+                            // party here to be granting anything to — but a
+                            // blanket yes would also cover geolocation and
+                            // notifications, which is not ours to give away.
+                            if request.is::<UserMediaPermissionRequest>() {
+                                request.allow();
+                                return true;
+                            }
+                            false
+                        });
+                    }) {
+                        log::error!("could not enable media capture on the webview: {e}");
+                    }
+                }
+                #[cfg(not(target_os = "linux"))]
+                let _ = &main_window;
 
                 // Pick up relay rotations for the next launch, through the
                 // tunnel when it is up (a censored user cannot reach the

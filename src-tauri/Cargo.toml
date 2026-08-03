@@ -36,6 +36,13 @@ tauri = { version = "2.11.2", features = ["tray-icon", "image-png"] }
 tauri-plugin-log = "2"
 tauri-plugin-notification = "2"
 
+# Calls: WebKitGTK keeps the media stream behind a setting and denies any
+# permission request nobody answers, so the Linux build reaches into its own
+# webview to switch both on. Pinned to the exact version wry resolves, so there
+# is one copy of the crate and the handle Tauri hands us is the type we expect.
+[target."cfg(target_os = \"linux\")".dependencies]
+webkit2gtk = { version = "=2.0.2", features = ["v2_40"] }
+
 [target."cfg(not(any(target_os = \"android\", target_os = \"ios\")))".dependencies]
 tauri-plugin-single-instance = "2"
 tauri-plugin-updater = "2"

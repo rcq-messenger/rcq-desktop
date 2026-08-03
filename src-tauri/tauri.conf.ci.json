@@ -3,7 +3,8 @@
   "bundle": {
     "createUpdaterArtifacts": false,
     "macOS": {
-      "signingIdentity": "-"
+      "signingIdentity": "-",
+      "entitlements": "Entitlements.plist"
     }
   }
 }

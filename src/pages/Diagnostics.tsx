@@ -10,10 +10,49 @@
 
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { Api } from '../lib/api'
+import type { WebIdentity } from '../lib/crypto'
 import { isTauri, networkDiagnostics, type NetworkDiagnostics } from '../lib/desktop'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
 import { useWS } from '../lib/ws'
+
+/// What a call would find if one were placed right now: a usable microphone,
+/// and somewhere to relay media when the two ends cannot see each other.
+/// Answering these on a quiet screen beats discovering them mid-call.
+interface CallReadiness {
+  /// An i18n key rather than a verdict, because "no access" and "no device"
+  /// need different things done about them.
+  mic: string
+  /// Relay servers the island handed out. `null` means we could not ask.
+  turn: number | null
+}
+
+async function checkCalls(identity: WebIdentity): Promise<CallReadiness> {
+  let mic = 'diag.mic_ok'
+  if (!navigator.mediaDevices?.getUserMedia) {
+    mic = 'diag.mic_unsupported'
+  } else {
+    try {
+      // Actually open the device. Querying the permission alone would pass on
+      // macOS right up until the hardened runtime refuses the capture itself.
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      stream.getTracks().forEach((track) => track.stop())
+    } catch (e) {
+      const name = (e as { name?: string } | null)?.name ?? ''
+      mic = name === 'NotFoundError' ? 'diag.mic_none' : 'diag.mic_denied'
+    }
+  }
+
+  let turn: number | null = null
+  try {
+    turn = (await Api.turnCredentials(identity)).urls.length
+  } catch {
+    // Island unreachable or too old for the endpoint; the row says "unknown"
+    // rather than claiming there are no relays.
+  }
+  return { mic, turn }
+}
 
 function Row({ label, value, tone }: { label: string; value: string; tone?: 'ok' | 'bad' }) {
   const color = tone === 'ok' ? 'text-accent' : tone === 'bad' ? 'text-red-600' : 'text-fg-secondary'
@@ -34,6 +73,7 @@ export function Diagnostics() {
   const [diag, setDiag] = useState<NetworkDiagnostics | null>(null)
   // Bumped by "Run again"; the only other trigger is arriving on the page.
   const [attempt, setAttempt] = useState(0)
+  const [calls, setCalls] = useState<CallReadiness | null>(null)
 
   const host = identity?.apiBase.replace(/^https?:\/\//, '').replace(/\/.*$/, '') ?? ''
 
@@ -42,15 +82,19 @@ export function Diagnostics() {
     let alive = true
     void (async () => {
       setRunning(true)
-      const result = await networkDiagnostics(host)
+      const [result, callState] = await Promise.all([
+        networkDiagnostics(host),
+        identity ? checkCalls(identity) : Promise.resolve(null),
+      ])
       if (!alive) return
       setDiag(result)
+      setCalls(callState)
       setRunning(false)
     })()
     return () => {
       alive = false
     }
-  }, [host, attempt])
+  }, [host, attempt, identity])
 
   if (!identity) {
     navigate('/', { replace: true })
@@ -114,6 +158,24 @@ export function Diagnostics() {
               }
             />
           )}
+          <Row
+            label={t('diag.mic')}
+            value={running || !calls ? '…' : t(calls.mic)}
+            tone={running || !calls ? undefined : calls.mic === 'diag.mic_ok' ? 'ok' : 'bad'}
+          />
+          <Row
+            label={t('diag.turn')}
+            value={
+              running || !calls
+                ? '…'
+                : calls.turn === null
+                  ? t('diag.turn_unknown')
+                  : calls.turn > 0
+                    ? t('diag.turn_ok', { count: calls.turn })
+                    : t('diag.turn_none')
+            }
+            tone={running || !calls || calls.turn === null ? undefined : calls.turn > 0 ? 'ok' : 'bad'}
+          />
           <Row label={t('diag.island')} value={host} />
         </section>
 

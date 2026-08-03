@@ -5,6 +5,8 @@ import { ThemeProvider } from './lib/theme-context'
 import { WSProvider } from './lib/ws'
 import { MessageReceiver } from './lib/message-receiver'
 import { MessageToasts } from './components/MessageToasts'
+import { CallProvider } from './lib/call'
+import { CallOverlay } from './components/CallOverlay'
 import { Login } from './pages/Login'
 import { Contacts } from './pages/Contacts'
 import { Chat } from './pages/Chat'
@@ -49,6 +51,7 @@ export default function App() {
       <I18nProvider>
         <IdentityProvider>
           <WSProvider>
+            <CallProvider>
             {/* market.rcq.app is the UIN market ONLY — no chat surface. Don't
                 run the message receiver (which drains the queue + fires toasts)
                 or the toast layer there, or the market shows stale "new
@@ -56,6 +59,9 @@ export default function App() {
             {!isMarketHost() && <MessageReceiver />}
             <Router>
             {!isMarketHost() && <MessageToasts />}
+            {/* Above every route: a call has to survive navigation, and the
+                incoming sheet has to appear wherever the user happens to be. */}
+            {!isMarketHost() && <CallOverlay />}
             {isMarketHost() ? (
             <Routes>
               <Route path="/" element={<MarketRoot />} />
@@ -167,6 +173,7 @@ export default function App() {
             </Routes>
             )}
           </Router>
+            </CallProvider>
           </WSProvider>
         </IdentityProvider>
       </I18nProvider>

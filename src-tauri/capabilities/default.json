@@ -8,6 +8,9 @@
   "permissions": [
     "core:default",
     "core:window:allow-set-badge-count",
+    "core:window:allow-show",
+    "core:window:allow-unminimize",
+    "core:window:allow-set-focus",
     "notification:default",
     "updater:default",
     "process:default",

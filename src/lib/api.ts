@@ -253,6 +253,15 @@ export interface MyUins {
   owned: OwnedUin[]
 }
 
+/// TURN relay credentials, minted per call and short-lived (`ttl` seconds).
+/// `urls` is empty on an island that runs no coturn — see `Api.turnCredentials`.
+export interface TurnCredentials {
+  urls: string[]
+  username: string
+  credential: string
+  ttl: number
+}
+
 // -----------------------------------------------------------
 
 export const Api = {
@@ -488,6 +497,16 @@ export const Api = {
   /// one. Migrates, hence the fresh {new_uin, token}.
   uinActivate(id: WebIdentity, uin: number): Promise<UinPurchaseResult> {
     return request<UinPurchaseResult>(id, 'POST', '/uin/activate', { uin })
+  },
+
+  // Calls ---------------------------------------------------
+
+  /// Short-lived TURN credentials for a call, same endpoint the phones use.
+  /// An island with no coturn configured answers with an EMPTY `urls` list,
+  /// which means "STUN only" rather than an error — the call still connects
+  /// on permissive networks and only fails behind a symmetric NAT.
+  turnCredentials(id: WebIdentity): Promise<TurnCredentials> {
+    return request<TurnCredentials>(id, 'GET', '/users/me/turn-credentials')
   },
 }
 

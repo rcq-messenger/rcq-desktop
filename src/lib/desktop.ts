@@ -53,6 +53,23 @@ export async function setDesktopBadge(count: number): Promise<void> {
   }
 }
 
+/// Bring the app forward — used when a call comes in. Closing the window hides
+/// it to the tray rather than quitting, so without this an incoming call would
+/// ring from an app the user cannot see, with nothing to answer it on. No-op
+/// off desktop, where the browser tab is wherever the user left it.
+export async function raiseDesktopWindow(): Promise<void> {
+  if (!isTauri()) return
+  try {
+    const { getCurrentWindow } = await import('@tauri-apps/api/window')
+    const win = getCurrentWindow()
+    await win.show()
+    await win.unminimize()
+    await win.setFocus()
+  } catch {
+    /* window API unavailable — ignore */
+  }
+}
+
 /// State of the bundled circumvention core, as the Rust side sees it.
 export interface BypassStatus {
   /// Whether this build can route the webview through a proxy at all. False on

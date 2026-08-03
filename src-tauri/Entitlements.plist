@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  macOS code-signing entitlements. Referenced from tauri.conf.json
+  (`bundle.macOS.entitlements`).
+
+  The build signs with the hardened runtime on (verified on the shipped 0.1.3:
+  `codesign -d` reports flags=0x10000(runtime), with no entitlements at all).
+  Under the hardened runtime a capture device is unreachable without an
+  explicit exception, no matter what the Info.plist says and no matter what the
+  user answers in the dialog — so without these two keys a call on macOS is
+  silent and there is nothing on screen to explain why.
+
+  Nothing else is granted. Networking needs no entitlement for a Developer-ID
+  app outside the App Sandbox, and we are not sandboxed.
+-->
+<plist version="1.0">
+  <dict>
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+    <key>com.apple.security.device.camera</key>
+    <true/>
+  </dict>
+</plist>

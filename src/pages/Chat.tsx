@@ -71,6 +71,7 @@ import { emoticonAssetURL } from '../lib/emoticons'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
 import { playSound } from '../lib/sounds'
+import { useCall } from '../lib/call'
 
 /// Envelope kinds `shipEnvelopeToCurrentThread` is allowed to encrypt + send.
 /// (Carbons take a separate path; this gates the in-thread sends.) `edit` was
@@ -103,6 +104,7 @@ const _groupCache = new Map<number, RCQGroup>()
 export function Chat() {
   const { identity } = useIdentity()
   const { t } = useI18n()
+  const call = useCall()
   const navigate = useNavigate()
   const params = useParams<{ uin?: string; groupId?: string }>()
   const [searchParams] = useSearchParams()
@@ -989,6 +991,31 @@ export function Chat() {
               <div className="font-mono text-xs text-fg-dim truncate">{headerSub}</div>
             </div>
           </Link>
+          {/* Calls are one to one only, and calling yourself is not a feature.
+              Hidden rather than disabled while the socket is down: signalling
+              has no REST fallback, so the button would simply do nothing. */}
+          {!isGroup && !isSelf && peer && call.callable && (
+            <>
+              <button
+                type="button"
+                onClick={() => call.start(peer.uin, peer.nickname ?? `#${peer.uin}`, 'audio')}
+                aria-label={t('call.start.audio')}
+                title={t('call.start.audio')}
+                className="p-2 text-fg-secondary hover:text-fg-primary"
+              >
+                <HeaderPhoneIcon />
+              </button>
+              <button
+                type="button"
+                onClick={() => call.start(peer.uin, peer.nickname ?? `#${peer.uin}`, 'video')}
+                aria-label={t('call.start.video')}
+                title={t('call.start.video')}
+                className="p-2 text-fg-secondary hover:text-fg-primary"
+              >
+                <HeaderCameraIcon />
+              </button>
+            </>
+          )}
         </div>
       </header>
 
@@ -1638,6 +1665,26 @@ function AttachIcon() {
 }
 
 /// Bookmark glyph for the Saved Messages («Заметки») chat header.
+/// Handset glyph for "call this contact". Same weight as the other header
+/// icons so the row reads as one set.
+function HeaderPhoneIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z" />
+    </svg>
+  )
+}
+
+/// Camcorder glyph for "call with video".
+function HeaderCameraIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M23 7l-7 5 7 5V7z" />
+      <rect x="1" y="5" width="15" height="14" rx="2" />
+    </svg>
+  )
+}
+
 function BookmarkIcon() {
   return (
     <svg className="text-accent flex-none" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>

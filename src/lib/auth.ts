@@ -21,6 +21,40 @@ import { decodePhrase, deriveKeysFromSeed, encodeSeed, newSeed, parsePhrase } fr
 const STORAGE_KEY = 'rcq.web.identity.v1'
 const LINK_TTL_SECONDS = 5 * 60
 
+/// Does this JWT already name an install? Payload peek only — the signature
+/// is the server's business.
+export function tokenNamesAnInstall(jwt: string): boolean {
+  const parts = jwt.split('.')
+  if (parts.length < 2) return false
+  try {
+    const json = atob(parts[1].replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(parts[1].length / 4) * 4, '='))
+    const dev = (JSON.parse(json) as { dev?: unknown }).dev
+    return typeof dev === 'string' && dev.length > 0
+  } catch {
+    return false
+  }
+}
+
+/// Swap a pre-claim session for one that names this browser. Returns the new
+/// jwt, or null to keep the current one (already claimed, island too old to
+/// know the route, offline). The server copies the offline-queue drain cursor
+/// onto the new id, so nothing is re-downloaded.
+export async function claimInstallToken(id: WebIdentity): Promise<string | null> {
+  if (tokenNamesAnInstall(id.jwt)) return null
+  try {
+    const res = await fetch(`${id.apiBase}/auth/device`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${id.jwt}` },
+      body: JSON.stringify({ device_id: installId() }),
+    })
+    if (!res.ok) return null
+    const out = (await res.json()) as { token?: string }
+    return out.token || null
+  } catch {
+    return null
+  }
+}
+
 // -----------------------------------------------------------
 // Linking-blob path
 // -----------------------------------------------------------
@@ -129,6 +163,22 @@ interface RegisterResponse {
   token: string
 }
 
+/// This browser's install id, minted once and kept next to the theme (a
+/// device pref, not account data — it survives a sign-out). The server keys a
+/// session with no device id as "primary", the same name every OTHER install
+/// of the account uses; two of those supersede each other's websocket in a
+/// loop and share one offline-queue cursor. A browser recovered onto the same
+/// account as a phone is exactly that case.
+const INSTALL_KEY = 'rcq.web.install.id'
+
+export function installId(): string {
+  const existing = localStorage.getItem(INSTALL_KEY)
+  if (existing) return existing
+  const fresh = crypto.randomUUID().replace(/-/g, '')
+  localStorage.setItem(INSTALL_KEY, fresh)
+  return fresh
+}
+
 /// Mint a fresh account: generate keypairs, POST /auth/register,
 /// adopt the returned UIN+JWT into a `WebIdentity`. Throws on
 /// validation or network failure; caller surfaces via `auth.error.*`.
@@ -151,6 +201,7 @@ export async function createNewAccount(nickname: string, apiBase: string = DEFAU
       nickname: trimmedNick,
       identity_key: bytesToB64(k.identityPub),
       signing_key: bytesToB64(k.signingPub),
+      device_id: installId(),
     }),
   })
   const text = await res.text()
@@ -337,6 +388,9 @@ const PRESERVED_KEYS = new Set<string>([
   'rcq.web.chat.theme',
   'rcq.web.language',
   'rcq.web.sounds.enabled',
+  // Which browser this is, not who is signed in. Re-minting it on sign-out
+  // would leave the account's old cursor behind holding its queue.
+  'rcq.web.install.id',
 ])
 
 /// Wipe ALL account-scoped local data so a fresh account never inherits

@@ -5,7 +5,14 @@
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { WebIdentity } from './crypto'
-import { adoptMigratedUin, clearIdentity, loadStoredIdentity, wipeLocalAccountData } from './auth'
+import {
+  adoptMigratedUin,
+  claimInstallToken,
+  clearIdentity,
+  loadStoredIdentity,
+  persistIdentity,
+  wipeLocalAccountData,
+} from './auth'
 import { setUnauthorizedHandler } from './api'
 import { idbClearAll } from './signal-persist'
 
@@ -36,6 +43,24 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
     setIdentity(loadStoredIdentity())
     setHydrated(true)
   }, [])
+
+  // Name this browser to the server once. A session minted before the client
+  // sent an install id keys as "primary" — the name every other install of the
+  // account uses — so a phone and a browser recovered onto the SAME account
+  // supersede each other's websocket and share one offline-queue cursor.
+  // Only the token changes, so no reload: whoever holds the old jwt in a
+  // closure is holding a session that still works.
+  const claimedRef = useRef(false)
+  useEffect(() => {
+    if (!identity || claimedRef.current) return
+    claimedRef.current = true
+    void claimInstallToken(identity).then((jwt) => {
+      if (!jwt) return
+      const next = { ...identity, jwt }
+      persistIdentity(next)
+      setIdentity(next)
+    })
+  }, [identity])
 
   // A UIN migration by THIS tab is in flight. Two things arrive during it
   // that otherwise read as "this session is over", and both would throw away

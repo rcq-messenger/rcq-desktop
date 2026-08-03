@@ -123,27 +123,32 @@ npm run desktop:build
 CI (`.github/workflows/release.yml`) builds Windows and Linux with
 `tauri.conf.ci.json`, which sets `createUpdaterArtifacts: false` and gets no
 signing key — so **its installers carry no `.sig` and no updater archives**.
-Until the key lives in repo secrets, sign those by hand from the release
-assets: the plugin takes a raw `.exe`, `.msi`, `.deb` or `.rpm` as-is, and
-wants the AppImage inside a `.tar.gz`.
+The updater half is done locally instead, in one pass:
 
 ```bash
-# build the AppImage archive with GNU tar, NOT macOS tar: bsdtar prepends a
-# pax header entry named PaxHeader/<name>.AppImage, and the updater picks its
-# payload by the .AppImage extension
-tar czf RCQ-linux.AppImage.tar.gz RCQ-linux.AppImage
-
-for f in RCQ-windows-setup.exe RCQ-windows.msi RCQ-linux.deb RCQ-linux.rpm \
-         RCQ-linux.AppImage.tar.gz; do
-  npx tauri signer sign "$f"   # writes $f.sig
-done
+gh release download v0.1.4 --repo rcq-messenger/rcq-desktop --dir dl
+scripts/publish-desktop-update.py --version 0.1.4 --assets dl \
+  --notes-file notes.txt          # add --no-upload to inspect first
 ```
 
-Then upload everything to `/var/www/rcq/desktop/` and write `latest.json`.
-The plugin looks up `{os}-{arch}-{installer}` first and falls back to
-`{os}-{arch}`, so each format gets its own key plus a base key for binaries
-whose bundle type wasn't detected. The Linux base key must be the AppImage:
-an undetected Linux binary takes the AppImage install path.
+It packs, signs, verifies every signature against the pinned public key,
+uploads with `.bak-<prev>` backups, writes `latest.json`, then re-downloads
+each url over HTTPS and verifies again the way a client would. macOS comes
+from the local Developer-ID-signed build, not from the release.
+
+**The signing key deliberately stays off CI.** The repo is public and this key
+is remote code execution on every install, with no way to rotate it for
+binaries already in the wild; desktop releases are rare and macOS is built
+locally anyway, so the trade isn't close.
+
+Two things the script encodes that are easy to get wrong by hand. The plugin
+looks up `{os}-{arch}-{installer}` first and falls back to `{os}-{arch}`, so
+each format needs its own key plus a base key for binaries whose bundle type
+wasn't detected — and the Linux base key must be the AppImage, because an
+undetected Linux binary takes the AppImage install path and no other. And the
+AppImage archive must not be built by macOS `tar`: bsdtar prepends a pax header
+entry named `PaxHeader/<name>.AppImage`, and the updater picks its payload by
+the `.AppImage` extension.
 
 ```json
 {
@@ -186,11 +191,5 @@ Remaining:
    Gatekeeper warning — we have an Apple Developer account. Until then,
    right-click → Open.
 2. **Windows code signing** (avoid the SmartScreen warning).
-3. **Updater artifacts from CI.** Adding `TAURI_SIGNING_PRIVATE_KEY` to the
-   repo secrets and dropping `createUpdaterArtifacts: false` would let
-   `tauri-action` emit the signed archives itself, instead of the manual pass
-   above. Needs a call on whether the update signing key belongs in GitHub
-   Secrets — it is the same key that signs macOS updates, and a leak means
-   someone else's "update" on our users' machines.
-4. Embedded `sing-box` in the Rust shell for desktop circumvention (mirrors the
+3. Embedded `sing-box` in the Rust shell for desktop circumvention (mirrors the
    iOS/Android transport).

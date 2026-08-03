@@ -13,6 +13,7 @@ import { LanguagePicker } from '../components/LanguagePicker'
 import { Logo } from '../components/Logo'
 import { MyQRCode } from '../components/MyQRCode'
 import { Api } from '../lib/api'
+import { appVersion, checkForUpdatesNow, isTauri } from '../lib/desktop'
 import { uploadReportAttachment } from '../lib/media'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
@@ -60,6 +61,11 @@ export function Settings() {
   const [hofAvatar, setHofAvatar] = useState<string | null>(null)
   const [hofBusy, setHofBusy] = useState(false)
   const [hofError, setHofError] = useState<string | null>(null)
+  // Desktop only: installed version + on-demand update check. The launch check
+  // fires once, so someone who leaves the app open for weeks needs a button.
+  const [desktopVersion, setDesktopVersion] = useState<string | null>(null)
+  const [updateBusy, setUpdateBusy] = useState(false)
+  const [updateNote, setUpdateNote] = useState<string | null>(null)
 
   // Seed the HoF toggle + avatar from the server (owner-self echoes both).
   useEffect(() => {
@@ -76,6 +82,19 @@ export function Settings() {
       alive = false
     }
   }, [identity])
+
+  useEffect(() => {
+    void appVersion().then(setDesktopVersion)
+  }, [])
+
+  async function runUpdateCheck() {
+    setUpdateBusy(true)
+    setUpdateNote(null)
+    const outcome = await checkForUpdatesNow(t)
+    setUpdateBusy(false)
+    if (outcome === 'current') setUpdateNote(t('settings.about.update_current'))
+    else if (outcome === 'failed') setUpdateNote(t('settings.about.update_failed'))
+  }
 
   if (!identity) {
     navigate('/', { replace: true })
@@ -645,6 +664,22 @@ export function Settings() {
             </div>
           </div>
           <p className="text-xs text-fg-secondary leading-relaxed">{t('settings.about.body')}</p>
+          {isTauri() && (
+            <>
+              <div className="flex items-center justify-between text-xs pt-1">
+                <span className="text-fg-secondary">{t('settings.about.version')}</span>
+                <span className="font-mono text-fg-secondary">{desktopVersion ?? '…'}</span>
+              </div>
+              <button
+                onClick={() => void runUpdateCheck()}
+                disabled={updateBusy}
+                className="w-full h-10 rounded-md border border-line text-sm font-medium hover:bg-surface-dim disabled:opacity-40 transition-colors"
+              >
+                {updateBusy ? t('settings.about.update_checking') : t('settings.about.update_check')}
+              </button>
+              {updateNote && <p className="text-xs text-fg-dim">{updateNote}</p>}
+            </>
+          )}
           <a
             href="https://rcq.app"
             target="_blank"

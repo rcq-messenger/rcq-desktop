@@ -183,6 +183,12 @@ export const en: Record<string, string> = {
   'settings.section.about': 'About',
   'settings.about.body':
     'RCQ is an anonymous, end-to-end encrypted messenger — no phone number, no email. This is the web client; it runs its own account in this browser.',
+  // Desktop build only — the browser has nothing to update.
+  'settings.about.version': 'Version',
+  'settings.about.update_check': 'Check for updates',
+  'settings.about.update_checking': 'Checking…',
+  'settings.about.update_current': 'You have the latest version.',
+  'settings.about.update_failed': 'Could not check for updates. Try again later.',
   'settings.section.session': 'Session',
   'settings.session.unlink': 'Sign out',
   'settings.session.unlink_footer':
@@ -632,4 +638,11 @@ export const en: Record<string, string> = {
   'uin_market.error.cooldown': 'You changed your UIN recently. Please wait a bit before changing again.',
   'uin_market.error.generic': 'Something went wrong. Please try again.',
   'uin_market.settings.row': 'Claim a shorter, custom UIN',
+
+  // Desktop update prompt. This one is drawn by the OS, not by us, so the
+  // strings travel into the native dialog through `checkForUpdates*`.
+  'desktop.update.title': 'Update RCQ',
+  'desktop.update.body': 'RCQ {version} is available. Install and restart now?',
+  'desktop.update.install': 'Install',
+  'desktop.update.later': 'Later',
 }

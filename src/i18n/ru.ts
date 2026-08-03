@@ -182,6 +182,12 @@ export const ru: Record<string, string> = {
   'settings.section.about': 'О RCQ',
   'settings.about.body':
     'RCQ это анонимный мессенджер со сквозным шифрованием, без номера телефона и почты. Это веб-клиент, он работает со своим аккаунтом в этом браузере.',
+  // Только для десктопной сборки, в браузере обновлять нечего.
+  'settings.about.version': 'Версия',
+  'settings.about.update_check': 'Проверить обновления',
+  'settings.about.update_checking': 'Проверяем…',
+  'settings.about.update_current': 'У вас последняя версия.',
+  'settings.about.update_failed': 'Не удалось проверить обновления. Попробуйте позже.',
   'settings.section.session': 'Сессия',
   'settings.session.unlink': 'Выйти',
   'settings.session.unlink_footer':
@@ -631,4 +637,11 @@ export const ru: Record<string, string> = {
   'uin_market.error.cooldown': 'Вы недавно меняли UIN. Подождите немного перед следующей сменой.',
   'uin_market.error.generic': 'Что-то пошло не так. Попробуйте ещё раз.',
   'uin_market.settings.row': 'Занять короткий, свой UIN',
+
+  // Окно обновления рисует система, а не мы, поэтому строки попадают в
+  // системный диалог через `checkForUpdates*`.
+  'desktop.update.title': 'Обновление RCQ',
+  'desktop.update.body': 'Доступна версия RCQ {version}. Установить и перезапустить сейчас?',
+  'desktop.update.install': 'Установить',
+  'desktop.update.later': 'Позже',
 }

@@ -41,10 +41,12 @@ export function MessageToasts() {
     void setDesktopBadge(totalUnread)
   }, [totalUnread])
 
-  // Desktop only: check for an app update once on launch.
+  // Desktop only: check for an app update once on launch. `t` is passed in so
+  // the native dialog speaks the same language as the rest of the app; the
+  // once-per-launch guard lives in the helper, so a language switch is a no-op.
   useEffect(() => {
-    void checkForUpdatesOnLaunch()
-  }, [])
+    void checkForUpdatesOnLaunch(t)
+  }, [t])
 
   // Desktop only: fire an OS notification for a new message that arrives while
   // the window isn't focused (when it IS focused the in-app banner below is

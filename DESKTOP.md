@@ -106,9 +106,10 @@ build is published it prompts, downloads, installs, and relaunches.
 - **Update signing key:** `~/.rcq/desktop-updater/rcq-desktop.key` (private —
   BACK IT UP; losing it breaks updates) + `.key.pub`. The public key is pinned
   in `tauri.conf.json` `plugins.updater.pubkey`.
-- **Endpoint:** `https://rcq.app/desktop/latest.json` — the founder hosts a
-  static manifest + the signed `.app.tar.gz` there (mirror the Android updater
-  on the droplet). NOT live until that's set up.
+- **Endpoint:** `https://rcq.app/desktop/latest.json`, served straight off the
+  droplet from `/var/www/rcq/desktop/` (`rcq.app` is DNS-only in Cloudflare and
+  Caddy sends `cache-control: no-cache`, so there is no CDN copy to bust).
+  `deploy/deploy-web.sh` excludes `desktop/`, so a landing deploy won't wipe it.
 
 To cut a release:
 
@@ -119,8 +120,30 @@ npm run desktop:build
 # produces target/release/bundle/macos/RCQ.app.tar.gz + .sig
 ```
 
-Then upload `RCQ.app.tar.gz` to `https://rcq.app/desktop/` and write
-`latest.json`:
+CI (`.github/workflows/release.yml`) builds Windows and Linux with
+`tauri.conf.ci.json`, which sets `createUpdaterArtifacts: false` and gets no
+signing key — so **its installers carry no `.sig` and no updater archives**.
+Until the key lives in repo secrets, sign those by hand from the release
+assets: the plugin takes a raw `.exe`, `.msi`, `.deb` or `.rpm` as-is, and
+wants the AppImage inside a `.tar.gz`.
+
+```bash
+# build the AppImage archive with GNU tar, NOT macOS tar: bsdtar prepends a
+# pax header entry named PaxHeader/<name>.AppImage, and the updater picks its
+# payload by the .AppImage extension
+tar czf RCQ-linux.AppImage.tar.gz RCQ-linux.AppImage
+
+for f in RCQ-windows-setup.exe RCQ-windows.msi RCQ-linux.deb RCQ-linux.rpm \
+         RCQ-linux.AppImage.tar.gz; do
+  npx tauri signer sign "$f"   # writes $f.sig
+done
+```
+
+Then upload everything to `/var/www/rcq/desktop/` and write `latest.json`.
+The plugin looks up `{os}-{arch}-{installer}` first and falls back to
+`{os}-{arch}`, so each format gets its own key plus a base key for binaries
+whose bundle type wasn't detected. The Linux base key must be the AppImage:
+an undetected Linux binary takes the AppImage install path.
 
 ```json
 {
@@ -128,15 +151,27 @@ Then upload `RCQ.app.tar.gz` to `https://rcq.app/desktop/` and write
   "notes": "What changed",
   "pub_date": "2026-06-16T00:00:00Z",
   "platforms": {
-    "darwin-aarch64": {
-      "signature": "<contents of RCQ.app.tar.gz.sig>",
-      "url": "https://rcq.app/desktop/RCQ.app.tar.gz"
-    }
+    "darwin-aarch64":        { "signature": "<RCQ.app.tar.gz.sig>",            "url": "https://rcq.app/desktop/RCQ.app.tar.gz" },
+    "windows-x86_64-nsis":   { "signature": "<RCQ-windows-setup.exe.sig>",     "url": "https://rcq.app/desktop/RCQ-windows-setup.exe" },
+    "windows-x86_64-msi":    { "signature": "<RCQ-windows.msi.sig>",           "url": "https://rcq.app/desktop/RCQ-windows.msi" },
+    "windows-x86_64":        { "signature": "<RCQ-windows-setup.exe.sig>",     "url": "https://rcq.app/desktop/RCQ-windows-setup.exe" },
+    "linux-x86_64-appimage": { "signature": "<RCQ-linux.AppImage.tar.gz.sig>", "url": "https://rcq.app/desktop/RCQ-linux.AppImage.tar.gz" },
+    "linux-x86_64-deb":      { "signature": "<RCQ-linux.deb.sig>",             "url": "https://rcq.app/desktop/RCQ-linux.deb" },
+    "linux-x86_64-rpm":      { "signature": "<RCQ-linux.rpm.sig>",             "url": "https://rcq.app/desktop/RCQ-linux.rpm" },
+    "linux-x86_64":          { "signature": "<RCQ-linux.AppImage.tar.gz.sig>", "url": "https://rcq.app/desktop/RCQ-linux.AppImage.tar.gz" }
   }
 }
 ```
 
-(Bump `version` in `tauri.conf.json` for each release.)
+Bump `version` in `tauri.conf.json`, `Cargo.toml`, `Cargo.lock` and
+`package.json` for each release. The config version is the one the running app
+reports, so a stale `Cargo.toml` won't cause an update loop — but keep them
+together anyway.
+
+⚠ Do **not** point a locally downgraded dev build at the live manifest to test
+the updater. `tauri dev` runs a bare binary, so the macOS installer resolves
+its install path to `src-tauri/target/debug/` and replaces that whole directory
+with the downloaded app. Use a local manifest and a local file URL instead.
 
 ## Status / follow-ups
 
@@ -150,7 +185,12 @@ Remaining:
 1. **Notarization** (macOS) so the build runs on other Macs without a
    Gatekeeper warning — we have an Apple Developer account. Until then,
    right-click → Open.
-2. **Windows code signing** (avoid the SmartScreen warning) and a host for the
-   auto-update manifest.
-3. Embedded `sing-box` in the Rust shell for desktop circumvention (mirrors the
+2. **Windows code signing** (avoid the SmartScreen warning).
+3. **Updater artifacts from CI.** Adding `TAURI_SIGNING_PRIVATE_KEY` to the
+   repo secrets and dropping `createUpdaterArtifacts: false` would let
+   `tauri-action` emit the signed archives itself, instead of the manual pass
+   above. Needs a call on whether the update signing key belongs in GitHub
+   Secrets — it is the same key that signs macOS updates, and a leak means
+   someone else's "update" on our users' machines.
+4. Embedded `sing-box` in the Rust shell for desktop circumvention (mirrors the
    iOS/Android transport).

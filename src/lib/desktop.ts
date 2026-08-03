@@ -53,6 +53,57 @@ export async function setDesktopBadge(count: number): Promise<void> {
   }
 }
 
+/// State of the bundled circumvention core, as the Rust side sees it.
+export interface BypassStatus {
+  /// Whether this build can route the webview through a proxy at all. False on
+  /// a macOS build without the `mac-bypass` feature, where the setting would
+  /// look like it worked and quietly do nothing.
+  supported: boolean
+  /// What the user asked for. Survives a restart.
+  enabled: boolean
+  /// Whether the core is actually up in this session. Differs from `enabled`
+  /// between flipping the toggle and restarting, and when the core failed.
+  running: boolean
+  /// Whether this session tried to bring the core up. With `running` false
+  /// that means it failed; without it, the user has just not restarted yet.
+  tried_at_startup: boolean
+  relay_config_version: number | null
+  relay_count: number
+}
+
+export async function bypassStatus(): Promise<BypassStatus | null> {
+  if (!isTauri()) return null
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    return await invoke<BypassStatus>('bypass_status')
+  } catch {
+    return null
+  }
+}
+
+/// Record the choice. It only takes effect on the next launch: the webview
+/// proxy is fixed when the webview is built, so there is nothing to flip live.
+export async function setBypassEnabled(enabled: boolean): Promise<boolean> {
+  if (!isTauri()) return false
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    await invoke('bypass_set', { enabled })
+    return true
+  } catch {
+    return false
+  }
+}
+
+export async function relaunchApp(): Promise<void> {
+  if (!isTauri()) return
+  try {
+    const { relaunch } = await import('@tauri-apps/plugin-process')
+    await relaunch()
+  } catch {
+    /* nothing sensible to do — the user can restart it themselves */
+  }
+}
+
 /// The installed app version, e.g. `0.1.3`. Null in a browser.
 export async function appVersion(): Promise<string | null> {
   if (!isTauri()) return null

@@ -183,6 +183,18 @@ export const en: Record<string, string> = {
   'settings.section.about': 'About',
   'settings.about.body':
     'RCQ is an anonymous, end-to-end encrypted messenger — no phone number, no email. This is the web client; it runs its own account in this browser.',
+  // Desktop build only — circumvention through the bundled sing-box.
+  'settings.section.bypass': 'Getting through blocks',
+  'settings.bypass.toggle': 'Route this app through RCQ relays',
+  'settings.bypass.footer':
+    'Where RCQ is blocked, this carries the app’s traffic through our relays instead of straight out. It is off by default: on an open network it only makes things slower.',
+  'settings.bypass.restart_note': 'Applies when the app restarts.',
+  'settings.bypass.restart_now': 'Restart',
+  'settings.bypass.failed': 'The relays could not be reached. Restart to try again.',
+  'settings.bypass.running': 'On, racing {count} relays',
+  'settings.bypass.list_version': 'relay list v{version}',
+  'settings.bypass.unsupported': 'This build cannot do it yet — it needs macOS 14 or newer.',
+
   // Desktop build only — the browser has nothing to update.
   'settings.about.version': 'Version',
   'settings.about.update_check': 'Check for updates',

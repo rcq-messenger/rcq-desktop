@@ -1,0 +1,244 @@
+// Signed relay list — the same payload the phone clients use, so a burned
+// relay can be swapped without shipping a desktop release.
+//
+// Mirrors `RelayConfigStore` on Android and iOS: fetch from hard-to-block
+// mirrors, verify an Ed25519 signature over the canonical JSON of everything
+// except `sig`, cache the verified payload, and fall back through
+// memory -> disk -> a bundled copy so a fresh install on a censored network
+// still has a list to try.
+
+use base64::{engine::general_purpose::STANDARD as B64, Engine};
+use ed25519_dalek::{Signature, VerifyingKey};
+use serde_json::Value;
+use std::path::Path;
+
+// Raw 32-byte Ed25519 public key, the same one embedded in both phone clients.
+const PUBKEY_B64: &str = "TY834OFcBvtUqHcnVw/QrPBOaEAZo7a1GAmABMhjkT8=";
+
+// Tried in order, first signature-valid payload wins. GitHub raw is primary:
+// RU DPI hits it far less than Cloudflare.
+const SOURCES: [&str; 2] = [
+    "https://raw.githubusercontent.com/rcq-messenger/rcq-ios/main/relay-config.json",
+    "https://relay.rcq.app/v1/config",
+];
+
+pub const CACHE_FILE: &str = "relay-config.json";
+
+// Last-resort pool for an install that has never reached a mirror. It is a
+// real signed payload rather than a hand-copied list, so it verifies through
+// exactly the same path as a fetched one.
+const BUNDLED: &str = include_str!("../relay-config.json");
+
+#[derive(Clone, Debug)]
+pub struct Relay {
+    pub tag: String,
+    pub proto: String,
+    pub server: String,
+    pub port: u16,
+    pub sni: String,
+    pub uuid: Option<String>,
+    pub public_key: Option<String>,
+    pub short_id: Option<String>,
+    pub flow: Option<String>,
+    pub password: Option<String>,
+    pub obfs_password: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct RelayConfig {
+    pub version: Option<i64>,
+    pub relays: Vec<Relay>,
+}
+
+/// The list to use right now: the freshest verified payload we have.
+/// Disk cache first (it was verified before it was written), bundled last.
+pub fn load(cache_dir: &Path) -> Option<RelayConfig> {
+    std::fs::read_to_string(cache_dir.join(CACHE_FILE))
+        .ok()
+        .and_then(|t| verify_and_parse(&t))
+        .or_else(|| verify_and_parse(BUNDLED))
+}
+
+/// Pull a fresh list and cache it for the next launch. Best-effort: on a
+/// blocked network every mirror fails and the caller keeps using disk/bundled.
+///
+/// `proxy` routes the fetch through our own tunnel once it is up. A censored
+/// user cannot reach either mirror directly, so without this they would stay
+/// on the bundled pool forever and never see a rotation. The signed config is
+/// public, so tunnelling it leaks nothing.
+pub fn refresh(cache_dir: &Path, proxy: Option<&str>) -> Option<RelayConfig> {
+    let mut client = reqwest::blocking::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(8))
+        .timeout(std::time::Duration::from_secs(12));
+    if let Some(url) = proxy {
+        if let Ok(p) = reqwest::Proxy::all(url) {
+            client = client.proxy(p);
+        }
+    }
+    let client = client.build().ok()?;
+
+    for url in SOURCES {
+        let Ok(resp) = client.get(url).send() else { continue };
+        if !resp.status().is_success() {
+            continue;
+        }
+        let Ok(body) = resp.text() else { continue };
+        let Some(config) = verify_and_parse(&body) else { continue };
+        let _ = std::fs::create_dir_all(cache_dir);
+        let _ = std::fs::write(cache_dir.join(CACHE_FILE), &body);
+        return Some(config);
+    }
+    None
+}
+
+/// Verify the signature, then parse the relays in priority order. Any failure
+/// returns None: an unsigned or mis-signed payload is treated as no payload.
+pub fn verify_and_parse(text: &str) -> Option<RelayConfig> {
+    let root: Value = serde_json::from_str(text).ok()?;
+    let sig_b64 = root.get("sig")?.as_str()?;
+
+    let mut signed = root.clone();
+    signed.as_object_mut()?.remove("sig");
+    let mut message = String::new();
+    canonical(&signed, &mut message);
+
+    let key_bytes: [u8; 32] = B64.decode(PUBKEY_B64).ok()?.try_into().ok()?;
+    let key = VerifyingKey::from_bytes(&key_bytes).ok()?;
+    let signature = Signature::from_slice(&B64.decode(sig_b64).ok()?).ok()?;
+    key.verify_strict(message.as_bytes(), &signature).ok()?;
+
+    let mut relays: Vec<(i64, Relay)> = Vec::new();
+    for entry in root.get("relays")?.as_array()? {
+        let s = |k: &str| entry.get(k).and_then(Value::as_str).map(str::to_owned);
+        let (Some(tag), Some(server), Some(sni)) = (s("tag"), s("server"), s("sni")) else {
+            continue;
+        };
+        let Some(port) = entry.get("port").and_then(Value::as_u64) else { continue };
+        relays.push((
+            entry.get("priority").and_then(Value::as_i64).unwrap_or(100),
+            Relay {
+                tag,
+                proto: s("proto").unwrap_or_else(|| "vless".into()),
+                server,
+                port: port as u16,
+                sni,
+                uuid: s("uuid"),
+                public_key: s("public_key"),
+                short_id: s("short_id"),
+                flow: s("flow"),
+                password: s("password"),
+                obfs_password: s("obfs_password"),
+            },
+        ));
+    }
+    if relays.is_empty() {
+        return None;
+    }
+    relays.sort_by_key(|(priority, _)| *priority);
+
+    Some(RelayConfig {
+        version: root.get("version").and_then(Value::as_i64),
+        relays: relays.into_iter().map(|(_, r)| r).collect(),
+    })
+}
+
+/// Canonical JSON, byte-for-byte what the Python signer produces with
+/// `json.dumps(sort_keys=True, separators=(",", ":"), ensure_ascii=False)`.
+///
+/// Keys are sorted explicitly rather than relying on serde_json's map order:
+/// with the `preserve_order` feature on anywhere in the tree, that order is
+/// insertion order and every signature would fail.
+fn canonical(value: &Value, out: &mut String) {
+    match value {
+        Value::Object(map) => {
+            out.push('{');
+            let mut keys: Vec<&String> = map.keys().collect();
+            keys.sort();
+            for (i, key) in keys.iter().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                write_string(key, out);
+                out.push(':');
+                canonical(&map[key.as_str()], out);
+            }
+            out.push('}');
+        }
+        Value::Array(items) => {
+            out.push('[');
+            for (i, item) in items.iter().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                canonical(item, out);
+            }
+            out.push(']');
+        }
+        Value::Null => out.push_str("null"),
+        Value::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
+        // The payload carries only integers, which serialize identically in
+        // both languages. A float would not be safe to assume that about.
+        Value::Number(n) => out.push_str(&n.to_string()),
+        Value::String(s) => write_string(s, out),
+    }
+}
+
+// serde_json escapes the same set Python does with ensure_ascii=False: quotes,
+// backslash, the \b \f \n \r \t shortcuts, other control chars as \u00xx, and
+// slashes and non-ASCII left alone.
+fn write_string(s: &str, out: &mut String) {
+    out.push_str(&Value::String(s.to_owned()).to_string());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bundled_payload_verifies() {
+        let config = verify_and_parse(BUNDLED).expect("bundled payload must verify");
+        assert!(!config.relays.is_empty());
+    }
+
+    #[test]
+    fn relays_come_back_in_priority_order() {
+        let config = verify_and_parse(BUNDLED).unwrap();
+        let root: Value = serde_json::from_str(BUNDLED).unwrap();
+        let mut expected: Vec<(i64, String)> = root["relays"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| {
+                (
+                    r["priority"].as_i64().unwrap_or(100),
+                    r["tag"].as_str().unwrap().to_owned(),
+                )
+            })
+            .collect();
+        expected.sort_by_key(|(p, _)| *p);
+        let got: Vec<String> = config.relays.iter().map(|r| r.tag.clone()).collect();
+        assert_eq!(got, expected.into_iter().map(|(_, t)| t).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn a_tampered_payload_is_rejected() {
+        let mut root: Value = serde_json::from_str(BUNDLED).unwrap();
+        root["relays"][0]["server"] = Value::String("127.0.0.1".into());
+        assert!(verify_and_parse(&root.to_string()).is_none());
+    }
+
+    #[test]
+    fn an_unsigned_payload_is_rejected() {
+        let mut root: Value = serde_json::from_str(BUNDLED).unwrap();
+        root.as_object_mut().unwrap().remove("sig");
+        assert!(verify_and_parse(&root.to_string()).is_none());
+    }
+
+    #[test]
+    fn canonical_json_sorts_keys_and_stays_compact() {
+        let value: Value = serde_json::from_str(r#"{"b":1,"a":{"d":[1,2],"c":"x/y"}}"#).unwrap();
+        let mut out = String::new();
+        canonical(&value, &mut out);
+        assert_eq!(out, r#"{"a":{"c":"x/y","d":[1,2]},"b":1}"#);
+    }
+}

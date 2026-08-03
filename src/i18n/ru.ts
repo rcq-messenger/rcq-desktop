@@ -182,6 +182,18 @@ export const ru: Record<string, string> = {
   'settings.section.about': 'О RCQ',
   'settings.about.body':
     'RCQ это анонимный мессенджер со сквозным шифрованием, без номера телефона и почты. Это веб-клиент, он работает со своим аккаунтом в этом браузере.',
+  // Только для десктопной сборки: обход через встроенный sing-box.
+  'settings.section.bypass': 'Обход блокировок',
+  'settings.bypass.toggle': 'Пускать приложение через релеи RCQ',
+  'settings.bypass.footer':
+    'Там, где RCQ заблокирован, трафик приложения пойдёт через наши релеи, а не напрямую. По умолчанию выключено: на открытой сети это только замедляет.',
+  'settings.bypass.restart_note': 'Применится после перезапуска приложения.',
+  'settings.bypass.restart_now': 'Перезапустить',
+  'settings.bypass.failed': 'Не удалось достучаться до релеев. Перезапустите, чтобы попробовать снова.',
+  'settings.bypass.running': 'Включён, релеев в гонке: {count}',
+  'settings.bypass.list_version': 'список релеев v{version}',
+  'settings.bypass.unsupported': 'Эта сборка пока не умеет: нужна macOS 14 или новее.',
+
   // Только для десктопной сборки, в браузере обновлять нечего.
   'settings.about.version': 'Версия',
   'settings.about.update_check': 'Проверить обновления',

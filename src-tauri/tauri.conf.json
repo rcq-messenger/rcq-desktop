@@ -10,18 +10,7 @@
     "beforeBuildCommand": "npm run build"
   },
   "app": {
-    "windows": [
-      {
-        "title": "RCQ",
-        "width": 1100,
-        "height": 760,
-        "minWidth": 380,
-        "minHeight": 560,
-        "resizable": true,
-        "fullscreen": false,
-        "center": true
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; media-src 'self' blob: data:; connect-src 'self' ipc: http://ipc.localhost https: http: wss: ws:; frame-src 'none'; object-src 'none'"
     }
@@ -42,7 +31,10 @@
     },
     "android": {
       "debugApplicationIdSuffix": ".debug"
-    }
+    },
+    "externalBin": [
+      "binaries/sing-box"
+    ]
   },
   "plugins": {
     "updater": {

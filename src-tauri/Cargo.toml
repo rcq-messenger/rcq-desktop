@@ -14,6 +14,17 @@ rust-version = "1.77.2"
 name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+# Circumvention on macOS. wry reaches the webview proxy through
+# nw_proxy_config_create_socksv5, a Network.framework symbol introduced in
+# macOS 14 and linked NON-weakly (verified: `nm -m` shows it as plain
+# "undefined external"). A build with this on therefore refuses to launch on
+# macOS 13 and older even for someone who never turns the bypass on — and the
+# updater would happily hand that build to them. So release builds leave it
+# off and the toggle reports itself unsupported; turn it on locally to verify
+# the feature on a Mac, or fleet-wide once the macOS floor moves to 14.
+mac-bypass = ["tauri/macos-proxy"]
+
 [build-dependencies]
 tauri-build = { version = "2.6.2", features = [] }
 
@@ -30,3 +41,7 @@ tauri-plugin-single-instance = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 tauri-plugin-dialog = "2"
+tauri-plugin-shell = "2"
+base64 = "0.22"
+ed25519-dalek = "2"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls", "socks"] }

@@ -5,6 +5,10 @@ dist
 .DS_Store
 tsconfig.tsbuildinfo
 
+# The bundled sing-box, ~80 MB across three platforms. Built by
+# scripts/build-singbox-sidecar.sh; CI runs it before packaging.
+src-tauri/binaries/
+
 # Dev scratch / large local-only dirs (not needed to build the app)
 crypto-wasm-spike/
 .mh-test/

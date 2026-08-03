@@ -64,6 +64,17 @@ jobs:
         with:
           workspaces: src-tauri
 
+      # The circumvention core is bundled as a Tauri sidecar and is not
+      # committed (~80 MB across three platforms), so it has to exist before
+      # the bundler runs or packaging fails on the missing externalBin.
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Build the sing-box sidecar
+        shell: bash
+        run: scripts/build-singbox-sidecar.sh
+
       - name: Install JS dependencies
         run: npm ci
 

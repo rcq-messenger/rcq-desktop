@@ -13,7 +13,15 @@ import { LanguagePicker } from '../components/LanguagePicker'
 import { Logo } from '../components/Logo'
 import { MyQRCode } from '../components/MyQRCode'
 import { Api } from '../lib/api'
-import { appVersion, checkForUpdatesNow, isTauri } from '../lib/desktop'
+import {
+  appVersion,
+  bypassStatus,
+  checkForUpdatesNow,
+  isTauri,
+  relaunchApp,
+  setBypassEnabled,
+  type BypassStatus,
+} from '../lib/desktop'
 import { uploadReportAttachment } from '../lib/media'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
@@ -66,6 +74,8 @@ export function Settings() {
   const [desktopVersion, setDesktopVersion] = useState<string | null>(null)
   const [updateBusy, setUpdateBusy] = useState(false)
   const [updateNote, setUpdateNote] = useState<string | null>(null)
+  // Desktop only: the bundled sing-box. `bypass` null off desktop.
+  const [bypass, setBypass] = useState<BypassStatus | null>(null)
 
   // Seed the HoF toggle + avatar from the server (owner-self echoes both).
   useEffect(() => {
@@ -85,7 +95,13 @@ export function Settings() {
 
   useEffect(() => {
     void appVersion().then(setDesktopVersion)
+    void bypassStatus().then(setBypass)
   }, [])
+
+  async function toggleBypass(enabled: boolean) {
+    if (!(await setBypassEnabled(enabled))) return
+    setBypass((s) => (s ? { ...s, enabled } : s))
+  }
 
   async function runUpdateCheck() {
     setUpdateBusy(true)
@@ -651,6 +667,57 @@ export function Settings() {
             <div className="text-sm text-red-600 bg-red-500/5 rounded-md p-2">{reportError}</div>
           )}
         </section>
+
+        {/* Desktop only: the bundled sing-box. The webview proxy is fixed when
+            the webview is built, so flipping this needs a restart. */}
+        {bypass && (
+          <section className="bg-surface rounded-lg border border-line p-4 space-y-3">
+            <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+              {t('settings.section.bypass')}
+            </div>
+            <label
+              className={
+                'flex items-center justify-between ' +
+                (bypass.supported ? 'cursor-pointer' : 'opacity-40 cursor-not-allowed')
+              }
+            >
+              <span className="text-sm pr-3">{t('settings.bypass.toggle')}</span>
+              <input
+                type="checkbox"
+                checked={bypass.enabled}
+                disabled={!bypass.supported}
+                onChange={(e) => void toggleBypass(e.target.checked)}
+                className="w-5 h-5 accent-accent cursor-pointer"
+              />
+            </label>
+            <p className="text-xs text-fg-dim">{t('settings.bypass.footer')}</p>
+            {!bypass.supported && (
+              <p className="text-xs text-fg-dim">{t('settings.bypass.unsupported')}</p>
+            )}
+            {bypass.supported && bypass.enabled !== bypass.running && (
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs text-fg-dim">
+                  {bypass.enabled && bypass.tried_at_startup
+                    ? t('settings.bypass.failed')
+                    : t('settings.bypass.restart_note')}
+                </p>
+                <button
+                  onClick={() => void relaunchApp()}
+                  className="shrink-0 h-8 px-3 rounded-md border border-line text-xs font-medium hover:bg-surface-dim transition-colors"
+                >
+                  {t('settings.bypass.restart_now')}
+                </button>
+              </div>
+            )}
+            {bypass.running && (
+              <p className="text-xs text-fg-dim">
+                {t('settings.bypass.running', { count: bypass.relay_count })}
+                {bypass.relay_config_version != null &&
+                  ` · ${t('settings.bypass.list_version', { version: bypass.relay_config_version })}`}
+              </p>
+            )}
+          </section>
+        )}
 
         <section className="bg-surface rounded-lg border border-line p-4 space-y-3">
           <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">

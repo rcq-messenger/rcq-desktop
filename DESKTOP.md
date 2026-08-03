@@ -178,6 +178,48 @@ the updater. `tauri dev` runs a bare binary, so the macOS installer resolves
 its install path to `src-tauri/target/debug/` and replaces that whole directory
 with the downloaded app. Use a local manifest and a local file URL instead.
 
+## Getting through blocks
+
+A sing-box built from pinned upstream ships as a Tauri sidecar. With the
+setting on, it starts before the window is built, listens on a loopback SOCKS
+port, and the webview is created with `proxy_url` pointing at it — so every
+request the page makes leaves through a relay. Verified on a release build:
+the webview's network process held only loopback sockets to that port and no
+direct connection at all, while sing-box raced three relays over UDP/443.
+
+The relay list is the same signed payload the phones use (`src/relay.rs`):
+GitHub raw, then Cloudflare, Ed25519-verified over the canonical JSON of
+everything but `sig`, cached, with a bundled copy for a first launch that can
+reach neither mirror. It refreshes in the background through the tunnel when
+one is up, because a censored user cannot reach either mirror any other way.
+
+The sing-box config carries **no `direct` outbound** on purpose: if every
+relay is unreachable the tunnel must fail loudly rather than quietly carry the
+user's traffic in the clear.
+
+```bash
+scripts/build-singbox-sidecar.sh          # host platform (CI does this per runner)
+scripts/build-singbox-sidecar.sh --all    # all three; Go cross-compiles
+```
+
+The binaries are gitignored — three platforms is ~80 MB and it would have to be
+re-committed on every bump. Bump `SING_BOX_REV` in the script deliberately.
+
+Two things worth knowing:
+
+- **The proxy can only be attached while the webview is being built**, wry has
+  no runtime API for it. So the on/off flag lives in Rust (`bypass.json` in the
+  app config dir) rather than in the page, which does not exist yet at the
+  moment we have to decide — and flipping it restarts the app.
+- **macOS is off by default** (`mac-bypass` Cargo feature). wry reaches the
+  macOS proxy through `nw_proxy_config_create_socksv5`, introduced in macOS 14
+  and linked non-weakly — `nm -m` shows it as a plain undefined external, so a
+  build with the feature on refuses to launch on macOS 13 even for someone who
+  never turns the bypass on, and the updater would hand them that build. Turn
+  it on to develop against (`npx tauri build --features mac-bypass`) or
+  fleet-wide once the macOS floor moves to 14. Without it the setting reports
+  itself unsupported instead of silently doing nothing.
+
 ## Status / follow-ups
 
 Done:
@@ -191,5 +233,9 @@ Remaining:
    Gatekeeper warning — we have an Apple Developer account. Until then,
    right-click → Open.
 2. **Windows code signing** (avoid the SmartScreen warning).
-3. Embedded `sing-box` in the Rust shell for desktop circumvention (mirrors the
-   iOS/Android transport).
+3. **Circumvention on macOS**: decide whether the macOS floor moves to 14 (see
+   above). We ship arm64 only and every Apple Silicon Mac can run 14, so the
+   cost is small — but pre-14 users would be handed a build that cannot launch,
+   and the manifest has no way to hold them back.
+4. Onion (2-hop) and the user's-own-proxy mode, both of which the phone clients
+   already have and the desktop core does not.

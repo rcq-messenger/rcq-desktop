@@ -499,6 +499,13 @@ export const Api = {
     return request<UinPurchaseResult>(id, 'POST', '/uin/activate', { uin })
   },
 
+  /// Take this session out of the account's linked-device list, on the way
+  /// out. Only a linked session has an entry; for anything else the server
+  /// answers ok and does nothing. Best-effort by design — see `signOut`.
+  unlinkSelf(id: WebIdentity): Promise<void> {
+    return request<void>(id, 'DELETE', '/devices/me')
+  },
+
   // Calls ---------------------------------------------------
 
   /// Short-lived TURN credentials for a call, same endpoint the phones use.

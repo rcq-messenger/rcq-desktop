@@ -13,7 +13,7 @@ import {
   persistIdentity,
   wipeLocalAccountData,
 } from './auth'
-import { setUnauthorizedHandler } from './api'
+import { Api, setUnauthorizedHandler } from './api'
 import { idbClearAll } from './signal-persist'
 
 interface IdentityCtx {
@@ -107,6 +107,16 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
       // this a new account inherited the old one's messages.
       signOut: () => {
         if (migrating.current) return
+        // Tell the account this session is gone before forgetting how to say
+        // so. Signing out used to clear local state only, so the phone went on
+        // listing a desktop that no longer existed and its token stayed valid
+        // — "на компе вышел из профиля и удалил, а в телефоне всё равно
+        // показывает, что десктоп подключён".
+        //
+        // Fire-and-forget: a sign-out must not be blocked, or refused, by a
+        // network that happens to be down. The entry then outlives the session
+        // exactly as it does today, and the phone can still revoke it by hand.
+        if (identity) void Api.unlinkSelf(identity).catch(() => {})
         clearIdentity()
         wipeLocalAccountData()
         void idbClearAll().finally(() => {

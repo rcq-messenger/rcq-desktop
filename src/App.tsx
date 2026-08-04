@@ -19,7 +19,7 @@ import { JoinGroup } from './pages/JoinGroup'
 import { Diagnostics } from './pages/Diagnostics'
 import { Privacy } from './pages/Privacy'
 import { Market } from './pages/Market'
-import { defaultHome, isMarketHost } from './lib/routing'
+import { defaultHome } from './lib/routing'
 
 function Authed({ children }: { children: JSX.Element }) {
   const { identity } = useIdentity()
@@ -33,14 +33,6 @@ function RootEntry() {
   return <Login />
 }
 
-// market.rcq.app is the UIN market ONLY, served at the root path. Logged in →
-// the market; logged out → the login (which returns to '/'). No chat surface
-// is reachable on this subdomain (the catch-all below sends everything to '/').
-function MarketRoot() {
-  const { identity } = useIdentity()
-  return identity ? <Market /> : <Login />
-}
-
 export default function App() {
   // Provider order: Theme is outermost (applies a class on <html>
   // before children paint), then I18n, then Identity (auth gate),
@@ -52,22 +44,12 @@ export default function App() {
         <IdentityProvider>
           <WSProvider>
             <CallProvider>
-            {/* market.rcq.app is the UIN market ONLY — no chat surface. Don't
-                run the message receiver (which drains the queue + fires toasts)
-                or the toast layer there, or the market shows stale "new
-                message" toasts for chats the user already read elsewhere. */}
-            {!isMarketHost() && <MessageReceiver />}
+            <MessageReceiver />
             <Router>
-            {!isMarketHost() && <MessageToasts />}
+            <MessageToasts />
             {/* Above every route: a call has to survive navigation, and the
                 incoming sheet has to appear wherever the user happens to be. */}
-            {!isMarketHost() && <CallOverlay />}
-            {isMarketHost() ? (
-            <Routes>
-              <Route path="/" element={<MarketRoot />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-            ) : (
+            <CallOverlay />
             <Routes>
               <Route path="/" element={<RootEntry />} />
               <Route
@@ -166,12 +148,22 @@ export default function App() {
                   </Authed>
                 }
               />
-              {/* No /market on chat.rcq.app — the market lives only on
-                  market.rcq.app. The header/settings buttons link there
-                  (external), and any /market path falls through to '/'. */}
+              {/* The market is a screen of this app, not a separate site.
+                  It used to live only on market.rcq.app, which meant every
+                  entry point into it was a link OFF the client: on the desktop
+                  that carried the whole window away, and in a browser it
+                  created a second origin with its own copy of the signed-in
+                  identity that a sign-out here could not reach. */}
+              <Route
+                path="/market"
+                element={
+                  <Authed>
+                    <Market />
+                  </Authed>
+                }
+              />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
-            )}
           </Router>
             </CallProvider>
           </WSProvider>

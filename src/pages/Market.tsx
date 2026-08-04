@@ -256,21 +256,10 @@ export function Market() {
       <header className="sticky top-0 z-20 backdrop-blur-xl bg-surface-dim/80">
         <div className="max-w-lg mx-auto px-5 h-14 flex items-center">
           <button
-            onClick={() => {
-              // Market lives on its own host (market.rcq.app), where
-              // "/contacts" isn't a route — it just bounces back to the
-              // market root, so the button felt dead. Send the user to
-              // the chat surface instead. On any non-market host (dev),
-              // fall back to in-app navigation.
-              const host = window.location.hostname
-              if (host.startsWith('market.')) {
-                window.location.assign(
-                  `${window.location.protocol}//${host.replace(/^market\./, 'chat.')}/`,
-                )
-              } else {
-                navigate('/contacts')
-              }
-            }}
+            // The market is a screen of the app now, so back is just back.
+            // It used to live on its own host, where "/contacts" was not a
+            // route and this button had to leave the site to work.
+            onClick={() => navigate('/contacts')}
             className="grid place-items-center h-9 w-9 -ml-1.5 rounded-full text-fg-secondary hover:text-fg-primary hover:bg-fg-primary/[0.06] active:scale-95 transition"
             aria-label={t('common.back')}
           >

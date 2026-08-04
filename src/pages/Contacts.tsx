@@ -346,14 +346,14 @@ export function Contacts() {
                 </span>
               )}
             </Link>
-            <a
-              href="https://market.rcq.app"
+            <Link
+              to="/market"
               className="text-fg-secondary hover:text-fg-primary p-2 rounded-md hover:bg-surface-dim"
               title={t('uin_market.title')}
               aria-label={t('uin_market.title')}
             >
               <TagIcon />
-            </a>
+            </Link>
             <ThemeToggle className="text-fg-secondary hover:text-fg-primary p-2 rounded-md hover:bg-surface-dim transition-colors" />
             <Link
               to="/settings"

@@ -335,8 +335,8 @@ export function Settings() {
 
         <RecoveryPhraseSection />
 
-        <a
-          href="https://market.rcq.app"
+        <Link
+          to="/market"
           className="block bg-surface rounded-lg border border-line p-4 hover:bg-surface-dim transition-colors"
         >
           <div className="flex items-center justify-between gap-3">
@@ -348,7 +348,7 @@ export function Settings() {
             </div>
             <span className="text-fg-dim">→</span>
           </div>
-        </a>
+        </Link>
 
         <section className="bg-surface rounded-lg border border-line p-4 space-y-3">
           <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">

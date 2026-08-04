@@ -22,6 +22,10 @@ import {
   relaunchApp,
   setBypassEnabled,
   type BypassStatus,
+  addUserRelay,
+  removeUserRelay,
+  userRelays,
+  type UserRelay,
 } from '../lib/desktop'
 import { uploadReportAttachment } from '../lib/media'
 import { useI18n } from '../lib/i18n-context'
@@ -101,6 +105,32 @@ export function Settings() {
     void bypassStatus().then(setBypass)
     void desktopPlatform().then(setPlatform)
   }, [])
+
+  const [relays, setRelays] = useState<UserRelay[]>([])
+  const [relayToken, setRelayToken] = useState('')
+  const [relayError, setRelayError] = useState<string | null>(null)
+
+  useEffect(() => {
+    void userRelays().then(setRelays)
+  }, [])
+
+  async function addRelay() {
+    const token = relayToken.trim()
+    if (!token) return
+    const res = await addUserRelay(token)
+    if (!res.ok) {
+      setRelayError(t('settings.bypass.relay_bad'))
+      return
+    }
+    setRelayError(null)
+    setRelayToken('')
+    setRelays(await userRelays())
+  }
+
+  async function dropRelay(tag: string) {
+    await removeUserRelay(tag)
+    setRelays(await userRelays())
+  }
 
   async function toggleBypass(enabled: boolean) {
     if (!(await setBypassEnabled(enabled))) return
@@ -721,6 +751,54 @@ export function Settings() {
                   ` · ${t('settings.bypass.list_version', { version: bypass.relay_config_version })}`}
               </p>
             )}
+            {/* Hand-added bridges. The signed list and the broker both arrive
+                over names a censor can enumerate, so when those are gone this
+                is the only way left to point the app at something that works —
+                a token pasted from a chat, a note, or read aloud. */}
+            <div className="pt-1 space-y-2">
+              <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+                {t('settings.bypass.relay_add')}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  value={relayToken}
+                  onChange={(e) => setRelayToken(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') void addRelay()
+                  }}
+                  placeholder="rcq-relay://…"
+                  spellCheck={false}
+                  className="flex-1 min-w-0 h-9 px-3 rounded-md bg-surface-dim border border-line text-sm font-mono"
+                />
+                <button
+                  onClick={() => void addRelay()}
+                  disabled={!relayToken.trim()}
+                  className="shrink-0 h-9 px-3 rounded-md border border-line text-xs font-medium hover:bg-surface-dim transition-colors disabled:opacity-40"
+                >
+                  {t('common.save')}
+                </button>
+              </div>
+              {relayError && <p className="text-xs text-red-500">{relayError}</p>}
+              {relays.length > 0 && (
+                <ul className="space-y-1">
+                  {relays.map((r) => (
+                    <li key={r.tag} className="flex items-center justify-between gap-2 text-xs">
+                      <span className="font-mono text-fg-secondary truncate">
+                        {r.server}:{r.port} · {r.proto}
+                      </span>
+                      <button
+                        onClick={() => void dropRelay(r.tag)}
+                        className="shrink-0 text-fg-dim hover:text-red-500 transition-colors"
+                      >
+                        {t('settings.bypass.relay_remove')}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className="text-xs text-fg-dim">{t('settings.bypass.relay_note')}</p>
+            </div>
+
             <Link
               to="/diagnostics"
               className="block text-xs font-medium text-accent hover:underline"

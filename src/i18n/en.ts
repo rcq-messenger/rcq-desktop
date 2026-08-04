@@ -222,6 +222,10 @@ export const en: Record<string, string> = {
   'bypass.shield.unverified': 'Going through a relay, but nothing has come back yet',
   'bypass.shield.off': 'Circumvention is off',
   'bypass.auto_note': 'Turned on automatically: the island did not answer directly.',
+  'settings.bypass.relay_add': 'Your own relay',
+  'settings.bypass.relay_remove': 'remove',
+  'settings.bypass.relay_bad': 'That does not look like a usable relay link.',
+  'settings.bypass.relay_note': 'Paste an rcq-relay:// link someone sent you, or one your own relay printed. Takes effect after a restart.',
 
   // Desktop build only — circumvention through the bundled sing-box.
   'settings.section.bypass': 'Getting through blocks',

@@ -5,6 +5,7 @@
 // via lib/desktop.ts), and circumvention through a bundled sing-box.
 
 #[cfg(desktop)]
+mod user_relay;
 mod bypass;
 #[cfg(desktop)]
 mod relay;
@@ -26,6 +27,28 @@ fn focus_main(app: &tauri::AppHandle) {
         let _ = w.unminimize();
         let _ = w.set_focus();
     }
+}
+
+/// Relays the user pasted by hand. Kept apart from the signed pool: these
+/// arrive out of band and nothing vouches for them.
+#[cfg(desktop)]
+#[tauri::command]
+fn user_relays(app: tauri::AppHandle) -> Vec<user_relay::UserRelay> {
+    user_relay::list(&app)
+}
+
+/// Takes effect on the next launch, like every other change to the tunnel —
+/// the proxy is bound when the webview is built.
+#[cfg(desktop)]
+#[tauri::command]
+fn user_relay_add(app: tauri::AppHandle, token: String) -> Result<user_relay::UserRelay, String> {
+    user_relay::add(&app, &token)
+}
+
+#[cfg(desktop)]
+#[tauri::command]
+fn user_relay_remove(app: tauri::AppHandle, tag: String) -> Result<(), String> {
+    user_relay::remove(&app, &tag)
 }
 
 #[cfg(desktop)]
@@ -101,6 +124,9 @@ pub fn run() {
             .plugin(tauri_plugin_shell::init())
             .invoke_handler(tauri::generate_handler![
                 bypass_status,
+                user_relays,
+                user_relay_add,
+                user_relay_remove,
                 bypass_set,
                 network_diagnostics,
                 desktop_platform

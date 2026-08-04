@@ -91,6 +91,51 @@ export interface BypassStatus {
   auto: boolean
 }
 
+/** A relay the user pasted by hand. Unsigned by nature — the whole point is
+ *  that it travels out of band, over any channel that still works. */
+export interface UserRelay {
+  tag: string
+  proto: string
+  server: string
+  port: number
+  sni: string
+}
+
+export async function userRelays(): Promise<UserRelay[]> {
+  if (!isTauri()) return []
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    return await invoke<UserRelay[]>('user_relays')
+  } catch {
+    return []
+  }
+}
+
+/** Add from an `rcq-relay://` token. Rejects anything that would build an
+ *  outbound sing-box cannot dial, so the error surfaces at paste time rather
+ *  than as a tunnel that silently carries nothing. */
+export async function addUserRelay(token: string): Promise<{ ok: boolean; error?: string }> {
+  if (!isTauri()) return { ok: false }
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    await invoke('user_relay_add', { token })
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: String(e) }
+  }
+}
+
+export async function removeUserRelay(tag: string): Promise<boolean> {
+  if (!isTauri()) return false
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    await invoke('user_relay_remove', { tag })
+    return true
+  } catch {
+    return false
+  }
+}
+
 export async function bypassStatus(): Promise<BypassStatus | null> {
   if (!isTauri()) return null
   try {

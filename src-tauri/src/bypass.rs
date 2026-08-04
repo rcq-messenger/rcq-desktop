@@ -206,7 +206,11 @@ pub fn start(app: &AppHandle) -> Option<u16> {
 
     let config_path = cache_dir.join(CONFIG_FILE);
     std::fs::create_dir_all(&cache_dir).ok()?;
-    write_config(&config_path, &config.relays, port, &cache_dir.join(LOG_FILE)).ok()?;
+    // Signed pool first, then whatever the user pasted by hand. Merged at the
+    // call site rather than inside write_config, which is under a test that
+    // pins one outbound per relay.
+    let pool = crate::user_relay::merge(&config.relays, &crate::user_relay::list(app));
+    write_config(&config_path, &pool, port, &cache_dir.join(LOG_FILE)).ok()?;
 
     let command = app
         .shell()

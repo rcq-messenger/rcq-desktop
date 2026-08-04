@@ -221,6 +221,10 @@ export const ru: Record<string, string> = {
   'bypass.shield.unverified': 'Идём через релей, но ответа пока не было',
   'bypass.shield.off': 'Обход выключен',
   'bypass.auto_note': 'Включён автоматически: остров не отвечал напрямую.',
+  'settings.bypass.relay_add': 'Свой релей',
+  'settings.bypass.relay_remove': 'убрать',
+  'settings.bypass.relay_bad': 'Это не похоже на рабочую ссылку релея.',
+  'settings.bypass.relay_note': 'Вставьте ссылку вида rcq-relay://, которую вам прислали или выдал ваш собственный релей. Применится после перезапуска.',
 
   // Только для десктопной сборки: обход через встроенный sing-box.
   'settings.section.bypass': 'Обход блокировок',

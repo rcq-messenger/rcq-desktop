@@ -152,6 +152,10 @@ export const ru: Record<string, string> = {
   'chat.forward.sent': 'отправлено',
   'chat.forwarded_label': 'переслано от {name}',
   'chat.you': 'вы',
+  'chat.jump_to_newest': 'К последним сообщениям',
+  'chat.drop_to_send': 'Отпустите, чтобы отправить',
+  'chat.date.today': 'Сегодня',
+  'chat.date.yesterday': 'Вчера',
 
   // Settings
   'settings.title': 'Настройки',
@@ -215,6 +219,7 @@ export const ru: Record<string, string> = {
   // Щит в шапке, виден только пока трафик реально идёт через релей.
   'bypass.shield.verified': 'Идём через релей, и он пробивается',
   'bypass.shield.unverified': 'Идём через релей, но ответа пока не было',
+  'bypass.shield.off': 'Обход выключен',
 
   // Только для десктопной сборки: обход через встроенный sing-box.
   'settings.section.bypass': 'Обход блокировок',
@@ -226,7 +231,10 @@ export const ru: Record<string, string> = {
   'settings.bypass.failed': 'Не удалось достучаться до релеев. Перезапустите, чтобы попробовать снова.',
   'settings.bypass.running': 'Включён, релеев в гонке: {count}',
   'settings.bypass.list_version': 'список релеев v{version}',
-  'settings.bypass.unsupported': 'Эта сборка пока не умеет: нужна macOS 14 или новее.',
+  // Показывает только сборка, собранная без фичи `mac-bypass`. Раньше здесь
+  // было «нужна macOS 14 или новее», и это читалось как проблема системы, хотя
+  // на любом маке, который видел эту строку, дело было в самой сборке.
+  'settings.bypass.unsupported': 'Эта сборка собрана без поддержки обхода.',
 
   // Только для десктопной сборки, в браузере обновлять нечего.
   'settings.about.version': 'Версия',

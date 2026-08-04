@@ -153,6 +153,10 @@ export const en: Record<string, string> = {
   'chat.forward.sent': 'sent',
   'chat.forwarded_label': 'forwarded from {name}',
   'chat.you': 'you',
+  'chat.jump_to_newest': 'Jump to the newest',
+  'chat.drop_to_send': 'Drop to send',
+  'chat.date.today': 'Today',
+  'chat.date.yesterday': 'Yesterday',
 
   // Settings
   'settings.title': 'Settings',
@@ -216,6 +220,7 @@ export const en: Record<string, string> = {
   // The header shield, shown only while a relay is carrying the app.
   'bypass.shield.verified': 'Going through a relay, and it is getting through',
   'bypass.shield.unverified': 'Going through a relay, but nothing has come back yet',
+  'bypass.shield.off': 'Circumvention is off',
 
   // Desktop build only — circumvention through the bundled sing-box.
   'settings.section.bypass': 'Getting through blocks',
@@ -227,7 +232,10 @@ export const en: Record<string, string> = {
   'settings.bypass.failed': 'The relays could not be reached. Restart to try again.',
   'settings.bypass.running': 'On, racing {count} relays',
   'settings.bypass.list_version': 'relay list v{version}',
-  'settings.bypass.unsupported': 'This build cannot do it yet — it needs macOS 14 or newer.',
+  // Shown only by a build compiled without the `mac-bypass` feature. It used to
+  // say "needs macOS 14 or newer", which read as an OS problem and was wrong on
+  // every Mac that saw it — the released builds simply had the feature off.
+  'settings.bypass.unsupported': 'This build was compiled without circumvention support.',
 
   // Desktop build only — the browser has nothing to update.
   'settings.about.version': 'Version',

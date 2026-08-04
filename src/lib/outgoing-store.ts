@@ -47,7 +47,14 @@ export function storageKey(isGroup: boolean, idNum: number): string {
 }
 
 /// Cap on persisted rows per thread so localStorage stays bounded.
-export const MAX_PERSISTED_ROWS = 200
+///
+/// Raised from 200: incoming messages live in IndexedDB with no cap at all, so
+/// the two halves of a conversation aged out at wildly different rates — in an
+/// active thread your own side simply vanished after a reload while the other
+/// person's stayed, which reads as lost history rather than as a cap. A text
+/// row is a few hundred bytes, so a couple of thousand of them is still small
+/// next to the 5 MB localStorage budget.
+export const MAX_PERSISTED_ROWS = 2000
 
 export function loadPersisted(key: string): OutgoingRow[] {
   try {

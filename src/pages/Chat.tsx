@@ -154,6 +154,8 @@ export function Chat() {
   // The attach button opens a small menu (Photo / File) — the web couldn't
   // send documents before (#16). Each picks a different hidden <input>.
   const [attachMenuOpen, setAttachMenuOpen] = useState(false)
+  // A file is being dragged over the conversation (drop-to-send overlay).
+  const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const docInputRef = useRef<HTMLInputElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -196,7 +198,13 @@ export function Chat() {
   const [pinExpanded, setPinExpanded] = useState(false)
   // Decrypted incoming messages, fed by the app-wide MessageReceiver (ws +
   // offline-queue → libsignal decrypt). 1:1 keyed by peer, group by group_id.
-  const peerIncoming = useIncoming(isGroup ? null : peer?.uin ?? null)
+  // Keyed by the ROUTE's uin, not by the loaded peer: the peer object only
+  // arrives after Api.contacts answers, and until then the thread rendered
+  // empty even though its messages were already in the store — opening a chat
+  // cold (or reloading straight onto /chat/123) showed nothing for a moment.
+  // Every branch below synthesises the peer with `uin === peerUIN`, so this is
+  // the same key, just available immediately. Groups already do this.
+  const peerIncoming = useIncoming(isGroup ? null : peerUIN)
   // Keyed by the ROUTE id (the alias for foreign groups) — the receiver files
   // foreign rows under the alias, and `group.id` is the server-side id.
   const groupIncoming = useGroupIncoming(isGroup ? groupId : null)
@@ -205,8 +213,9 @@ export function Chat() {
   // optimistic toggle); the per-row chips read the store directly.
   useReactionsVersion()
   // Re-render when a message is deleted-for-everyone (ours or a received
-  // delete) so the tombstone filter drops it live.
-  useDeletedVersion()
+  // delete) so the tombstone filter drops it live. The version also feeds the
+  // timeline memo below, which does that filtering.
+  const deletedVersion = useDeletedVersion()
 
   const myNickname = useMemo<string>(
     () => myInfo?.nickname ?? t('chat.you'),
@@ -217,12 +226,26 @@ export function Chat() {
   // with new route params. Reload the outgoing log from the new
   // thread's storage key so the previous chat's bubbles don't
   // bleed in. Reset transient UI (action menu, reply mode) too.
+  //
+  // ⚠ The edit mode HAS to be reset with them. It used to survive the switch,
+  // and since the composer's Enter routes to saveEdit while editing, the next
+  // message typed in the new chat was sent as an edit of a message in the OLD
+  // one: the wrong person received an edit envelope, and nothing changed
+  // locally because no row with that id exists here. The draft and the error
+  // banner are reset for the milder version of the same thing — arriving in a
+  // chat carrying someone else's half-typed line, or a stale red banner.
   useEffect(() => {
     if (!persistKey) return
     setOutgoing(loadPersisted(persistKey))
     setActionsForRowId(null)
     setReactionForRowId(null)
     setReplyTo(null)
+    setEditingRow(null)
+    setForwardingRow(null)
+    setInput('')
+    setError(null)
+    setShowPicker(false)
+    setAttachMenuOpen(false)
   }, [persistKey])
 
   // Persist on every change. Cheaper than a debounce here — the
@@ -310,9 +333,79 @@ export function Chat() {
   // message that hydrated/drained after open reeled the list down.
   const lastThreadRef = useRef<string | null>(null)
   const atBottomRef = useRef(true)
+  // The same fact as `atBottomRef`, but in state so the view can react to it:
+  // a ref cannot render the "jump to newest" button, which is why there never
+  // was one. Kept as a pair rather than replacing the ref — the scroll effect
+  // reads it synchronously inside requestAnimationFrame.
+  const [atBottom, setAtBottom] = useState(true)
+  // New messages that arrived while the user was reading further up, so the
+  // button can say how many are waiting instead of just pointing down.
+  const [unseenBelow, setUnseenBelow] = useState(0)
+
+  // Escape backs out of whatever is open, innermost first, and a click
+  // anywhere else closes the floating bits. Neither existed: the only key this
+  // screen handled was Enter, and the action menu / reaction picker / emoji
+  // panel could only be dismissed by hitting the very same button again.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== 'Escape') return
+      if (attachMenuOpen) return setAttachMenuOpen(false)
+      if (showPicker) return setShowPicker(false)
+      if (reactionForRowId) return setReactionForRowId(null)
+      if (actionsForRowId) return setActionsForRowId(null)
+      if (editingRow) return cancelEdit()
+      if (replyTo) return setReplyTo(null)
+    }
+    function onDown(e: MouseEvent) {
+      const el = e.target as HTMLElement | null
+      // Let the bubble's own handler decide — it toggles its menu, and closing
+      // here first would make the click a no-op.
+      if (el?.closest('[data-chat-menu]')) return
+      setActionsForRowId(null)
+      setReactionForRowId(null)
+    }
+    document.addEventListener('keydown', onKey)
+    document.addEventListener('mousedown', onDown)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('mousedown', onDown)
+    }
+  }, [attachMenuOpen, showPicker, reactionForRowId, actionsForRowId, editingRow, replyTo])
+
+  /** Pin the list to the bottom and mark it as followed. Called when the user
+   *  does something that means "I want to be at the newest": sending, or
+   *  tapping the jump button. */
+  function stickToBottom() {
+    atBottomRef.current = true
+    setAtBottom(true)
+    setUnseenBelow(0)
+    const jump = () => {
+      const el = scrollRef.current
+      if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'auto' })
+    }
+    // Now, and again after layout. The immediate call is what actually moves
+    // the list — requestAnimationFrame does not fire while the window is in
+    // the background, so a frame-only version silently did nothing there. The
+    // deferred one catches the row that has just been appended.
+    jump()
+    requestAnimationFrame(jump)
+  }
+  const lastCountRef = useRef(0)
   useEffect(() => {
     const switched = lastThreadRef.current !== persistKey
     lastThreadRef.current = persistKey
+    const total = outgoing.length + incoming.length
+    const grew = switched ? 0 : Math.max(0, total - lastCountRef.current)
+    lastCountRef.current = total
+    if (switched) {
+      setAtBottom(true)
+      setUnseenBelow(0)
+    } else if (grew && !atBottomRef.current) {
+      // Arrived while the user is reading further up: count it for the jump
+      // button instead of yanking the list, which is what the early return
+      // below has always (correctly) done.
+      setUnseenBelow((n) => n + grew)
+    }
     const el = scrollRef.current
     if (!el) return
     // Defer past layout so late content (queued history, decrypted images) is
@@ -627,6 +720,13 @@ export function Chat() {
     setInput('')
     setShowPicker(false)
     setReplyTo(null)
+    // Sending is an explicit "put me at the bottom": without this, answering
+    // while scrolled up left your own message off-screen, because the scroll
+    // effect below refuses to move the list once the user has scrolled away.
+    // The focus goes back too — send by mouse used to leave it on the button,
+    // so the next keystroke went nowhere.
+    stickToBottom()
+    taRef.current?.focus()
     await attemptSendRow(row)
   }
 
@@ -949,6 +1049,46 @@ export function Chat() {
       ? t('chat.saved.subtitle')
       // Cross-island: show the peer's island (presence doesn't cross islands).
       : peer?.host ? `#${peerUIN} · ${peer.host}` : String(peerUIN)
+  // One ordered timeline of both halves of the conversation, with a day
+  // separator inserted wherever the date changes. Until now the list showed
+  // only HH:MM, so a message from last week looked exactly like one from an
+  // hour ago and there was no way to tell what happened when.
+  const timeline = useMemo(() => {
+    const items = [
+      ...outgoing.map((row) => ({ at: row.sentAt, kind: 'out' as const, row })),
+      ...incoming.map((m) => ({ at: m.at, kind: 'in' as const, msg: m })),
+    ]
+      .filter((it) => !isDeleted(it.kind === 'out' ? it.row.id : it.msg.id))
+      .sort((a, b) => a.at - b.at)
+
+    const out: Array<(typeof items)[number] | { kind: 'day'; at: number }> = []
+    let lastDay = ''
+    for (const it of items) {
+      const day = new Date(it.at).toDateString()
+      if (day !== lastDay) {
+        out.push({ kind: 'day', at: it.at })
+        lastDay = day
+      }
+      out.push(it)
+    }
+    return out
+  }, [outgoing, incoming, deletedVersion])
+
+  /** "Today" / "Yesterday" / a plain date, in the user's locale. */
+  function dayLabel(at: number): string {
+    const d = new Date(at)
+    const today = new Date()
+    const yesterday = new Date(today)
+    yesterday.setDate(today.getDate() - 1)
+    if (d.toDateString() === today.toDateString()) return t('chat.date.today')
+    if (d.toDateString() === yesterday.toDateString()) return t('chat.date.yesterday')
+    return d.toLocaleDateString(undefined, {
+      day: 'numeric',
+      month: 'long',
+      ...(d.getFullYear() === today.getFullYear() ? {} : { year: 'numeric' }),
+    })
+  }
+
   const headerLink = isGroup
     ? group ? `/groups/${group.id}` : '#'
     : isSelf
@@ -967,7 +1107,39 @@ export function Chat() {
     // what desktop Windows reported: scroll the whole sheet down to read, then
     // all the way back up to find the way out. `h-screen` is the floor that
     // survives, `dvh` wins wherever it is understood.
-    <div className="h-screen [height:100dvh] flex flex-col bg-surface-dim overflow-hidden">
+    <div
+      className="h-screen [height:100dvh] flex flex-col bg-surface-dim overflow-hidden relative"
+      // Drop a file anywhere on the conversation to send it. The upload paths
+      // already existed; the only way to reach them was the paperclip and a
+      // system dialog, which on a desktop is the long way round for a file
+      // already sitting in a window next to you.
+      onDragOver={(e) => {
+        if (!e.dataTransfer?.types?.includes('Files')) return
+        e.preventDefault()
+        setDragOver(true)
+      }}
+      onDragLeave={(e) => {
+        // Only when the pointer actually leaves the shell, not on every hop
+        // between the children inside it.
+        if (e.currentTarget.contains(e.relatedTarget as Node | null)) return
+        setDragOver(false)
+      }}
+      onDrop={(e) => {
+        if (!e.dataTransfer?.files?.length) return
+        e.preventDefault()
+        setDragOver(false)
+        const file = e.dataTransfer.files[0]
+        if (file.type.startsWith('image/')) void sendPhoto(file)
+        else void sendFile(file)
+      }}
+    >
+      {dragOver && (
+        <div className="absolute inset-0 z-40 grid place-items-center bg-ink-black/40 pointer-events-none">
+          <div className="rounded-xl border-2 border-dashed border-white/70 px-6 py-4 text-white text-sm font-medium">
+            {t('chat.drop_to_send')}
+          </div>
+        </div>
+      )}
       <header className="flex-none bg-surface border-b border-line z-10">
         <div className="max-w-2xl mx-auto px-4 h-14 flex items-center gap-3">
           <Link to="/contacts" className="text-fg-secondary hover:text-fg-primary px-2">
@@ -1040,7 +1212,12 @@ export function Chat() {
         ref={scrollRef}
         onScroll={(e) => {
           const el = e.currentTarget
-          atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+          const bottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+          atBottomRef.current = bottom
+          setAtBottom((was) => {
+            if (was !== bottom && bottom) setUnseenBelow(0)
+            return bottom
+          })
         }}
         className="flex-1 max-w-2xl w-full mx-auto px-4 py-4 overflow-y-auto no-scrollbar"
       >
@@ -1052,13 +1229,17 @@ export function Chat() {
 
 
         <ul ref={contentRef} className="space-y-2">
-          {[
-            ...outgoing.map((row) => ({ at: row.sentAt, kind: 'out' as const, row })),
-            ...incoming.map((m) => ({ at: m.at, kind: 'in' as const, msg: m })),
-          ]
-            .filter((it) => !isDeleted(it.kind === 'out' ? it.row.id : it.msg.id))
-            .sort((a, b) => a.at - b.at)
+          {timeline
             .map((item) => {
+              if (item.kind === 'day') {
+                return (
+                  <li key={`day-${item.at}`} className="flex justify-center py-2">
+                    <span className="px-2 py-0.5 rounded-full bg-surface text-fg-dim text-[11px] font-medium">
+                      {dayLabel(item.at)}
+                    </span>
+                  </li>
+                )
+              }
               if (item.kind === 'in') {
                 const m = item.msg
                 const senderName = isGroup
@@ -1427,6 +1608,27 @@ export function Chat() {
         <div ref={bottomRef} />
       </main>
 
+      {/* Jump to the newest. Only while the user has scrolled up: the list
+          deliberately does not follow new messages then, so without this the
+          only way back was dragging the scrollbar, and a message that arrived
+          meanwhile gave no sign of itself at all. */}
+      {!atBottom && (
+        <div className="relative max-w-2xl w-full mx-auto">
+          <button
+            type="button"
+            onClick={stickToBottom}
+            aria-label={t('chat.jump_to_newest')}
+            title={t('chat.jump_to_newest')}
+            className="absolute bottom-2 right-4 z-20 h-10 min-w-10 px-2 rounded-full bg-surface border border-line shadow-lg text-fg-primary flex items-center justify-center gap-1 hover:bg-surface-dim transition-colors"
+          >
+            <span aria-hidden="true" className="text-base leading-none">↓</span>
+            {unseenBelow > 0 && (
+              <span className="text-xs font-semibold tabular-nums">{unseenBelow}</span>
+            )}
+          </button>
+        </div>
+      )}
+
       {/* Composer: the bar has NO background (floats on the page); the
           input is a bordered round pill, side buttons are round, and the
           emoji panel is a floating overlay ABOVE the composer — it does
@@ -1599,7 +1801,32 @@ export function Chat() {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault()
                   void send()
+                  return
                 }
+                // Up-arrow on an empty composer edits your last message, the
+                // habit every messenger and shell shares. Editing existed but
+                // was reachable only by clicking the bubble and picking a menu
+                // item.
+                if (e.key === 'ArrowUp' && !input && !editingRow) {
+                  const last = [...outgoing]
+                    .reverse()
+                    .find((r) => r.state === 'sent' && (!r.kind || r.kind === 'text'))
+                  if (last) {
+                    e.preventDefault()
+                    startEdit(last)
+                  }
+                }
+              }}
+              onPaste={(e) => {
+                // A screenshot in the clipboard is the most common way to send
+                // an image on a desktop, and Ctrl+V did nothing: the only way
+                // in was the paperclip and a file dialog.
+                const items = Array.from(e.clipboardData?.items ?? [])
+                const img = items.find((i) => i.kind === 'file' && i.type.startsWith('image/'))
+                const file = img?.getAsFile()
+                if (!file) return
+                e.preventDefault()
+                void sendPhoto(file)
               }}
               disabled={!peer && !group}
             />

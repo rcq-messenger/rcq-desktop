@@ -221,6 +221,7 @@ export const en: Record<string, string> = {
   'bypass.shield.verified': 'Going through a relay, and it is getting through',
   'bypass.shield.unverified': 'Going through a relay, but nothing has come back yet',
   'bypass.shield.off': 'Circumvention is off',
+  'bypass.auto_note': 'Turned on automatically: the island did not answer directly.',
 
   // Desktop build only — circumvention through the bundled sing-box.
   'settings.section.bypass': 'Getting through blocks',

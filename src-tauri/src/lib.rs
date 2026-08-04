@@ -39,6 +39,7 @@ fn bypass_status(app: tauri::AppHandle) -> bypass::Status {
         tried_at_startup: bypass::tried_at_startup(),
         relay_config_version: config.as_ref().and_then(|c| c.version),
         relay_count: config.map(|c| c.relays.len()).unwrap_or(0),
+        auto: bypass::is_auto(&app),
     }
 }
 
@@ -59,6 +60,9 @@ fn bypass_set(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
 #[cfg(desktop)]
 #[tauri::command]
 async fn network_diagnostics(app: tauri::AppHandle, host: String) -> bypass::Diagnostics {
+    // The only place the island's host crosses into Rust. Remember it so the
+    // next launch can probe the right one before any window exists.
+    bypass::remember_host(&app, &host);
     tauri::async_runtime::spawn_blocking(move || bypass::diagnostics(&app, &host))
         .await
         .unwrap_or_default()
@@ -121,10 +125,15 @@ pub fn run() {
                 // Starting it costs a moment of blank screen on a censored
                 // network; showing a window we then have to throw away costs
                 // more.
+                // The user's own choice first; failing that, ask the network.
+                // A blocked user could not reach the toggle before — the app
+                // they needed the toggle FOR was the thing that would not
+                // connect — so the probe decides for them, once, with a short
+                // budget (this runs before the window exists).
                 let proxy_port = if bypass::is_enabled(app.handle()) {
                     bypass::start(app.handle())
                 } else {
-                    None
+                    bypass::auto_engage_if_blocked(app.handle())
                 };
 
                 let nav_handle = app.handle().clone();

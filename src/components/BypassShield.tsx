@@ -88,9 +88,16 @@ export function BypassShield({ className = '' }: { className?: string }) {
     ? t(verified ? 'bypass.shield.verified' : 'bypass.shield.unverified')
     : t('bypass.shield.off')
 
+  // What the switch should READ: the user's own choice, or an auto-engaged
+  // tunnel. Without the second half an automatic tunnel showed an "off" switch
+  // over a working bypass, which reads as a bug in both directions.
+  const wanted = status.enabled || status.auto
+
   async function toggle(enabled: boolean) {
     if (!(await setBypassEnabled(enabled))) return
-    setStatus((s) => (s ? { ...s, enabled } : s))
+    // Turning an auto tunnel off is an opt-out the backend records; reflect it
+    // here immediately so the switch does not spring back.
+    setStatus((s) => (s ? { ...s, enabled, auto: false } : s))
   }
 
   return (
@@ -119,7 +126,7 @@ export function BypassShield({ className = '' }: { className?: string }) {
             <span className="text-sm">{t('settings.bypass.toggle')}</span>
             <input
               type="checkbox"
-              checked={status.enabled}
+              checked={wanted}
               disabled={!status.supported}
               onChange={(e) => void toggle(e.target.checked)}
               className="w-5 h-5 accent-accent cursor-pointer"
@@ -130,10 +137,15 @@ export function BypassShield({ className = '' }: { className?: string }) {
             <p className="text-xs text-fg-dim">{t('settings.bypass.unsupported')}</p>
           )}
 
+          {/* The app turned this on by itself after the island did not answer
+              directly. Saying so is the difference between "it is protecting
+              me" and "why is my client routing through somewhere". */}
+          {status.auto && <p className="text-xs text-fg-dim">{t('bypass.auto_note')}</p>}
+
           {/* The proxy is bound to the webview when the window is built, so a
               flip only takes effect after a restart. Saying so here is what
               stops the switch from looking broken. */}
-          {status.supported && status.enabled !== status.running && (
+          {status.supported && wanted !== status.running && (
             <div className="flex items-center justify-between gap-2">
               <p className="text-xs text-fg-dim">
                 {status.enabled && status.tried_at_startup

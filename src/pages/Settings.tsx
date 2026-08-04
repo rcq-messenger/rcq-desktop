@@ -104,7 +104,7 @@ export function Settings() {
 
   async function toggleBypass(enabled: boolean) {
     if (!(await setBypassEnabled(enabled))) return
-    setBypass((s) => (s ? { ...s, enabled } : s))
+    setBypass((s) => (s ? { ...s, enabled, auto: false } : s))
   }
 
   async function runUpdateCheck() {
@@ -688,7 +688,7 @@ export function Settings() {
               <span className="text-sm pr-3">{t('settings.bypass.toggle')}</span>
               <input
                 type="checkbox"
-                checked={bypass.enabled}
+                checked={bypass.enabled || bypass.auto}
                 disabled={!bypass.supported}
                 onChange={(e) => void toggleBypass(e.target.checked)}
                 className="w-5 h-5 accent-accent cursor-pointer"
@@ -698,7 +698,8 @@ export function Settings() {
             {!bypass.supported && (
               <p className="text-xs text-fg-dim">{t('settings.bypass.unsupported')}</p>
             )}
-            {bypass.supported && bypass.enabled !== bypass.running && (
+            {bypass.auto && <p className="text-xs text-fg-dim">{t('bypass.auto_note')}</p>}
+            {bypass.supported && (bypass.enabled || bypass.auto) !== bypass.running && (
               <div className="flex items-center justify-between gap-3">
                 <p className="text-xs text-fg-dim">
                   {bypass.enabled && bypass.tried_at_startup

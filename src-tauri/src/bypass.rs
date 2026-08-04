@@ -20,6 +20,9 @@ use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
 
 const STATE_FILE: &str = "bypass.json";
+/// Where the startup probe knocks on a first-ever launch, before the front has
+/// ever told us which island this install talks to.
+const DEFAULT_ISLAND: &str = "api.rcq.app";
 const CONFIG_FILE: &str = "sing-box.json";
 const LOG_FILE: &str = "sing-box.log";
 
@@ -41,7 +44,25 @@ static PORT: AtomicU16 = AtomicU16::new(0);
 
 #[derive(Default, Serialize, Deserialize)]
 struct Persisted {
+    /// What the user asked for. Survives restarts and always wins.
     enabled: bool,
+    /// This session's tunnel was turned on by the startup probe, not by the
+    /// user. Kept so the UI can say so, and so it can be dropped again the
+    /// moment the network recovers instead of quietly staying on forever.
+    #[serde(default)]
+    auto: bool,
+    /// The user switched an AUTO-engaged tunnel off. Their opt-out has to
+    /// outlive the session, or the next launch would helpfully turn it back on
+    /// and we would be arguing with them once a day. The explicit toggle is
+    /// unaffected.
+    #[serde(default)]
+    auto_disabled: bool,
+    /// Last island the front talked to. Rust never learns it otherwise: the
+    /// only place the host crosses the boundary is `network_diagnostics`, and
+    /// the startup probe happens long before the window exists. Falls back to
+    /// the flagship for a first-ever launch.
+    #[serde(default)]
+    host: Option<String>,
 }
 
 /// What the settings screen needs to draw the toggle.
@@ -63,6 +84,10 @@ pub struct Status {
     /// bundled copy and have never verified a fetched one.
     pub relay_config_version: Option<i64>,
     pub relay_count: usize,
+    /// The tunnel came up because the island was unreachable directly, not
+    /// because the user asked. Lets the UI explain itself rather than looking
+    /// like it flipped its own switch.
+    pub auto: bool,
 }
 
 pub const fn supported() -> bool {
@@ -73,24 +98,98 @@ fn state_path(app: &AppHandle) -> Option<PathBuf> {
     app.path().app_config_dir().ok().map(|d| d.join(STATE_FILE))
 }
 
-pub fn is_enabled(app: &AppHandle) -> bool {
-    if !supported() {
-        return false;
-    }
+fn load(app: &AppHandle) -> Persisted {
     state_path(app)
         .and_then(|p| std::fs::read_to_string(p).ok())
         .and_then(|t| serde_json::from_str::<Persisted>(&t).ok())
-        .map(|s| s.enabled)
-        .unwrap_or(false)
+        .unwrap_or_default()
 }
 
-pub fn set_enabled(app: &AppHandle, enabled: bool) -> Result<(), String> {
+fn save(app: &AppHandle, state: &Persisted) -> Result<(), String> {
     let path = state_path(app).ok_or("no config directory")?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    let body = serde_json::to_string(&Persisted { enabled }).map_err(|e| e.to_string())?;
+    let body = serde_json::to_string(state).map_err(|e| e.to_string())?;
     std::fs::write(&path, body).map_err(|e| e.to_string())
+}
+
+pub fn is_enabled(app: &AppHandle) -> bool {
+    supported() && load(app).enabled
+}
+
+/// True when the tunnel currently up was raised by the startup probe.
+pub fn is_auto(app: &AppHandle) -> bool {
+    load(app).auto
+}
+
+/// Read-modify-write, unlike the original which rebuilt the whole record from
+/// one field and would have silently erased everything added beside it.
+pub fn set_enabled(app: &AppHandle, enabled: bool) -> Result<(), String> {
+    let mut state = load(app);
+    // Switching OFF a tunnel this app turned on itself is an opt-out, and it
+    // has to stick: otherwise the next launch probes, finds the island still
+    // unreachable, and turns it straight back on.
+    if !enabled && state.auto {
+        state.auto_disabled = true;
+    }
+    if enabled {
+        state.auto_disabled = false;
+    }
+    state.enabled = enabled;
+    state.auto = false;
+    save(app, &state)
+}
+
+/// Remember which island the front is talking to, so the next launch can probe
+/// the right host before any window exists.
+pub fn remember_host(app: &AppHandle, host: &str) {
+    let mut state = load(app);
+    if state.host.as_deref() == Some(host) {
+        return;
+    }
+    state.host = Some(host.to_string());
+    let _ = save(app, &state);
+}
+
+/// The desktop equivalent of the phones' auto-engage: when the user has not
+/// asked for the tunnel, probe the island once and raise it if the network is
+/// blocking us. Returns the SOCKS port when it did.
+///
+/// Until now the desktop had none of this. sing-box only ever started from the
+/// manual toggle, and only on the NEXT launch, so a blocked user had to know
+/// the feature existed, find it in settings, and restart the app — through a
+/// connection that was already broken.
+///
+/// ⚠ This runs BEFORE the window is built, because wry can only attach a proxy
+/// while the webview is being created. Every second spent here is a second of
+/// blank screen, so the probe gets one short attempt, not the three long ones
+/// the diagnostics screen can afford.
+pub fn auto_engage_if_blocked(app: &AppHandle) -> Option<u16> {
+    if !supported() {
+        return None;
+    }
+    let state = load(app);
+    if state.enabled || state.auto_disabled {
+        return None;
+    }
+    let host = state.host.clone().unwrap_or_else(|| DEFAULT_ISLAND.to_string());
+    if probe_once(&host, Duration::from_secs(3)) {
+        // Reachable directly: make sure a previously auto-raised tunnel does
+        // not linger into a session that does not need it.
+        if state.auto {
+            let mut next = state;
+            next.auto = false;
+            let _ = save(app, &next);
+        }
+        return None;
+    }
+    log::warn!("island {host} unreachable directly — engaging the tunnel automatically");
+    let port = start(app)?;
+    let mut next = load(app);
+    next.auto = true;
+    let _ = save(app, &next);
+    Some(port)
 }
 
 /// Start the core and return the local SOCKS port it listens on.
@@ -213,6 +312,23 @@ pub fn diagnostics(app: &AppHandle, host: &str) -> Diagnostics {
 // blow the budget on DNS plus a TLS handshake without anything censoring it,
 // and on the phones a single-shot probe misreading that was exactly the
 // "bypass turns itself on when it shouldn't" report. Real DPI keeps timing out.
+/// One attempt, short budget — for the startup path, where the cost of waiting
+/// is a blank window rather than a slower diagnostics screen.
+fn probe_once(host: &str, budget: Duration) -> bool {
+    let Ok(client) = reqwest::blocking::Client::builder()
+        .timeout(budget)
+        .no_proxy()
+        .build()
+    else {
+        return false;
+    };
+    client
+        .get(format!("https://{host}/health"))
+        .send()
+        .map(|r| r.status().is_success())
+        .unwrap_or(false)
+}
+
 fn probe(host: &str, proxy: Option<&str>) -> bool {
     let mut builder = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(5))

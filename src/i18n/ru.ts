@@ -220,6 +220,7 @@ export const ru: Record<string, string> = {
   'bypass.shield.verified': 'Идём через релей, и он пробивается',
   'bypass.shield.unverified': 'Идём через релей, но ответа пока не было',
   'bypass.shield.off': 'Обход выключен',
+  'bypass.auto_note': 'Включён автоматически: остров не отвечал напрямую.',
 
   // Только для десктопной сборки: обход через встроенный sing-box.
   'settings.section.bypass': 'Обход блокировок',

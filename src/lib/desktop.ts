@@ -86,6 +86,9 @@ export interface BypassStatus {
   tried_at_startup: boolean
   relay_config_version: number | null
   relay_count: number
+  /** The tunnel came up because the island was unreachable, not because the
+   *  user asked. The UI says so rather than looking like it flipped itself. */
+  auto: boolean
 }
 
 export async function bypassStatus(): Promise<BypassStatus | null> {

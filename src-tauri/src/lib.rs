@@ -127,12 +127,40 @@ pub fn run() {
                     None
                 };
 
+                let nav_handle = app.handle().clone();
                 let mut window = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
                     .title("RCQ")
                     .inner_size(1100.0, 760.0)
                     .min_inner_size(380.0, 560.0)
                     .resizable(true)
-                    .center();
+                    .center()
+                    // An ordinary <a href> to another site would navigate THIS
+                    // window away from the app. The user is then looking at a
+                    // web page where they are not signed in, with no way back
+                    // except restarting — which is exactly what the UIN market
+                    // link in Settings did, and it read as "it logged me out"
+                    // (reported 2026-08-04).
+                    //
+                    // The app owns its window: only its own pages may load in
+                    // it, and anything else goes to the real browser, where
+                    // links belong.
+                    .on_navigation(move |url| {
+                        let scheme = url.scheme();
+                        let internal = matches!(scheme, "tauri" | "ipc" | "asset")
+                            || url.host_str() == Some("tauri.localhost")
+                            || url.host_str() == Some("localhost")
+                            || url.host_str() == Some("127.0.0.1");
+                        if internal {
+                            return true;
+                        }
+                        #[allow(deprecated)]
+                        if let Err(e) = tauri_plugin_shell::ShellExt::shell(&nav_handle)
+                            .open(url.as_str(), None)
+                        {
+                            log::error!("could not hand {url} to the browser: {e}");
+                        }
+                        false
+                    });
                 if let Some(port) = proxy_port {
                     let url = format!("socks5://127.0.0.1:{port}");
                     match url.parse() {

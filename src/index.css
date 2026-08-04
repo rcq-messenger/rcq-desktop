@@ -53,6 +53,16 @@ html.dark.desktop {
   --c-bubble-other: 32 32 37;  /* incoming bubbles */
 }
 
+/* This interface was drawn for a phone held at arm's length. In a 1100px
+   window on a desktop monitor the same type is simply small — "какой-то
+   уродский мелкий шрифт" (tester, 2026-08-04). Every size and spacing in the
+   app is in rem, so lifting the root is the whole fix: text, padding and
+   controls grow together and nothing is re-laid-out by hand. Gated on the
+   desktop class, so the browser at chat.rcq.app is untouched. */
+html.desktop {
+  font-size: 17.5px;
+}
+
 html, body, #root {
   height: 100%;
 }

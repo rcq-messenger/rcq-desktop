@@ -45,6 +45,13 @@ ASSETS = {
 }
 
 MACOS_ARCHIVE = REPO / "src-tauri/target/release/bundle/macos/RCQ.app.tar.gz"
+# The macOS .dmg is what the SITE links to. It carries no updater signature and
+# appears in no manifest, so nothing here would have complained about it — and
+# on 0.2.0 nothing did: the release shipped with every updater artifact fresh
+# and the download on rcq.app still serving the previous version. It rides
+# along now, from the same locally signed build.
+MACOS_DMG_GLOB = "src-tauri/target/release/bundle/dmg/RCQ_*_aarch64.dmg"
+MACOS_DMG_HOSTED = "RCQ-macos-arm64.dmg"
 
 # The plugin looks up "{os}-{arch}-{installer}" first and falls back to
 # "{os}-{arch}". The Linux fallback must be the AppImage: a binary whose bundle
@@ -66,7 +73,7 @@ def die(msg):
 
 
 def collect(assets_dir, macos_archive, work):
-    """Copy the CI assets and the local macOS archive to their hosted names."""
+    """Copy the CI assets and the local macOS build to their hosted names."""
     for name, pattern in ASSETS.items():
         found = sorted(assets_dir.glob(pattern))
         if len(found) != 1:
@@ -78,6 +85,13 @@ def collect(assets_dir, macos_archive, work):
         die(f"no macOS archive at {macos_archive} — run npm run desktop:build first")
     shutil.copy2(macos_archive, work / "RCQ.app.tar.gz")
     print(f"  {macos_archive.name} -> RCQ.app.tar.gz (local signed build)")
+
+    dmgs = sorted(REPO.glob(MACOS_DMG_GLOB))
+    if len(dmgs) != 1:
+        die(f"{MACOS_DMG_GLOB!r} matched {len(dmgs)} files, expected 1 — "
+            "delete the stale ones so the site cannot be given the wrong build")
+    shutil.copy2(dmgs[0], work / MACOS_DMG_HOSTED)
+    print(f"  {dmgs[0].name} -> {MACOS_DMG_HOSTED} (site download)")
 
 
 def pack_appimage(work):
@@ -217,7 +231,10 @@ def main():
             die(f"missing {path}")
 
     work = Path(tempfile.mkdtemp(prefix="rcq-update-"))
+    # `names` is what gets an updater signature and a manifest entry. The dmg
+    # is a plain download, so it is uploaded but neither signed nor listed.
     names = list(ASSETS) + ["RCQ-linux.AppImage.tar.gz", "RCQ.app.tar.gz"]
+    hosted = names + [MACOS_DMG_HOSTED]
     notes = args.notes_file.read_text().strip() if args.notes_file else ""
     pub_date = args.pub_date or (
         datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -239,7 +256,7 @@ def main():
         print(f"\nready in {work} (not uploaded)")
         return
     print("uploading")
-    upload(work, args.version, names)
+    upload(work, args.version, hosted)
     print("verifying the live manifest")
     verify_live()
     print(f"\n{args.version} published, {len(PLATFORMS)} platforms verified")

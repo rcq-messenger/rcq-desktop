@@ -36,7 +36,8 @@ GitHub release.
 
 Messaging, groups, media, contacts, realtime — everything the web client does,
 plus desktop chrome (tray, background run, OS notifications, dock badge,
-auto-update). **No voice/video calls yet** (the web client has no WebRTC).
+auto-update), plus **voice and video calls** (0.2.0), which interoperate with
+the iOS and Android clients.
 
 ## License
 

@@ -74,9 +74,12 @@ the tray; real quit is Cmd+Q or the tray's Quit), **single instance**,
 **OS notifications** (when the window isn't focused), **dock unread badge**,
 and **auto-update**.
 
-**No calls.** web-chat has no WebRTC, so cross-island calls are
-iOS/Android-only for now. Desktop calls are a v2 item (add WebRTC to the
-web client first).
+**Calls** (0.2.0): 1:1 voice and video over WebRTC, speaking the same
+signalling as the phones, so a desktop call reaches an iOS or Android peer and
+back. Video can be turned on mid-call, and a broken path is recovered with an
+ICE restart rather than a re-ring. The engine is `src/lib/call.tsx`; the wire
+and the per-OS capture permissions are documented in the file header and in
+"Microphone and camera" below.
 
 ## Code signing (required — notifications depend on it)
 
@@ -97,6 +100,41 @@ codesign -dvvv src-tauri/target/release/bundle/macos/RCQ.app   # TeamIdentifier 
 For distribution to other Macs the app also needs **notarization**
 (`xcrun notarytool submit` + `stapler`) — not done yet. The end user still
 picks Banners vs Notification-Center in System Settings → Notifications → RCQ.
+
+## Microphone and camera (calls)
+
+Each of the three webviews withholds capture for a different reason, and none
+of them says so out loud — a call just goes silent.
+
+- **macOS.** wry answers the WKUIDelegate capture request with `Grant`, so the
+  page is not the obstacle: the OS is. Two things are needed and both are in
+  this repo. `Info.plist` carries `NSMicrophoneUsageDescription` and
+  `NSCameraUsageDescription` — an app that touches a capture device without one
+  is **terminated** by the system, not refused. And because the build signs
+  with the hardened runtime, `Entitlements.plist` grants
+  `com.apple.security.device.audio-input` and `.camera`; without them the
+  capture is refused underneath the webview no matter what the user answered in
+  the dialog. Check a build with
+  `codesign -d --entitlements - RCQ.app`.
+- **Linux.** WebKitGTK ships with the media stream switched **off**, so
+  `navigator.mediaDevices` does not exist at all, and it denies every
+  permission request nobody handles. Neither wry nor Tauri turns either on.
+  `src-tauri/src/lib.rs` does, through the webview handle Tauri hands us
+  (`with_webview` → `webkit2gtk::WebView`): `set_enable_media_stream`,
+  `set_enable_webrtc`, and a `permission-request` handler that allows
+  `UserMediaPermissionRequest` and nothing else. The `webkit2gtk` dependency is
+  pinned to the exact version wry resolves so there is one copy of the crate.
+  ⚠ This code only compiles in CI; to read the crate API from a Mac use
+  `cargo fetch --target x86_64-unknown-linux-gnu`.
+- **Windows.** WebView2 shows its own permission prompt. Nothing to do.
+
+Secure context is not a problem on either: wry registers the custom scheme as
+secure on Linux, and on macOS the app already relies on `crypto.subtle`.
+
+Connection diagnostics has a **Microphone** row that opens the device for real
+(not a permission query, which would pass on macOS right up until the hardened
+runtime refuses the capture) and a **Call relay** row with the number of TURN
+servers the island handed out.
 
 ## Auto-update (publishing a release)
 

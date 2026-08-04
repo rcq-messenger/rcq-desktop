@@ -1,15 +1,27 @@
-// Header shield for the desktop bypass, the same badge the phones carry.
+// Header shield for the desktop bypass, the same badge the phones carry — and
+// on desktop also the way in to turning it on.
 //
-// It is deliberately honest about two different things: it appears only when
-// traffic is actually going through a relay, and it only goes solid once the
-// island has answered over that route. Amber means the tunnel is up but has
-// not been seen carrying anything — the phones learned that the hard way, from
-// a shield that claimed a working bypass over a dead chain ("щит есть, связи
-// нет"). Renders nothing off the desktop, or with the bypass off.
+// It is deliberately honest about two things: solid only once the island has
+// answered THROUGH the relay, amber while the tunnel is up but has not been
+// seen carrying anything. The phones learned that the hard way, from a shield
+// that claimed a working bypass over a dead chain ("щит есть, связи нет").
+//
+// It used to render nothing at all while the bypass was off, which meant the
+// only way to reach the feature was Settings → scroll → a section near the
+// bottom, and the only link to diagnostics in the whole app was inside that
+// same section. So the shield now stays visible (dimmed) whenever this is a
+// desktop build, and clicking it opens the switch and the diagnostics link
+// right there. Renders nothing in the browser, where there is no bypass at all.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { bypassStatus, networkDiagnostics } from '../lib/desktop'
+import {
+  bypassStatus,
+  networkDiagnostics,
+  relaunchApp,
+  setBypassEnabled,
+  type BypassStatus,
+} from '../lib/desktop'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
 
@@ -21,8 +33,10 @@ const RECHECK_MS = 2 * 60 * 1000
 export function BypassShield({ className = '' }: { className?: string }) {
   const { t } = useI18n()
   const { identity } = useIdentity()
-  const [on, setOn] = useState(false)
+  const [status, setStatus] = useState<BypassStatus | null>(null)
   const [verified, setVerified] = useState(false)
+  const [open, setOpen] = useState(false)
+  const boxRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!identity) return
@@ -30,10 +44,12 @@ export function BypassShield({ className = '' }: { className?: string }) {
     const host = identity.apiBase.replace(/^https?:\/\//, '').replace(/\/.*$/, '')
 
     async function check() {
-      const status = await bypassStatus()
+      const s = await bypassStatus()
       if (!alive) return
-      setOn(!!status?.running)
-      if (!status?.running) return setVerified(false)
+      setStatus(s)
+      if (!s?.running) return setVerified(false)
+      // Seconds on a censored network — each probe waits out its timeout — so
+      // this stays on the slow timer and is never tied to opening the menu.
       const diag = await networkDiagnostics(host)
       if (alive) setVerified(!!diag?.route_ok)
     }
@@ -46,23 +62,110 @@ export function BypassShield({ className = '' }: { className?: string }) {
     }
   }, [identity])
 
-  if (!on) return null
+  // Close on click-outside and on Escape, the same as the other header menus.
+  useEffect(() => {
+    if (!open) return
+    function onDown(e: MouseEvent) {
+      if (!boxRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  // Browser build: there is no bypass to offer.
+  if (!status) return null
+
+  const running = status.running
+  const tone = !running ? 'text-fg-secondary' : verified ? 'text-accent' : 'text-amber-500'
+  const label = running
+    ? t(verified ? 'bypass.shield.verified' : 'bypass.shield.unverified')
+    : t('bypass.shield.off')
+
+  async function toggle(enabled: boolean) {
+    if (!(await setBypassEnabled(enabled))) return
+    setStatus((s) => (s ? { ...s, enabled } : s))
+  }
 
   return (
-    <Link
-      to="/diagnostics"
-      title={t(verified ? 'bypass.shield.verified' : 'bypass.shield.unverified')}
-      aria-label={t(verified ? 'bypass.shield.verified' : 'bypass.shield.unverified')}
-      className={'flex-none p-1 rounded-md hover:bg-surface-dim transition-colors ' + className}
-    >
-      <svg
-        viewBox="0 0 24 24"
-        fill="currentColor"
-        aria-hidden="true"
-        className={'w-[18px] h-[18px] ' + (verified ? 'text-accent' : 'text-amber-500')}
+    <div className="relative flex-none" ref={boxRef}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        title={label}
+        aria-label={label}
+        aria-expanded={open}
+        className={'flex-none p-1 rounded-md hover:bg-surface-dim transition-colors ' + className}
       >
-        <path d="M12 2 4 5.5v6c0 4.6 3.2 8.9 8 10.5 4.8-1.6 8-5.9 8-10.5v-6L12 2Z" />
-      </svg>
-    </Link>
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" className={'w-[18px] h-[18px] ' + tone}>
+          <path d="M12 2 4 5.5v6c0 4.6 3.2 8.9 8 10.5 4.8-1.6 8-5.9 8-10.5v-6L12 2Z" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="absolute top-full left-0 mt-1 w-64 bg-surface border border-line rounded-lg shadow-lg p-3 space-y-2 z-30">
+          <label
+            className={
+              'flex items-center justify-between gap-3 ' +
+              (status.supported ? 'cursor-pointer' : 'opacity-40 cursor-not-allowed')
+            }
+          >
+            <span className="text-sm">{t('settings.bypass.toggle')}</span>
+            <input
+              type="checkbox"
+              checked={status.enabled}
+              disabled={!status.supported}
+              onChange={(e) => void toggle(e.target.checked)}
+              className="w-5 h-5 accent-accent cursor-pointer"
+            />
+          </label>
+
+          {!status.supported && (
+            <p className="text-xs text-fg-dim">{t('settings.bypass.unsupported')}</p>
+          )}
+
+          {/* The proxy is bound to the webview when the window is built, so a
+              flip only takes effect after a restart. Saying so here is what
+              stops the switch from looking broken. */}
+          {status.supported && status.enabled !== status.running && (
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs text-fg-dim">
+                {status.enabled && status.tried_at_startup
+                  ? t('settings.bypass.failed')
+                  : t('settings.bypass.restart_note')}
+              </p>
+              <button
+                onClick={() => void relaunchApp()}
+                className="shrink-0 h-7 px-2 rounded-md border border-line text-xs font-medium hover:bg-surface-dim transition-colors"
+              >
+                {t('settings.bypass.restart_now')}
+              </button>
+            </div>
+          )}
+
+          {running && (
+            <p className="text-xs text-fg-dim">
+              {t('settings.bypass.running', { count: status.relay_count })}
+              {status.relay_config_version != null &&
+                ` · ${t('settings.bypass.list_version', { version: status.relay_config_version })}`}
+            </p>
+          )}
+
+          <Link
+            to="/diagnostics"
+            onClick={() => setOpen(false)}
+            className="block text-xs font-medium text-accent hover:underline"
+          >
+            {t('diag.title')}
+          </Link>
+        </div>
+      )}
+    </div>
   )
 }

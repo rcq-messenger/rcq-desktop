@@ -28,7 +28,8 @@
     ],
     "macOS": {
       "signingIdentity": "Developer ID Application: Yaroslav Tager (P29Q334JHX)",
-      "entitlements": "Entitlements.plist"
+      "entitlements": "Entitlements.plist",
+      "minimumSystemVersion": "14.0"
     },
     "android": {
       "debugApplicationIdSuffix": ".debug"

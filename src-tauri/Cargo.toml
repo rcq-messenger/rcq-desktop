@@ -19,10 +19,17 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 # nw_proxy_config_create_socksv5, a Network.framework symbol introduced in
 # macOS 14 and linked NON-weakly (verified: `nm -m` shows it as plain
 # "undefined external"). A build with this on therefore refuses to launch on
-# macOS 13 and older even for someone who never turns the bypass on — and the
-# updater would happily hand that build to them. So release builds leave it
-# off and the toggle reports itself unsupported; turn it on locally to verify
-# the feature on a Mac, or fleet-wide once the macOS floor moves to 14.
+# macOS 13 and older even for someone who never turns the bypass on.
+#
+# It used to be off by default, which meant every released Mac build reported
+# the toggle as unsupported and refused to switch on — on ANY macOS, including
+# 26. The founder hit exactly that: a dead checkbox under a line blaming an OS
+# version that was years newer than required.
+#
+# Now on by default, with the bundle's minimumSystemVersion raised to 14.0 to
+# match (tauri.conf.json). The floor is what makes this safe: without it the
+# updater would hand a build that cannot launch to someone on 13.
+default = ["mac-bypass"]
 mac-bypass = ["tauri/macos-proxy"]
 
 [build-dependencies]

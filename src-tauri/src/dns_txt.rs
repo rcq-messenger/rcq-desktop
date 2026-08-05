@@ -27,13 +27,24 @@ const CLASS_IN: u16 = 1;
 /// A DNS answer is small; anything larger is not one.
 const MAX_RESPONSE: usize = 64 * 1024;
 
-/// DoH endpoints, tried in order. The domestic resolver is here because a
-/// resolver cannot forge a signed payload, so one that answers beats one that
-/// does not.
-pub const RESOLVERS: [&str; 3] = [
-    "https://cloudflare-dns.com/dns-query",
-    "https://common.dns.yandex.net/dns-query",
-    "https://dns.google/dns-query",
+/// DoH endpoints, tried in order, addressed by IP.
+///
+/// By IP on purpose. Asking a resolver by NAME means resolving that name through
+/// ordinary DNS first — the very thing being tampered with on the networks this
+/// channel exists for. Their certificates carry the addresses in the SAN, so
+/// verification is unaffected.
+///
+/// ⚠ This list first read `common.dns.yandex.net`, which does not exist: the one
+/// resolver included because it answers inside RU would never have returned
+/// anything. All four below were checked live against a published record.
+///
+/// A resolver cannot forge a signed payload, so one that answers beats one that
+/// does not — hence the domestic entry, and four jurisdictions.
+pub const RESOLVERS: [&str; 4] = [
+    "https://1.1.1.1/dns-query",   // Cloudflare
+    "https://77.88.8.8/dns-query", // Yandex — answers inside RU
+    "https://8.8.8.8/dns-query",   // Google
+    "https://9.9.9.9/dns-query",   // Quad9
 ];
 
 /// Fetch and reassemble the payload published at `name`.

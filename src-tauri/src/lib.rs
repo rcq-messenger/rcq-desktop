@@ -9,6 +9,7 @@ mod user_relay;
 mod bypass;
 #[cfg(desktop)]
 mod relay;
+mod dns_txt;
 mod signing_keys;
 
 #[cfg(desktop)]

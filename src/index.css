@@ -42,11 +42,16 @@ html.dark {
   --c-bubble-other: 38 40 47;
 }
 
-/* Desktop (Tauri) only: a true-black ("AMOLED") dark theme. The `desktop`
-   class is added on <html> at startup when running inside Tauri (main.tsx);
-   the web build never gets it, so chat.rcq.app keeps the grey dark theme.
-   Only the background tokens go black — foreground/accent are unchanged. */
-html.dark.desktop {
+/* A true-black ("AMOLED") dark theme. Only the background tokens go black —
+   foreground and accent are unchanged.
+
+   This was gated on the `desktop` class until 2026-08-05, so chat.rcq.app kept
+   a grey dark theme while the app window was black. Two surfaces of the same
+   product looked like two products, and the phones are black as well. The
+   larger root font size below stays desktop-only: that one is about a window
+   on a monitor, not about the palette, and lifting it in the browser would
+   grow the layout on phones too. */
+html.dark {
   --c-surface-dim: 0 0 0;      /* page / large-area background → true black */
   --c-surface: 20 20 23;       /* panels, cards, composer — lifted off black */
   --c-line: 38 40 47;          /* borders read against pure black */

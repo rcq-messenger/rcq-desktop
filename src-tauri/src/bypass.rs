@@ -23,6 +23,10 @@ const STATE_FILE: &str = "bypass.json";
 /// Where the startup probe knocks on a first-ever launch, before the front has
 /// ever told us which island this install talks to.
 const DEFAULT_ISLAND: &str = "api.rcq.app";
+/// What the relay selector races each relay against, until a signed payload
+/// names something else. Compiled in so a client with no fetched list still
+/// has a way to tell a working relay from a dead one.
+const DEFAULT_PROBE: &str = "https://api.rcq.app/health";
 const CONFIG_FILE: &str = "sing-box.json";
 const LOG_FILE: &str = "sing-box.log";
 
@@ -84,6 +88,11 @@ pub struct Status {
     /// bundled copy and have never verified a fetched one.
     pub relay_config_version: Option<i64>,
     pub relay_count: usize,
+    /// Bare hostname of the CF front, when the signed list names one. Handed to
+    /// the page because the front is the ONE circumvention layer this platform
+    /// can apply to a window already open (the proxy cannot be: wry fixes it
+    /// when the webview is built), so the page owns it, not Rust.
+    pub relay_front: Option<String>,
     /// The tunnel came up because the island was unreachable directly, not
     /// because the user asked. Lets the UI explain itself rather than looking
     /// like it flipped its own switch.
@@ -277,7 +286,14 @@ pub fn start(app: &AppHandle) -> Option<u16> {
     // call site rather than inside write_config, which is under a test that
     // pins one outbound per relay.
     let pool = crate::user_relay::merge(&config.relays, &crate::user_relay::list(app));
-    write_config(&config_path, &pool, port, &cache_dir.join(LOG_FILE)).ok()?;
+    write_config(
+        &config_path,
+        &pool,
+        port,
+        &cache_dir.join(LOG_FILE),
+        config.probe.as_deref(),
+    )
+    .ok()?;
 
     let command = app
         .shell()
@@ -451,12 +467,18 @@ fn wait_for_port(port: u16) -> bool {
 /// There is deliberately no `direct` outbound: with the tunnel on, a relay
 /// pool that is entirely unreachable must fail loudly rather than quietly
 /// carry the user's traffic in the clear.
-fn write_config(path: &Path, relays: &[Relay], port: u16, log_path: &Path) -> std::io::Result<()> {
+fn write_config(
+    path: &Path,
+    relays: &[Relay],
+    port: u16,
+    log_path: &Path,
+    probe: Option<&str>,
+) -> std::io::Result<()> {
     let mut outbounds: Vec<Value> = vec![json!({
         "type": "urltest",
         "tag": "out",
         "outbounds": relays.iter().map(|r| r.tag.clone()).collect::<Vec<_>>(),
-        "url": "https://api.rcq.app/health",
+        "url": probe.unwrap_or(DEFAULT_PROBE),
         "interval": "5m",
         "tolerance": 50,
     })];
@@ -542,7 +564,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("sing-box.json");
         let relays = relays();
-        write_config(&path, &relays, 1080, &dir.join("sing-box.log")).unwrap();
+        write_config(&path, &relays, 1080, &dir.join("sing-box.log"), None).unwrap();
 
         let config: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         let outbounds = config["outbounds"].as_array().unwrap();

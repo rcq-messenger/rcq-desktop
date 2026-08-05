@@ -63,6 +63,7 @@ fn bypass_status(app: tauri::AppHandle) -> bypass::Status {
         running: bypass::is_running(),
         tried_at_startup: bypass::tried_at_startup(),
         relay_config_version: config.as_ref().and_then(|c| c.version),
+        relay_front: config.as_ref().and_then(|c| c.front.clone()),
         relay_count: config.map(|c| c.relays.len()).unwrap_or(0),
         auto: bypass::is_auto(&app),
         needs_relaunch: bypass::needs_relaunch(),

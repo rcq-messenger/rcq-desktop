@@ -89,6 +89,11 @@ export interface BypassStatus {
   /** The tunnel came up because the island was unreachable, not because the
    *  user asked. The UI says so rather than looking like it flipped itself. */
   auto: boolean
+  /** The island stopped answering while the app was running and the tunnel was
+   *  raised for it — but a webview's proxy is fixed when the webview is built,
+   *  so nothing actually changes until relaunch. Say so: a tunnel the page is
+   *  not using looks exactly like an app that is simply broken. */
+  needs_relaunch: boolean
 }
 
 /** A relay the user pasted by hand. Unsigned by nature — the whole point is

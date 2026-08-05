@@ -65,6 +65,7 @@ fn bypass_status(app: tauri::AppHandle) -> bypass::Status {
         relay_config_version: config.as_ref().and_then(|c| c.version),
         relay_count: config.map(|c| c.relays.len()).unwrap_or(0),
         auto: bypass::is_auto(&app),
+        needs_relaunch: bypass::needs_relaunch(),
     }
 }
 
@@ -163,6 +164,11 @@ pub fn run() {
                 } else {
                     bypass::auto_engage_if_blocked(app.handle())
                 };
+                // The startup probe answers "is it blocked right now". A network
+                // that starts blocking with the window already open used to go
+                // unnoticed until the next launch, which is the moment nobody
+                // suspects a setting. This keeps asking.
+                bypass::watch(app.handle());
 
                 let nav_handle = app.handle().clone();
                 let mut window = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())

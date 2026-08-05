@@ -23,6 +23,7 @@ import {
   type ReactNode,
 } from 'react'
 import { useIdentity } from './identity-context'
+import { refreshFrontRouting } from './front'
 
 export type WsEvent = { type: string; [key: string]: unknown }
 type Listener = (ev: WsEvent) => void
@@ -112,7 +113,17 @@ export function WSProvider({ children }: { children: ReactNode }) {
       // behaviour; prevents thundering-herd on backend bounces.
       const delay = Math.min(30_000, 1000 * 2 ** backoffRef.current)
       backoffRef.current = Math.min(backoffRef.current + 1, 5)
-      reconnectTimerRef.current = setTimeout(connect, delay)
+      // A socket that keeps dying is the first sign of a network that started
+      // blocking mid-session, and it is the only such sign the desktop gets:
+      // there is no route ladder re-walking underneath it. Re-decide the front
+      // before redialling, from the second failure on — once is a bounce, twice
+      // is worth a look — and the dial below then picks up whatever it decided.
+      const redial = () => { void connect() }
+      if (backoffRef.current >= 2) {
+        reconnectTimerRef.current = setTimeout(() => { void refreshFrontRouting().finally(redial) }, delay)
+      } else {
+        reconnectTimerRef.current = setTimeout(redial, delay)
+      }
     })
     ws.addEventListener('error', () => {
       // The 'close' handler above runs after every error, so

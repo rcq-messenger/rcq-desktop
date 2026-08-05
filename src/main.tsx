@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import App from './App'
 import './index.css'
 import { isTauri } from './lib/desktop'
+import { installFrontRouting, refreshFrontRouting } from './lib/front'
 import { wipeLocalAccountData } from './lib/auth'
 import { idbClearAll } from './lib/signal-persist'
 
@@ -10,6 +11,23 @@ import { idbClearAll } from './lib/signal-persist'
 // override in index.css applies. The web build never gets this class, so
 // chat.rcq.app keeps the grey dark theme.
 if (isTauri()) document.documentElement.classList.add('desktop')
+
+// Desktop only: put the Cloudflare front in front of the flagship, so a
+// blocked island has an answer that does not need the tunnel (which on this
+// platform cannot be applied to a window that is already open).
+//
+// Not for the browser build. chat.rcq.app is served from the island's own
+// address, so a user who cannot reach the island never loaded this page to
+// begin with — there is nothing for a front to rescue there.
+//
+// Installed before React mounts so the very first request already goes through
+// the wrapper, and probed without blocking the mount: a healthy user must not
+// wait on a censorship check, and a blocked one is no worse off than today
+// while it runs.
+if (isTauri()) {
+  installFrontRouting()
+  void refreshFrontRouting()
+}
 
 // ★ One origin, one session.
 //

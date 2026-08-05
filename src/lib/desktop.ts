@@ -86,6 +86,10 @@ export interface BypassStatus {
   tried_at_startup: boolean
   relay_config_version: number | null
   relay_count: number
+  /** Bare hostname of the CF front, when the signed list names one. The page
+   *  owns the front rather than Rust, because it is the one circumvention
+   *  layer that can be applied to a window already open. */
+  relay_front: string | null
   /** The tunnel came up because the island was unreachable, not because the
    *  user asked. The UI says so rather than looking like it flipped itself. */
   auto: boolean

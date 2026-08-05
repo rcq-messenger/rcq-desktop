@@ -65,6 +65,19 @@ pub struct RelayConfig {
     /// Extra mirrors this payload names for itself, so a new delivery channel
     /// reaches installed clients without a release.
     pub sources: Vec<Source>,
+    /// Bare hostname of the CF front, when this payload names one. The front
+    /// and the island share the `rcq.app` apex today, so a single rule by name
+    /// takes both; moving the front to a domain bought elsewhere has to be
+    /// doable without shipping a build, because the people who need it are the
+    /// ones who cannot reach us to get one.
+    pub front: Option<String>,
+    /// Full https URL the relay selector races each relay against.
+    ///
+    /// ⚠ Unlike `front`, this one travels THROUGH each relay, so every relay's
+    /// allow-list has to permit the host before a payload names it. Relays
+    /// derive that list from this same payload but on a timer, and a probe they
+    /// do not yet allow makes urltest pick nothing at all.
+    pub probe: Option<String>,
 }
 
 /// The list to use right now: the freshest verified payload we have.
@@ -224,10 +237,27 @@ pub fn verify_and_parse(text: &str, min_version: Option<i64>) -> Option<RelayCon
         })
         .unwrap_or_default();
 
+    // Transport names. A `front` with a slash in it is refused: it is a bare
+    // hostname by contract, and letting a path through would quietly build
+    // URLs that fail in a way pointing at the network rather than the payload.
+    let transport = root.get("transport");
+    let front = transport
+        .and_then(|t| t.get("front"))
+        .and_then(Value::as_str)
+        .filter(|h| !h.is_empty() && !h.contains('/'))
+        .map(str::to_owned);
+    let probe = transport
+        .and_then(|t| t.get("probe"))
+        .and_then(Value::as_str)
+        .filter(|u| u.starts_with("https://"))
+        .map(str::to_owned);
+
     Some(RelayConfig {
         version,
         relays: relays.into_iter().map(|(_, r)| r).collect(),
         sources,
+        front,
+        probe,
     })
 }
 
@@ -312,6 +342,57 @@ mod tests {
         expected.sort_by_key(|(p, _)| *p);
         let got: Vec<String> = config.relays.iter().map(|r| r.tag.clone()).collect();
         assert_eq!(got, expected.into_iter().map(|(_, t)| t).collect::<Vec<_>>());
+    }
+
+    /// The live payload plus a `transport` block, re-signed with the production
+    /// key. This is the whole delivery mechanism for moving off the apex, so it
+    /// is worth a genuinely signed fixture rather than a hand-built one.
+    const TRANSPORT: &str = include_str!("../test-fixtures/relay-config-transport.json");
+
+    #[test]
+    fn a_signed_transport_block_names_the_front_and_the_probe() {
+        let config = verify_and_parse(TRANSPORT, None).expect("fixture must verify");
+        assert_eq!(config.front.as_deref(), Some("edge.northfieldlabs.fyi"));
+        assert_eq!(
+            config.probe.as_deref(),
+            Some("https://edge.northfieldlabs.fyi/health")
+        );
+    }
+
+    #[test]
+    fn a_payload_without_a_transport_block_names_neither() {
+        // Absent means "keep the compiled-in names", which is what None tells
+        // the callers. The bundled payload has no transport block.
+        let config = verify_and_parse(BUNDLED, None).unwrap();
+        assert!(config.front.is_none());
+        assert!(config.probe.is_none());
+    }
+
+    #[test]
+    fn an_unsigned_front_is_ignored() {
+        // Whoever can set this decides where a censored client sends its API
+        // traffic, so it has to fall on the signature check like anything else.
+        let mut root: Value = serde_json::from_str(TRANSPORT).unwrap();
+        root["transport"]["front"] = Value::String("evil.example".into());
+        assert!(verify_and_parse(&root.to_string(), None).is_none());
+    }
+
+    /// Genuinely signed by the production key, and malformed anyway: a front
+    /// carrying a path and a probe over plain http. The signature cannot catch
+    /// a payload that really is ours, so only the parser's own rules can.
+    const TRANSPORT_BAD: &str =
+        include_str!("../test-fixtures/relay-config-transport-bad.json");
+
+    #[test]
+    fn a_malformed_transport_block_falls_back_to_the_compiled_in_names() {
+        let config = verify_and_parse(TRANSPORT_BAD, None)
+            .expect("the payload itself is validly signed and must still parse");
+        // Both refused, so the callers keep their compiled-in names rather than
+        // building URLs that fail in a way pointing at the network.
+        assert!(config.front.is_none(), "a front with a path must be refused");
+        assert!(config.probe.is_none(), "a non-https probe must be refused");
+        // And the rest of the payload is untouched by the bad block.
+        assert!(!config.relays.is_empty());
     }
 
     #[test]

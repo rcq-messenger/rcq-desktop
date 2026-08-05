@@ -2,14 +2,16 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
 import './index.css'
-import { isTauri } from './lib/desktop'
-import { installFrontRouting, refreshFrontRouting } from './lib/front'
+import { bypassStatus, isTauri } from './lib/desktop'
+import { installFrontRouting, refreshFrontRouting, setFrontHost } from './lib/front'
 import { wipeLocalAccountData } from './lib/auth'
 import { idbClearAll } from './lib/signal-persist'
 
-// Desktop (Tauri) build only: mark the root so the true-black dark theme
-// override in index.css applies. The web build never gets this class, so
-// chat.rcq.app keeps the grey dark theme.
+// Desktop (Tauri) build only: mark the root so the desktop-sized root font in
+// index.css applies. The palette is no longer keyed off this — both surfaces
+// are true black since 2026-08-05 — but the type size still is: it answers a
+// window on a monitor, and lifting it in the browser would grow the layout on
+// phones too.
 if (isTauri()) document.documentElement.classList.add('desktop')
 
 // Desktop only: put the Cloudflare front in front of the flagship, so a
@@ -26,7 +28,16 @@ if (isTauri()) document.documentElement.classList.add('desktop')
 // while it runs.
 if (isTauri()) {
   installFrontRouting()
-  void refreshFrontRouting()
+  void (async () => {
+    // Ask the signed list where the front lives before deciding whether to use
+    // it. Local call, no network: Rust already holds the verified payload.
+    // Nothing names one today, so this is the compiled-in host until a config
+    // push moves it — which is the whole point, since the front and the island
+    // share the apex and one rule by name takes both.
+    const status = await bypassStatus()
+    if (status?.relay_front) setFrontHost(`https://${status.relay_front}`)
+    await refreshFrontRouting()
+  })()
 }
 
 // ★ One origin, one session.

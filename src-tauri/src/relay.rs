@@ -7,17 +7,20 @@
 // memory -> disk -> a bundled copy so a fresh install on a censored network
 // still has a list to try.
 
-use base64::{engine::general_purpose::STANDARD as B64, Engine};
-use ed25519_dalek::{Signature, VerifyingKey};
 use serde_json::Value;
 use std::path::Path;
 
-// Raw 32-byte Ed25519 public key, the same one embedded in both phone clients.
-const PUBKEY_B64: &str = "TY834OFcBvtUqHcnVw/QrPBOaEAZo7a1GAmABMhjkT8=";
+// Which keys may sign this payload lives in `signing_keys` — a SET, so the
+// signing key can change without a release. See that module for why the set is
+// compiled in rather than carried by the payload it authenticates.
 
-// Tried in order, first signature-valid payload wins. GitHub raw is primary:
-// RU DPI hits it far less than Cloudflare.
-const SOURCES: [&str; 2] = [
+// The two mirrors compiled into the app. Tried in order, first signature-valid
+// payload wins. GitHub raw is primary: RU DPI hits it far less than Cloudflare.
+//
+// ⚠ These two names are also the entire attack surface of the delivery channel:
+// a censor who blocks both leaves this install with the bundled pool and a
+// hand-pasted token, which is what the payload's own `sources` list is for.
+const BUNDLED_SOURCES: [&str; 2] = [
     "https://raw.githubusercontent.com/rcq-messenger/rcq-ios/main/relay-config.json",
     "https://relay.rcq.app/v1/config",
 ];
@@ -48,6 +51,9 @@ pub struct Relay {
 pub struct RelayConfig {
     pub version: Option<i64>,
     pub relays: Vec<Relay>,
+    /// Extra mirrors this payload names for itself, so a new delivery channel
+    /// reaches installed clients without a release.
+    pub sources: Vec<String>,
 }
 
 /// The list to use right now: the freshest verified payload we have.
@@ -55,8 +61,8 @@ pub struct RelayConfig {
 pub fn load(cache_dir: &Path) -> Option<RelayConfig> {
     std::fs::read_to_string(cache_dir.join(CACHE_FILE))
         .ok()
-        .and_then(|t| verify_and_parse(&t))
-        .or_else(|| verify_and_parse(BUNDLED))
+        .and_then(|t| verify_and_parse(&t, None))
+        .or_else(|| verify_and_parse(BUNDLED, None))
 }
 
 /// Pull a fresh list and cache it for the next launch. Best-effort: on a
@@ -77,13 +83,32 @@ pub fn refresh(cache_dir: &Path, proxy: Option<&str>) -> Option<RelayConfig> {
     }
     let client = client.build().ok()?;
 
-    for url in SOURCES {
-        let Ok(resp) = client.get(url).send() else { continue };
+    // Mirrors to walk, freshest knowledge first, then the compiled-in pair, and
+    // the floor to hold them to.
+    //
+    // ★ The bundled pair is ALWAYS appended and never replaced. A published
+    // source list is an ADDITION, not a substitution — otherwise one bad push,
+    // a typo'd host or a lapsed domain, points every install at a dead mirror
+    // with no route back and no later push able to reach it.
+    let known = load(cache_dir);
+    let floor = known.as_ref().and_then(|c| c.version);
+    let mut urls: Vec<String> = known.map(|c| c.sources).unwrap_or_default();
+    for bundled in BUNDLED_SOURCES {
+        if !urls.iter().any(|u| u == bundled) {
+            urls.push(bundled.to_owned());
+        }
+    }
+    // A refresh runs before the tunnel is up, so each dead entry costs its full
+    // timeout; a payload naming fifty would turn launch into a stall.
+    urls.truncate(8);
+
+    for url in urls {
+        let Ok(resp) = client.get(&url).send() else { continue };
         if !resp.status().is_success() {
             continue;
         }
         let Ok(body) = resp.text() else { continue };
-        let Some(config) = verify_and_parse(&body) else { continue };
+        let Some(config) = verify_and_parse(&body, floor) else { continue };
         let _ = std::fs::create_dir_all(cache_dir);
         let _ = std::fs::write(cache_dir.join(CACHE_FILE), &body);
         return Some(config);
@@ -93,7 +118,7 @@ pub fn refresh(cache_dir: &Path, proxy: Option<&str>) -> Option<RelayConfig> {
 
 /// Verify the signature, then parse the relays in priority order. Any failure
 /// returns None: an unsigned or mis-signed payload is treated as no payload.
-pub fn verify_and_parse(text: &str) -> Option<RelayConfig> {
+pub fn verify_and_parse(text: &str, min_version: Option<i64>) -> Option<RelayConfig> {
     let root: Value = serde_json::from_str(text).ok()?;
     let sig_b64 = root.get("sig")?.as_str()?;
 
@@ -102,10 +127,13 @@ pub fn verify_and_parse(text: &str) -> Option<RelayConfig> {
     let mut message = String::new();
     canonical(&signed, &mut message);
 
-    let key_bytes: [u8; 32] = B64.decode(PUBKEY_B64).ok()?.try_into().ok()?;
-    let key = VerifyingKey::from_bytes(&key_bytes).ok()?;
-    let signature = Signature::from_slice(&B64.decode(sig_b64).ok()?).ok()?;
-    key.verify_strict(message.as_bytes(), &signature).ok()?;
+    if !crate::signing_keys::verify(
+        crate::signing_keys::Role::RelayConfig,
+        message.as_bytes(),
+        sig_b64,
+    ) {
+        return None;
+    }
 
     let mut relays: Vec<(i64, Relay)> = Vec::new();
     for entry in root.get("relays")?.as_array()? {
@@ -136,10 +164,43 @@ pub fn verify_and_parse(text: &str) -> Option<RelayConfig> {
     }
     relays.sort_by_key(|(priority, _)| *priority);
 
+    let version = root.get("version").and_then(Value::as_i64);
+    // Refuse to move BACKWARDS. A signature proves a payload came from us; it
+    // says nothing about WHEN. Anyone who can answer for a mirror, or sit on the
+    // path to one, can replay an OLD signed payload and walk this install back
+    // onto a relay set we retired months ago — no forgery, just an old truth
+    // served late. The updater was never exposed to this because it compares
+    // against the installed version; this list had no such check.
+    if let (Some(v), Some(floor)) = (version, min_version) {
+        if v < floor {
+            return None;
+        }
+    }
+
+    let sources = root
+        .get("sources")
+        .and_then(Value::as_array)
+        .map(|entries| {
+            entries
+                .iter()
+                .filter(|e| e.get("type").and_then(Value::as_str).unwrap_or("https") == "https")
+                .filter_map(|e| e.get("url").and_then(Value::as_str))
+                .filter(|u| u.starts_with("https://"))
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default();
+
     Some(RelayConfig {
-        version: root.get("version").and_then(Value::as_i64),
+        version,
         relays: relays.into_iter().map(|(_, r)| r).collect(),
+        sources,
     })
+}
+
+#[cfg(test)]
+pub(crate) fn canonical_for_test(v: &Value, out: &mut String) {
+    canonical(v, out)
 }
 
 /// Canonical JSON, byte-for-byte what the Python signer produces with
@@ -196,13 +257,13 @@ mod tests {
 
     #[test]
     fn bundled_payload_verifies() {
-        let config = verify_and_parse(BUNDLED).expect("bundled payload must verify");
+        let config = verify_and_parse(BUNDLED, None).expect("bundled payload must verify");
         assert!(!config.relays.is_empty());
     }
 
     #[test]
     fn relays_come_back_in_priority_order() {
-        let config = verify_and_parse(BUNDLED).unwrap();
+        let config = verify_and_parse(BUNDLED, None).unwrap();
         let root: Value = serde_json::from_str(BUNDLED).unwrap();
         let mut expected: Vec<(i64, String)> = root["relays"]
             .as_array()
@@ -224,14 +285,14 @@ mod tests {
     fn a_tampered_payload_is_rejected() {
         let mut root: Value = serde_json::from_str(BUNDLED).unwrap();
         root["relays"][0]["server"] = Value::String("127.0.0.1".into());
-        assert!(verify_and_parse(&root.to_string()).is_none());
+        assert!(verify_and_parse(&root.to_string(), None).is_none());
     }
 
     #[test]
     fn an_unsigned_payload_is_rejected() {
         let mut root: Value = serde_json::from_str(BUNDLED).unwrap();
         root.as_object_mut().unwrap().remove("sig");
-        assert!(verify_and_parse(&root.to_string()).is_none());
+        assert!(verify_and_parse(&root.to_string(), None).is_none());
     }
 
     #[test]

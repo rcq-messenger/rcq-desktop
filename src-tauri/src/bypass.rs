@@ -464,7 +464,7 @@ mod tests {
     use super::*;
 
     fn relays() -> Vec<Relay> {
-        relay::verify_and_parse(include_str!("../relay-config.json"))
+        relay::verify_and_parse(include_str!("../relay-config.json"), None)
             .unwrap()
             .relays
     }

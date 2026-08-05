@@ -9,6 +9,7 @@ mod user_relay;
 mod bypass;
 #[cfg(desktop)]
 mod relay;
+mod signing_keys;
 
 #[cfg(desktop)]
 use tauri::{

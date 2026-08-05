@@ -27,6 +27,7 @@ import { ed25519 } from '@noble/curves/ed25519'
 import { b64ToBytes, bytesToB64, encryptV1, type Envelope, type PeerBundle, type WebIdentity } from './crypto'
 import { suggestNickname, persistIdentity } from './auth'
 import { verifyHomeIslandRecord, type IslandHome } from './federation'
+import { verifySigned } from './signing-keys'
 
 const STORE_KEY = 'rcq.web.multihome.v1'
 const PEER_CACHE_KEY = 'rcq.web.multihome.peers.v1'
@@ -184,9 +185,9 @@ export async function addBackupIsland(
 const AUTO_ISLANDS_URL =
   'https://raw.githubusercontent.com/rcq-messenger/rcq-servers/main/auto-islands.json'
 const AUTO_ISLANDS_SIG_URL = `${AUTO_ISLANDS_URL}.sig`
-// Maintainer Ed25519 public key (raw 32-byte b64), the same key the mobile
-// clients pin for relay-config.
-const AUTO_ISLANDS_PUBKEY = b64ToBytes('TY834OFcBvtUqHcnVw/QrPBOaEAZo7a1GAmABMhjkT8=')
+// Verified against the ISLAND_LIST role in `signing-keys.ts` — its own role,
+// because steering a backup mailbox and steering a tunnel are different powers
+// and should not stay welded to one key.
 
 /// True when the auto-pick toggle is on (an auto-picked home exists).
 export function hasAutoBackup(): boolean {
@@ -217,7 +218,7 @@ async function fetchSignedAutoIslands(): Promise<string[]> {
   if (!jsonRes.ok || !sigRes.ok) throw new Error('no island')
   const bytes = new Uint8Array(await jsonRes.arrayBuffer())
   const sig = b64ToBytes((await sigRes.text()).trim())
-  if (!ed25519.verify(sig, bytes, AUTO_ISLANDS_PUBKEY)) throw new Error('no island')
+  if (!verifySigned('island-list', bytes, sig)) throw new Error('no island')
   const doc = JSON.parse(new TextDecoder().decode(bytes)) as { islands?: string[] }
   return Array.isArray(doc.islands) ? doc.islands : []
 }

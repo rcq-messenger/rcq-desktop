@@ -7,6 +7,7 @@
 // memory -> disk -> a bundled copy so a fresh install on a censored network
 // still has a list to try.
 
+use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use serde_json::Value;
 use std::path::Path;
 
@@ -24,6 +25,16 @@ const BUNDLED_SOURCES: [&str; 2] = [
     "https://raw.githubusercontent.com/rcq-messenger/rcq-ios/main/relay-config.json",
     "https://relay.rcq.app/v1/config",
 ];
+
+/// Where a payload can be read from. `Https` is a mirror URL; `DnsTxt` is a name
+/// whose TXT record carries a signed seed, read over DoH — a channel that
+/// survives both mirror names being blocked, since it rides resolvers half the
+/// internet needs to stay up.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Source {
+    Https(String),
+    DnsTxt(String),
+}
 
 pub const CACHE_FILE: &str = "relay-config.json";
 
@@ -53,7 +64,7 @@ pub struct RelayConfig {
     pub relays: Vec<Relay>,
     /// Extra mirrors this payload names for itself, so a new delivery channel
     /// reaches installed clients without a release.
-    pub sources: Vec<String>,
+    pub sources: Vec<Source>,
 }
 
 /// The list to use right now: the freshest verified payload we have.
@@ -92,22 +103,34 @@ pub fn refresh(cache_dir: &Path, proxy: Option<&str>) -> Option<RelayConfig> {
     // with no route back and no later push able to reach it.
     let known = load(cache_dir);
     let floor = known.as_ref().and_then(|c| c.version);
-    let mut urls: Vec<String> = known.map(|c| c.sources).unwrap_or_default();
+    let mut sources: Vec<Source> = known.map(|c| c.sources).unwrap_or_default();
     for bundled in BUNDLED_SOURCES {
-        if !urls.iter().any(|u| u == bundled) {
-            urls.push(bundled.to_owned());
+        let s = Source::Https(bundled.to_owned());
+        if !sources.contains(&s) {
+            sources.push(s);
         }
     }
     // A refresh runs before the tunnel is up, so each dead entry costs its full
     // timeout; a payload naming fifty would turn launch into a stall.
-    urls.truncate(8);
+    sources.truncate(8);
 
-    for url in urls {
-        let Ok(resp) = client.get(&url).send() else { continue };
-        if !resp.status().is_success() {
-            continue;
-        }
-        let Ok(body) = resp.text() else { continue };
+    for source in sources {
+        let body = match source {
+            Source::Https(ref url) => {
+                let Ok(resp) = client.get(url).send() else { continue };
+                if !resp.status().is_success() {
+                    continue;
+                }
+                let Ok(text) = resp.text() else { continue };
+                text
+            }
+            Source::DnsTxt(ref name) => {
+                let Some(value) = crate::dns_txt::fetch(name, &client) else { continue };
+                let Ok(raw) = B64.decode(value) else { continue };
+                let Ok(text) = String::from_utf8(raw) else { continue };
+                text
+            }
+        };
         let Some(config) = verify_and_parse(&body, floor) else { continue };
         let _ = std::fs::create_dir_all(cache_dir);
         let _ = std::fs::write(cache_dir.join(CACHE_FILE), &body);
@@ -183,10 +206,20 @@ pub fn verify_and_parse(text: &str, min_version: Option<i64>) -> Option<RelayCon
         .map(|entries| {
             entries
                 .iter()
-                .filter(|e| e.get("type").and_then(Value::as_str).unwrap_or("https") == "https")
-                .filter_map(|e| e.get("url").and_then(Value::as_str))
-                .filter(|u| u.starts_with("https://"))
-                .map(str::to_owned)
+                .filter_map(|e| match e.get("type").and_then(Value::as_str).unwrap_or("https") {
+                    "https" => e
+                        .get("url")
+                        .and_then(Value::as_str)
+                        .filter(|u| u.starts_with("https://"))
+                        .map(|u| Source::Https(u.to_owned())),
+                    "dns-txt" => e
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .filter(|n| !n.is_empty())
+                        .map(|n| Source::DnsTxt(n.to_owned())),
+                    // A channel this build cannot speak; the rest stays usable.
+                    _ => None,
+                })
                 .collect()
         })
         .unwrap_or_default();

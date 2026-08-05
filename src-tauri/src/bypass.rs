@@ -88,6 +88,11 @@ pub struct Status {
     /// because the user asked. Lets the UI explain itself rather than looking
     /// like it flipped its own switch.
     pub auto: bool,
+    /// The island stopped answering while the app was running and the tunnel was
+    /// raised for it — but a webview's proxy is fixed at creation, so nothing
+    /// changes until relaunch. The UI has to say so; silently running a tunnel
+    /// the page does not use would look exactly like the app being broken.
+    pub needs_relaunch: bool,
 }
 
 pub const fn supported() -> bool {
@@ -198,6 +203,68 @@ pub fn auto_engage_if_blocked(app: &AppHandle) -> Option<u16> {
 /// list, a core that never comes up. The caller then builds the window with no
 /// proxy: a direct connection is worse for a censored user than a tunnelled
 /// one, but far better than a window that never appears.
+/// Set once the runtime watcher has raised the tunnel mid-session.
+static NEEDS_RELAUNCH: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn needs_relaunch() -> bool {
+    NEEDS_RELAUNCH.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Watch the island while the app runs, and raise the tunnel if it goes away.
+///
+/// The phones re-walk their whole route ladder on the fly. The desktop cannot:
+/// wry fixes a webview's proxy when the webview is created and offers no way to
+/// change it afterwards, so the page keeps talking directly no matter what we
+/// start underneath it. Until this, the startup probe was the only one there
+/// was — a network that began blocking while the window was open went unnoticed
+/// until the user restarted, which is the moment they were least likely to
+/// suspect a setting.
+///
+/// So this does the half that is possible: notice, bring the core up so it is
+/// ready, and flag that a relaunch will finish the job. Raising the tunnel
+/// without saying that would be worse than doing nothing — a tunnel the page
+/// does not use looks identical to an app that is simply broken.
+///
+/// Deliberately unhurried. Three consecutive failures a minute apart before
+/// acting, so a suspended laptop or one dropped request cannot flip it, and the
+/// watch ends once there is nothing left to decide.
+pub fn watch(app: &AppHandle) {
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        let mut consecutive_failures = 0u8;
+        loop {
+            std::thread::sleep(Duration::from_secs(60));
+
+            let state = load(&handle);
+            // Already tunnelled, or told not to: nothing to decide.
+            if is_running() || state.auto_disabled || state.enabled {
+                continue;
+            }
+            let Some(host) = state.host.clone() else { continue };
+
+            if probe_once(&host, Duration::from_secs(5)) {
+                consecutive_failures = 0;
+                continue;
+            }
+            consecutive_failures += 1;
+            if consecutive_failures < 3 {
+                continue;
+            }
+
+            log::warn!("island {host} stopped answering — raising the tunnel for the next launch");
+            if start(&handle).is_some() {
+                let mut next = load(&handle);
+                next.auto = true;
+                let _ = save(&handle, &next);
+                NEEDS_RELAUNCH.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+            // Either it came up and a relaunch is what remains, or it could not
+            // and probing again this session changes nothing.
+            return;
+        }
+    });
+}
+
 pub fn start(app: &AppHandle) -> Option<u16> {
     TRIED_AT_STARTUP.store(true, Ordering::Relaxed);
     let cache_dir = app.path().app_config_dir().ok()?;

@@ -145,7 +145,23 @@ export function BypassShield({ className = '' }: { className?: string }) {
           {/* The proxy is bound to the webview when the window is built, so a
               flip only takes effect after a restart. Saying so here is what
               stops the switch from looking broken. */}
-          {status.supported && wanted !== status.running && (
+          {/* Raised mid-session because the island stopped answering. The switch
+              and the core now AGREE — both on — so the condition below would say
+              nothing, and the user would be looking at a tunnel the page is not
+              using with no explanation for why the app still cannot connect. */}
+          {status.needs_relaunch && (
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs text-fg-dim">{t('bypass.needs_relaunch')}</p>
+              <button
+                onClick={() => void relaunchApp()}
+                className="shrink-0 h-7 px-2 rounded-md border border-line text-xs font-medium hover:bg-surface-dim transition-colors"
+              >
+                {t('settings.bypass.restart')}
+              </button>
+            </div>
+          )}
+
+          {status.supported && !status.needs_relaunch && wanted !== status.running && (
             <div className="flex items-center justify-between gap-2">
               <p className="text-xs text-fg-dim">
                 {status.enabled && status.tried_at_startup

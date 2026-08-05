@@ -222,6 +222,8 @@ export const en: Record<string, string> = {
   'bypass.shield.unverified': 'Going through a relay, but nothing has come back yet',
   'bypass.shield.off': 'Circumvention is off',
   'bypass.auto_note': 'Turned on automatically: the island did not answer directly.',
+  'bypass.needs_relaunch':
+    'The connection stopped working, so circumvention was turned on. Restart RCQ to start using it.',
   'settings.bypass.relay_add': 'Your own relay',
   'settings.bypass.relay_remove': 'remove',
   'settings.bypass.relay_bad': 'That does not look like a usable relay link.',

@@ -221,6 +221,8 @@ export const ru: Record<string, string> = {
   'bypass.shield.unverified': 'Идём через релей, но ответа пока не было',
   'bypass.shield.off': 'Обход выключен',
   'bypass.auto_note': 'Включён автоматически: остров не отвечал напрямую.',
+  'bypass.needs_relaunch':
+    'Связь пропала, поэтому обход включён. Чтобы он заработал, перезапустите RCQ.',
   'settings.bypass.relay_add': 'Свой релей',
   'settings.bypass.relay_remove': 'убрать',
   'settings.bypass.relay_bad': 'Это не похоже на рабочую ссылку релея.',

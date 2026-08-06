@@ -5,11 +5,12 @@
 
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { StatusIcon } from '../components/StatusIcon'
+import { PersonAvatar } from '../components/PersonAvatar'
 import { Api, type UserInfo } from '../lib/api'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
 import { getCrossIsland } from '../lib/crossisland-store'
+import { uploadEncryptedImage } from '../lib/media'
 
 const GENDER_OPTIONS: { value: string; key: string }[] = [
   { value: '', key: 'profile.gender.dont_share' },
@@ -177,8 +178,15 @@ function ReadView({
     <div className="space-y-4">
       <section className="bg-surface rounded-lg border border-line p-4 space-y-1">
         <div className="flex items-center gap-2">
-          {/* Cross-island: presence doesn't cross islands → gray flower. */}
-          <StatusIcon status={info.status} size={22} crossIsland={!!crossIslandHost} />
+          {/* Cross-island: presence doesn't cross islands → gray flower, and
+              the picture lives on their island, so it stays a flower too. */}
+          <PersonAvatar
+            status={info.status}
+            size={44}
+            mediaId={info.avatar_media_id}
+            mediaKey={info.avatar_media_key}
+            crossIsland={!!crossIslandHost}
+          />
           <div className="text-2xl font-bold">{info.nickname || `#${info.uin}`}</div>
         </div>
         <div className="font-mono text-xs text-fg-dim">
@@ -274,9 +282,68 @@ function EditView({
   function patch<K extends keyof UserInfo>(key: K, value: UserInfo[K]) {
     setDraft({ ...draft, [key]: value })
   }
+  const [picBusy, setPicBusy] = useState(false)
+  const { identity } = useIdentity()
+  // The blob is encrypted here and uploaded like any other image; the island
+  // only ever stores ciphertext plus the key it hands to people allowed to see
+  // it. Clearing sends two blank strings, which is how the island reads
+  // "remove" (leaving the fields out means "do not touch").
+  async function pickPicture(file: File | null) {
+    if (!file || !identity) return
+    setPicBusy(true)
+    try {
+      const up = await uploadEncryptedImage(identity.apiBase, file)
+      if (up) {
+        await Api.updateProfile(identity, { avatar_media_id: up.mediaId, avatar_media_key: up.keyB64 })
+        setDraft({ ...draft, avatar_media_id: up.mediaId, avatar_media_key: up.keyB64 })
+      }
+    } finally {
+      setPicBusy(false)
+    }
+  }
+  async function clearPicture() {
+    if (!identity) return
+    setPicBusy(true)
+    try {
+      await Api.updateProfile(identity, { avatar_media_id: '', avatar_media_key: '' })
+      setDraft({ ...draft, avatar_media_id: null, avatar_media_key: null })
+    } finally {
+      setPicBusy(false)
+    }
+  }
   return (
     <div className="space-y-4">
       <section className="bg-surface rounded-lg border border-line p-4 space-y-3">
+        <div className="flex items-center gap-3">
+          <PersonAvatar
+            status={draft.status}
+            size={56}
+            mediaId={draft.avatar_media_id}
+            mediaKey={draft.avatar_media_key}
+          />
+          <div className="flex flex-col gap-1">
+            <label className="text-sm text-accent cursor-pointer hover:underline">
+              {draft.avatar_media_id ? t('profile.picture.change') : t('profile.picture.set')}
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                disabled={picBusy}
+                onChange={(e) => void pickPicture(e.target.files?.[0] ?? null)}
+              />
+            </label>
+            {draft.avatar_media_id && (
+              <button
+                type="button"
+                disabled={picBusy}
+                onClick={() => void clearPicture()}
+                className="text-xs text-fg-secondary hover:underline text-left"
+              >
+                {t('profile.picture.remove')}
+              </button>
+            )}
+          </div>
+        </div>
         <Input
           label={t('profile.field.nickname')}
           value={draft.nickname}

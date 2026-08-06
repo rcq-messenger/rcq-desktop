@@ -13,7 +13,7 @@ import { ContactActionsMenu } from '../components/ContactActionsMenu'
 import { GroupActionsMenu } from '../components/GroupActionsMenu'
 import { CreateGroupSheet } from '../components/CreateGroupSheet'
 import { GroupAvatar } from '../components/GroupAvatar'
-import { StatusIcon } from '../components/StatusIcon'
+import { PersonAvatar } from '../components/PersonAvatar'
 import { StatusPickerButton } from '../components/StatusPicker'
 import { ThemeToggle } from '../components/ThemeToggle'
 import {
@@ -646,7 +646,13 @@ function ContactRow({
           className="flex items-center gap-3 flex-1 min-w-0"
           aria-label={t('contacts.open_chat')}
         >
-          <StatusIcon status={contact.status} size={20} />
+          <PersonAvatar
+            status={contact.status}
+            size={28}
+            mediaId={contact.avatar_media_id}
+            mediaKey={contact.avatar_media_key}
+            crossIsland={!!contact.host}
+          />
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5">
               <span className={'truncate ' + (unread > 0 ? 'font-bold' : 'font-medium')}>

@@ -747,4 +747,7 @@ export const en: Record<string, string> = {
   'diag.turn_ok': '{count} server(s)',
   'diag.turn_none': 'None offered',
   'diag.turn_unknown': 'Unknown',
+  'profile.picture.set': 'Set a picture',
+  'profile.picture.change': 'Change picture',
+  'profile.picture.remove': 'Remove picture',
 }

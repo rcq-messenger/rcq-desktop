@@ -72,6 +72,11 @@ export interface Contact {
   signing_key: string
   signal_identity_key?: string | null
   gender?: string | null
+  // Profile picture: an encrypted blob id plus its key. The island only fills
+  // these in for people allowed to see it (a mutual contact, yourself, or a
+  // member of a group you are in), so the client never has to gate it.
+  avatar_media_id?: string | null
+  avatar_media_key?: string | null
   // Federation (F2): set for a cross-island peer (the island host where they
   // live). Undefined/absent = a normal flagship contact. When present, the chat
   // send path routes via federation-send (deliverCrossIsland) instead of the
@@ -82,6 +87,8 @@ export interface Contact {
 export interface UserInfo {
   uin: number
   nickname: string
+  avatar_media_id?: string | null
+  avatar_media_key?: string | null
   identity_key: string
   signing_key: string
   status: UserStatus
@@ -208,6 +215,11 @@ export interface ProfileUpdate {
   /// Public HoF avatar as a data-URI (image/gif|png|jpeg|webp, base64,
   /// capped ~256KB server-side). Empty string clears it.
   hof_avatar?: string
+  /// Profile picture: id + key of an already-uploaded encrypted blob. Both
+  /// blank clears it; leaving them out entirely leaves the picture alone, so a
+  /// patch that only changes a nickname cannot wipe it.
+  avatar_media_id?: string
+  avatar_media_key?: string
 }
 
 /// UIN market — mirrors backend `app/routers/uin_shop.py` (`/uin/*`).

@@ -19,7 +19,7 @@ import { EmoticonPicker } from '../components/EmoticonPicker'
 import { EmoticonText } from '../components/EmoticonText'
 import { ForwardModal, type ForwardTarget } from '../components/ForwardModal'
 import { ReactionPicker } from '../components/ReactionPicker'
-import { StatusIcon } from '../components/StatusIcon'
+import { PersonAvatar } from '../components/PersonAvatar'
 import { Api, peerBundleFrom, type Contact, type PollOut, type RCQGroup, type UserInfo } from '../lib/api'
 import {
   useIncoming,
@@ -1201,7 +1201,15 @@ export function Chat() {
             className="flex items-center gap-2 flex-1 min-w-0 hover:opacity-80"
           >
             {!isGroup && isSelf && <BookmarkIcon />}
-            {!isGroup && !isSelf && peer && <StatusIcon status={peer.status} size={20} crossIsland={!!peer.host} />}
+            {!isGroup && !isSelf && peer && (
+              <PersonAvatar
+                status={peerTyping ? 'typing' : peer.status}
+                size={28}
+                mediaId={peer.avatar_media_id}
+                mediaKey={peer.avatar_media_key}
+                crossIsland={!!peer.host}
+              />
+            )}
             {isGroup && (
               <GroupAvatar
                 size={28}

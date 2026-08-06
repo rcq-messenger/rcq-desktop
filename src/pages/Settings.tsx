@@ -8,6 +8,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { currentRecoveryPhrase } from '../lib/auth'
+import { exportBackup, importBackup } from '../lib/backup-data'
 import { Dropdown, type DropdownOption } from '../components/Dropdown'
 import { LanguagePicker } from '../components/LanguagePicker'
 import { Logo } from '../components/Logo'
@@ -364,6 +365,8 @@ export function Settings() {
         </section>
 
         <RecoveryPhraseSection />
+
+        <BackupSection />
 
         <Link
           to="/market"
@@ -952,6 +955,82 @@ function WarnIcon() {
 /// phone-linked or legacy raw-key session has no phrase — currentRecoveryPhrase
 /// returns null and we render nothing). Lets a user back up later if they
 /// skipped the create-time card.
+
+/// Export the history to a file, or add a file's history back. Deliberately a
+/// plain file and nothing of ours: the person keeps it where they keep things,
+/// so there is nothing for us to lose and nothing for us to be made to hand
+/// over. The container is shared with the phones (see backup.ts).
+function BackupSection() {
+  const { t } = useI18n()
+  const { identity } = useIdentity()
+  const [busy, setBusy] = useState(false)
+  const [note, setNote] = useState<string | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  const words = currentRecoveryPhrase()
+  if (!identity || !words) return null
+  const phrase = words.join(' ')
+
+  async function save() {
+    setBusy(true); setErr(null); setNote(null)
+    try {
+      const blob = await exportBackup(identity!.uin, phrase)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `rcq-${new Date().toISOString().slice(0, 10)}.rcqbak`
+      a.click()
+      URL.revokeObjectURL(url)
+      setNote(t('settings.backup.saved'))
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function restore(file: File | null) {
+    if (!file) return
+    setBusy(true); setErr(null); setNote(null)
+    try {
+      const r = await importBackup(await file.arrayBuffer(), phrase, identity!.uin)
+      setNote(t('settings.backup.restored', { added: r.added, skipped: r.skipped }))
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="bg-surface rounded-lg border border-line p-4 space-y-3">
+      <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+        {t('settings.backup.title')}
+      </div>
+      <p className="text-xs text-fg-dim leading-relaxed">{t('settings.backup.body')}</p>
+      <button
+        onClick={() => void save()}
+        disabled={busy}
+        className="w-full h-9 rounded-md border border-line bg-surface-dim hover:bg-line/40 text-sm font-medium disabled:opacity-40 transition-colors"
+      >
+        {t('settings.backup.save')}
+      </button>
+      <p className="text-xs text-fg-dim leading-relaxed">{t('settings.backup.restore_body')}</p>
+      <label className="block w-full h-9 leading-9 text-center rounded-md border border-line bg-surface-dim hover:bg-line/40 text-sm font-medium cursor-pointer transition-colors">
+        {t('settings.backup.restore')}
+        <input
+          type="file"
+          className="hidden"
+          disabled={busy}
+          onChange={(e) => void restore(e.target.files?.[0] ?? null)}
+        />
+      </label>
+      {note && <p className="text-xs text-accent">{note}</p>}
+      {err && <p className="text-xs text-red-500">{err}</p>}
+      <p className="text-xs text-fg-dim leading-relaxed">{t('settings.backup.warning')}</p>
+    </section>
+  )
+}
+
 function RecoveryPhraseSection() {
   const { t } = useI18n()
   const [revealed, setRevealed] = useState(false)

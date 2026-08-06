@@ -394,6 +394,37 @@ export function useTotalUnread(): number {
   })
 }
 
+/// Everything this account has RECEIVED, for a backup export. Returns the raw
+/// rows keyed by thread; the caller maps them to the neutral archive record.
+export function exportAllIncoming(): {
+  peers: Record<string, IncomingRow[]>
+  groups: Record<string, IncomingRow[]>
+} {
+  return { peers: Object.fromEntries(byPeer), groups: Object.fromEntries(byGroup) }
+}
+
+/// Merge restored rows into a thread. Only ADDS: a row whose id is already
+/// known is skipped, so an old archive can never eat newer history, and
+/// nothing already here is rewritten.
+export function mergeRestoredIncoming(
+  kind: 'peer' | 'group',
+  id: number,
+  rows: IncomingRow[],
+): number {
+  const map = kind === 'peer' ? byPeer : byGroup
+  const prefix = kind === 'peer' ? 'p' : 'g'
+  const existing = map.get(id) ?? []
+  const known = new Set(existing.map((r) => r.id))
+  const fresh = rows.filter((r) => !known.has(r.id))
+  if (!fresh.length) return 0
+  const merged = [...existing, ...fresh].sort((a, b) => a.at - b.at)
+  map.set(id, merged)
+  for (const r of fresh) seen.add(`${prefix}:${id}:${r.id}`)
+  persist()
+  emit()
+  return fresh.length
+}
+
 function persist() {
   if (_activeUin == null) return
   const reactions: Record<string, Record<string, string>> = {}

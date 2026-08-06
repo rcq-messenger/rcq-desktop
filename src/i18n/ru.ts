@@ -746,4 +746,7 @@ export const ru: Record<string, string> = {
   'diag.turn_ok': 'серверов: {count}',
   'diag.turn_none': 'Не выдан',
   'diag.turn_unknown': 'Неизвестно',
+  'profile.picture.set': 'Поставить фото',
+  'profile.picture.change': 'Сменить фото',
+  'profile.picture.remove': 'Убрать фото',
 }

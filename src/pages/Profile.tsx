@@ -10,6 +10,7 @@ import { Api, type UserInfo } from '../lib/api'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
 import { getCrossIsland } from '../lib/crossisland-store'
+import { useContactAliases } from '../lib/local-store'
 import { uploadEncryptedImage } from '../lib/media'
 
 const GENDER_OPTIONS: { value: string; key: string }[] = [
@@ -171,6 +172,11 @@ function ReadView({
   navigate: ReturnType<typeof useNavigate>
   crossIslandHost?: string | null
 }) {
+  // My own name for them. Device-only, and shown alongside what they call
+  // themselves so a rename never hides who you are actually talking to.
+  const { aliasFor, setAlias } = useContactAliases()
+  const alias = aliasFor(info.uin)
+  const [editingAlias, setEditingAlias] = useState<string | null>(null)
   const fullName = [info.first_name, info.last_name].filter(Boolean).join(' ')
   const location = [info.city, info.country].filter(Boolean).join(', ')
 
@@ -187,13 +193,61 @@ function ReadView({
             mediaKey={info.avatar_media_key}
             crossIsland={!!crossIslandHost}
           />
-          <div className="text-2xl font-bold">{info.nickname || `#${info.uin}`}</div>
+          <div className="min-w-0">
+            <div className="text-2xl font-bold truncate">{alias || info.nickname || `#${info.uin}`}</div>
+            {alias && info.nickname && alias !== info.nickname && (
+              <div className="text-xs text-fg-secondary truncate">
+                {t('profile.their_name', { name: info.nickname })}
+              </div>
+            )}
+          </div>
         </div>
         <div className="font-mono text-xs text-fg-dim">
           #{info.uin}{crossIslandHost ? ` · ${crossIslandHost}` : ''}
         </div>
         {info.status_message && (
           <div className="text-sm text-fg-secondary pt-1">{info.status_message}</div>
+        )}
+        {!isSelf && editingAlias === null && (
+          <button
+            type="button"
+            onClick={() => setEditingAlias(alias ?? '')}
+            className="text-xs text-accent hover:underline"
+          >
+            {alias ? t('profile.name.change') : t('profile.name.set')}
+          </button>
+        )}
+        {!isSelf && editingAlias !== null && (
+          <div className="flex flex-col gap-1 pt-1">
+            <input
+              value={editingAlias}
+              onChange={(e) => setEditingAlias(e.target.value.slice(0, 48))}
+              placeholder={info.nickname}
+              className="h-9 rounded-md border border-line bg-bg px-3 text-sm outline-none focus:border-accent"
+            />
+            <div className="text-xs text-fg-dim">{t('profile.name.hint')}</div>
+            <div className="flex gap-3 text-sm">
+              <button
+                type="button"
+                className="text-accent hover:underline"
+                onClick={() => { setAlias(info.uin, editingAlias); setEditingAlias(null) }}
+              >
+                {t('common.save')}
+              </button>
+              {alias && (
+                <button
+                  type="button"
+                  className="text-fg-secondary hover:underline"
+                  onClick={() => { setAlias(info.uin, null); setEditingAlias(null) }}
+                >
+                  {t('profile.name.clear')}
+                </button>
+              )}
+              <button type="button" className="text-fg-secondary hover:underline" onClick={() => setEditingAlias(null)}>
+                {t('common.cancel')}
+              </button>
+            </div>
+          </div>
         )}
         {!isSelf && (
           <div className="mt-3">

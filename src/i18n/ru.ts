@@ -749,4 +749,9 @@ export const ru: Record<string, string> = {
   'profile.picture.set': 'Поставить фото',
   'profile.picture.change': 'Сменить фото',
   'profile.picture.remove': 'Убрать фото',
+  'profile.name.set': 'Задать своё имя',
+  'profile.name.change': 'Изменить заданное имя',
+  'profile.name.clear': 'Убрать',
+  'profile.name.hint': 'Остаётся только на этом устройстве. Собеседник об этом не узнает.',
+  'profile.their_name': 'Себя называет {name}',
 }

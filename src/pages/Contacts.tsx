@@ -31,6 +31,7 @@ import {
   useArchive,
   useArchiveGroups,
   useCollapsedSections,
+  useContactAliases,
   useFavorites,
   useFavoriteGroups,
   useMutedGroups,
@@ -636,6 +637,10 @@ function ContactRow({
   const { t } = useI18n()
   const [menuOpen, setMenuOpen] = useState(false)
   const unread = usePeerUnread(contact.uin)
+  // My own name for this person wins over the nickname they chose. Device-only
+  // (see useContactAliases).
+  const { aliasFor } = useContactAliases()
+  const alias = aliasFor(contact.uin)
   return (
     <li className="relative">
       <div className={'flex items-center gap-3 px-4 py-3 ' + (archived ? 'opacity-60' : '')}>
@@ -656,7 +661,7 @@ function ContactRow({
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5">
               <span className={'truncate ' + (unread > 0 ? 'font-bold' : 'font-medium')}>
-                {contact.nickname || `#${contact.uin}`}
+                {alias || contact.nickname || `#${contact.uin}`}
               </span>
               <GenderIcon gender={contact.gender} />
               {favorite && <span className="text-yellow-500 text-xs flex-none">★</span>}

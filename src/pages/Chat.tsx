@@ -72,6 +72,7 @@ import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
 import { playSound } from '../lib/sounds'
 import { useCall } from '../lib/call'
+import { useContactAliases } from '../lib/local-store'
 import { useWS } from '../lib/ws'
 
 /// Envelope kinds `shipEnvelopeToCurrentThread` is allowed to encrypt + send.
@@ -1045,11 +1046,14 @@ export function Chat() {
     )
   }
 
+  const { aliasFor: peerAliasFor } = useContactAliases()
+  const peerAlias = peerUIN ? peerAliasFor(peerUIN) : undefined
   const headerName = isGroup
     ? group?.name ?? `#${groupId}`
     : isSelf
       ? t('chat.saved.title')
-      : peer?.nickname ?? `#${peerUIN}`
+      // My own name for them, when I set one (device-only, see useContactAliases).
+      : peerAlias ?? peer?.nickname ?? `#${peerUIN}`
   // "typing…" — the phones have had it for a long time and the web has not,
   // so a conversation between a phone and a browser looked one-sided. Wire
   // format is the phones': {type:"typing", to_uin, active} out,

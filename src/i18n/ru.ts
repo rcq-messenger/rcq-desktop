@@ -754,4 +754,12 @@ export const ru: Record<string, string> = {
   'profile.name.clear': 'Убрать',
   'profile.name.hint': 'Остаётся только на этом устройстве. Собеседник об этом не узнает.',
   'profile.their_name': 'Себя называет {name}',
+  'settings.backup.title': "Резервная копия",
+  'settings.backup.body': "Сохраняет историю этого устройства в файл, зашифрованный вашей фразой восстановления. Файл ваш: храните его где хотите. К нам он не уходит, и прочитать его мы не можем.",
+  'settings.backup.save': "Сохранить копию",
+  'settings.backup.restore': "Восстановить из файла",
+  'settings.backup.restore_body': "Восстановление только добавляет: ничего из того, что уже есть, не удаляется и не перезаписывается.",
+  'settings.backup.saved': "Файл сохранён.",
+  'settings.backup.restored': "Восстановлено: {added} добавлено, {skipped} уже были.",
+  'settings.backup.warning': "Этот файл вместе с фразой это вся переписка. Ключей в нём нет, войти по нему нельзя.",
 }

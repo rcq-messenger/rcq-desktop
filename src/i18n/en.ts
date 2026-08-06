@@ -755,4 +755,12 @@ export const en: Record<string, string> = {
   'profile.name.clear': 'Clear',
   'profile.name.hint': 'Stays on this device only. The other person is never told.',
   'profile.their_name': 'They call themselves {name}',
+  'settings.backup.title': "Backup",
+  'settings.backup.body': "Saves this device's history to a file, encrypted with your recovery phrase. The file is yours: keep it wherever you like. Nothing is uploaded to us, and we cannot read it.",
+  'settings.backup.save': "Save a backup",
+  'settings.backup.restore': "Restore from a file",
+  'settings.backup.restore_body': "Restoring only adds: nothing already here is deleted or replaced.",
+  'settings.backup.saved': "File saved.",
+  'settings.backup.restored': "Restored: {added} added, {skipped} already here.",
+  'settings.backup.warning': "This file plus your phrase is your whole history. It holds no keys and cannot be used to sign in.",
 }

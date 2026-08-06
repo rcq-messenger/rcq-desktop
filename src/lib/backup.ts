@@ -78,11 +78,11 @@ function unb64(s: string): Uint8Array {
 
 /// Normalised the same way every client does it, so a phrase typed with odd
 /// spacing or capitals still derives the same key.
-async function deriveKey(phrase: string, salt: Uint8Array): Promise<CryptoKey> {
+async function deriveKey(phrase: string, salt: Uint8Array, rounds: number = ROUNDS): Promise<CryptoKey> {
   const norm = phrase.trim().toLowerCase().split(/\s+/).join(' ')
   const base = await crypto.subtle.importKey('raw', enc.encode(norm), 'PBKDF2', false, ['deriveKey'])
   return crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt: salt as BufferSource, iterations: ROUNDS, hash: 'SHA-256' },
+    { name: 'PBKDF2', salt: salt as BufferSource, iterations: rounds, hash: 'SHA-256' },
     base,
     { name: 'AES-GCM', length: 256 },
     false,
@@ -124,7 +124,11 @@ export async function writeBackup(
   let total = 0
   const parts: Uint8Array[] = []
   for (const e of entries) {
-    const head = enc.encode(`{"name":"${e.name}","size":${e.bytes.length}}\n`)
+    // The line is built by hand, so the two characters that could break it are
+    // escaped. Names are ASCII by contract (see the format doc); this is the
+    // belt for a future client that forgets.
+    const safe = e.name.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+    const head = enc.encode(`{"name":"${safe}","size":${e.bytes.length}}\n`)
     parts.push(head, e.bytes)
     total += head.length + e.bytes.length
   }
@@ -179,7 +183,16 @@ export async function readBackup(file: ArrayBuffer, phrase: string): Promise<Rea
   p += hlen
   const header = JSON.parse(dec.decode(headerBytes)) as BackupHeader
   if (header.version > BACKUP_VERSION) throw new Error('this backup was made by a newer version')
-  const key = await deriveKey(phrase, unb64(header.salt))
+  // The header says how the key was derived, so it is obeyed rather than
+  // assumed. A mismatch here fails the GCM tag and looks exactly like a wrong
+  // phrase, which sends the person to re-check the one thing that was fine.
+  const kdf = header.kdf ?? 'pbkdf2-sha256'
+  const cipher = header.cipher ?? 'aes-256-gcm'
+  if (kdf !== 'pbkdf2-sha256') throw new Error(`this backup uses a key derivation this version does not know: ${kdf}`)
+  if (cipher !== 'aes-256-gcm') throw new Error(`this backup uses a cipher this version does not know: ${cipher}`)
+  const rounds = header.rounds ?? ROUNDS
+  if (!Number.isInteger(rounds) || rounds < 1 || rounds > 10_000_000) throw new Error('backup header looks wrong')
+  const key = await deriveKey(phrase, unb64(header.salt), rounds)
 
   const chunks: Uint8Array[] = []
   let index = 0
@@ -221,9 +234,16 @@ export async function readBackup(file: ArrayBuffer, phrase: string): Promise<Rea
   while (q < plain.length) {
     let nl = q
     while (nl < plain.length && plain[nl] !== 0x0a) nl++
-    if (nl >= plain.length) break
+    // Every framing error below is thrown rather than shrugged off. subarray
+    // clamps instead of failing, so the old code turned a desynced stream into
+    // a short entry and a clean success — the precise "silently restore half a
+    // history" the format exists to rule out.
+    if (nl >= plain.length) throw new Error('backup is damaged')
     const head = JSON.parse(dec.decode(plain.subarray(q, nl))) as { name: string; size: number }
     q = nl + 1
+    if (!Number.isInteger(head.size) || head.size < 0 || q + head.size > plain.length) {
+      throw new Error('backup is damaged')
+    }
     const bytes = plain.subarray(q, q + head.size)
     q += head.size
     entries.push({ name: head.name, bytes })

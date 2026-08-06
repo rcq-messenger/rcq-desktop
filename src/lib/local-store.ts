@@ -20,6 +20,7 @@ const KEYS = {
   mutedPeers: 'rcq.web.muted.peers',
   mutedGroups: 'rcq.web.muted.groups',
   collapsed: 'rcq.web.contacts.collapsed', // section ids the user collapsed
+  aliases: 'rcq.web.contacts.aliases', // my own name for a contact, uin -> name
 }
 
 function readSet(key: string): Set<number> {
@@ -83,6 +84,45 @@ function useNumberSet(key: string) {
       if (s.has(id)) s.delete(id)
       else s.add(id)
       writeSet(key, s)
+    },
+  }
+}
+
+/// My own name for a contact, keyed by UIN. DEVICE-ONLY on purpose: what I
+/// chose to call someone says more about the relationship than the contact row
+/// does, it serves no server-side function, and an island that stores it is an
+/// island that can be made to hand it over. The cost is honest — aliases do not
+/// follow you to another device until the backup does.
+export function useContactAliases() {
+  const subscribe = (cb: () => void) => {
+    const handler = (e: StorageEvent) => {
+      if (e.key === KEYS.aliases || e.key == null) cb()
+    }
+    window.addEventListener('storage', handler)
+    return () => window.removeEventListener('storage', handler)
+  }
+  const get = () => localStorage.getItem(KEYS.aliases) ?? ''
+  const snapshot = useSyncExternalStore(subscribe, get, () => '')
+  let map: Record<string, string> = {}
+  try {
+    map = snapshot ? (JSON.parse(snapshot) as Record<string, string>) : {}
+  } catch {
+    map = {}
+  }
+  return {
+    aliasFor: (uin: number): string | undefined => map[String(uin)],
+    setAlias: (uin: number, name: string | null) => {
+      let cur: Record<string, string> = {}
+      try {
+        cur = JSON.parse(localStorage.getItem(KEYS.aliases) ?? '{}') as Record<string, string>
+      } catch {
+        cur = {}
+      }
+      const trimmed = name?.trim().slice(0, 48)
+      if (trimmed) cur[String(uin)] = trimmed
+      else delete cur[String(uin)]
+      localStorage.setItem(KEYS.aliases, JSON.stringify(cur))
+      window.dispatchEvent(new StorageEvent('storage', { key: KEYS.aliases }))
     },
   }
 }

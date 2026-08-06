@@ -750,4 +750,9 @@ export const en: Record<string, string> = {
   'profile.picture.set': 'Set a picture',
   'profile.picture.change': 'Change picture',
   'profile.picture.remove': 'Remove picture',
+  'profile.name.set': 'Set your own name',
+  'profile.name.change': 'Change the name you gave',
+  'profile.name.clear': 'Clear',
+  'profile.name.hint': 'Stays on this device only. The other person is never told.',
+  'profile.their_name': 'They call themselves {name}',
 }

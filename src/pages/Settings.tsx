@@ -978,8 +978,16 @@ function BackupSection() {
       const a = document.createElement('a')
       a.href = url
       a.download = `rcq-${new Date().toISOString().slice(0, 10)}.rcqbak`
+      // In the document and revoked a task later: Firefox and Safari start the
+      // download asynchronously, and revoking in the same task raced it into a
+      // zero-byte file while the screen still said it had been saved.
+      a.style.display = 'none'
+      document.body.appendChild(a)
       a.click()
-      URL.revokeObjectURL(url)
+      setTimeout(() => {
+        a.remove()
+        URL.revokeObjectURL(url)
+      }, 60_000)
       setNote(t('settings.backup.saved'))
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
@@ -993,7 +1001,12 @@ function BackupSection() {
     setBusy(true); setErr(null); setNote(null)
     try {
       const r = await importBackup(await file.arrayBuffer(), phrase, identity!.uin)
-      setNote(t('settings.backup.restored', { added: r.added, skipped: r.skipped }))
+      // What could not be read and what the browser cannot hold are said out
+      // loud rather than folded into "already here".
+      const parts = [t('settings.backup.restored', { added: r.added, skipped: r.skipped })]
+      if (r.unreadable > 0) parts.push(t('settings.backup.restoredUnreadable', { n: r.unreadable }))
+      if (r.mediaIgnored > 0) parts.push(t('settings.backup.restoredMediaIgnored', { n: r.mediaIgnored }))
+      setNote(parts.join(' '))
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))
     } finally {

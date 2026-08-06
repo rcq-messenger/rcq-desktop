@@ -9,17 +9,31 @@
 import type { BackupRecord } from './backup'
 import { readBackup, writeBackup } from './backup'
 import {
+  applyReaction,
   exportAllIncoming,
   mergeRestoredIncoming,
+  reactionsForTarget,
   type IncomingRow,
 } from './incoming-store'
-import { loadPersisted, storageKey, type OutgoingRow } from './outgoing-store'
+import { appendToThreadLog, loadPersisted, storageKey, type OutgoingRow } from './outgoing-store'
 
 const enc = new TextEncoder()
 const dec = new TextDecoder()
 
 const OUTGOING_PREFIX = 'rcq.web.outgoing.'
 const ALIASES_KEY = 'rcq.web.contacts.aliases'
+
+/// Reactions live in their own store keyed by the message they sit on, not on
+/// the row, so they have to be gathered per record. Always emitted, even empty:
+/// a reader that meets an absent field has to guess, and one of them guessed
+/// wrong badly enough to drop every message in the file.
+function reactionsFor(id: string): Record<string, string> {
+  const inner = reactionsForTarget(id)
+  if (!inner) return {}
+  const out: Record<string, string> = {}
+  for (const [uin, asset] of inner) out[String(uin)] = asset
+  return out
+}
 
 function incomingToRecord(row: IncomingRow, peer: number | null, group: number | null): BackupRecord {
   return {
@@ -44,6 +58,7 @@ function incomingToRecord(row: IncomingRow, peer: number | null, group: number |
     reply_to_id: row.replyTo?.id ?? null,
     reply_to_author: row.replyTo?.authorName ?? null,
     reply_to_snippet: row.replyTo?.snippet ?? null,
+    reactions: reactionsFor(row.id),
   }
 }
 
@@ -62,6 +77,38 @@ function outgoingToRecord(row: OutgoingRow, peer: number | null, group: number |
     file_name: row.fileName ?? null,
     file_mime: row.fileMime ?? null,
     file_size: row.fileSize ?? null,
+    // Everything below this line the row has held all along and the archive
+    // simply left behind, so your own half of a conversation came back plainer
+    // than the other person's.
+    duration_sec: row.durationSec ?? null,
+    thumb_b64: row.thumbnailB64 ?? null,
+    edited: row.edited ?? false,
+    reply_to_id: row.replyTo?.id ?? null,
+    reply_to_author: row.replyTo?.authorName ?? null,
+    reply_to_snippet: row.replyTo?.snippet ?? null,
+    reactions: reactionsFor(row.id),
+  }
+}
+
+function recordToOutgoing(r: BackupRecord): OutgoingRow {
+  return {
+    id: r.id,
+    text: r.body,
+    sentAt: r.sent_at,
+    // History, not something still on its way.
+    state: 'sent',
+    kind: (r.kind as OutgoingRow['kind']) ?? 'text',
+    ...(r.media_id ? { mediaId: r.media_id } : {}),
+    ...(r.media_key ? { mediaKey: r.media_key } : {}),
+    ...(r.thumb_b64 ? { thumbnailB64: r.thumb_b64 } : {}),
+    ...(r.duration_sec != null ? { durationSec: r.duration_sec } : {}),
+    ...(r.file_name ? { fileName: r.file_name } : {}),
+    ...(r.file_mime ? { fileMime: r.file_mime } : {}),
+    ...(r.file_size != null ? { fileSize: r.file_size } : {}),
+    ...(r.edited ? { edited: true } : {}),
+    ...(r.reply_to_id
+      ? { replyTo: { id: r.reply_to_id, authorName: r.reply_to_author ?? '', snippet: r.reply_to_snippet ?? '' } }
+      : {}),
   }
 }
 
@@ -135,6 +182,13 @@ export async function exportBackup(uin: number, phrase: string): Promise<Blob> {
 export interface RestoreOutcome {
   added: number
   skipped: number
+  /// Lines this build could not turn into a message. Counted apart from
+  /// `skipped` on purpose: "already here" and "could not read" are not the
+  /// same sentence, and folding them together is how a restore reports success
+  /// while quietly handing back a shorter history.
+  unreadable: number
+  /// Attachments the archive carried that the browser has nowhere to put.
+  mediaIgnored: number
 }
 
 export async function importBackup(
@@ -151,23 +205,48 @@ export async function importBackup(
 
   let added = 0
   let total = 0
+  let unreadable = 0
+  let mediaIgnored = 0
   for (const e of entries) {
     if (e.name === 'messages.ndjson') {
       const byPeer = new Map<number, IncomingRow[]>()
       const byGroup = new Map<number, IncomingRow[]>()
+      // Your own half of the conversation, per thread. It used to be dropped
+      // here on the theory that "the client that owns them rebuilds them from
+      // the same archive" — no such path exists, so restoring on a fresh
+      // browser gave back a one-sided history and called it a success.
+      const mine: { key: string; rows: OutgoingRow[] }[] = []
+      const mineByKey = new Map<string, OutgoingRow[]>()
+      const reactions: { target: string; who: number; asset: string }[] = []
       for (const line of dec.decode(e.bytes).split('\n')) {
         if (!line.trim()) continue
         let rec: BackupRecord
         try {
           rec = JSON.parse(line) as BackupRecord
         } catch {
+          unreadable++
+          continue
+        }
+        if (!rec.id || (rec.peer == null && rec.group == null)) {
+          unreadable++
           continue
         }
         total++
-        // Only what was received goes back into the incoming store; rows this
-        // device sent are rebuilt from the same archive on the client that
-        // owns them, and re-adding them here would duplicate your own side.
-        if (rec.from_me) continue
+        for (const [who, asset] of Object.entries(rec.reactions ?? {})) {
+          const uin = Number(who)
+          if (Number.isFinite(uin) && asset) reactions.push({ target: rec.id, who: uin, asset })
+        }
+        if (rec.from_me) {
+          const key = storageKey(rec.group != null, (rec.group ?? rec.peer) as number)
+          let rows = mineByKey.get(key)
+          if (!rows) {
+            rows = []
+            mineByKey.set(key, rows)
+            mine.push({ key, rows })
+          }
+          rows.push(recordToOutgoing(rec))
+          continue
+        }
         const row = recordToIncoming(rec)
         if (rec.group != null) {
           byGroup.set(rec.group, [...(byGroup.get(rec.group) ?? []), row])
@@ -177,6 +256,22 @@ export async function importBackup(
       }
       for (const [id, rows] of byPeer) added += mergeRestoredIncoming('peer', id, rows)
       for (const [id, rows] of byGroup) added += mergeRestoredIncoming('group', id, rows)
+      for (const { key, rows } of mine) {
+        // appendToThreadLog dedupes by id, so this obeys the same only-adds
+        // rule as everything else: a message already logged is left alone.
+        const before = loadPersisted(key).length
+        for (const r of rows.sort((a, b) => a.sentAt - b.sentAt)) appendToThreadLog(key, r)
+        added += Math.max(0, loadPersisted(key).length - before)
+      }
+      // Applied after the messages so a reaction always lands on a target that
+      // is already there.
+      for (const r of reactions) applyReaction(r.target, r.who, r.asset)
+    } else if (e.name.startsWith('media/')) {
+      // The browser has no decrypted-blob cache to put these in, so they are
+      // counted and said out loud rather than dropped in silence: a phone's
+      // archive is full of them and the person picked "include attachments"
+      // for a reason.
+      mediaIgnored++
     } else if (e.name === 'local.json') {
       const obj = JSON.parse(dec.decode(e.bytes)) as { aliases?: Record<string, string> }
       const cur = JSON.parse(localStorage.getItem(ALIASES_KEY) ?? '{}') as Record<string, string>
@@ -187,5 +282,5 @@ export async function importBackup(
       window.dispatchEvent(new StorageEvent('storage', { key: ALIASES_KEY }))
     }
   }
-  return { added, skipped: Math.max(0, total - added) }
+  return { added, skipped: Math.max(0, total - added), unreadable, mediaIgnored }
 }

@@ -756,9 +756,14 @@ export function Chat() {
         setTransientNotice(t('chat.error.upload_failed'))
         return
       }
+      // Whatever is already typed becomes the caption, the way every web
+      // messenger does it. The envelope has carried `caption` from the start
+      // and both bubbles render it; there was simply no way to fill it in, so
+      // people sent a picture and then a separate line about it.
+      const caption = input.trim()
       const row: OutgoingRow = {
         id: newUUIDv4(),
-        text: '',
+        text: caption,
         sentAt: Date.now(),
         state: 'sending',
         kind: 'photo',
@@ -767,6 +772,7 @@ export function Chat() {
         ...(replyTo ? { replyTo } : {}),
       }
       setOutgoing((rows) => [...rows, row])
+      if (caption) setInput('')
       setReplyTo(null)
       await attemptSendRow(row)
     } finally {

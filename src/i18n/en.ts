@@ -91,6 +91,7 @@ export const en: Record<string, string> = {
   'contacts.saved.subtitle': 'Notes to self',
 
   // Chat
+  'chat.typing': 'typing…',
   'chat.placeholder': 'Message {nick}…',
   'chat.placeholder_loading': 'Loading…',
   'chat.send': 'Send',

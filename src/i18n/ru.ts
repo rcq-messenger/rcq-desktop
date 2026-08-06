@@ -90,6 +90,7 @@ export const ru: Record<string, string> = {
   'contacts.saved.subtitle': 'Заметки для себя',
 
   // Chat
+  'chat.typing': 'печатает…',
   'chat.placeholder': 'Сообщение для {nick}…',
   'chat.placeholder_loading': 'Загружаем…',
   'chat.send': 'Отправить',

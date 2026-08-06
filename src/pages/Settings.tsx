@@ -814,10 +814,19 @@ export function Settings() {
           </div>
           <div className="flex items-center gap-3">
             <Logo size={40} />
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <div className="font-semibold">{t('brand.name')}</div>
               <div className="text-xs text-fg-dim">{t('login.tagline')}</div>
             </div>
+            {/* The version belongs next to the name, where every app puts it.
+                It was already on this screen, one row further down and only
+                after the eye had passed the blurb, and a tester asked outright
+                where to see which version was installed. */}
+            {isTauri() && (
+              <span className="font-mono text-xs text-fg-secondary shrink-0">
+                {desktopVersion ?? '…'}
+              </span>
+            )}
           </div>
           {/* The desktop is not the web client and shouldn't say it is; each
               build names its own OS. */}

@@ -12,7 +12,7 @@
 // incoming yet). Forwards write into the target thread's storage
 // so the forwarded message shows up there when the user navigates.
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { EmoticonPicker } from '../components/EmoticonPicker'
@@ -72,6 +72,7 @@ import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
 import { playSound } from '../lib/sounds'
 import { useCall } from '../lib/call'
+import { useWS } from '../lib/ws'
 
 /// Envelope kinds `shipEnvelopeToCurrentThread` is allowed to encrypt + send.
 /// (Carbons take a separate path; this gates the in-thread sends.) `edit` was
@@ -1043,10 +1044,60 @@ export function Chat() {
     : isSelf
       ? t('chat.saved.title')
       : peer?.nickname ?? `#${peerUIN}`
+  // "typing…" — the phones have had it for a long time and the web has not,
+  // so a conversation between a phone and a browser looked one-sided. Wire
+  // format is the phones': {type:"typing", to_uin, active} out,
+  // {type:"typing", from_uin, active} in.
+  const ws = useWS()
+  const [peerTyping, setPeerTyping] = useState(false)
+  useEffect(() => {
+    if (isGroup || isSelf || !peerUIN) return
+    // Same 6s ceiling the phones use: a client that goes away mid-word must
+    // not leave the indicator stuck on forever.
+    let clear: ReturnType<typeof setTimeout> | undefined
+    const off = ws.on('typing', (ev) => {
+      if (Number(ev.from_uin) !== peerUIN) return
+      const active = ev.active === true
+      setPeerTyping(active)
+      if (clear) clearTimeout(clear)
+      if (active) clear = setTimeout(() => setPeerTyping(false), 6000)
+    })
+    return () => { off(); if (clear) clearTimeout(clear); setPeerTyping(false) }
+  }, [ws, peerUIN, isGroup, isSelf])
+
+  // Outgoing: one "started" per burst, a "stopped" when the composer goes
+  // quiet for 3s or the message ships. Sending on every keystroke would be a
+  // packet per character for no extra information.
+  const typingSentAt = useRef(0)
+  const typingStop = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const notifyTyping = useCallback(() => {
+    if (isGroup || isSelf || !peerUIN) return
+    const now = Date.now()
+    if (now - typingSentAt.current > 4000) {
+      typingSentAt.current = now
+      ws.send({ type: 'typing', to_uin: peerUIN, active: true })
+    }
+    if (typingStop.current) clearTimeout(typingStop.current)
+    typingStop.current = setTimeout(() => {
+      typingSentAt.current = 0
+      ws.send({ type: 'typing', to_uin: peerUIN, active: false })
+    }, 3000)
+  }, [ws, peerUIN, isGroup, isSelf])
+  const stopTyping = useCallback(() => {
+    if (isGroup || isSelf || !peerUIN) return
+    if (typingStop.current) clearTimeout(typingStop.current)
+    if (typingSentAt.current) {
+      typingSentAt.current = 0
+      ws.send({ type: 'typing', to_uin: peerUIN, active: false })
+    }
+  }, [ws, peerUIN, isGroup, isSelf])
+
   const headerSub = isGroup
     ? group ? t('section.groups.members', { n: group.members.length }) : ''
     : isSelf
       ? t('chat.saved.subtitle')
+      : peerTyping
+        ? t('chat.typing')
       // Cross-island: show the peer's island (presence doesn't cross islands).
       : peer?.host ? `#${peerUIN} · ${peer.host}` : String(peerUIN)
   // One ordered timeline of both halves of the conversation, with a day
@@ -1796,7 +1847,8 @@ export function Chat() {
                     : t('chat.placeholder_loading')
               }
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => { setInput(e.target.value); if (e.target.value) notifyTyping(); else stopTyping() }}
+              onBlur={stopTyping}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault()

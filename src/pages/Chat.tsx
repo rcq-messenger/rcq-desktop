@@ -61,6 +61,7 @@ import {
 import { buildGroupDualSend, encryptGroupEnvelope } from '../lib/group-crypto'
 import { parseGroupInvite } from '../lib/group-invite'
 import { groupApiCtx } from '../lib/visited-islands'
+import { ensureRoster, memberCount } from '../lib/group-roster'
 import { GroupJoinCard } from '../components/GroupJoinCard'
 import { GroupAvatar } from '../components/GroupAvatar'
 import { DecryptedImage } from '../components/DecryptedImage'
@@ -981,7 +982,12 @@ export function Chat() {
       if (target.kind === 'group') {
         // target.id may be a foreign-group alias — resolve the island ctx.
         const fctx = groupApiCtx(identity, target.id)
-        const { payloads, skipped } = encryptGroupEnvelope(env, fctx.ident, target.group.members)
+        // ⚠ The picker's list is fetched without rosters, so this group can
+        // carry an empty member list. Sealing against that produces no
+        // payloads at all, and the forward would report an empty group — or
+        // worse, on a partial roster, quietly reach only some of it.
+        const full = await ensureRoster(fctx.ident, target.group)
+        const { payloads, skipped } = encryptGroupEnvelope(env, fctx.ident, full.members)
         if (payloads.length === 0) {
           throw new Error(
             skipped.length > 0
@@ -1103,7 +1109,7 @@ export function Chat() {
   }, [ws, peerUIN, isGroup, isSelf])
 
   const headerSub = isGroup
-    ? group ? t('section.groups.members', { n: group.members.length }) : ''
+    ? group ? t('section.groups.members', { n: memberCount(group) }) : ''
     : isSelf
       ? t('chat.saved.subtitle')
       : peerTyping

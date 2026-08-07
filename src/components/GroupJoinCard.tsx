@@ -36,7 +36,8 @@ async function loadMyGroupIds(
 ): Promise<Set<number>> {
   const cached = _myGroupIds.get(cacheKey)
   if (cached) return cached
-  const groups = await Api.groups(identity)
+  // Ids only — no reason to pay for every roster to answer "am I in it".
+  const groups = await Api.groups(identity, false)
   const ids = new Set(groups.map((g) => g.id))
   _myGroupIds.set(cacheKey, ids)
   return ids

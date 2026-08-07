@@ -6,7 +6,13 @@
 # it once locally before your first `npm run desktop:build`.
 #
 #   scripts/build-singbox-sidecar.sh                 # host platform only
-#   scripts/build-singbox-sidecar.sh --all           # all three, Go cross-compiles
+#   scripts/build-singbox-sidecar.sh --all           # every platform, Go cross-compiles
+#
+# macOS is built for BOTH architectures and then lipo'd into one
+# `universal-apple-darwin` sidecar, because that is the triple the app is
+# bundled for: one dmg that runs on an Intel Mac and an Apple Silicon one.
+# Tauri looks a sidecar up by the exact triple it is building, so the universal
+# file has to exist under that name — the per-arch pair alone is not enough.
 #
 # The build tags are the two the relay pool actually needs: with_utls for
 # VLESS+Reality, with_quic for Hysteria2. Upstream's default tag set drags in
@@ -41,14 +47,25 @@ build() { # goos goarch target-triple [.exe]
       -o "$out_dir/$name" ./cmd/sing-box )
 }
 
+build_macos_universal() {
+  build darwin arm64 aarch64-apple-darwin
+  build darwin amd64 x86_64-apple-darwin
+  echo "  lipo -> sing-box-universal-apple-darwin"
+  lipo -create \
+    "$out_dir/sing-box-aarch64-apple-darwin" \
+    "$out_dir/sing-box-x86_64-apple-darwin" \
+    -output "$out_dir/sing-box-universal-apple-darwin"
+  chmod +x "$out_dir/sing-box-universal-apple-darwin"
+}
+
 echo "building sing-box $version (tags: $TAGS)"
 if [ "${1:-}" = "--all" ]; then
-  build darwin arm64 aarch64-apple-darwin
+  build_macos_universal
   build linux amd64 x86_64-unknown-linux-gnu
   build windows amd64 x86_64-pc-windows-msvc .exe
 else
   case "$(uname -s)" in
-    Darwin) build darwin arm64 aarch64-apple-darwin ;;
+    Darwin) build_macos_universal ;;
     Linux)  build linux amd64 x86_64-unknown-linux-gnu ;;
     *)      build windows amd64 x86_64-pc-windows-msvc .exe ;;
   esac

@@ -44,20 +44,29 @@ ASSETS = {
     "RCQ-linux.AppImage": "*_amd64.AppImage",
 }
 
-MACOS_ARCHIVE = REPO / "src-tauri/target/release/bundle/macos/RCQ.app.tar.gz"
+# The macOS build is `--target universal-apple-darwin`, so it lands under that
+# triple rather than in the plain release dir, and one bundle covers both
+# architectures. Through 0.2.3 this was arm64 only, which meant an Intel Mac
+# had nothing to download and nothing to update to — not a worse build, no
+# build.
+MACOS_ARCHIVE = REPO / "src-tauri/target/universal-apple-darwin/release/bundle/macos/RCQ.app.tar.gz"
 # The macOS .dmg is what the SITE links to. It carries no updater signature and
 # appears in no manifest, so nothing here would have complained about it — and
 # on 0.2.0 nothing did: the release shipped with every updater artifact fresh
 # and the download on rcq.app still serving the previous version. It rides
 # along now, from the same locally signed build.
-MACOS_DMG_GLOB = "src-tauri/target/release/bundle/dmg/RCQ_*_aarch64.dmg"
-MACOS_DMG_HOSTED = "RCQ-macos-arm64.dmg"
+MACOS_DMG_GLOB = "src-tauri/target/universal-apple-darwin/release/bundle/dmg/RCQ_*_universal.dmg"
+MACOS_DMG_HOSTED = "RCQ-macos.dmg"
 
 # The plugin looks up "{os}-{arch}-{installer}" first and falls back to
 # "{os}-{arch}". The Linux fallback must be the AppImage: a binary whose bundle
 # type went undetected takes the AppImage install path and no other.
 PLATFORMS = {
+    # Both Mac architectures point at the same universal bundle. The updater
+    # asks by "{os}-{arch}", so an Intel Mac that never had an entry here was
+    # told there was no update, forever.
     "darwin-aarch64": "RCQ.app.tar.gz",
+    "darwin-x86_64": "RCQ.app.tar.gz",
     "windows-x86_64-nsis": "RCQ-windows-setup.exe",
     "windows-x86_64-msi": "RCQ-windows.msi",
     "windows-x86_64": "RCQ-windows-setup.exe",

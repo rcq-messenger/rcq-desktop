@@ -41,11 +41,25 @@ npm run desktop:build   # tauri build — produces RCQ.app + .dmg (release)
 `tauri dev` loads `http://localhost:5174` (the Vite dev server). The
 release build runs `npm run build` first and bundles `dist/`.
 
-Output of a release build (Apple Silicon):
+macOS is built for **both** architectures at once and shipped as a single
+universal dmg — an Intel Mac that can run macOS 14 is a supported Mac, and
+through 0.2.3 it had nothing to download at all:
+
+```bash
+npm run desktop:build -- --target universal-apple-darwin
+```
+
+That triple needs `rustup target add x86_64-apple-darwin` alongside the
+aarch64 one, and a `sing-box-universal-apple-darwin` sidecar —
+`scripts/build-singbox-sidecar.sh` builds both Mac architectures and `lipo`s
+them into it. Tauri looks a sidecar up by the exact triple it is building, so
+the per-arch pair on its own is not enough.
+
+Output of a release build:
 
 ```
-src-tauri/target/release/bundle/macos/RCQ.app
-src-tauri/target/release/bundle/dmg/RCQ_<version>_aarch64.dmg
+src-tauri/target/universal-apple-darwin/release/bundle/macos/RCQ.app
+src-tauri/target/universal-apple-darwin/release/bundle/dmg/RCQ_<version>_universal.dmg
 ```
 
 ## Configuration notes
@@ -154,8 +168,8 @@ To cut a release:
 ```bash
 export TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.rcq/desktop-updater/rcq-desktop.key)"
 export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
-npm run desktop:build
-# produces target/release/bundle/macos/RCQ.app.tar.gz + .sig
+npm run desktop:build -- --target universal-apple-darwin
+# produces target/universal-apple-darwin/release/bundle/macos/RCQ.app.tar.gz + .sig
 ```
 
 CI (`.github/workflows/release.yml`) builds Windows and Linux with
@@ -195,6 +209,7 @@ the `.AppImage` extension.
   "pub_date": "2026-06-16T00:00:00Z",
   "platforms": {
     "darwin-aarch64":        { "signature": "<RCQ.app.tar.gz.sig>",            "url": "https://rcq.app/desktop/RCQ.app.tar.gz" },
+    "darwin-x86_64":         { "signature": "<RCQ.app.tar.gz.sig>",            "url": "https://rcq.app/desktop/RCQ.app.tar.gz" },
     "windows-x86_64-nsis":   { "signature": "<RCQ-windows-setup.exe.sig>",     "url": "https://rcq.app/desktop/RCQ-windows-setup.exe" },
     "windows-x86_64-msi":    { "signature": "<RCQ-windows.msi.sig>",           "url": "https://rcq.app/desktop/RCQ-windows.msi" },
     "windows-x86_64":        { "signature": "<RCQ-windows-setup.exe.sig>",     "url": "https://rcq.app/desktop/RCQ-windows-setup.exe" },

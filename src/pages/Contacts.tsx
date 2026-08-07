@@ -311,6 +311,8 @@ export function Contacts() {
               <StatusPickerButton
                 current={me.status}
                 onChange={(s) => setMe({ ...me, status: s })}
+                avatarMediaId={me.avatar_media_id}
+                avatarMediaKey={me.avatar_media_key}
               />
               <Link
                 to="/profile"

@@ -56,11 +56,17 @@ npm run desktop:dev    # desktop (native window + HMR)
 
 `npm run desktop:build` builds installers for the **host OS** you run it on:
 
-| OS | Artifacts |
-|----|-----------|
-| macOS | `.app` + `.dmg` |
-| Linux | `.AppImage` + `.deb` + `.rpm` |
-| Windows | `.msi` + `.exe` (NSIS) |
+| OS | Artifacts | Architectures |
+|----|-----------|---------------|
+| macOS | `.app` + `.dmg` | **Intel and Apple Silicon**, one universal build |
+| Linux | `.AppImage` + `.deb` + `.rpm` | x86-64 |
+| Windows | `.msi` + `.exe` (NSIS) | x86-64 |
+
+macOS needs its target named — `npm run desktop:build -- --target
+universal-apple-darwin` — otherwise you get a build for whichever architecture
+you happen to be sitting at. Released macOS builds are universal, and require
+**macOS 14 or newer**: circumvention on Mac goes through a system feature
+earlier versions do not have.
 
 See **[DESKTOP.md](DESKTOP.md)** for the full desktop story: code signing
 (required for notifications), the microphone and camera permissions each OS

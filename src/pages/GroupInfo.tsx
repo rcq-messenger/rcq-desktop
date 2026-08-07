@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { StatusIcon } from '../components/StatusIcon'
+import { PersonAvatar } from '../components/PersonAvatar'
 import { GroupAvatar } from '../components/GroupAvatar'
 import { Api, type RCQGroup } from '../lib/api'
 import { useI18n } from '../lib/i18n-context'
@@ -133,7 +133,18 @@ export function GroupInfo() {
                       to={m.uin === identity.uin ? '/profile' : `/profile/${m.uin}`}
                       className="flex items-center gap-3 px-4 py-2.5 hover:bg-surface-dim"
                     >
-                      <StatusIcon status={m.status} size={18} />
+                      {/* A member's picture rides with the roster, gated by
+                          membership; without one this is the plain status icon,
+                          so the screen is unchanged for everyone who never set
+                          one. Presence stays on it as the badge — this is a
+                          list of people, which is exactly where it means
+                          something. */}
+                      <PersonAvatar
+                        status={m.status}
+                        size={18}
+                        mediaId={m.avatar_media_id}
+                        mediaKey={m.avatar_media_key}
+                      />
                       <div className="flex-1 min-w-0">
                         <div className="font-medium text-sm truncate">
                           {m.nickname || `#${m.uin}`}

@@ -134,6 +134,11 @@ export interface GroupMember {
   // Granular moderator caps the owner granted (subset of delete|members|info).
   // Empty/absent for a plain member; gates pinning a message from the chat.
   permissions?: string[]
+  // Profile picture, gated by MEMBERSHIP rather than by the contact list:
+  // sharing a group is the relationship here, the same one that already
+  // exposes the nickname on this row.
+  avatar_media_id?: string | null
+  avatar_media_key?: string | null
 }
 
 export interface RCQGroup {

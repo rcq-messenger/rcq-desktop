@@ -20,6 +20,7 @@ import { EmoticonText } from '../components/EmoticonText'
 import { ForwardModal, type ForwardTarget } from '../components/ForwardModal'
 import { ReactionPicker } from '../components/ReactionPicker'
 import { PersonAvatar } from '../components/PersonAvatar'
+import { SenderAvatar } from '../components/SenderAvatar'
 import { Api, peerBundleFrom, type Contact, type PollOut, type RCQGroup, type UserInfo } from '../lib/api'
 import {
   useIncoming,
@@ -1317,9 +1318,8 @@ export function Chat() {
               }
               if (item.kind === 'in') {
                 const m = item.msg
-                const senderName = isGroup
-                  ? group?.members.find((mem) => mem.uin === m.from)?.nickname || `#${m.from}`
-                  : null
+                const senderMember = isGroup ? group?.members.find((mem) => mem.uin === m.from) : undefined
+                const senderName = isGroup ? senderMember?.nickname || `#${m.from}` : null
                 const invite = parseGroupInvite(m.text)
                 const replyAuthor = senderName ?? peer?.nickname ?? `#${m.from}`
                 const isPlainText =
@@ -1332,8 +1332,11 @@ export function Chat() {
                       {senderName && (
                         <Link
                           to={`/profile/${m.from}`}
-                          className="font-mono text-[10px] text-fg-dim px-1 hover:text-accent hover:underline"
+                          className="flex items-center gap-1.5 font-mono text-[10px] text-fg-dim px-1 hover:text-accent hover:underline"
                         >
+                          {/* Beside the nick, never instead of it, and only
+                              when there is a picture. */}
+                          <SenderAvatar mediaId={senderMember?.avatar_media_id} mediaKey={senderMember?.avatar_media_key} size={16} />
                           {senderName}
                         </Link>
                       )}

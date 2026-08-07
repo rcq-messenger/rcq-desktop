@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Api, type UserStatus } from '../lib/api'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
+import { PersonAvatar } from './PersonAvatar'
 import { StatusIcon } from './StatusIcon'
 
 const STATES: UserStatus[] = ['online', 'away', 'dnd', 'invisible', 'offline']
@@ -18,9 +19,13 @@ interface Props {
   /// optimistically; the backend echo via WS will reconcile if the
   /// PUT actually fails.
   onChange: (s: UserStatus) => void
+  /// The account's own picture, when it has one. Absent means the plain
+  /// status glyph, which is what this always drew.
+  avatarMediaId?: string | null
+  avatarMediaKey?: string | null
 }
 
-export function StatusPickerButton({ current, onChange }: Props) {
+export function StatusPickerButton({ current, onChange, avatarMediaId, avatarMediaKey }: Props) {
   const { identity } = useIdentity()
   const { t } = useI18n()
   const [open, setOpen] = useState(false)
@@ -58,7 +63,20 @@ export function StatusPickerButton({ current, onChange }: Props) {
         aria-label={t('status.picker')}
         title={t(`status.${current}`)}
       >
-        <StatusIcon status={current} size={20} />
+        {/* The picture, with the status kept as the badge on its edge — the
+            same shape the phones draw. Without one this falls straight back to
+            the plain status glyph, so nothing changes for anyone who never set
+            a picture. */}
+        {avatarMediaId && avatarMediaKey ? (
+          <PersonAvatar
+            status={current}
+            size={26}
+            mediaId={avatarMediaId}
+            mediaKey={avatarMediaKey}
+          />
+        ) : (
+          <StatusIcon status={current} size={20} />
+        )}
       </button>
       {open && (
         <div className="absolute top-full left-0 mt-1 bg-surface border border-line rounded-lg shadow-lg py-1 z-30 min-w-[160px]">

@@ -189,6 +189,8 @@ export interface RestoreOutcome {
   unreadable: number
   /// Attachments the archive carried that the browser has nowhere to put.
   mediaIgnored: number
+  /// Disappearing messages the archive carried, deliberately not restored.
+  expired: number
 }
 
 export async function importBackup(
@@ -207,6 +209,7 @@ export async function importBackup(
   let total = 0
   let unreadable = 0
   let mediaIgnored = 0
+  let expired = 0
   for (const e of entries) {
     if (e.name === 'messages.ndjson') {
       const byPeer = new Map<number, IncomingRow[]>()
@@ -229,6 +232,15 @@ export async function importBackup(
         }
         if (!rec.id || (rec.peer == null && rec.group == null)) {
           unreadable++
+          continue
+        }
+        // ⚠ A disappearing message never comes back here. This client has no
+        // expiry of its own, so restoring one would turn a message someone
+        // asked to be temporary into a permanent one — the exact opposite of
+        // what the timer was for. Newer archives do not carry them at all;
+        // older ones do, and this is where those stop.
+        if (rec.expires_at != null) {
+          expired++
           continue
         }
         total++
@@ -282,5 +294,5 @@ export async function importBackup(
       window.dispatchEvent(new StorageEvent('storage', { key: ALIASES_KEY }))
     }
   }
-  return { added, skipped: Math.max(0, total - added), unreadable, mediaIgnored }
+  return { added, skipped: Math.max(0, total - added), unreadable, mediaIgnored, expired }
 }

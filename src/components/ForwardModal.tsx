@@ -10,6 +10,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Api, type Contact, type RCQGroup } from '../lib/api'
+import { memberCount } from '../lib/group-roster'
 import { useIdentity } from '../lib/identity-context'
 import { useI18n } from '../lib/i18n-context'
 import { StatusIcon } from './StatusIcon'
@@ -37,7 +38,9 @@ export function ForwardModal({
   useEffect(() => {
     if (!visible || !identity) return
     setLoading(true)
-    void Promise.all([Api.contacts(identity), Api.groups(identity)])
+    // Without rosters: this list shows a name and a count, and the forward
+    // itself fetches the roster for the one group the user actually picks.
+    void Promise.all([Api.contacts(identity), Api.groups(identity, false)])
       .then(([cs, gs]) => {
         setContacts(cs)
         setGroups(gs)
@@ -146,7 +149,7 @@ export function ForwardModal({
                     <div className="flex-1 min-w-0">
                       <div className="text-sm truncate">{g.name}</div>
                       <div className="font-mono text-[10px] text-fg-dim">
-                        {g.members.length}
+                        {memberCount(g)}
                       </div>
                     </div>
                   </Row>

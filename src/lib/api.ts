@@ -145,6 +145,16 @@ export interface RCQGroup {
   owner_uin: number
   avatar_seed: number
   created_at: string
+  /// How many people are in the group, independent of whether `members` was
+  /// fetched. A list row needs the number and nothing else, and the roster is
+  /// the expensive half of a group payload. Absent on older islands — fall
+  /// back to `members.length` there.
+  member_count?: number
+  /// ⚠ Can legitimately be EMPTY. The chat list is fetched with `?members=0`,
+  /// so a group that came from `Api.groups` may carry no roster at all.
+  /// Anything that encrypts per recipient must go through `ensureRoster`
+  /// first — sealing against an empty roster produces no payloads at all, and
+  /// against a stale one it misses whoever joined since.
   members: GroupMember[]
   // Owner-set display gate: hide the member roster from Group Info for
   // non-owners. Mirrors the iOS/backend `members_hidden`.
@@ -346,8 +356,16 @@ export const Api = {
 
   // Groups --------------------------------------------------
 
-  groups(id: WebIdentity): Promise<RCQGroup[]> {
-    return request<RCQGroup[]>(id, 'GET', '/groups')
+  /// The account's groups.
+  ///
+  /// `withMembers = false` asks the island to leave the roster out, which is
+  /// the expensive part: every member with two base64 keys each, on a group
+  /// with a couple of thousand people. The count still rides along in
+  /// `member_count`, and the roster is one `groupInfo` away for the moments
+  /// that genuinely need it — see `ensureRoster`. Older islands ignore the
+  /// parameter and answer with the roster anyway, which is the safe direction.
+  groups(id: WebIdentity, withMembers = true): Promise<RCQGroup[]> {
+    return request<RCQGroup[]>(id, 'GET', withMembers ? '/groups' : '/groups?members=0')
   },
 
   groupInfo(id: WebIdentity, groupId: number): Promise<RCQGroup> {

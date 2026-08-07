@@ -24,6 +24,7 @@ import {
   type UserInfo,
   type UserStatus,
 } from '../lib/api'
+import { memberCount } from '../lib/group-roster'
 import { usePeerUnread, useGroupUnread, useTotalUnread, peerUnreadCount, groupUnreadCount } from '../lib/incoming-store'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
@@ -152,7 +153,15 @@ export function Contacts() {
         Api.contacts(identity),
         Api.pendingRequests(identity),
         Api.myInfo(identity),
-        Api.groups(identity),
+        // Without the roster: a chat-list row wants a name, a picture and a
+        // count, and the roster is the expensive half — every member with two
+        // base64 keys, which on the beta group is a couple of hundred
+        // kilobytes on the boot path, on every poll. Whoever needs the real
+        // roster (the chat, the group screen, a forward) fetches it per group.
+        Api.groups(identity, false),
+        // Foreign islands keep answering with their rosters: a cross-island
+        // group's members come from its own island and nothing here can ask
+        // for them by the local alias id.
         fetchForeignGroups(identity),
       ])
       const allGroups = [...groupList, ...foreignGroups]
@@ -732,7 +741,7 @@ function GroupRow({ group, onChanged }: { group: RCQGroup; onChanged: () => void
               {isMuted && <MuteGlyph />}
             </div>
             <div className="text-xs text-fg-dim">
-              {t('section.groups.members', { n: group.members.length })}
+              {t('section.groups.members', { n: memberCount(group) })}
               {group.host && <span className="font-mono"> · {group.host}</span>}
             </div>
           </div>

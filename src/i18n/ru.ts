@@ -762,6 +762,7 @@ export const ru: Record<string, string> = {
   'settings.backup.saved': "Файл сохранён.",
   'settings.backup.restored': "Восстановлено: {added} добавлено, {skipped} уже были.",
   'settings.backup.restoredUnreadable': "{n} эта версия прочитать не смогла.",
+  'settings.backup.restoredExpired': "В файле было исчезающих сообщений: {n}. Они не восстановлены.",
   'settings.backup.restoredMediaIgnored': "В файле было вложений: {n}. Браузер держит картинки на острове, поэтому из файла они не взяты.",
   'settings.backup.warning': "Этот файл вместе с фразой это вся переписка. Ключей в нём нет, войти по нему нельзя.",
 }

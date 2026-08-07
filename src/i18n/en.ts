@@ -763,6 +763,7 @@ export const en: Record<string, string> = {
   'settings.backup.saved': "File saved.",
   'settings.backup.restored': "Restored: {added} added, {skipped} already here.",
   'settings.backup.restoredUnreadable': "{n} this version could not read.",
+  'settings.backup.restoredExpired': "{n} disappearing messages were in the file and were not restored.",
   'settings.backup.restoredMediaIgnored': "{n} attachments were in the file; the browser keeps pictures on the island, so they were not taken from it.",
   'settings.backup.warning': "This file plus your phrase is your whole history. It holds no keys and cannot be used to sign in.",
 }

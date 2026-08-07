@@ -1006,6 +1006,7 @@ function BackupSection() {
       const parts = [t('settings.backup.restored', { added: r.added, skipped: r.skipped })]
       if (r.unreadable > 0) parts.push(t('settings.backup.restoredUnreadable', { n: r.unreadable }))
       if (r.mediaIgnored > 0) parts.push(t('settings.backup.restoredMediaIgnored', { n: r.mediaIgnored }))
+      if (r.expired > 0) parts.push(t('settings.backup.restoredExpired', { n: r.expired }))
       setNote(parts.join(' '))
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e))

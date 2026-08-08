@@ -224,7 +224,24 @@ the `.AppImage` extension.
 Bump `version` in `tauri.conf.json`, `Cargo.toml`, `Cargo.lock` and
 `package.json` for each release. The config version is the one the running app
 reports, so a stale `Cargo.toml` won't cause an update loop — but keep them
-together anyway.
+together anyway. In `Cargo.lock` the package is named `app`, not `rcq-desktop`.
+
+⚠ **There is a fifth place, and it is in a different repository.**
+`RCQ/web/src/components/Downloads.tsx` holds `DESKTOP_VERSION`, which prints
+on the download tiles AND is the `?v=` cache-buster on the three download
+URLs. Desktop filenames are stable across releases, so an unchanged query lets
+Cloudflare keep serving the previous build from its edge for hours after a
+publish. Bumping the four files here and forgetting that one ships a release
+whose own website advertises the version before it — this happened on 0.2.5,
+which went out ten minutes after the site had already been deployed. Bump it,
+rebuild `RCQ/web`, and deploy the site AFTER the release is published.
+
+⚠ CI (`.github/workflows/release.yml`) builds macOS on `aarch64-apple-darwin`
+only, so every tag push also uploads an arm64-only `RCQ_<v>_aarch64.dmg` and
+`RCQ_aarch64.app.tar.gz` with an ad-hoc signature. The publish script ignores
+them, but delete them from the release and upload the local
+`RCQ_<v>_universal.dmg` instead, or Intel users download a build that cannot
+run for them.
 
 ⚠ Do **not** point a locally downgraded dev build at the live manifest to test
 the updater. `tauri dev` runs a bare binary, so the macOS installer resolves

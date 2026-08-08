@@ -218,7 +218,14 @@ export function MessageReceiver() {
       })
     }
     // Every sealed 1:1 envelope_type a peer / our own other device can push.
-    const SEALED_WS_TYPES = ['message', 'reaction', 'delete', 'edit', 'read', 'system', 'secscreen', 'visit', 'bounce', 'carbon', 'homerec']
+    // skdm/sknack ride this same path and route() has handlers for both, but
+    // they were missing here: a sender-key chain handed to us live was dropped,
+    // the next gmsg had no key, we fanned an sknack out to the whole group, the
+    // kid owner's skdm reply was dropped too, and the loop repeated every few
+    // minutes. iOS and Android have carried both for a while. `nudge` and
+    // `relay_share` are deliberately NOT here: web has no envelope kind for
+    // either, so they would decrypt and fall through to a null row.
+    const SEALED_WS_TYPES = ['message', 'reaction', 'delete', 'edit', 'read', 'system', 'secscreen', 'visit', 'bounce', 'carbon', 'homerec', 'skdm', 'sknack']
     const offs = SEALED_WS_TYPES.map((tp) => on(tp, handle))
     return () => offs.forEach((off) => off())
   }, [identity, on])

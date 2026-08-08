@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.2.4"
+version = "0.2.5"
 description = "RCQ desktop client"
 authors = ["RCQ"]
 license = "AGPL-3.0"

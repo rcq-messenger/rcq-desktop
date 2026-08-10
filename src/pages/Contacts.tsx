@@ -24,6 +24,7 @@ import {
   type UserInfo,
   type UserStatus,
 } from '../lib/api'
+import { contactsCache } from '../lib/contacts-cache'
 import { memberCount } from '../lib/group-roster'
 import { usePeerUnread, useGroupUnread, useTotalUnread, peerUnreadCount, groupUnreadCount } from '../lib/incoming-store'
 import { useI18n } from '../lib/i18n-context'
@@ -82,48 +83,13 @@ async function fetchForeignGroups(identity: Parameters<typeof Api.groups>[0]): P
 // re-showed a loading spinner + re-fetched 4 endpoints each time. With it, a
 // return paints the last-known list INSTANTLY and refreshes silently in the
 // background.
-interface ContactsSnapshot {
-  contacts: Contact[]
-  groups: RCQGroup[]
-  pending: PendingRequest[]
-  me: UserInfo | null
-}
-const _contactsCache = new Map<number, ContactsSnapshot>()
-
-/// Best-effort name lookups off the warm contacts cache — used by the
-/// in-app message toasts so a "push" shows the sender/group name. Null
-/// when the cache is cold or the id isn't known.
-export function lookupContactName(viewerUin: number, uin: number): string | null {
-  return _contactsCache.get(viewerUin)?.contacts.find((c) => c.uin === uin)?.nickname || null
-}
-/// Last-known presence of a contact off the warm cache — used by the
-/// message toasts so a "push" shows the sender's status dot, not just
-/// the nick. Null when the cache is cold or the id isn't known.
-export function lookupContactStatus(viewerUin: number, uin: number): UserStatus | null {
-  return _contactsCache.get(viewerUin)?.contacts.find((c) => c.uin === uin)?.status ?? null
-}
-/// A contact's avatar media off the warm cache. The call overlay is the reason
-/// this exists: it showed a big letter of the nick where every other surface in
-/// the app shows the person's face.
-export function lookupContactAvatar(
-  viewerUin: number,
-  uin: number,
-): { mediaId?: string | null; mediaKey?: string | null } | null {
-  const c = _contactsCache.get(viewerUin)?.contacts.find((x) => x.uin === uin)
-  return c ? { mediaId: c.avatar_media_id, mediaKey: c.avatar_media_key } : null
-}
-export function lookupGroupName(viewerUin: number, id: number): string | null {
-  return _contactsCache.get(viewerUin)?.groups.find((g) => g.id === id)?.name || null
-}
-/// Group avatar media off the warm cache — so a group toast can show the
-/// group's avatar, not just a glyph. Null when cold / no custom avatar.
-export function lookupGroupAvatar(
-  viewerUin: number,
-  id: number,
-): { mediaId?: string | null; mediaKey?: string | null } | null {
-  const g = _contactsCache.get(viewerUin)?.groups.find((x) => x.id === id)
-  return g ? { mediaId: g.avatar_media_id, mediaKey: g.avatar_media_key } : null
-}
+export {
+  lookupContactName,
+  lookupContactStatus,
+  lookupContactAvatar,
+  lookupGroupName,
+  lookupGroupAvatar,
+} from '../lib/contacts-cache'
 
 export function Contacts() {
   const { identity } = useIdentity()
@@ -135,7 +101,7 @@ export function Contacts() {
   // last-known contacts on the FIRST render — no "Загружаем" spinner flash
   // between the initial (empty) render and the effect that reads the cache.
   // A silent background refresh still runs to pick up changes in place.
-  const _cachedAtMount = identity ? _contactsCache.get(identity.uin) : undefined
+  const _cachedAtMount = identity ? contactsCache.get(identity.uin) : undefined
   const [contacts, setContacts] = useState<Contact[]>(() => _cachedAtMount?.contacts ?? [])
   const [groups, setGroups] = useState<RCQGroup[]>(() => _cachedAtMount?.groups ?? [])
   const [pending, setPending] = useState<PendingRequest[]>(() => _cachedAtMount?.pending ?? [])
@@ -179,7 +145,7 @@ export function Contacts() {
       setPending(pendingList)
       setMe(myInfo)
       setGroups(allGroups)
-      _contactsCache.set(identity.uin, { contacts: list, groups: allGroups, pending: pendingList, me: myInfo })
+      contactsCache.set(identity.uin, { contacts: list, groups: allGroups, pending: pendingList, me: myInfo })
     } catch (e) {
       // On a background refresh keep the cached view; only surface errors on a cold load.
       if (!background) setError(e instanceof Error ? e.message : t('contacts.error'))
@@ -190,7 +156,7 @@ export function Contacts() {
 
   useEffect(() => {
     if (!identity) return
-    const cached = _contactsCache.get(identity.uin)
+    const cached = contactsCache.get(identity.uin)
     if (cached) {
       // Instant paint from cache, then refresh silently.
       setContacts(cached.contacts)
@@ -252,8 +218,8 @@ export function Contacts() {
     setMe((prev) => {
       if (!prev || prev.status !== 'offline') return prev
       const updated = { ...prev, status: 'online' as UserStatus }
-      const cached = _contactsCache.get(identity.uin)
-      if (cached) _contactsCache.set(identity.uin, { ...cached, me: updated })
+      const cached = contactsCache.get(identity.uin)
+      if (cached) contactsCache.set(identity.uin, { ...cached, me: updated })
       return updated
     })
     // If the user added their OWN UIN as a contact, that row never gets a

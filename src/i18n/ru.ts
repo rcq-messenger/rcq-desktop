@@ -333,8 +333,8 @@ export const ru: Record<string, string> = {
 
   // Добавить контакт
   'add.title': 'Добавить контакт',
-  'add.placeholder': 'UIN, ник, город…',
-  'add.hint': 'Введите хотя бы одну букву или цифру.',
+  'add.placeholder': '#UIN, ник, город…',
+  'add.hint': 'Введите хотя бы один символ. Точный номер ищется через #: #134.',
   'add.no_match': 'Ничего не найдено.',
   'add.cta': 'Добавить',
   'add.requested': 'Заявка отправлена',

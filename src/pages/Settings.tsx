@@ -27,6 +27,9 @@ import {
   removeUserRelay,
   userRelays,
   type UserRelay,
+  relayKeyStatus,
+  setRelayKey,
+  type RelayKeyStatus,
 } from '../lib/desktop'
 import { uploadReportAttachment } from '../lib/media'
 import { useI18n } from '../lib/i18n-context'
@@ -114,6 +117,46 @@ export function Settings() {
   useEffect(() => {
     void userRelays().then(setRelays)
   }, [])
+
+  const [keyStatus, setKeyStatus] = useState<RelayKeyStatus | null>(null)
+  const [keyInput, setKeyInput] = useState('')
+  const [keyBusy, setKeyBusy] = useState(false)
+  const [keyMsg, setKeyMsg] = useState<{ ok: boolean; text: string } | null>(null)
+
+  useEffect(() => {
+    void relayKeyStatus().then(setKeyStatus)
+  }, [])
+
+  async function saveKey() {
+    const key = keyInput.trim()
+    if (!key) return
+    setKeyBusy(true)
+    setKeyMsg(null)
+    const res = await setRelayKey(key)
+    setKeyBusy(false)
+    // Four outcomes, and they are not interchangeable. Telling somebody their
+    // key is wrong when the question never reached the broker is the answer
+    // that costs an evening.
+    if (res.verdict === 'ok') {
+      setKeyInput('')
+      setKeyMsg({ ok: true, text: t('settings.bypass.key_ok', { count: res.private_count }) })
+    } else if (res.verdict === 'expired') {
+      setKeyMsg({ ok: false, text: t('settings.bypass.key_expired') })
+    } else if (res.verdict === 'offline') {
+      setKeyMsg({ ok: false, text: t('settings.bypass.key_offline') })
+    } else {
+      setKeyMsg({ ok: false, text: t('settings.bypass.key_unknown') })
+    }
+    setKeyStatus(await relayKeyStatus())
+  }
+
+  async function clearKey() {
+    setKeyBusy(true)
+    await setRelayKey(null)
+    setKeyBusy(false)
+    setKeyMsg(null)
+    setKeyStatus(await relayKeyStatus())
+  }
 
   async function addRelay() {
     const token = relayToken.trim()
@@ -754,7 +797,54 @@ export function Settings() {
                   ` · ${t('settings.bypass.list_version', { version: bypass.relay_config_version })}`}
               </p>
             )}
-            {/* Hand-added bridges. The signed list and the broker both arrive
+            {/* A paid tenancy's access key. No prices and no purchase here on
+                purpose: this is the field, the buying happens on the site. */}
+            <div className="pt-1 space-y-2">
+              <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+                {t('settings.bypass.key_title')}
+              </div>
+              <p className="text-xs text-fg-dim">{t('settings.bypass.key_hint')}</p>
+              {keyStatus?.present ? (
+                <div className="flex items-center justify-between gap-2 text-xs">
+                  <span className="text-fg-secondary">
+                    {t('settings.bypass.key_present', { count: keyStatus.private_count })}
+                  </span>
+                  <button
+                    onClick={() => void clearKey()}
+                    disabled={keyBusy}
+                    className="shrink-0 text-fg-dim hover:text-red-500 transition-colors disabled:opacity-40"
+                  >
+                    {t('settings.bypass.key_remove')}
+                  </button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <input
+                    value={keyInput}
+                    onChange={(e) => setKeyInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') void saveKey()
+                    }}
+                    placeholder={t('settings.bypass.key_placeholder')}
+                    spellCheck={false}
+                    className="flex-1 min-w-0 h-9 px-3 rounded-md bg-surface-dim border border-line text-sm font-mono"
+                  />
+                  <button
+                    onClick={() => void saveKey()}
+                    disabled={keyBusy || !keyInput.trim()}
+                    className="shrink-0 h-9 px-3 rounded-md border border-line text-xs font-medium hover:bg-surface-dim transition-colors disabled:opacity-40"
+                  >
+                    {keyBusy ? t('settings.bypass.key_checking') : t('common.save')}
+                  </button>
+                </div>
+              )}
+              {keyMsg && (
+                <p className={`text-xs ${keyMsg.ok ? 'text-fg-secondary' : 'text-red-500'}`}>
+                  {keyMsg.text}
+                </p>
+              )}
+            </div>
+                        {/* Hand-added bridges. The signed list and the broker both arrive
                 over names a censor can enumerate, so when those are gone this
                 is the only way left to point the app at something that works —
                 a token pasted from a chat, a note, or read aloud. */}

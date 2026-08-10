@@ -6,6 +6,7 @@
 
 #[cfg(desktop)]
 mod user_relay;
+mod broker;
 mod bypass;
 #[cfg(desktop)]
 mod relay;
@@ -51,6 +52,38 @@ fn user_relay_add(app: tauri::AppHandle, token: String) -> Result<user_relay::Us
 #[tauri::command]
 fn user_relay_remove(app: tauri::AppHandle, tag: String) -> Result<(), String> {
     user_relay::remove(&app, &tag)
+}
+
+
+/// The paid access key. Storing it asks the broker what it is worth right away
+/// and rebuilds the running tunnel, so the endpoints are carrying traffic
+/// before the person who pasted the key has looked away. Everywhere else on
+/// this platform a change to the tunnel waits for a relaunch, because the
+/// webview's proxy is bound when the window is built — that constraint is about
+/// the ADDRESS the page talks to, and rebuilding the core behind the same
+/// loopback port does not move it.
+#[cfg(desktop)]
+#[tauri::command]
+fn relay_key_set(app: tauri::AppHandle, key: Option<String>) -> broker::KeyResult {
+    let proxy = bypass::proxy_for_fetch();
+    let result = broker::set_key(&app, key, proxy.as_deref());
+    if result.verdict == "ok" {
+        bypass::rebuild(&app);
+    }
+    result
+}
+
+/// Whether a key is stored and what the broker last made of it. The key itself
+/// is never handed back to the page: it is a bearer credential, and the page has
+/// no use for it that showing a masked state does not cover.
+#[cfg(desktop)]
+#[tauri::command]
+fn relay_key_status(app: tauri::AppHandle) -> serde_json::Value {
+    serde_json::json!({
+        "present": broker::key(&app).is_some(),
+        "verdict": broker::verdict(&app),
+        "private_count": broker::relays(&app).len(),
+    })
 }
 
 #[cfg(desktop)]
@@ -132,6 +165,8 @@ pub fn run() {
                 user_relay_add,
                 user_relay_remove,
                 bypass_set,
+                relay_key_set,
+                relay_key_status,
                 network_diagnostics,
                 desktop_platform
             ]);

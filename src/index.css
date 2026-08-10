@@ -150,8 +150,16 @@ html.dark .rcq-wave {
   border-radius: 0.5rem;
   transition: background-color 120ms ease, color 120ms ease;
 }
+/* Light theme lights up with the field colour, dark with the panel colour. One
+   token for both looked right on black and almost invisible on white: the panel
+   colour there is 255 against a 250 page, which is a difference you have to look
+   for. Each theme uses whichever of its own tokens is a step AWAY from the page. */
 .rcq-header button:hover:not(:disabled),
 .rcq-header a[aria-label]:hover {
+  background-color: rgb(var(--c-field));
+}
+html.dark .rcq-header button:hover:not(:disabled),
+html.dark .rcq-header a[aria-label]:hover {
   background-color: rgb(var(--c-surface));
 }
 

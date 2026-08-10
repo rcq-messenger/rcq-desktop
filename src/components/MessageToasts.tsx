@@ -121,7 +121,7 @@ export function MessageToasts() {
             exit={{ opacity: 0, x: 24, scale: 0.97 }}
             transition={{ duration: 0.22, ease: 'easeOut' }}
             onClick={() => open(toast)}
-            className="text-left rounded-xl border border-line bg-surface shadow-lg px-3 py-2.5 hover:bg-surface-dim transition-colors"
+            className="text-left rounded-xl bg-surface shadow-lg px-3 py-2.5 hover:bg-field transition-colors"
           >
             <div className="flex items-start gap-2">
               {/* Group toast: lead with the group's avatar (#toast-avatars). */}

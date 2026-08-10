@@ -141,7 +141,7 @@ function VideoStage() {
           autoPlay
           playsInline
           muted
-          className="absolute bottom-4 right-4 w-36 rounded-xl border border-line shadow-lg [transform:scaleX(-1)]"
+          className="absolute bottom-4 right-4 w-36 rounded-xl shadow-lg [transform:scaleX(-1)]"
         />
       )}
       <div className="absolute top-4 left-0 right-0 flex flex-col items-center gap-1 text-white drop-shadow">
@@ -207,7 +207,7 @@ function Controls() {
   return (
     <div className="flex-none pb-10 pt-6 px-6 flex flex-col items-center gap-5">
       {call.incomingUpgrade && (
-        <div className="flex items-center gap-3 bg-surface border border-line rounded-2xl px-4 py-3">
+        <div className="flex items-center gap-3 bg-surface rounded-2xl px-4 py-3">
           <span className="text-sm">{t('call.upgrade.ask')}</span>
           <button
             onClick={call.acceptUpgrade}
@@ -274,7 +274,7 @@ function RoundButton({
   // Colour carries meaning and nothing else: green answers, red ends, and an
   // engaged toggle inverts. Everything else stays a plain surface.
   const tones: Record<string, string> = {
-    neutral: 'bg-surface border border-line text-fg-primary hover:bg-surface-dim',
+    neutral: 'bg-surface text-fg-primary hover:bg-surface-dim',
     on: 'bg-fg-primary text-surface',
     danger: 'bg-red-600 text-white hover:bg-red-700',
     accept: 'bg-accent text-white hover:bg-accent-dim',

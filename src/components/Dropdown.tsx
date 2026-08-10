@@ -69,8 +69,8 @@ export function Dropdown<T extends string>({
 
   const triggerBase =
     variant === 'pill'
-      ? 'bg-surface border border-line rounded-full px-3 py-1.5'
-      : 'w-full bg-surface-dim border border-line rounded-md px-3 py-2'
+      ? 'bg-surface rounded-full px-3 py-1.5'
+      : 'w-full bg-field rounded-md px-3 py-2'
 
   return (
     <div ref={wrapRef} className={`relative inline-block ${variant === 'pill' ? '' : 'w-full'}`}>
@@ -91,7 +91,7 @@ export function Dropdown<T extends string>({
       {open && (
         <ul
           role="listbox"
-          className={`absolute z-30 mt-1 ${panelWidthClass ?? 'left-0 right-0'} max-h-64 overflow-y-auto rounded-md border border-line bg-surface shadow-lg py-1`}
+          className={`absolute z-30 mt-1 ${panelWidthClass ?? 'left-0 right-0'} max-h-64 overflow-y-auto rounded-md bg-surface shadow-lg py-1`}
         >
           {options.map((opt) => {
             const selected = opt.value === value

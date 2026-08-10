@@ -54,7 +54,7 @@ export function Privacy() {
 
   return (
     <div className="min-h-screen bg-surface-dim">
-      <header className="sticky top-0 bg-surface border-b border-line z-10">
+      <header className="sticky top-0 bg-surface z-10">
         <div className="max-w-2xl mx-auto px-4 h-14 flex items-center gap-3">
           <Link to="/settings" className="text-fg-secondary hover:text-fg-primary px-2">
             ←
@@ -77,7 +77,7 @@ export function Privacy() {
         )}
 
         {info && (
-          <section className="bg-surface rounded-lg border border-line p-4 divide-y divide-line">
+          <section className="bg-surface rounded-lg p-4">
             <div className="pb-3">
               <ScopePicker
                 label={t('settings.privacy.last_seen')}
@@ -139,7 +139,7 @@ function ScopePicker({
           value={value}
           onChange={(e) => onChange(e.target.value as Scope)}
           disabled={disabled}
-          className="bg-surface-dim border border-line rounded-md px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-accent disabled:opacity-40 flex-none"
+          className="bg-field rounded-md px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-accent disabled:opacity-40 flex-none"
         >
           <option value="everyone">{t('settings.privacy.scope.everyone')}</option>
           <option value="contacts">{t('settings.privacy.scope.contacts')}</option>

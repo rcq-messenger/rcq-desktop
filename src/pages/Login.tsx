@@ -81,7 +81,7 @@ function ModeSwitch({ onDone }: { onDone: (id: WebIdentity) => void }) {
   )
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-3 gap-1 p-1 rounded-lg bg-surface-dim border border-line text-sm font-medium">
+      <div className="grid grid-cols-3 gap-1 p-1 rounded-lg bg-surface-dim text-sm font-medium">
         {tab('create', t('login.mode.create'))}
         {tab('recover', t('login.mode.recover'))}
         {tab('link', t('login.mode.link'))}
@@ -105,7 +105,7 @@ function ModeSwitch({ onDone }: { onDone: (id: WebIdentity) => void }) {
 
 function PhraseGrid({ words }: { words: string[] }) {
   return (
-    <div className="grid grid-cols-3 gap-1.5 rounded-lg border border-line bg-surface-dim p-3">
+    <div className="grid grid-cols-3 gap-1.5 rounded-lg bg-surface-dim p-3">
       {words.map((w, i) => (
         <div key={i} className="flex items-baseline gap-1 text-sm">
           <span className="font-mono text-[10px] text-fg-dim w-5 text-right shrink-0">{i + 1}</span>
@@ -148,7 +148,7 @@ function RecoverPane({ onDone }: { onDone: (id: WebIdentity) => void }) {
         onChange={(e) => setPhrase(e.target.value)}
         rows={4}
         placeholder={t('login.recover.placeholder')}
-        className="w-full px-3 py-2 rounded-md border border-line bg-surface-dim outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm resize-none"
+        className="w-full px-3 py-2 rounded-md bg-field outline-none focus:ring-1 focus:ring-accent text-sm resize-none"
         spellCheck={false}
         autoCorrect="off"
         autoCapitalize="off"
@@ -345,7 +345,7 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
             setCopied(true)
             setTimeout(() => setCopied(false), 1500)
           }}
-          className="w-full h-9 rounded-md border border-line bg-surface-dim hover:bg-line/40 text-sm font-medium transition-colors"
+          className="w-full h-9 rounded-md bg-field hover:bg-line/40 text-sm font-medium transition-colors"
         >
           {copied ? t('login.phrase.copied') : t('login.phrase.copy')}
         </button>
@@ -375,7 +375,7 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
           value={nickname}
           onChange={(e) => setNickname(e.target.value)}
           maxLength={64}
-          className="w-full h-10 px-3 rounded-md border border-line bg-surface-dim outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
+          className="w-full h-10 px-3 rounded-md bg-field outline-none focus:ring-1 focus:ring-accent text-sm"
           spellCheck={false}
           autoCorrect="off"
           autoCapitalize="off"

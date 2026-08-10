@@ -42,19 +42,19 @@ export function DecryptedImage({ mediaId, mediaKey, apiBase }: Props) {
 
   if (failed) {
     return (
-      <div className="flex h-40 w-56 max-w-full items-center justify-center rounded-lg bg-surface-dim border border-line text-xs text-fg-dim">
+      <div className="flex h-40 w-56 max-w-full items-center justify-center rounded-lg bg-surface-dim text-xs text-fg-dim">
         {t('chat.media.unavailable')}
       </div>
     )
   }
   if (!url) {
-    return <div className="h-40 w-56 max-w-full animate-pulse rounded-lg bg-surface-dim border border-line" />
+    return <div className="h-40 w-56 max-w-full animate-pulse rounded-lg bg-surface-dim" />
   }
   return (
     <button
       type="button"
       onClick={() => window.open(url, '_blank', 'noopener')}
-      className="block overflow-hidden rounded-lg border border-line"
+      className="block overflow-hidden rounded-lg"
       title={t('chat.media.open')}
     >
       <img

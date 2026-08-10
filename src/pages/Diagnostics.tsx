@@ -103,7 +103,7 @@ export function Diagnostics() {
 
   return (
     <div className="min-h-screen bg-surface-dim">
-      <header className="sticky top-0 bg-surface border-b border-line z-10">
+      <header className="sticky top-0 bg-surface z-10">
         <div className="max-w-2xl mx-auto px-3 h-14 flex items-center gap-3">
           <Link to="/settings" className="text-fg-secondary hover:text-fg-primary" aria-label={t('common.back')}>
             ←
@@ -113,7 +113,7 @@ export function Diagnostics() {
       </header>
 
       <main className="max-w-2xl mx-auto px-4 py-4 space-y-4">
-        <section className="bg-surface rounded-lg border border-line p-4 space-y-2">
+        <section className="bg-surface rounded-lg p-4 space-y-2">
           <Row
             label={t('diag.route')}
             value={diag?.tunnel ? t('diag.mode_tunnel') : t('diag.mode_direct')}
@@ -184,7 +184,7 @@ export function Diagnostics() {
         <button
           onClick={() => setAttempt((n) => n + 1)}
           disabled={running}
-          className="w-full h-10 rounded-md border border-line text-sm font-medium hover:bg-surface-dim disabled:opacity-40 transition-colors"
+          className="w-full h-10 rounded-md bg-field text-sm font-medium hover:bg-line/50 disabled:opacity-40 transition-colors"
         >
           {running ? t('diag.running') : t('diag.run_again')}
         </button>

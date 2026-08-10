@@ -1068,7 +1068,7 @@ export function Chat() {
             key={c.asset}
             onClick={() => void toggleReaction(targetId, c.asset)}
             className={`inline-flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 transition-colors ${
-              c.mine ? 'border-accent/60 bg-accent/15' : 'border-line bg-surface hover:bg-surface-dim'
+              c.mine ? 'bg-accent/20' : 'bg-surface hover:bg-surface-dim'
             }`}
             title={c.asset}
           >
@@ -1235,7 +1235,7 @@ export function Chat() {
           </div>
         </div>
       )}
-      <header className="flex-none bg-surface border-b border-line z-10">
+      <header className="flex-none bg-surface z-10">
         <div className="max-w-2xl mx-auto px-4 h-14 flex items-center gap-3">
           <Link to="/contacts" className="text-fg-secondary hover:text-fg-primary px-2">
             ←
@@ -1267,25 +1267,31 @@ export function Chat() {
             </div>
           </Link>
           {/* Calls are one to one only, and calling yourself is not a feature.
-              Hidden rather than disabled while the socket is down: signalling
-              has no REST fallback, so the button would simply do nothing. */}
-          {!isGroup && !isSelf && peer && call.callable && (
+              These used to be HIDDEN whenever the socket was down, on the
+              reasoning that signalling has no REST fallback so the button would
+              do nothing. The result was a header whose controls appeared and
+              vanished on every reconnect — read as flickering, and a control
+              that moves is worse than one that is briefly unavailable. Dimmed
+              and disabled now, with a title that says why. */}
+          {!isGroup && !isSelf && peer && (
             <>
               <button
                 type="button"
+                disabled={!call.callable}
                 onClick={() => call.start(peer.uin, peer.nickname ?? `#${peer.uin}`, 'audio')}
                 aria-label={t('call.start.audio')}
-                title={t('call.start.audio')}
-                className="p-2 text-fg-secondary hover:text-fg-primary"
+                title={call.callable ? t('call.start.audio') : t('call.offline')}
+                className="p-2 text-fg-secondary hover:text-fg-primary disabled:opacity-30 disabled:hover:text-fg-secondary transition-opacity"
               >
                 <HeaderPhoneIcon />
               </button>
               <button
                 type="button"
+                disabled={!call.callable}
                 onClick={() => call.start(peer.uin, peer.nickname ?? `#${peer.uin}`, 'video')}
                 aria-label={t('call.start.video')}
-                title={t('call.start.video')}
-                className="p-2 text-fg-secondary hover:text-fg-primary"
+                title={call.callable ? t('call.start.video') : t('call.offline')}
+                className="p-2 text-fg-secondary hover:text-fg-primary disabled:opacity-30 disabled:hover:text-fg-secondary transition-opacity"
               >
                 <HeaderCameraIcon />
               </button>
@@ -1394,7 +1400,7 @@ export function Chat() {
                           className="border-l-2 border-accent/60 pl-2 max-w-full text-left rounded-r hover:bg-line/30 transition-colors cursor-pointer"
                         >
                           <div className="font-mono text-[10px] text-fg-dim">{m.replyTo.authorName}</div>
-                          <div className="text-[11px] text-fg-secondary line-clamp-3 break-words max-w-[18rem]">{m.replyTo.snippet}</div>
+                          <div className="text-[11px] text-fg-secondary line-clamp-3 break-words max-w-[18rem]"><EmoticonText text={m.replyTo.snippet} emoticonSize={14} /></div>
                         </button>
                       )}
                       {m.kind === 'poll' && m.poll ? (
@@ -1672,7 +1678,7 @@ export function Chat() {
                     >
                       <div className="font-mono text-[10px] text-fg-dim">{row.replyTo.authorName}</div>
                       <div className="text-[11px] text-fg-secondary line-clamp-3 break-words max-w-[18rem]">
-                        {row.replyTo.snippet}
+                        <EmoticonText text={row.replyTo.snippet} emoticonSize={14} />
                       </div>
                     </button>
                   )}
@@ -1776,7 +1782,7 @@ export function Chat() {
             onClick={stickToBottom}
             aria-label={t('chat.jump_to_newest')}
             title={t('chat.jump_to_newest')}
-            className="absolute bottom-2 right-4 z-20 h-10 min-w-10 px-2 rounded-full bg-surface border border-line shadow-lg text-fg-primary flex items-center justify-center gap-1 hover:bg-surface-dim transition-colors"
+            className="absolute bottom-2 right-4 z-20 h-10 min-w-10 px-2 rounded-full bg-surface shadow-lg text-fg-primary flex items-center justify-center gap-1 hover:bg-field transition-colors"
           >
             <span aria-hidden="true" className="text-base leading-none">↓</span>
             {unseenBelow > 0 && (
@@ -1806,7 +1812,7 @@ export function Chat() {
             </AnimatePresence>
           </div>
           {!isGroup && peer?.blocked ? (
-            <div className="flex items-center justify-center gap-3 rounded-2xl border border-line px-4 py-3 text-sm text-fg-secondary">
+            <div className="flex items-center justify-center gap-3 rounded-2xl bg-surface px-4 py-3 text-sm text-fg-secondary">
               <span>{t('chat.blocked.notice')}</span>
               <button
                 onClick={() => void unblockPeer()}
@@ -1818,7 +1824,7 @@ export function Chat() {
           ) : isGroup && group?.post_policy === 'owner_only' && identity != null && group.owner_uin !== identity.uin ? (
             // Broadcast group: only the owner posts. Match the iOS/Android
             // read-only notice (the server enforces it too now).
-            <div className="flex items-center justify-center rounded-2xl border border-line px-4 py-3 text-sm text-fg-secondary">
+            <div className="flex items-center justify-center rounded-2xl bg-surface px-4 py-3 text-sm text-fg-secondary">
               <span>{t('chat.owner_only.notice')}</span>
             </div>
           ) : (
@@ -1845,7 +1851,7 @@ export function Chat() {
                 <div className="font-mono text-[10px] text-fg-dim">
                   {t('chat.reply.replying_to', { name: replyTo.authorName })}
                 </div>
-                <div className="text-fg-secondary truncate">{replyTo.snippet}</div>
+                <div className="text-fg-secondary truncate"><EmoticonText text={replyTo.snippet} emoticonSize={14} /></div>
               </div>
               <button
                 onClick={cancelReply}
@@ -1905,7 +1911,7 @@ export function Chat() {
                           setAttachMenuOpen(false)
                           fileInputRef.current?.click()
                         }}
-                        className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm hover:bg-surface-dim transition-colors"
+                        className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm hover:bg-field transition-colors"
                       >
                         <AttachIcon />
                         {t('chat.attach.photo')}
@@ -1915,7 +1921,7 @@ export function Chat() {
                           setAttachMenuOpen(false)
                           docInputRef.current?.click()
                         }}
-                        className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm hover:bg-surface-dim transition-colors border-t border-line"
+                        className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm hover:bg-field transition-colors"
                       >
                         <DocIcon />
                         {t('chat.attach.file')}
@@ -1945,7 +1951,7 @@ export function Chat() {
             <textarea
               ref={taRef}
               rows={1}
-              className="flex-1 resize-none rounded-2xl border border-line bg-surface px-4 py-2.5 text-sm outline-none leading-snug placeholder:text-fg-dim focus:border-accent transition-colors max-h-[140px] overflow-y-auto"
+              className="flex-1 resize-none rounded-2xl bg-surface px-4 py-2.5 text-sm outline-none leading-snug placeholder:text-fg-dim focus:ring-1 focus:ring-accent transition-colors max-h-[140px] overflow-y-auto"
               placeholder={
                 isGroup && group
                   ? t('chat.placeholder.group', { name: group.name })
@@ -2124,7 +2130,7 @@ function pinPreview(text: string): string {
 function PinnedBanner({ text, group, expanded, onToggle }: { text: string; group: RCQGroup; expanded: boolean; onToggle: () => void }) {
   const { t } = useI18n()
   return (
-    <div className="flex-none bg-surface-dim border-b border-line">
+    <div className="flex-none bg-field">
       <div className="max-w-2xl mx-auto w-full">
         <button
           type="button"
@@ -2250,7 +2256,7 @@ function PollBubble({ poll }: { poll: PollRow }) {
               type="button"
               disabled={closed}
               onClick={() => void vote(i)}
-              className="relative text-left rounded-md overflow-hidden border border-line px-2 py-1.5 disabled:cursor-default"
+              className="relative text-left rounded-md overflow-hidden bg-field px-2 py-1.5 disabled:cursor-default"
             >
               <div className="absolute inset-y-0 left-0 bg-accent/20" style={{ width: `${pct}%` }} />
               <div className="relative flex items-center gap-2 text-[13px]">

@@ -109,7 +109,7 @@ export function AddContact() {
 
   return (
     <div className="min-h-screen bg-surface-dim">
-      <header className="sticky top-0 bg-surface border-b border-line z-10">
+      <header className="sticky top-0 bg-surface z-10">
         <div className="max-w-2xl mx-auto px-4 h-14 flex items-center gap-3">
           <Link to="/contacts" className="text-fg-secondary hover:text-fg-primary px-2">
             ←
@@ -124,7 +124,7 @@ export function AddContact() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder={t('add.placeholder')}
-          className="w-full h-11 px-3 rounded-md border border-line bg-surface outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
+          className="w-full h-11 px-3 rounded-md bg-field outline-none focus:ring-1 focus:ring-accent text-sm"
           spellCheck={false}
           autoCorrect="off"
           autoCapitalize="off"
@@ -137,7 +137,7 @@ export function AddContact() {
         )}
 
         {crossIsland && (
-          <div className="bg-surface rounded-lg border border-line p-4 flex items-center gap-3">
+          <div className="bg-surface rounded-lg p-4 flex items-center gap-3">
             <div className="flex-1 min-w-0">
               <div className="font-medium truncate">{crossIsland.uin}<span className="text-fg-dim">@{crossIsland.host}</span></div>
               <div className="text-xs text-fg-dim">Cross-island contact (another RCQ island)</div>
@@ -170,7 +170,7 @@ export function AddContact() {
           </div>
         )}
 
-        <ul className="bg-surface rounded-lg border border-line divide-y divide-line">
+        <ul className="bg-surface rounded-lg">
           {results.map((u) => (
             <li key={u.uin} className="p-4 flex items-center gap-3">
               <div className="flex-1 min-w-0">

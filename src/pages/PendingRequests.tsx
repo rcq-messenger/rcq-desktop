@@ -114,7 +114,7 @@ export function PendingRequests() {
 
   return (
     <div className="min-h-screen bg-surface-dim">
-      <header className="sticky top-0 bg-surface border-b border-line z-10">
+      <header className="sticky top-0 bg-surface z-10">
         <div className="max-w-2xl mx-auto px-4 h-14 flex items-center gap-3">
           <Link to="/contacts" className="text-fg-secondary hover:text-fg-primary px-2">
             ←
@@ -129,7 +129,7 @@ export function PendingRequests() {
             <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide mb-2">
               {t('ci.section')}
             </div>
-            <ul className="bg-surface rounded-lg border border-line divide-y divide-line">
+            <ul className="bg-surface rounded-lg">
               {ci.map((r) => {
                 const tag = `${r.uin}@${r.host}`
                 const firstText = r.msgs.find((m) => m.kind === 'text') as { text?: string } | undefined
@@ -145,7 +145,7 @@ export function PendingRequests() {
                       <div className="flex items-center gap-2 shrink-0">
                         <button
                           onClick={() => blockCI(r)}
-                          className="px-3 h-9 rounded-md border border-line text-sm font-medium hover:bg-surface-dim transition-colors"
+                          className="px-3 h-9 rounded-md bg-field text-sm font-medium hover:bg-line/50 transition-colors"
                         >
                           {t('ci.block')}
                         </button>
@@ -186,7 +186,7 @@ export function PendingRequests() {
           </div>
         )}
 
-        <ul className="bg-surface rounded-lg border border-line divide-y divide-line">
+        <ul className="bg-surface rounded-lg">
           {requests.map((r) => (
             <li key={r.id} className="p-4">
               <div className="flex items-center justify-between gap-3">
@@ -200,7 +200,7 @@ export function PendingRequests() {
                   <button
                     onClick={() => void respond(r.id, false)}
                     disabled={acting === r.id}
-                    className="px-3 h-9 rounded-md border border-line text-sm font-medium hover:bg-surface-dim disabled:opacity-40 transition-colors"
+                    className="px-3 h-9 rounded-md bg-field text-sm font-medium hover:bg-line/50 disabled:opacity-40 transition-colors"
                   >
                     {t('pending.decline')}
                   </button>

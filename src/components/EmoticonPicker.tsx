@@ -28,7 +28,7 @@ export function EmoticonPicker({ uin, onPick }: Props) {
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 8, scale: 0.97 }}
         transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-        className="rounded-2xl overflow-hidden border border-line bg-surface shadow-lg"
+        className="rounded-2xl overflow-hidden bg-surface shadow-lg"
       >
         {panel.length === 0 ? (
           <div className="flex flex-col items-center gap-2 px-4 py-6 text-center">
@@ -70,7 +70,7 @@ function Grid({ items, onPick }: { items: PaletteEntry[]; onPick: (code: string)
           key={p.asset}
           onClick={() => onPick(p.primaryCode)}
           title={`${p.name}  ${p.primaryCode}`}
-          className="w-9 h-9 flex items-center justify-center hover:bg-surface-dim rounded-md transition-colors"
+          className="w-9 h-9 flex items-center justify-center hover:bg-field rounded-md transition-colors"
         >
           <img
             src={emoticonAssetURL(p.asset)}

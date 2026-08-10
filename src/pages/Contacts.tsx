@@ -289,7 +289,7 @@ export function Contacts() {
 
   return (
     <div className="min-h-screen bg-surface-dim">
-      <header className="sticky top-0 bg-surface border-b border-line z-10">
+      <header className="sticky top-0 bg-surface z-10">
         <div className="max-w-2xl mx-auto px-3 h-14 flex items-center gap-2">
           {me && (
             <>
@@ -315,7 +315,7 @@ export function Contacts() {
           <div className="ml-auto flex items-center gap-0.5">
             <Link
               to="/add"
-              className="text-fg-secondary hover:text-fg-primary p-2 rounded-md hover:bg-surface-dim"
+              className="text-fg-secondary hover:text-fg-primary p-2 rounded-md hover:bg-field"
               title={t('contacts.add')}
               aria-label={t('contacts.add')}
             >
@@ -383,11 +383,11 @@ export function Contacts() {
             Always on top, like the native apps. The server never lists your
             own UIN in /contacts, so this is the only entry point. */}
         {me && (
-          <ul className="bg-surface rounded-lg border border-line [&_li:first-child>*]:rounded-t-lg [&_li:last-child>*]:rounded-b-lg">
+          <ul className="bg-surface rounded-lg [&_li:first-child>*]:rounded-t-lg [&_li:last-child>*]:rounded-b-lg">
             <li>
               <Link
                 to={`/chat/${me.uin}`}
-                className="flex items-center gap-3 px-4 py-3 hover:bg-surface-dim transition-colors"
+                className="flex items-center gap-3 px-4 py-3 hover:bg-field transition-colors"
               >
                 <span className="flex h-7 w-7 flex-none items-center justify-center rounded-full bg-accent/15 text-accent">
                   <BookmarkGlyph />
@@ -597,7 +597,7 @@ function Section({
           it: hovering the first or last row visibly cut the list's corner.
           `> *` takes whatever the row leads with, div or anchor. */}
       {!isCollapsed && (
-        <ul className="bg-surface rounded-lg border border-line divide-y divide-line [&_li:first-child>*]:rounded-t-lg [&_li:last-child>*]:rounded-b-lg">
+        <ul className="bg-surface rounded-lg [&_li:first-child>*]:rounded-t-lg [&_li:last-child>*]:rounded-b-lg">
           {children}
         </ul>
       )}
@@ -710,7 +710,7 @@ function GroupRow({ group, onChanged }: { group: RCQGroup; onChanged: () => void
   // opens"). Mirrors ContactRow. Links are siblings, never nested <a>.
   return (
     <li className="relative">
-      <div className={'flex items-center gap-3 px-4 py-3 hover:bg-surface-dim transition-colors ' + (isArchived ? 'opacity-60' : '')}>
+      <div className={'flex items-center gap-3 px-4 py-3 hover:bg-field transition-colors ' + (isArchived ? 'opacity-60' : '')}>
         <Link to={`/chat/g/${group.id}`} className="flex items-center gap-3 flex-1 min-w-0">
           <GroupAvatar size={28} mediaId={group.avatar_media_id} mediaKey={group.avatar_media_key} />
           <div className="flex-1 min-w-0">

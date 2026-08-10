@@ -69,7 +69,7 @@ export function GroupInfo() {
 
   return (
     <div className="min-h-screen bg-surface-dim">
-      <header className="sticky top-0 bg-surface border-b border-line z-10">
+      <header className="sticky top-0 bg-surface z-10">
         <div className="max-w-2xl mx-auto px-4 h-14 flex items-center gap-3">
           <Link to="/contacts" className="text-fg-secondary hover:text-fg-primary px-2">
             ←
@@ -101,7 +101,7 @@ export function GroupInfo() {
 
         {group && (
           <>
-            <section className="bg-surface rounded-lg border border-line p-4 space-y-1 flex items-center gap-3">
+            <section className="bg-surface rounded-lg p-4 space-y-1 flex items-center gap-3">
               <GroupAvatar size={48} mediaId={group.avatar_media_id} mediaKey={group.avatar_media_key} />
               <div className="flex-1 min-w-0">
                 <div className="font-bold text-lg truncate">{group.name}</div>
@@ -111,7 +111,7 @@ export function GroupInfo() {
               </div>
             </section>
 
-            <section className="bg-surface rounded-lg border border-line">
+            <section className="bg-surface rounded-lg">
               {group.members_hidden && !isOwner ? (
                 <div className="px-4 py-3 text-sm text-fg-secondary">
                   {t('group.info.members_hidden')}
@@ -120,18 +120,18 @@ export function GroupInfo() {
               <>
               <button
                 onClick={() => setMembersExpanded((v) => !v)}
-                className="w-full flex items-center justify-between px-4 py-2 text-xs font-semibold text-fg-secondary uppercase tracking-wide hover:bg-surface-dim"
+                className="w-full flex items-center justify-between px-4 py-2 text-xs font-semibold text-fg-secondary uppercase tracking-wide hover:bg-field"
               >
                 <span>{t('group.info.members_section')} · {group.members.length}</span>
                 <span className="text-fg-dim">{membersExpanded ? '▾' : '▸'}</span>
               </button>
               {membersExpanded && (
-              <ul className="divide-y divide-line border-t border-line">
+              <ul>
                 {group.members.map((m) => (
                   <li key={m.uin}>
                     <Link
                       to={m.uin === identity.uin ? '/profile' : `/profile/${m.uin}`}
-                      className="flex items-center gap-3 px-4 py-2.5 hover:bg-surface-dim"
+                      className="flex items-center gap-3 px-4 py-2.5 hover:bg-field"
                     >
                       {/* A member's picture rides with the roster, gated by
                           membership; without one this is the plain status icon,
@@ -170,7 +170,7 @@ export function GroupInfo() {
               )}
             </section>
 
-            <section className="bg-surface rounded-lg border border-line p-2">
+            <section className="bg-surface rounded-lg p-2">
               {!confirmDestroy ? (
                 <button
                   onClick={() => setConfirmDestroy(true)}
@@ -188,7 +188,7 @@ export function GroupInfo() {
                     <button
                       onClick={() => setConfirmDestroy(false)}
                       disabled={busy}
-                      className="flex-1 h-9 rounded-md border border-line text-sm font-medium hover:bg-surface-dim transition-colors"
+                      className="flex-1 h-9 rounded-md bg-field text-sm font-medium hover:bg-line/50 transition-colors"
                     >
                       {t('common.cancel')}
                     </button>

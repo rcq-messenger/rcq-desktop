@@ -83,7 +83,7 @@ export function ContactActionsMenu({ contact, onClose, onChanged }: Props) {
   return (
     <div
       ref={ref}
-      className="absolute right-0 top-full mt-1 w-56 bg-surface border border-line rounded-lg shadow-lg py-1 z-30 text-sm"
+      className="absolute right-0 top-full mt-1 w-56 bg-surface rounded-lg shadow-lg py-1 z-30 text-sm"
       onClick={(e) => e.stopPropagation()}
     >
       <Row
@@ -131,7 +131,7 @@ export function ContactActionsMenu({ contact, onClose, onChanged }: Props) {
           <div className="flex gap-1">
             <button
               onClick={() => setConfirmRemove(false)}
-              className="flex-1 h-8 rounded border border-line text-xs"
+              className="flex-1 h-8 rounded bg-field text-xs"
             >
               {t('common.cancel')}
             </button>
@@ -170,7 +170,7 @@ function Row({
       onClick={onClick}
       disabled={busy}
       className={
-        'w-full px-3 py-2 flex items-center gap-2.5 text-left hover:bg-surface-dim transition-colors disabled:opacity-40 ' +
+        'w-full px-3 py-2 flex items-center gap-2.5 text-left hover:bg-field transition-colors disabled:opacity-40 ' +
         (destructive ? 'text-red-600' : 'text-fg-primary')
       }
     >

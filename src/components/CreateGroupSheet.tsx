@@ -49,7 +49,7 @@ export function CreateGroupSheet({ contacts, onClose, onCreated }: Props) {
         className="bg-surface w-full sm:max-w-md sm:rounded-lg rounded-t-2xl shadow-xl max-h-[90vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <header className="flex items-center justify-between p-4 border-b border-line">
+        <header className="flex items-center justify-between p-4">
           <div className="font-semibold">{t('group.create.title')}</div>
           <button
             onClick={onClose}
@@ -60,7 +60,7 @@ export function CreateGroupSheet({ contacts, onClose, onCreated }: Props) {
           </button>
         </header>
 
-        <div className="p-4 space-y-3 border-b border-line">
+        <div className="p-4 space-y-3">
           <label className="text-xs font-semibold text-fg-secondary uppercase tracking-wide block">
             {t('group.create.name')}
           </label>
@@ -70,7 +70,7 @@ export function CreateGroupSheet({ contacts, onClose, onCreated }: Props) {
             onChange={(e) => setName(e.target.value)}
             maxLength={64}
             placeholder={t('group.create.name_placeholder')}
-            className="w-full h-10 px-3 rounded-md border border-line bg-surface-dim outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
+            className="w-full h-10 px-3 rounded-md bg-field outline-none focus:ring-1 focus:ring-accent text-sm"
           />
           <div className="flex items-baseline justify-between">
             <label className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
@@ -86,7 +86,7 @@ export function CreateGroupSheet({ contacts, onClose, onCreated }: Props) {
               {t('contacts.empty')}
             </div>
           )}
-          <ul className="divide-y divide-line">
+          <ul className="">
             {sorted.map((c) => {
               const on = picked.has(c.uin)
               return (
@@ -100,7 +100,7 @@ export function CreateGroupSheet({ contacts, onClose, onCreated }: Props) {
                         return next
                       })
                     }}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-surface-dim transition-colors text-left"
+                    className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-field transition-colors text-left"
                   >
                     <StatusIcon status={c.status} size={18} />
                     <span className="flex-1 truncate text-sm">
@@ -123,7 +123,7 @@ export function CreateGroupSheet({ contacts, onClose, onCreated }: Props) {
           </ul>
         </div>
 
-        <div className="p-4 border-t border-line space-y-2">
+        <div className="p-4 space-y-2">
           {error && (
             <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md p-2">
               {error}

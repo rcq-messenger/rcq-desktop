@@ -104,7 +104,7 @@ export function Profile() {
 
   return (
     <div className="min-h-screen bg-surface-dim">
-      <header className="sticky top-0 bg-surface border-b border-line z-10">
+      <header className="sticky top-0 bg-surface z-10">
         <div className="max-w-2xl mx-auto px-4 h-14 flex items-center gap-3">
           <Link
             to={isSelf ? '/contacts' : '/contacts'}
@@ -182,7 +182,7 @@ function ReadView({
 
   return (
     <div className="space-y-4">
-      <section className="bg-surface rounded-lg border border-line p-4 space-y-1">
+      <section className="bg-surface rounded-lg p-4 space-y-1">
         <div className="flex items-center gap-2">
           {/* Cross-island: presence doesn't cross islands → gray flower, and
               the picture lives on their island, so it stays a flower too. */}
@@ -223,7 +223,7 @@ function ReadView({
               value={editingAlias}
               onChange={(e) => setEditingAlias(e.target.value.slice(0, 48))}
               placeholder={info.nickname}
-              className="h-9 rounded-md border border-line bg-bg px-3 text-sm outline-none focus:border-accent"
+              className="h-9 rounded-md bg-field px-3 text-sm outline-none focus:ring-1 focus:ring-accent"
             />
             <div className="text-xs text-fg-dim">{t('profile.name.hint')}</div>
             <div className="flex gap-3 text-sm">
@@ -298,7 +298,7 @@ function ReadView({
 
 function Field({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="bg-surface rounded-lg border border-line p-4 space-y-2">
+    <section className="bg-surface rounded-lg p-4 space-y-2">
       <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">{title}</div>
       <div className="space-y-1">{children}</div>
     </section>
@@ -367,7 +367,7 @@ function EditView({
   }
   return (
     <div className="space-y-4">
-      <section className="bg-surface rounded-lg border border-line p-4 space-y-3">
+      <section className="bg-surface rounded-lg p-4 space-y-3">
         <div className="flex items-center gap-3">
           <PersonAvatar
             status={draft.status}
@@ -465,7 +465,7 @@ function EditView({
         <button
           onClick={onCancel}
           disabled={saving}
-          className="flex-1 h-10 rounded-md border border-line text-sm font-medium hover:bg-surface-dim disabled:opacity-40 transition-colors"
+          className="flex-1 h-10 rounded-md bg-field text-sm font-medium hover:bg-line/50 disabled:opacity-40 transition-colors"
         >
           {t('common.cancel')}
         </button>
@@ -501,7 +501,7 @@ function Input({
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full h-10 px-3 rounded-md border border-line bg-surface-dim outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
+        className="w-full h-10 px-3 rounded-md bg-field outline-none focus:ring-1 focus:ring-accent text-sm"
         spellCheck={false}
       />
     </div>
@@ -526,7 +526,7 @@ function TextareaField({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         rows={3}
-        className="w-full px-3 py-2 rounded-md border border-line bg-surface-dim outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm resize-none"
+        className="w-full px-3 py-2 rounded-md bg-field outline-none focus:ring-1 focus:ring-accent text-sm resize-none"
       />
     </div>
   )
@@ -551,7 +551,7 @@ function SelectField({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full h-10 px-3 rounded-md border border-line bg-surface-dim outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm"
+        className="w-full h-10 px-3 rounded-md bg-field outline-none focus:ring-1 focus:ring-accent text-sm"
       >
         {options.map((o) => (
           <option key={o.value} value={o.value}>

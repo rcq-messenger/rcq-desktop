@@ -149,7 +149,7 @@ export function GroupJoinCard({ groupId, host }: Props) {
   // everything resolves after the guest registration.
   if (unvisited && foreignHost) {
     return (
-      <div className="w-64 max-w-full rounded-xl border border-line bg-surface p-3">
+      <div className="w-64 max-w-full rounded-xl bg-surface p-3">
         <div className="flex items-center gap-3">
           <GroupAvatar size={40} />
           <div className="min-w-0 flex-1">
@@ -174,14 +174,14 @@ export function GroupJoinCard({ groupId, host }: Props) {
 
   if (loading) {
     return (
-      <div className="w-64 max-w-full rounded-xl border border-line bg-surface px-4 py-3">
+      <div className="w-64 max-w-full rounded-xl bg-surface px-4 py-3">
         <div className="text-xs text-fg-dim">{t('group_join.loading')}</div>
       </div>
     )
   }
   if (loadError || !preview) {
     return (
-      <div className="w-64 max-w-full rounded-xl border border-line bg-surface px-4 py-3">
+      <div className="w-64 max-w-full rounded-xl bg-surface px-4 py-3">
         <div className="text-xs text-fg-dim">{loadError ?? t('group_join.error.generic')}</div>
       </div>
     )
@@ -190,7 +190,7 @@ export function GroupJoinCard({ groupId, host }: Props) {
   const closedToMe = preview.is_closed && !isMember
 
   return (
-    <div className="w-64 max-w-full rounded-xl border border-line bg-surface p-3">
+    <div className="w-64 max-w-full rounded-xl bg-surface p-3">
       <div className="flex items-center gap-3">
         <GroupAvatar size={40} mediaId={preview.avatar_media_id} mediaKey={preview.avatar_media_key} />
         <div className="min-w-0 flex-1">
@@ -209,14 +209,14 @@ export function GroupJoinCard({ groupId, host }: Props) {
         {isMember ? (
           <button
             onClick={() => navigate(chatPath())}
-            className="w-full rounded-full bg-surface-dim py-2 text-xs font-medium hover:bg-line transition-colors"
+            className="w-full rounded-full bg-field py-2 text-xs font-medium hover:bg-line transition-colors"
           >
             {t('group_join.open_button')}
           </button>
         ) : closedToMe ? (
           <button
             disabled
-            className="w-full rounded-full bg-surface-dim py-2 text-xs font-medium text-fg-dim cursor-not-allowed"
+            className="w-full rounded-full bg-field py-2 text-xs font-medium text-fg-dim cursor-not-allowed"
           >
             {t('group_join.closed_button')}
           </button>

@@ -12,12 +12,45 @@
 // `combined` minus the leading nonce. No AAD (iOS seals without AAD).
 
 import { b64ToBytes, bytesToB64 } from './crypto'
+import { idbDel, idbGet, idbSet } from './signal-persist'
 
 // Cache the decrypted object URL per (mediaId, key) so repeated
 // renders (Contacts row + Chat header + GroupInfo) don't re-fetch,
 // re-decrypt, or leak a new object URL each time. Object URLs live for
 // the page lifetime — fine for the handful of group avatars in view.
 const _urlCache = new Map<string, Promise<string | null>>()
+
+/// Decrypted avatar bytes, kept in IndexedDB so they survive a reload.
+///
+/// The map above dies with the page, so every visit to chat.rcq.app fetched and
+/// AES-decrypted every avatar in the roster again — for pictures that only
+/// change when somebody deliberately changes one, and whose cache key already
+/// contains the media key, so a new picture cannot be served from an old entry.
+/// Bounded, because this is a cache and not storage: an account that has seen a
+/// thousand faces should not carry all of them forever.
+const IMG_PREFIX = 'img:'
+const IMG_INDEX = 'img:index'
+const IMG_KEEP = 300
+
+async function readCachedImage(k: string): Promise<ArrayBuffer | null> {
+  return (await idbGet<ArrayBuffer>(IMG_PREFIX + k)) ?? null
+}
+
+async function writeCachedImage(k: string, buf: ArrayBuffer) {
+  await idbSet(IMG_PREFIX + k, buf)
+  // Insertion-ordered index, newest last. Trimming from the front drops the
+  // least recently ADDED rather than least recently used — the distinction
+  // costs a write per read and buys nothing for a list of faces.
+  const index = (await idbGet<string[]>(IMG_INDEX)) ?? []
+  const next = [...index.filter((x) => x !== k), k]
+  const overflow = next.length - IMG_KEEP
+  if (overflow > 0) {
+    for (const gone of next.slice(0, overflow)) await idbDel(IMG_PREFIX + gone)
+    await idbSet(IMG_INDEX, next.slice(overflow))
+  } else {
+    await idbSet(IMG_INDEX, next)
+  }
+}
 
 function cacheKey(mediaId: string, keyB64: string): string {
   return `${mediaId}:${keyB64}`
@@ -66,10 +99,20 @@ async function fetchDecryptToBuffer(apiBase: string, mediaId: string, keyB64: st
   }
 }
 
-async function fetchAndDecrypt(apiBase: string, mediaId: string, keyB64: string): Promise<string | null> {
+/// Both halves at once: the object URL to render, and the bytes to cache. The
+/// caller cannot re-read a Blob out of an object URL cheaply, and re-fetching
+/// to fill the cache would defeat the point of having one.
+async function fetchAndDecryptBuffer(
+  apiBase: string,
+  mediaId: string,
+  keyB64: string,
+): Promise<{ objectUrl: string; buf: ArrayBuffer } | null> {
   const buf = await fetchDecryptToBuffer(apiBase, mediaId, keyB64)
   if (!buf) return null
-  return URL.createObjectURL(new Blob([buf], { type: sniffImageType(new Uint8Array(buf)) }))
+  return {
+    objectUrl: URL.createObjectURL(new Blob([buf], { type: sniffImageType(new Uint8Array(buf)) })),
+    buf,
+  }
 }
 
 /// Sniff a video MIME from the leading magic bytes so `<video>` gets a usable
@@ -258,7 +301,16 @@ export function loadEncryptedImage(
   const k = cacheKey(mediaId, keyB64)
   const hit = _urlCache.get(k)
   if (hit) return hit
-  const p = fetchAndDecrypt(apiBase, mediaId, keyB64)
+  const p = (async () => {
+    const cached = await readCachedImage(k).catch(() => null)
+    if (cached) {
+      return URL.createObjectURL(new Blob([cached], { type: sniffImageType(new Uint8Array(cached)) }))
+    }
+    const url = await fetchAndDecryptBuffer(apiBase, mediaId, keyB64)
+    if (!url) return null
+    void writeCachedImage(k, url.buf).catch(() => {})
+    return url.objectUrl
+  })()
   _urlCache.set(k, p)
   // If the decrypt fails, drop the rejected/null promise so a later
   // attempt (e.g. after reconnect) can retry instead of caching null.

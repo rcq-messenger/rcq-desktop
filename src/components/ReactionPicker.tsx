@@ -22,7 +22,7 @@ export function ReactionPicker({
 }) {
   const assets = useReactionAssets(uin)
   return (
-    <div className="grid grid-cols-6 gap-1 rounded-lg border border-line bg-surface px-2 py-1.5 shadow-sm">
+    <div data-chat-menu className="grid grid-cols-6 gap-1 rounded-lg bg-surface px-2 py-1.5 shadow-lg">
       {assets.map((a) => {
         const selected = current === a
         return (

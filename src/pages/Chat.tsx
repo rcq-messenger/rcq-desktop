@@ -1331,6 +1331,26 @@ export function Chat() {
         )}
 
 
+        {timeline.length === 0 && (
+          <div className="h-full flex flex-col items-center justify-center gap-3 text-center px-6 -mt-8">
+            <div className="text-4xl select-none">{isSelf ? '🔖' : '👋'}</div>
+            <div className="text-fg-secondary text-sm max-w-xs">
+              {isSelf
+                ? t('chat.empty.saved')
+                : t('chat.empty.peer', { name: headerName })}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setInput(isSelf ? '' : t('chat.empty.greeting'))
+                requestAnimationFrame(() => taRef.current?.focus())
+              }}
+              className="rounded-full bg-accent hover:bg-accent-dim text-white text-sm font-semibold px-5 py-2 transition-colors"
+            >
+              {isSelf ? t('chat.empty.cta_saved') : t('chat.empty.cta')}
+            </button>
+          </div>
+        )}
         <ul ref={contentRef} className="space-y-2">
           {timeline
             .map((item) => {
@@ -1425,6 +1445,7 @@ export function Chat() {
                         <GroupJoinCard groupId={invite.id} host={invite.host} />
                       ) : (
                         <button
+                          data-chat-menu
                           onClick={() => toggleActions(m.id)}
                           onContextMenu={(e) => { e.preventDefault(); toggleActions(m.id) }}
                           className="rounded-lg px-3 py-2 text-sm text-left bg-bubble-other hover:brightness-110 transition-colors"
@@ -1438,7 +1459,7 @@ export function Chat() {
                         {new Date(m.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </div>
                       {isPlainText && showActions && (
-                        <div className="flex items-center gap-1.5 rounded-lg border border-line bg-surface px-2 py-1 shadow-sm">
+                        <div data-chat-menu className="flex items-center gap-1.5 rounded-lg bg-surface px-2 py-1 shadow-lg">
                           <ActionButton onClick={() => startReplyTo(m.id, m.text, replyAuthor)} label={t('chat.actions.reply')} icon="↩" />
                           {m.kind === 'text' && (
                             <ActionButton onClick={() => copyText(m.text)} label={t('chat.actions.copy')} icon="⧉" />
@@ -1656,6 +1677,7 @@ export function Chat() {
                     </button>
                   )}
                   <button
+                    data-chat-menu
                     onClick={() => toggleActions(row.id)}
                     // Right-click opens the same actions. On a phone, tapping a
                     // bubble to get reply/edit/delete is the obvious gesture; on
@@ -1702,7 +1724,7 @@ export function Chat() {
                     </div>
                   )}
                   {showActions && row.state === 'sent' && (
-                    <div className="flex items-center gap-1.5 rounded-lg border border-line bg-surface px-2 py-1 shadow-sm">
+                    <div data-chat-menu className="flex items-center gap-1.5 rounded-lg bg-surface px-2 py-1 shadow-lg">
                       <ActionButton onClick={() => startReply(row)} label={t('chat.actions.reply')} icon="↩" />
                       {(!row.kind || row.kind === 'text') && (
                         <ActionButton onClick={() => startEdit(row)} label={t('chat.actions.edit')} icon="✎" />
@@ -1802,7 +1824,7 @@ export function Chat() {
           ) : (
           <div className="relative">
           {editingRow && (
-            <div className="absolute bottom-full inset-x-0 mb-2 z-10 flex items-start gap-2 rounded-2xl border border-accent/40 bg-surface shadow-lg px-3 py-2 text-xs">
+            <div className="absolute bottom-full inset-x-0 mb-2 z-10 flex items-start gap-2 rounded-2xl bg-surface shadow-lg px-3 py-2 text-xs">
               <div className="border-l-2 border-accent/60 pl-2 flex-1 min-w-0">
                 <div className="font-mono text-[10px] text-accent uppercase tracking-wider">
                   {t('chat.edit.editing')}
@@ -1818,7 +1840,7 @@ export function Chat() {
             </div>
           )}
           {replyTo && !editingRow && (
-            <div className="absolute bottom-full inset-x-0 mb-2 z-10 flex items-start gap-2 rounded-2xl border border-line bg-surface shadow-lg px-3 py-2 text-xs">
+            <div className="absolute bottom-full inset-x-0 mb-2 z-10 flex items-start gap-2 rounded-2xl bg-surface shadow-lg px-3 py-2 text-xs">
               <div className="border-l-2 border-accent/60 pl-2 flex-1 min-w-0">
                 <div className="font-mono text-[10px] text-fg-dim">
                   {t('chat.reply.replying_to', { name: replyTo.authorName })}
@@ -1875,7 +1897,8 @@ export function Chat() {
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: 6 }}
                       transition={{ duration: 0.14 }}
-                      className="absolute bottom-full left-0 mb-2 z-20 w-44 rounded-xl border border-line bg-surface shadow-lg overflow-hidden"
+                      data-chat-menu
+                      className="absolute bottom-full left-0 mb-2 z-20 w-44 rounded-xl bg-surface shadow-lg overflow-hidden"
                     >
                       <button
                         onClick={() => {

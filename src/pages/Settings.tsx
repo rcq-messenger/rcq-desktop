@@ -33,7 +33,10 @@ import {
 } from '../lib/desktop'
 import { uploadReportAttachment } from '../lib/media'
 import { useI18n } from '../lib/i18n-context'
+import type { UserInfo } from '../lib/api'
 import { DEFAULT_API_BASE } from '../lib/auth'
+import { snapshotFor } from '../lib/contacts-cache'
+import { PersonAvatar } from '../components/PersonAvatar'
 import { useIdentity } from '../lib/identity-context'
 import { isPresenceSoundEnabled, isSoundEnabled, setPresenceSoundEnabled, setSoundEnabled } from '../lib/sounds'
 import { useTheme, type ThemePref } from '../lib/theme-context'
@@ -88,6 +91,7 @@ export function Settings() {
   const [bypass, setBypass] = useState<BypassStatus | null>(null)
   // 'macos' | 'windows' | 'linux', null in a browser — About names the build.
   const [platform, setPlatform] = useState<string | null>(null)
+  const [me, setMe] = useState<UserInfo | null>(null)
 
   // Seed the HoF toggle + avatar from the server (owner-self echoes both).
   useEffect(() => {
@@ -98,6 +102,11 @@ export function Settings() {
         if (!alive) return
         setHofOptIn(!!info.hof_opt_in)
         setHofAvatar(info.hof_avatar ?? null)
+        // The accounts row draws the face and the name from this. A brand-new
+        // account has no persisted roster snapshot yet, so without it the row
+        // for the account you are signed into showed a blank flower and a bare
+        // number — while its profile sat two sections above.
+        setMe(info)
       })
       .catch(() => {})
     return () => {
@@ -400,56 +409,73 @@ export function Settings() {
 
         {/* Accounts. A browser could only ever hold one, so there was no way to
             keep a second number here or to move between them without signing
-            out — the phones have had both for as long as they have existed. */}
-        <section className="bg-surface rounded-lg p-4 space-y-2">
-          <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+            out — the phones have had both for as long as they have existed.
+            Each row shows that account's own name and face, read from its own
+            stored snapshot: nothing is fetched to draw this. */}
+        <section className="bg-surface rounded-lg overflow-hidden">
+          <div className="px-4 pt-4 pb-2 text-xs font-semibold text-fg-secondary uppercase tracking-wide">
             {t('settings.accounts')}
           </div>
-          <ul className="space-y-1">
-            {accounts.map((a) => (
-              <li key={a.uin} className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => switchAccount(a.uin)}
-                  disabled={a.uin === identity?.uin}
-                  className={`flex-1 min-w-0 text-left rounded-md px-3 py-2 text-sm transition-colors ${
-                    a.uin === identity?.uin ? 'bg-accent/15 text-accent' : 'hover:bg-field'
-                  }`}
-                >
-                  <span className="font-mono">#{a.uin}</span>
-                  {a.uin === identity?.uin && (
-                    <span className="ml-2 text-[10px] uppercase tracking-wider">
-                      {t('settings.accounts.active')}
-                    </span>
-                  )}
-                  {/* The island, but only when it is not the usual one: a host
-                      beside every row is noise for the people who never leave
-                      the flagship, which is most of them. */}
-                  {a.apiBase !== DEFAULT_API_BASE && (
-                    <span className="ml-2 text-[11px] text-fg-dim">
-                      {a.apiBase.replace(/^https?:\/\//, '')}
-                    </span>
-                  )}
-                </button>
-                {accounts.length > 1 && (
+          <ul>
+            {accounts.map((a) => {
+              const isActive = a.uin === identity?.uin
+              // The active account's own profile is already loaded on this
+              // screen; the others come from the snapshot each one persisted.
+              const who = isActive ? me ?? snapshotFor(a.uin)?.me : snapshotFor(a.uin)?.me
+              const name = who?.nickname || `#${a.uin}`
+              return (
+                <li key={a.uin} className="flex items-center gap-3 px-4 py-2.5 hover:bg-field transition-colors">
                   <button
                     type="button"
-                    onClick={() => signOutAccount(a.uin)}
-                    className="shrink-0 text-xs text-fg-dim hover:text-red-500 transition-colors px-2"
+                    onClick={() => switchAccount(a.uin)}
+                    disabled={isActive}
+                    className="flex items-center gap-3 flex-1 min-w-0 text-left disabled:cursor-default"
                   >
-                    {t('settings.accounts.forget')}
+                    <PersonAvatar
+                      status={who?.status ?? 'offline'}
+                      size={32}
+                      mediaId={who?.avatar_media_id}
+                      mediaKey={who?.avatar_media_key}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-medium truncate">{name}</span>
+                      <span className="block font-mono text-xs text-fg-dim truncate">
+                        #{a.uin}
+                        {/* The island, but only when it is not the usual one: a
+                            host on every row is noise for the people who never
+                            leave the flagship, which is most of them. */}
+                        {a.apiBase !== DEFAULT_API_BASE && ` · ${a.apiBase.replace(/^https?:\/\//, '')}`}
+                      </span>
+                    </span>
+                    {isActive && <span className="flex-none text-accent text-sm">✓</span>}
                   </button>
-                )}
-              </li>
-            ))}
+                  {accounts.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => signOutAccount(a.uin)}
+                      title={t('settings.accounts.forget')}
+                      aria-label={t('settings.accounts.forget')}
+                      className="flex-none h-8 w-8 rounded-full text-fg-dim hover:text-red-500 hover:bg-field transition-colors"
+                    >
+                      ×
+                    </button>
+                  )}
+                </li>
+              )
+            })}
+            <li>
+              <button
+                type="button"
+                onClick={addAccount}
+                className="flex items-center gap-3 w-full px-4 py-2.5 hover:bg-field transition-colors text-left"
+              >
+                <span className="h-8 w-8 rounded-full bg-field text-accent flex items-center justify-center text-lg leading-none">
+                  +
+                </span>
+                <span className="text-sm font-medium">{t('settings.accounts.add')}</span>
+              </button>
+            </li>
           </ul>
-          <button
-            type="button"
-            onClick={addAccount}
-            className="w-full h-9 rounded-md bg-field hover:bg-line/50 text-sm font-medium transition-colors"
-          >
-            {t('settings.accounts.add')}
-          </button>
         </section>
 
         <section className="bg-surface rounded-lg p-4 space-y-2">

@@ -115,6 +115,18 @@ input, textarea, button {
 .rcq-wave {
   animation: rcq-wave 2.7s ease-out infinite;
 }
+/* On true black the ripple was drawn at 25% accent over a pure-black page and
+   did not survive — it has to be brighter against nothing than against white.
+   A separate keyframe rather than a static opacity, which would have fought the
+   animation that owns that property. */
+@keyframes rcq-wave-dark {
+  0%   { transform: scale(0.9); opacity: 1; }
+  70%  { opacity: 0; }
+  100% { transform: scale(1.75); opacity: 0; }
+}
+html.dark .rcq-wave {
+  animation-name: rcq-wave-dark;
+}
 @media (prefers-reduced-motion: reduce) {
   .rcq-wave { animation: none; opacity: 0; }
 }

@@ -98,7 +98,16 @@ function rowFromEnvelope(from: number, env: Envelope): IncomingRow | null {
   }
   const loose = env as { kind?: string; id?: string; caption?: string }
   if (loose.id && (loose.kind === 'voice' || loose.kind === 'location')) {
-    return { id: loose.id, from, text: loose.caption ?? '', at: Date.now(), kind: 'other', mediaKind: loose.kind }
+    const geo = loose as { lat?: number; lng?: number }
+    return {
+      id: loose.id,
+      from,
+      text: loose.caption ?? '',
+      at: Date.now(),
+      kind: 'other',
+      mediaKind: loose.kind,
+      ...(geo.lat != null && geo.lng != null ? { lat: geo.lat, lng: geo.lng } : {}),
+    }
   }
   // Group poll (terse wire keys poll/q/opts/sc/anon — see PollEnvelope). Was
   // silently dropped, so polls were invisible on web (#7).

@@ -41,6 +41,18 @@ export function persistSnapshot(uin: number, snap: ContactsSnapshot) {
   }
 }
 
+/// One account's persisted snapshot, by explicit UIN rather than the active
+/// scope. The account switcher needs each account's own name and face, and
+/// those are sitting in each account's own snapshot — there is nothing to fetch.
+export function snapshotFor(uin: number): ContactsSnapshot | null {
+  try {
+    const raw = localStorage.getItem(`rcq.web.${uin}.${SNAPSHOT_KEY}`)
+    return raw ? (JSON.parse(raw) as ContactsSnapshot) : null
+  } catch {
+    return null
+  }
+}
+
 /// Warm the in-memory cache from disk. Called once, before the first render
 /// that reads it.
 export function restoreSnapshot(uin: number) {

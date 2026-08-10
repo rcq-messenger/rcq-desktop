@@ -636,6 +636,15 @@ export function Chat() {
         ...(row.replyTo ? { reply: row.replyTo } : {}),
         ...(row.fwdName ? { fwdName: row.fwdName } : {}),
       }
+    } else if (row.kind === 'other' && row.mediaKind === 'location' && row.lat != null && row.lng != null) {
+      env = {
+        kind: 'location',
+        id: row.id,
+        lat: row.lat,
+        lng: row.lng,
+        ...(row.text ? { caption: row.text } : {}),
+        ...(row.replyTo ? { reply: row.replyTo } : {}),
+      }
     } else {
       env = {
         kind: 'text',
@@ -784,6 +793,48 @@ export function Chat() {
     } finally {
       setUploadingPhoto(false)
     }
+  }
+
+  /// Share where you are. No blob and no upload — the coordinates ride in the
+  /// envelope, which is why this is the one attachment that works offline right
+  /// up to the send.
+  ///
+  /// The browser asks its own permission prompt; a refusal is a decision, not an
+  /// error, so it says so quietly and leaves the composer alone.
+  async function sendLocation() {
+    if (!identity) return
+    setAttachMenuOpen(false)
+    if (!navigator.geolocation) {
+      setTransientNotice(t('chat.error.no_geolocation'))
+      return
+    }
+    const pos = await new Promise<GeolocationPosition | null>((resolve) => {
+      navigator.geolocation.getCurrentPosition(
+        (p) => resolve(p),
+        () => resolve(null),
+        { enableHighAccuracy: false, timeout: 12_000, maximumAge: 60_000 },
+      )
+    })
+    if (!pos) {
+      setTransientNotice(t('chat.error.no_location'))
+      return
+    }
+    const caption = input.trim()
+    const row: OutgoingRow = {
+      id: newUUIDv4(),
+      text: caption,
+      sentAt: Date.now(),
+      state: 'sending',
+      kind: 'other',
+      mediaKind: 'location',
+      lat: pos.coords.latitude,
+      lng: pos.coords.longitude,
+      ...(replyTo ? { replyTo } : {}),
+    }
+    setOutgoing((rows) => [...rows, row])
+    if (caption) setInput('')
+    setReplyTo(null)
+    await attemptSendRow(row)
   }
 
   /// Pick → encrypt → upload → send a document of any type (#16). Raw bytes
@@ -2078,6 +2129,13 @@ export function Chat() {
                       >
                         <DocIcon />
                         {t('chat.attach.file')}
+                      </button>
+                      <button
+                        onClick={() => void sendLocation()}
+                        className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm hover:bg-field transition-colors"
+                      >
+                        <PinIcon />
+                        {t('chat.attach.location')}
                       </button>
                     </motion.div>
                   </>

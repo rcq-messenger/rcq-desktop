@@ -104,7 +104,7 @@ export function Profile() {
 
   return (
     <div className="min-h-screen bg-surface-dim">
-      <header className="sticky top-0 bg-surface z-10">
+      <header className="rcq-header sticky top-0 z-10">
         <div className="max-w-2xl mx-auto px-4 h-14 flex items-center gap-3">
           <Link
             to={isSelf ? '/contacts' : '/contacts'}

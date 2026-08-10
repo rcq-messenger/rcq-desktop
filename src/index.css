@@ -131,6 +131,53 @@ html.dark .rcq-wave {
   .rcq-wave { animation: none; opacity: 0; }
 }
 
+/* The header sits on the page's own background rather than on a lighter panel.
+   Two shades of dark stacked on top of each other read as a web page's chrome;
+   one continuous surface reads as an app. The grey the header used to be is not
+   gone, it moved: it is now what a header control lights up with under the
+   pointer, so the panel colour appears where something is actually happening. */
+.rcq-header {
+  background-color: rgb(var(--c-surface-dim));
+}
+/* Every icon control in a header: the buttons, and the links that are icons
+   (they all carry an aria-label, the name link next to the avatar does not, so
+   the wide name row is left alone). Higher specificity than a Tailwind
+   `hover:bg-*` utility on purpose — several of those pointed at colours that
+   are now the header's own background, which would have made the hover state
+   invisible rather than merely inconsistent. */
+.rcq-header button,
+.rcq-header a[aria-label] {
+  border-radius: 0.5rem;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.rcq-header button:hover:not(:disabled),
+.rcq-header a[aria-label]:hover {
+  background-color: rgb(var(--c-surface));
+}
+
+/* In the desktop window, dragging across the interface used to paint a text
+   selection over labels, headers and buttons — the giveaway that you are
+   looking at a web page ("я будто в вебе сижу, будучи на десктопе"). Native
+   apps do not do that. Only in the Tauri build: in a browser, selecting text is
+   what a browser is for.
+
+   Message text, inputs and anything explicitly marked stay selectable — the
+   point is to stop selecting the CHROME, not to take copying away. */
+html.desktop {
+  -webkit-user-select: none;
+  user-select: none;
+}
+html.desktop input,
+html.desktop textarea,
+html.desktop [contenteditable="true"],
+html.desktop pre,
+html.desktop code,
+html.desktop .rcq-selectable,
+html.desktop .rcq-selectable * {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 /* The composer is a contenteditable, so it has no `placeholder` of its own and
    no automatic single-line height. Both come from here. */
 .rcq-composer {

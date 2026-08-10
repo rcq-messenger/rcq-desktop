@@ -334,8 +334,8 @@ export const en: Record<string, string> = {
 
   // Add contact
   'add.title': 'Add contact',
-  'add.placeholder': 'Search by UIN, nickname, city…',
-  'add.hint': 'Type at least one character to search.',
+  'add.placeholder': 'Search #UIN, nickname, city…',
+  'add.hint': 'Type at least one character. A # finds an exact number: #134.',
   'add.no_match': 'No matches.',
   'add.cta': 'Add',
   'add.requested': 'Requested',

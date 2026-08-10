@@ -50,6 +50,9 @@ export const ru: Record<string, string> = {
   'login.create.body':
     'Создаёт новый аккаунт RCQ, который живёт в этом браузере: свой UIN и свои ключи.',
   'login.create.nickname': 'Никнейм',
+  'login.island': 'Остров',
+  'login.island.hint': 'Сервер, на котором будет жить аккаунт. Не трогайте, если не держите свой.',
+  'login.island.change': 'Остров: {host} · сменить',
   'login.create.nickname_hint': 'Можно поменять позже в настройках.',
   'login.create.cta': 'Создать аккаунт',
   'login.create.busy': 'Создаём…',
@@ -171,6 +174,10 @@ export const ru: Record<string, string> = {
 
   // Settings
   'settings.title': 'Настройки',
+  'settings.accounts': 'Аккаунты',
+  'settings.accounts.active': 'активный',
+  'settings.accounts.add': 'Добавить аккаунт',
+  'settings.accounts.forget': 'выйти',
   'settings.section.account': 'Аккаунт',
   'settings.field.uin': 'UIN',
   'settings.field.api_host': 'API-сервер',

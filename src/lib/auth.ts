@@ -19,6 +19,10 @@ import { b64ToBytes, bytesToB64, type WebIdentity } from './crypto'
 import { decodePhrase, deriveKeysFromSeed, encodeSeed, newSeed, parsePhrase } from './recovery'
 
 const STORAGE_KEY = 'rcq.web.identity.v1'
+/// Every account this browser holds. The ACTIVE one stays in STORAGE_KEY as
+/// well, unchanged, so a session that predates this reads exactly as before and
+/// nothing has to be migrated to sign in.
+const ACCOUNTS_KEY = 'rcq.web.accounts.v1'
 const LINK_TTL_SECONDS = 5 * 60
 
 /// Does this JWT already name an install? Payload peek only — the signature
@@ -344,6 +348,85 @@ export function persistIdentity(id: WebIdentity, seed?: string) {
     ...(keepSeed ? { seed: keepSeed } : {}),
   }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(stored))
+}
+
+function readAccounts(): StoredIdentity[] {
+  try {
+    const raw = localStorage.getItem(ACCOUNTS_KEY)
+    const list = raw ? (JSON.parse(raw) as StoredIdentity[]) : []
+    return Array.isArray(list) ? list : []
+  } catch {
+    return []
+  }
+}
+
+function writeAccounts(list: StoredIdentity[]) {
+  localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(list))
+}
+
+function hydrate(stored: StoredIdentity): WebIdentity {
+  return {
+    uin: stored.uin,
+    jwt: stored.jwt,
+    apiBase: stored.apiBase,
+    identityPriv: b64ToBytes(stored.identityPriv),
+    identityPub: b64ToBytes(stored.identityPub),
+    signingPriv: b64ToBytes(stored.signingPriv),
+    signingPub: b64ToBytes(stored.signingPub),
+  }
+}
+
+/// Every account held here, active one first. The list is seeded from the
+/// single stored identity the first time it is read, so an existing session
+/// appears in it without anyone signing in again.
+export function listStoredIdentities(): WebIdentity[] {
+  let list = readAccounts()
+  const activeRaw = localStorage.getItem(STORAGE_KEY)
+  if (activeRaw) {
+    try {
+      const active = JSON.parse(activeRaw) as StoredIdentity
+      if (!list.some((a) => a.uin === active.uin)) {
+        list = [active, ...list]
+        writeAccounts(list)
+      }
+    } catch {
+      /* unreadable active entry — the list stands on its own */
+    }
+  }
+  return list.map(hydrate)
+}
+
+/// Make `uin` the active account. Returns false when this browser does not hold
+/// it, so a caller can refuse rather than sign the user out of everything.
+export function activateStoredIdentity(uin: number): boolean {
+  const hit = readAccounts().find((a) => a.uin === uin)
+  if (!hit) return false
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(hit))
+  return true
+}
+
+/// Forget ONE account, leaving the others alone.
+///
+/// ⚠ Its message logs and its IndexedDB are deliberately NOT swept here. They
+/// are scoped by uin, so they harm nobody by staying, and a sign-out that also
+/// destroys history is a thing people do by accident. Wiping everything is
+/// still what the full sign-out does.
+export function removeStoredIdentity(uin: number): WebIdentity | null {
+  const list = readAccounts().filter((a) => a.uin !== uin)
+  writeAccounts(list)
+  const activeRaw = localStorage.getItem(STORAGE_KEY)
+  let activeUin: number | null = null
+  try {
+    activeUin = activeRaw ? (JSON.parse(activeRaw) as StoredIdentity).uin : null
+  } catch {
+    /* ignore */
+  }
+  if (activeUin !== uin) return null
+  localStorage.removeItem(STORAGE_KEY)
+  const next = list[0]
+  if (!next) return null
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+  return hydrate(next)
 }
 
 export function loadStoredIdentity(): WebIdentity | null {

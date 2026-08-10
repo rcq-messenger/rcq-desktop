@@ -13,6 +13,7 @@ import { ContactActionsMenu } from '../components/ContactActionsMenu'
 import { GroupActionsMenu } from '../components/GroupActionsMenu'
 import { CreateGroupSheet } from '../components/CreateGroupSheet'
 import { GroupAvatar } from '../components/GroupAvatar'
+import { NewsButton } from '../components/NewsPopover'
 import { PersonAvatar } from '../components/PersonAvatar'
 import { StatusPickerButton } from '../components/StatusPicker'
 import { ThemeToggle } from '../components/ThemeToggle'
@@ -335,14 +336,11 @@ export function Contacts() {
                 </span>
               )}
             </Link>
-            <Link
-              to="/market"
-              className="text-fg-secondary hover:text-fg-primary p-2 rounded-md hover:bg-surface-dim"
-              title={t('uin_market.title')}
-              aria-label={t('uin_market.title')}
-            >
-              <TagIcon />
-            </Link>
+            {/* The market moved out of the header: it is already a row in
+                Settings, so this was the same door twice, and the header had no
+                door at all to the one thing that is genuinely new — the
+                operator's announcements. */}
+            <NewsButton className="relative text-fg-secondary hover:text-fg-primary p-2 rounded-md" />
             <ThemeToggle className="text-fg-secondary hover:text-fg-primary p-2 rounded-md hover:bg-surface-dim transition-colors" />
             <Link
               to="/settings"
@@ -777,14 +775,6 @@ function BookmarkGlyph() {
 }
 
 // UIN market — a price tag. Neutral commerce glyph (no gamey ornament).
-function TagIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 11V4a1 1 0 0 1 1-1h7l9 9-8 8-9-9z" />
-      <circle cx="7.5" cy="7.5" r="1.4" />
-    </svg>
-  )
-}
 function BellIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">

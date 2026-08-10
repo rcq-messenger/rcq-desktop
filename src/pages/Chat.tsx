@@ -192,6 +192,11 @@ export function Chat() {
   const [forwardingRow, setForwardingRow] = useState<{ text: string; author: string } | null>(null)
   const [replyTo, setReplyTo] = useState<ReplyContext | null>(null)
   const [highlightId, setHighlightId] = useState<string | null>(null)
+  // Search inside this conversation. Android has had it; the web had no way to
+  // find anything you had said, in a thread that can run for months.
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const [matchIdx, setMatchIdx] = useState(0)
   // The own message currently being edited (composer is in edit mode), or null.
   const [editingRow, setEditingRow] = useState<OutgoingRow | null>(null)
   const [transientNotice, setTransientNotice] = useState<string | null>(null)
@@ -349,6 +354,7 @@ export function Chat() {
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key !== 'Escape') return
+      if (searchOpen) { setSearchOpen(false); setQuery(''); return }
       if (attachMenuOpen) return setAttachMenuOpen(false)
       if (showPicker) return setShowPicker(false)
       if (reactionForRowId) return setReactionForRowId(null)
@@ -370,7 +376,7 @@ export function Chat() {
       document.removeEventListener('keydown', onKey)
       document.removeEventListener('mousedown', onDown)
     }
-  }, [attachMenuOpen, showPicker, reactionForRowId, actionsForRowId, editingRow, replyTo])
+  }, [searchOpen, attachMenuOpen, showPicker, reactionForRowId, actionsForRowId, editingRow, replyTo])
 
   /** Pin the list to the bottom and mark it as followed. Called when the user
    *  does something that means "I want to be at the newest": sending, or
@@ -1197,6 +1203,29 @@ export function Chat() {
     return out
   }, [outgoing, incoming, deletedVersion])
 
+  /// Ids of the messages containing the query, newest last — the same order
+  /// they sit in the thread, so stepping through them walks the conversation
+  /// rather than jumping about.
+  const matches = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return [] as string[]
+    return timeline.flatMap((it) => {
+      if (it.kind === 'day') return []
+      const text = it.kind === 'out' ? it.row.text : it.msg.text
+      const id = it.kind === 'out' ? it.row.id : it.msg.id
+      return text && text.toLowerCase().includes(q) ? [id] : []
+    })
+  }, [timeline, query])
+
+  /// Step to a match and take the view with you. Reuses the same jump the reply
+  /// quotes use, so a hit is marked the same way a quoted message is.
+  function gotoMatch(next: number) {
+    if (matches.length === 0) return
+    const i = ((next % matches.length) + matches.length) % matches.length
+    setMatchIdx(i)
+    jumpToMessage(matches[i])
+  }
+
   /** "Today" / "Yesterday" / a plain date, in the user's locale. */
   function dayLabel(at: number): string {
     const d = new Date(at)
@@ -1304,6 +1333,18 @@ export function Chat() {
               flicker white rather than removing it: anything driven by a socket
               flapping will flicker, whatever it is styled with. Whether the
               socket is up is decided when the button is PRESSED, not drawn. */}
+          <button
+            type="button"
+            onClick={() => {
+              setSearchOpen((v) => !v)
+              if (searchOpen) { setQuery(''); setMatchIdx(0) }
+            }}
+            aria-label={t('chat.search.open')}
+            title={t('chat.search.open')}
+            className={`p-2 transition-colors ${searchOpen ? 'text-accent' : 'text-fg-secondary hover:text-fg-primary'}`}
+          >
+            <SearchIcon />
+          </button>
           {!isGroup && !isSelf && peer && (peer.callable ?? true) && (
             <>
               <button
@@ -1328,6 +1369,43 @@ export function Chat() {
           )}
         </div>
       </header>
+
+      {searchOpen && (
+        <div className="flex-none bg-surface px-4 py-2 flex items-center gap-2">
+          <input
+            autoFocus
+            value={query}
+            onChange={(e) => { setQuery(e.target.value); setMatchIdx(0) }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); gotoMatch(e.shiftKey ? matchIdx - 1 : matchIdx + 1) }
+              if (e.key === 'Escape') { setSearchOpen(false); setQuery('') }
+            }}
+            placeholder={t('chat.search.placeholder')}
+            className="flex-1 min-w-0 h-9 px-3 rounded-full bg-field text-sm outline-none focus:ring-1 focus:ring-accent"
+          />
+          <span className="font-mono text-xs text-fg-dim tabular-nums flex-none">
+            {query.trim() ? `${matches.length ? matchIdx + 1 : 0}/${matches.length}` : ''}
+          </span>
+          <button
+            type="button"
+            onClick={() => gotoMatch(matchIdx - 1)}
+            disabled={matches.length === 0}
+            aria-label={t('chat.search.prev')}
+            className="h-8 w-8 rounded-full bg-field text-fg-secondary disabled:opacity-30 flex-none"
+          >
+            ↑
+          </button>
+          <button
+            type="button"
+            onClick={() => gotoMatch(matchIdx + 1)}
+            disabled={matches.length === 0}
+            aria-label={t('chat.search.next')}
+            className="h-8 w-8 rounded-full bg-field text-fg-secondary disabled:opacity-30 flex-none"
+          >
+            ↓
+          </button>
+        </div>
+      )}
 
       {isGroup && group?.pinned_text && (
         <PinnedBanner
@@ -2083,6 +2161,15 @@ function AttachIcon() {
 /// Bookmark glyph for the Saved Messages («Заметки») chat header.
 /// Handset glyph for "call this contact". Same weight as the other header
 /// icons so the row reads as one set.
+function SearchIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <circle cx="11" cy="11" r="7" />
+      <path d="M20 20l-3.5-3.5" />
+    </svg>
+  )
+}
+
 function HeaderPhoneIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>

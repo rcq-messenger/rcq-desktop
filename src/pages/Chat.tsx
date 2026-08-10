@@ -1086,8 +1086,8 @@ export function Chat() {
           <button
             key={c.asset}
             onClick={() => void toggleReaction(targetId, c.asset)}
-            className={`inline-flex items-center gap-0.5 rounded-full border px-1.5 py-0.5 transition-colors ${
-              c.mine ? 'bg-accent/20' : 'bg-surface hover:bg-surface-dim'
+            className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 transition-colors ${
+              c.mine ? 'bg-accent/25' : 'bg-field hover:bg-line/60'
             }`}
             title={c.asset}
           >
@@ -1371,7 +1371,7 @@ export function Chat() {
       </header>
 
       {searchOpen && (
-        <div className="flex-none bg-surface px-4 py-2 flex items-center gap-2">
+        <div className="flex-none bg-surface px-4 py-2 flex items-center gap-2 max-w-2xl w-full mx-auto">
           <input
             autoFocus
             value={query}
@@ -1381,7 +1381,7 @@ export function Chat() {
               if (e.key === 'Escape') { setSearchOpen(false); setQuery('') }
             }}
             placeholder={t('chat.search.placeholder')}
-            className="flex-1 min-w-0 h-9 px-3 rounded-full bg-field text-sm outline-none focus:ring-1 focus:ring-accent"
+            className="flex-1 min-w-0 max-w-xs h-9 px-3 rounded-full bg-field text-sm outline-none focus:ring-1 focus:ring-accent"
           />
           <span className="font-mono text-xs text-fg-dim tabular-nums flex-none">
             {query.trim() ? `${matches.length ? matchIdx + 1 : 0}/${matches.length}` : ''}
@@ -1488,7 +1488,7 @@ export function Chat() {
                 const showReactionPicker = reactionForRowId === m.id
                 return (
                   <li key={`in-${m.id}`} id={`msg-${m.id}`} className={`group flex justify-start rounded-lg transition-colors duration-500 ${item.cont ? '-mt-1' : ''} ${highlightId === m.id ? 'bg-accent/15' : ''}`} {...swipeReply(() => startReplyTo(m.id, m.text, replyAuthor))}>
-                    <div className="max-w-[80%] flex flex-col items-start gap-1">
+                    <div className="relative max-w-[80%] flex flex-col items-start gap-1">
                       {senderName && !item.cont && (
                         <Link
                           to={`/profile/${m.from}`}
@@ -1587,11 +1587,6 @@ export function Chat() {
                               icon="↗"
                             />
                           )}
-                          <ActionButton
-                            onClick={() => setReactionForRowId((id) => (id === m.id ? null : m.id))}
-                            label={t('chat.actions.react')}
-                            icon="☺"
-                          />
                           {/* Hides it HERE only. There is no deleting somebody
                               else's message off their device, and offering a
                               button that looks like it might is worse than not
@@ -1599,18 +1594,28 @@ export function Chat() {
                           <ActionButton
                             onClick={() => { markDeleted(m.id); setActionsForRowId(null) }}
                             label={t('chat.actions.hide')}
-                            icon="🗑"
-                            danger
+                            icon="⊘"
                           />
                         </div>
                       )}
-                      {showReactionPicker && (
-                        <ReactionPicker
-                          uin={identity!.uin}
-                          current={reactionsForTarget(m.id)?.get(identity!.uin) ?? null}
-                          onPick={(asset) => void toggleReaction(m.id, asset)}
-                        />
-                      )}
+                      <AnimatePresence>
+                        {showReactionPicker && (
+                          <motion.div
+                            key="rp"
+                            initial={{ opacity: 0, y: 4 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: 4 }}
+                            transition={{ duration: 0.12 }}
+                            className="absolute top-full left-0 mt-1 z-20"
+                          >
+                            <ReactionPicker
+                              uin={identity!.uin}
+                              current={reactionsForTarget(m.id)?.get(identity!.uin) ?? null}
+                              onPick={(asset) => void toggleReaction(m.id, asset)}
+                            />
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     </div>
                     <button
                       type="button"
@@ -1632,12 +1637,12 @@ export function Chat() {
                 // (not a raw URL bubble) with the delivery state below.
                 return (
                   <li key={row.id} id={`msg-${row.id}`} className={`group flex justify-end rounded-lg transition-colors duration-500 ${item.cont ? '-mt-1' : ''} ${highlightId === row.id ? 'bg-accent/15' : ''}`}>
-                    <div className="max-w-[80%] flex flex-col items-end gap-1">
+                    <div className="relative max-w-[80%] flex flex-col items-end gap-1">
                       <GroupJoinCard groupId={outInvite.id} host={outInvite.host} />
                       <div className="flex items-center justify-end gap-1 text-[10px] font-mono text-fg-dim">
                         {new Date(row.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        {row.state === 'sending' && <span>·{t('chat.delivery.sending')}</span>}
-                        {row.state === 'sent' && <span className="text-accent">✓</span>}
+                        {row.state === 'sending' && <ClockMark />}
+                        {row.state === 'sent' && <TickMark />}
                         {row.state === 'failed' && (
                           <>
                             <span className="text-red-500">·{t('chat.delivery.failed')}</span>
@@ -1658,7 +1663,7 @@ export function Chat() {
                 // A photo I sent — render the image bubble + delivery state.
                 return (
                   <li key={row.id} id={`msg-${row.id}`} className={`group flex justify-end rounded-lg transition-colors duration-500 ${item.cont ? '-mt-1' : ''} ${highlightId === row.id ? 'bg-accent/15' : ''}`}>
-                    <div className="max-w-[80%] flex flex-col items-end gap-1">
+                    <div className="relative max-w-[80%] flex flex-col items-end gap-1">
                       <DecryptedImage mediaId={row.mediaId} mediaKey={row.mediaKey} apiBase={groupMediaBase} />
                       {row.text && (
                         <div className="rounded-lg px-3 py-2 text-sm bg-bubble-self">
@@ -1668,8 +1673,8 @@ export function Chat() {
                       {renderReactions(row.id, 'end')}
                       <div className="flex items-center justify-end gap-1 text-[10px] font-mono text-fg-dim">
                         {new Date(row.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        {row.state === 'sending' && <span>·{t('chat.delivery.sending')}</span>}
-                        {row.state === 'sent' && <span className="text-accent">✓</span>}
+                        {row.state === 'sending' && <ClockMark />}
+                        {row.state === 'sent' && <TickMark />}
                         {row.state === 'failed' && (
                           <>
                             <span className="text-red-500">·{t('chat.delivery.failed')}</span>
@@ -1697,7 +1702,7 @@ export function Chat() {
                 // render the player + delivery state.
                 return (
                   <li key={row.id} id={`msg-${row.id}`} className={`group flex justify-end rounded-lg transition-colors duration-500 ${item.cont ? '-mt-1' : ''} ${highlightId === row.id ? 'bg-accent/15' : ''}`}>
-                    <div className="max-w-[80%] flex flex-col items-end gap-1">
+                    <div className="relative max-w-[80%] flex flex-col items-end gap-1">
                       <DecryptedVideo
                         mediaId={row.mediaId}
                         mediaKey={row.mediaKey}
@@ -1722,7 +1727,7 @@ export function Chat() {
                 // A document I sent — render the download chip + delivery state.
                 return (
                   <li key={row.id} id={`msg-${row.id}`} className={`group flex justify-end rounded-lg transition-colors duration-500 ${item.cont ? '-mt-1' : ''} ${highlightId === row.id ? 'bg-accent/15' : ''}`}>
-                    <div className="max-w-[80%] flex flex-col items-end gap-1">
+                    <div className="relative max-w-[80%] flex flex-col items-end gap-1">
                       <FileBubble
                         mediaId={row.mediaId}
                         mediaKey={row.mediaKey}
@@ -1738,8 +1743,8 @@ export function Chat() {
                       )}
                       <div className="flex items-center justify-end gap-1 text-[10px] font-mono text-fg-dim">
                         {new Date(row.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        {row.state === 'sending' && <span>·{t('chat.delivery.sending')}</span>}
-                        {row.state === 'sent' && <span className="text-accent">✓</span>}
+                        {row.state === 'sending' && <ClockMark />}
+                        {row.state === 'sent' && <TickMark />}
                         {row.state === 'failed' && (
                           <>
                             <span className="text-red-500">·{t('chat.delivery.failed')}</span>
@@ -1767,7 +1772,7 @@ export function Chat() {
                 // another device, echoed here via a carbon.
                 return (
                   <li key={row.id} id={`msg-${row.id}`} className={`group flex justify-end rounded-lg transition-colors duration-500 ${item.cont ? '-mt-1' : ''} ${highlightId === row.id ? 'bg-accent/15' : ''}`}>
-                    <div className="max-w-[80%] flex flex-col items-end gap-1">
+                    <div className="relative max-w-[80%] flex flex-col items-end gap-1">
                       <MediaPlaceholder mediaKind={row.mediaKind} />
                       <div className="flex items-center justify-end gap-1 text-[10px] font-mono text-fg-dim">
                         {new Date(row.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -1781,7 +1786,7 @@ export function Chat() {
               const showReactionPicker = reactionForRowId === row.id
               return (
               <li key={row.id} id={`msg-${row.id}`} className={`group flex justify-end rounded-lg transition-colors duration-500 ${item.cont ? '-mt-1' : ''} ${highlightId === row.id ? 'bg-accent/15' : ''}`} {...swipeReply(() => startReply(row))}>
-                <div className="max-w-[80%] flex flex-col items-end gap-1">
+                <div className="relative max-w-[80%] flex flex-col items-end gap-1">
                   {row.fwdName && (
                     <div className="font-mono text-[10px] uppercase tracking-wider text-fg-dim">
                       ↗ {t('chat.forwarded_label', { name: row.fwdName })}
@@ -1821,8 +1826,8 @@ export function Chat() {
                   {renderReactions(row.id, 'end')}
                   <div className="flex items-center justify-end gap-1 text-[10px] font-mono text-fg-dim">
                     {new Date(row.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    {row.state === 'sending' && <span>·{t('chat.delivery.sending')}</span>}
-                    {row.state === 'sent' && <span className="text-accent">✓</span>}
+                    {row.state === 'sending' && <ClockMark />}
+                    {row.state === 'sent' && <TickMark />}
                     {row.state === 'failed' && (
                       <>
                         <span className="text-red-500">·{t('chat.delivery.failed')}</span>
@@ -1859,21 +1864,27 @@ export function Chat() {
                         <ActionButton onClick={() => pinMessage(row.text)} label={t('chat.actions.pin')} icon="📌" />
                       )}
                       <ActionButton onClick={() => setForwardingRow({ text: row.text, author: myNickname })} label={t('chat.actions.forward')} icon="↗" />
-                      <ActionButton
-                        onClick={() => setReactionForRowId((id) => (id === row.id ? null : row.id))}
-                        label={t('chat.actions.react')}
-                        icon="☺"
-                      />
                       <ActionButton onClick={() => void deleteForEveryone(row)} label={t('chat.actions.delete')} icon="🗑" danger />
                     </div>
                   )}
-                  {showReactionPicker && (
-                    <ReactionPicker
-                      uin={identity!.uin}
-                      current={reactionsForTarget(row.id)?.get(identity!.uin) ?? null}
-                      onPick={(asset) => void toggleReaction(row.id, asset)}
-                    />
-                  )}
+                  <AnimatePresence>
+                    {showReactionPicker && (
+                      <motion.div
+                        key="rp"
+                        initial={{ opacity: 0, y: 4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 4 }}
+                        transition={{ duration: 0.12 }}
+                        className="absolute top-full right-0 mt-1 z-20"
+                      >
+                        <ReactionPicker
+                          uin={identity!.uin}
+                          current={reactionsForTarget(row.id)?.get(identity!.uin) ?? null}
+                          onPick={(asset) => void toggleReaction(row.id, asset)}
+                        />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
                 <button
                   type="button"
@@ -1920,9 +1931,12 @@ export function Chat() {
           not push the input down or the messages up. */}
       <div className="flex-none pb-[env(safe-area-inset-bottom)]">
         <div className="relative max-w-lg mx-auto px-3 py-3">
-          {/* Floating emoji panel — absolute, sits above the composer over
-              the chat, independent of layout. */}
-          <div className="absolute bottom-full inset-x-0 px-3 mb-2 z-10">
+          {/* Everything that floats above the composer lives in ONE stack: the
+              emoji panel on top, the reply/edit strip under it, both over the
+              thread. They used to be two absolute layers pinned to the same
+              edge, which is why opening the panel while replying put it BEHIND
+              the strip. */}
+          <div className="absolute bottom-full inset-x-0 px-3 mb-2 z-10 flex flex-col gap-2 pointer-events-none [&>*]:pointer-events-auto">
             <AnimatePresence>
               {showPicker && (
                 <EmoticonPicker
@@ -1930,6 +1944,54 @@ export function Chat() {
                   uin={identity!.uin}
                   onPick={(code, asset) => insertEmoticon(code, asset)}
                 />
+              )}
+            </AnimatePresence>
+            <AnimatePresence>
+              {editingRow && (
+                <motion.div
+                  key="editing"
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 6 }}
+                  transition={{ duration: 0.14 }}
+                  className="flex items-start gap-2 rounded-2xl bg-surface shadow-lg px-3 py-2 text-xs"
+                >
+                  <div className="border-l-2 border-accent/60 pl-2 flex-1 min-w-0">
+                    <div className="font-mono text-[10px] text-accent uppercase tracking-wider">
+                      {t('chat.edit.editing')}
+                    </div>
+                    <div className="text-fg-secondary truncate">{editingRow.text}</div>
+                  </div>
+                  <button
+                    onClick={cancelEdit}
+                    className="font-mono text-[10px] uppercase tracking-wider text-fg-dim hover:text-fg-primary"
+                  >
+                    × {t('chat.reply.cancel')}
+                  </button>
+                </motion.div>
+              )}
+              {replyTo && !editingRow && (
+                <motion.div
+                  key="replying"
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 6 }}
+                  transition={{ duration: 0.14 }}
+                  className="flex items-start gap-2 rounded-2xl bg-surface shadow-lg px-3 py-2 text-xs"
+                >
+                  <div className="border-l-2 border-accent/60 pl-2 flex-1 min-w-0">
+                    <div className="font-mono text-[10px] text-fg-dim">
+                      {t('chat.reply.replying_to', { name: replyTo.authorName })}
+                    </div>
+                    <div className="text-fg-secondary truncate"><EmoticonText text={replyTo.snippet} emoticonSize={14} /></div>
+                  </div>
+                  <button
+                    onClick={cancelReply}
+                    className="font-mono text-[10px] uppercase tracking-wider text-fg-dim hover:text-fg-primary"
+                  >
+                    × {t('chat.reply.cancel')}
+                  </button>
+                </motion.div>
               )}
             </AnimatePresence>
           </div>
@@ -1951,38 +2013,6 @@ export function Chat() {
             </div>
           ) : (
           <div className="relative">
-          {editingRow && (
-            <div className="absolute bottom-full inset-x-0 mb-2 z-10 flex items-start gap-2 rounded-2xl bg-surface shadow-lg px-3 py-2 text-xs">
-              <div className="border-l-2 border-accent/60 pl-2 flex-1 min-w-0">
-                <div className="font-mono text-[10px] text-accent uppercase tracking-wider">
-                  {t('chat.edit.editing')}
-                </div>
-                <div className="text-fg-secondary truncate">{editingRow.text}</div>
-              </div>
-              <button
-                onClick={cancelEdit}
-                className="font-mono text-[10px] uppercase tracking-wider text-fg-dim hover:text-fg-primary"
-              >
-                × {t('chat.reply.cancel')}
-              </button>
-            </div>
-          )}
-          {replyTo && !editingRow && (
-            <div className="absolute bottom-full inset-x-0 mb-2 z-10 flex items-start gap-2 rounded-2xl bg-surface shadow-lg px-3 py-2 text-xs">
-              <div className="border-l-2 border-accent/60 pl-2 flex-1 min-w-0">
-                <div className="font-mono text-[10px] text-fg-dim">
-                  {t('chat.reply.replying_to', { name: replyTo.authorName })}
-                </div>
-                <div className="text-fg-secondary truncate"><EmoticonText text={replyTo.snippet} emoticonSize={14} /></div>
-              </div>
-              <button
-                onClick={cancelReply}
-                className="font-mono text-[10px] uppercase tracking-wider text-fg-dim hover:text-fg-primary"
-              >
-                × {t('chat.reply.cancel')}
-              </button>
-            </div>
-          )}
           <div className="flex items-end gap-2">
             <input
               ref={fileInputRef}
@@ -2161,9 +2191,30 @@ function AttachIcon() {
 /// Bookmark glyph for the Saved Messages («Заметки») chat header.
 /// Handset glyph for "call this contact". Same weight as the other header
 /// icons so the row reads as one set.
+/// In flight: the island does not have it yet.
+function ClockMark() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-fg-dim" aria-hidden>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </svg>
+  )
+}
+
+/// The island has it. Deliberately a SINGLE tick: two ticks mean "they have it"
+/// everywhere anyone has seen them, and this client is never told that — there
+/// is no delivery or read receipt on the web, only sending / sent / failed.
+function TickMark() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="text-accent" aria-hidden>
+      <path d="M4 12.5l5 5L20 7" />
+    </svg>
+  )
+}
+
 function SearchIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <circle cx="11" cy="11" r="7" />
       <path d="M20 20l-3.5-3.5" />
     </svg>

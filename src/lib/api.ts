@@ -77,6 +77,11 @@ export interface Contact {
   // member of a group you are in), so the client never has to gate it.
   avatar_media_id?: string | null
   avatar_media_key?: string | null
+  /// Whether WE may call this contact, per THEIR `call_policy` — "nobody"
+  /// hides our call buttons. Optional for an older island that omits it, and
+  /// absent is treated as callable. The island enforces the policy on the
+  /// call_offer regardless, so this only decides what we DRAW.
+  callable?: boolean | null
   // Federation (F2): set for a cross-island peer (the island host where they
   // live). Undefined/absent = a normal flagship contact. When present, the chat
   // send path routes via federation-send (deliverCrossIsland) instead of the

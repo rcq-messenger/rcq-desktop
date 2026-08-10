@@ -98,6 +98,20 @@ export function Privacy() {
                 disabledHint={t('settings.privacy.gender_first')}
               />
             </div>
+            {/* Who may ring me. The island has enforced this on call_offer all
+                along and hands each contact a `callable` flag off it, and iOS
+                has shown the switch for as long — the web never drew it, so a
+                web user was reachable by anyone with no way to say otherwise.
+                The string for it was even already translated, used nowhere. */}
+            <div className="py-3">
+              <ScopePicker
+                label={t('settings.privacy.calls')}
+                description={t('settings.privacy.calls_desc')}
+                value={(info.call_policy as Scope) ?? 'everyone'}
+                onChange={(v) => patch('call_policy', v)}
+                t={t}
+              />
+            </div>
             <div className="pt-3">
               <ScopePicker
                 label={t('settings.privacy.group_invites')}

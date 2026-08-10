@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { EmoticonInput, insertEmoticonAt, serialize as serializeComposer } from '../components/EmoticonInput'
 import { EmoticonPicker } from '../components/EmoticonPicker'
 import { EmoticonText } from '../components/EmoticonText'
 import { ForwardModal, type ForwardTarget } from '../components/ForwardModal'
@@ -163,19 +164,11 @@ export function Chat() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const docInputRef = useRef<HTMLInputElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
-  // Auto-growing composer (#composer-expand): the textarea grows with its
-  // content up to a few lines, then scrolls — so a long message isn't cramped
-  // into one line in a small window. Reset back to one line after send.
-  const taRef = useRef<HTMLTextAreaElement>(null)
-  const autosize = () => {
-    const ta = taRef.current
-    if (!ta) return
-    ta.style.height = 'auto'
-    ta.style.height = Math.min(ta.scrollHeight, 140) + 'px'
-  }
-  useEffect(() => {
-    autosize()
-  }, [input])
+  // The composer. A contenteditable rather than a textarea, because a textarea
+  // cannot hold a picture and the emoticons were the point; it grows with its
+  // own content, so the manual height juggling that used to live here went with
+  // the element it was written for (max-height + overflow does the rest).
+  const taRef = useRef<HTMLDivElement>(null)
   // The scrolling message pane (<main>). We scroll this element directly to
   // its bottom rather than scrollIntoView-ing a zero-height anchor — the
   // anchor approach was landing short, leaving the newest messages tucked
@@ -909,6 +902,26 @@ export function Chat() {
     setReplyTo(null)
   }
 
+  function insertEmoticon(code: string, asset: string) {
+    const el = taRef.current
+    if (!el) return
+    insertEmoticonAt(el, asset, code)
+    setInput(serializeComposer(el))
+    notifyTyping()
+  }
+
+  /// Start a call, or say why not. Signalling rides the websocket and has no
+  /// REST fallback, so being offline really does block it — but that is a fact
+  /// at press time, not a reason to animate the header.
+  function startCall(media: 'audio' | 'video') {
+    if (!peer) return
+    if (!call.callable) {
+      setTransientNotice(t('call.offline'))
+      return
+    }
+    call.start(peer.uin, peer.nickname ?? `#${peer.uin}`, media)
+  }
+
   /// Scroll to the message a quote refers to and flash it.
   ///
   /// Tapping a quote did nothing at all before — no handler, and no anchors to
@@ -1267,31 +1280,32 @@ export function Chat() {
             </div>
           </Link>
           {/* Calls are one to one only, and calling yourself is not a feature.
-              These used to be HIDDEN whenever the socket was down, on the
-              reasoning that signalling has no REST fallback so the button would
-              do nothing. The result was a header whose controls appeared and
-              vanished on every reconnect — read as flickering, and a control
-              that moves is worse than one that is briefly unavailable. Dimmed
-              and disabled now, with a title that says why. */}
-          {!isGroup && !isSelf && peer && (
+              Shown or hidden by the PEER's call_policy, which the island hands
+              over as `callable` — the same rule iOS uses, and the only one that
+              belongs in a header: it is a property of the person, so it does
+              not change while you look at it.
+              ⚠ It used to be tied to the WEBSOCKET instead, so the controls
+              vanished and returned on every reconnect. Dimming them turned the
+              flicker white rather than removing it: anything driven by a socket
+              flapping will flicker, whatever it is styled with. Whether the
+              socket is up is decided when the button is PRESSED, not drawn. */}
+          {!isGroup && !isSelf && peer && (peer.callable ?? true) && (
             <>
               <button
                 type="button"
-                disabled={!call.callable}
-                onClick={() => call.start(peer.uin, peer.nickname ?? `#${peer.uin}`, 'audio')}
+                onClick={() => startCall('audio')}
                 aria-label={t('call.start.audio')}
-                title={call.callable ? t('call.start.audio') : t('call.offline')}
-                className="p-2 text-fg-secondary hover:text-fg-primary disabled:opacity-30 disabled:hover:text-fg-secondary transition-opacity"
+                title={t('call.start.audio')}
+                className="p-2 text-fg-secondary hover:text-fg-primary transition-colors"
               >
                 <HeaderPhoneIcon />
               </button>
               <button
                 type="button"
-                disabled={!call.callable}
-                onClick={() => call.start(peer.uin, peer.nickname ?? `#${peer.uin}`, 'video')}
+                onClick={() => startCall('video')}
                 aria-label={t('call.start.video')}
-                title={call.callable ? t('call.start.video') : t('call.offline')}
-                className="p-2 text-fg-secondary hover:text-fg-primary disabled:opacity-30 disabled:hover:text-fg-secondary transition-opacity"
+                title={t('call.start.video')}
+                className="p-2 text-fg-secondary hover:text-fg-primary transition-colors"
               >
                 <HeaderCameraIcon />
               </button>
@@ -1806,7 +1820,7 @@ export function Chat() {
                 <EmoticonPicker
                   key="picker"
                   uin={identity!.uin}
-                  onPick={(code) => setInput((prev) => prev + code)}
+                  onPick={(code, asset) => insertEmoticon(code, asset)}
                 />
               )}
             </AnimatePresence>
@@ -1948,10 +1962,9 @@ export function Chat() {
                 className="select-none"
               />
             </button>
-            <textarea
+            <EmoticonInput
               ref={taRef}
-              rows={1}
-              className="flex-1 resize-none rounded-2xl bg-surface px-4 py-2.5 text-sm outline-none leading-snug placeholder:text-fg-dim focus:ring-1 focus:ring-accent transition-colors max-h-[140px] overflow-y-auto"
+              className="flex-1 rounded-2xl bg-surface px-4 py-2.5 text-sm outline-none leading-snug focus:ring-1 focus:ring-accent transition-colors max-h-[140px] overflow-y-auto"
               placeholder={
                 isGroup && group
                   ? t('chat.placeholder.group', { name: group.name })
@@ -1960,39 +1973,20 @@ export function Chat() {
                     : t('chat.placeholder_loading')
               }
               value={input}
-              onChange={(e) => { setInput(e.target.value); if (e.target.value) notifyTyping(); else stopTyping() }}
+              onChange={(v) => { setInput(v); if (v) notifyTyping(); else stopTyping() }}
               onBlur={stopTyping}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault()
-                  void send()
-                  return
-                }
-                // Up-arrow on an empty composer edits your last message, the
-                // habit every messenger and shell shares. Editing existed but
-                // was reachable only by clicking the bubble and picking a menu
-                // item.
-                if (e.key === 'ArrowUp' && !input && !editingRow) {
-                  const last = [...outgoing]
-                    .reverse()
-                    .find((r) => r.state === 'sent' && (!r.kind || r.kind === 'text'))
-                  if (last) {
-                    e.preventDefault()
-                    startEdit(last)
-                  }
-                }
+              onSubmit={() => void send()}
+              // Up-arrow on an empty composer edits your last message, the
+              // habit every messenger and shell shares. Editing existed but was
+              // reachable only by clicking the bubble and picking a menu item.
+              onArrowUpEmpty={() => {
+                if (editingRow) return
+                const last = [...outgoing]
+                  .reverse()
+                  .find((r) => r.state === 'sent' && (!r.kind || r.kind === 'text'))
+                if (last) startEdit(last)
               }}
-              onPaste={(e) => {
-                // A screenshot in the clipboard is the most common way to send
-                // an image on a desktop, and Ctrl+V did nothing: the only way
-                // in was the paperclip and a file dialog.
-                const items = Array.from(e.clipboardData?.items ?? [])
-                const img = items.find((i) => i.kind === 'file' && i.type.startsWith('image/'))
-                const file = img?.getAsFile()
-                if (!file) return
-                e.preventDefault()
-                void sendPhoto(file)
-              }}
+              onPasteImage={(file) => void sendPhoto(file)}
               disabled={!peer && !group}
             />
             <button

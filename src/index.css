@@ -118,3 +118,25 @@ input, textarea, button {
 @media (prefers-reduced-motion: reduce) {
   .rcq-wave { animation: none; opacity: 0; }
 }
+
+/* The composer is a contenteditable, so it has no `placeholder` of its own and
+   no automatic single-line height. Both come from here. */
+.rcq-composer {
+  min-height: 2.5rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  outline: none;
+}
+.rcq-composer:empty::before {
+  content: attr(data-placeholder);
+  color: rgb(var(--c-fg-dim));
+  pointer-events: none;
+}
+/* A contenteditable that has only a <br> in it is not `:empty`, and that is the
+   state it lands in the moment you type and delete one character — so without
+   this the placeholder never comes back. */
+.rcq-composer:has(> br:only-child)::before {
+  content: attr(data-placeholder);
+  color: rgb(var(--c-fg-dim));
+  pointer-events: none;
+}

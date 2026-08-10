@@ -1,0 +1,13 @@
+Окно стало похоже на окно, а не на страницу в браузере.
+
+Шапка была светлее остального экрана, из-за чего поверху каждого экрана шла отдельная полоса. Теперь она того же цвета, что и всё остальное, а серый достался кнопкам: подсвечивается та, на которую вы навели.
+
+Интерфейс больше не выделяется мышью. Раньше протаскивание по окну красило подписи и кнопки синим, как в браузере. Поля ввода, окно набора сообщения и блоки кода выделяются как раньше.
+
+---
+
+The window looks like a window now, not like a page in a browser.
+
+The header used to be lighter than the rest of the screen, so every view had a separate strip across the top. It is the same colour as everything else now, and the grey went to the buttons: the one under your pointer lights up.
+
+The interface no longer selects. Dragging across the window used to paint labels and buttons blue, the way a web page does. Inputs, the composer and code blocks still select as before.

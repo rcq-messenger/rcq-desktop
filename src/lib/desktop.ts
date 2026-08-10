@@ -280,3 +280,42 @@ export async function checkForUpdatesNow(t: Translate): Promise<UpdateCheck> {
     return 'failed'
   }
 }
+
+export interface RelayKeyStatus {
+  present: boolean
+  verdict: string | null
+  private_count: number
+}
+
+/** Whether this install holds a paid access key, and what the broker last made
+ *  of it. The key itself never comes back: it is a bearer credential, and
+ *  nothing on screen needs its value. */
+export async function relayKeyStatus(): Promise<RelayKeyStatus> {
+  if (!isTauri()) return { present: false, verdict: null, private_count: 0 }
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    return await invoke<RelayKeyStatus>('relay_key_status')
+  } catch {
+    return { present: false, verdict: null, private_count: 0 }
+  }
+}
+
+/** Store a paid access key (or clear it with null) and rebuild the tunnel
+ *  around it immediately. Unlike every other tunnel change here, this one does
+ *  NOT need a relaunch: the core is restarted behind the same loopback port, so
+ *  the address the window was built against never moves.
+ *
+ *  Returns the broker's verdict: `ok`, `unknown` (a key it does not know),
+ *  `expired`, or `offline` when the question never got through — which is not
+ *  the same as a bad key and must not be reported as one. */
+export async function setRelayKey(
+  key: string | null,
+): Promise<{ verdict: string; private_count: number }> {
+  if (!isTauri()) return { verdict: 'offline', private_count: 0 }
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    return await invoke<{ verdict: string; private_count: number }>('relay_key_set', { key })
+  } catch {
+    return { verdict: 'offline', private_count: 0 }
+  }
+}

@@ -67,6 +67,11 @@ impl From<&UserRelay> for Relay {
             flow: u.flow.clone(),
             password: u.password.clone(),
             obfs_password: u.obfs_password.clone(),
+            // A hand-pasted relay is never the account's paid tenancy, whatever
+            // it was pasted from: `private` decides who leads the race and who
+            // may be an onion entry, and a token off a chat message has earned
+            // neither.
+            private: false,
         }
     }
 }
@@ -232,6 +237,7 @@ mod tests {
             public_key: Some("k".into()),
             short_id: None,
             flow: None,
+            private: false,
             password: None,
             obfs_password: None,
         }

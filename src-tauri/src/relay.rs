@@ -56,6 +56,11 @@ pub struct Relay {
     pub flow: Option<String>,
     pub password: Option<String>,
     pub obfs_password: Option<String>,
+    /// This endpoint belongs to the account's own paid tenancy rather than the
+    /// shared pool. Never true for anything out of the signed config: a private
+    /// address is not published there, which is the whole point of paying.
+    #[allow(dead_code)]
+    pub private: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -71,6 +76,14 @@ pub struct RelayConfig {
     /// doable without shipping a build, because the people who need it are the
     /// ones who cannot reach us to get one.
     pub front: Option<String>,
+    /// Whether the payload asks clients to route through a 2-hop chain.
+    ///
+    /// ⚠ The desktop parsed no such field until 2026-08-10 and silently ignored
+    /// it, so the cohort flip that turned onion on for every phone never reached
+    /// this client and there was nowhere to notice: no log line, no diagnostics
+    /// row, nothing in the UI. One relay went on seeing a desktop user's address
+    /// and their island at once while the server believed otherwise.
+    pub onion: bool,
     /// Full https URL the relay selector races each relay against.
     ///
     /// ⚠ Unlike `front`, this one travels THROUGH each relay, so every relay's
@@ -192,6 +205,7 @@ pub fn verify_and_parse(text: &str, min_version: Option<i64>) -> Option<RelayCon
                 flow: s("flow"),
                 password: s("password"),
                 obfs_password: s("obfs_password"),
+                private: false,
             },
         ));
     }
@@ -252,10 +266,17 @@ pub fn verify_and_parse(text: &str, min_version: Option<i64>) -> Option<RelayCon
         .filter(|u| u.starts_with("https://"))
         .map(str::to_owned);
 
+    let onion = root
+        .get("onion")
+        .and_then(|o| o.get("enabled"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+
     Some(RelayConfig {
         version,
         relays: relays.into_iter().map(|(_, r)| r).collect(),
         sources,
+        onion,
         front,
         probe,
     })

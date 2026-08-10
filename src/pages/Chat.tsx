@@ -1169,15 +1169,30 @@ export function Chat() {
       .filter((it) => !isDeleted(it.kind === 'out' ? it.row.id : it.msg.id))
       .sort((a, b) => a.at - b.at)
 
-    const out: Array<(typeof items)[number] | { kind: 'day'; at: number }> = []
+    // Group consecutive messages from the same author. Five in a row used to be
+    // five copies of the same name and avatar, which turns a conversation into a
+    // form; a run reads as one turn of speech when only the first of it is
+    // labelled. Broken by a change of author, a day boundary, or a gap long
+    // enough that the two are no longer one thought.
+    const RUN_GAP_MS = 5 * 60 * 1000
+    const out: Array<
+      ((typeof items)[number] & { cont?: boolean }) | { kind: 'day'; at: number }
+    > = []
     let lastDay = ''
+    let lastAuthor: string | null = null
+    let lastAt = 0
     for (const it of items) {
       const day = new Date(it.at).toDateString()
       if (day !== lastDay) {
         out.push({ kind: 'day', at: it.at })
         lastDay = day
+        lastAuthor = null
       }
-      out.push(it)
+      const author = it.kind === 'out' ? 'me' : `in:${it.msg.from}`
+      const cont = author === lastAuthor && it.at - lastAt < RUN_GAP_MS
+      out.push({ ...it, cont })
+      lastAuthor = author
+      lastAt = it.at
     }
     return out
   }, [outgoing, incoming, deletedVersion])
@@ -1394,9 +1409,9 @@ export function Chat() {
                 const showActions = actionsForRowId === m.id
                 const showReactionPicker = reactionForRowId === m.id
                 return (
-                  <li key={`in-${m.id}`} id={`msg-${m.id}`} className={`flex justify-start rounded-lg transition-colors duration-500 ${highlightId === m.id ? 'bg-accent/15' : ''}`} {...swipeReply(() => startReplyTo(m.id, m.text, replyAuthor))}>
+                  <li key={`in-${m.id}`} id={`msg-${m.id}`} className={`group flex justify-start rounded-lg transition-colors duration-500 ${item.cont ? '-mt-1' : ''} ${highlightId === m.id ? 'bg-accent/15' : ''}`} {...swipeReply(() => startReplyTo(m.id, m.text, replyAuthor))}>
                     <div className="max-w-[80%] flex flex-col items-start gap-1">
-                      {senderName && (
+                      {senderName && !item.cont && (
                         <Link
                           to={`/profile/${m.from}`}
                           className="flex items-center gap-1.5 font-mono text-[10px] text-fg-dim px-1 hover:text-accent transition-colors"
@@ -1519,6 +1534,16 @@ export function Chat() {
                         />
                       )}
                     </div>
+                    <button
+                      type="button"
+                      data-chat-menu
+                      onClick={() => setReactionForRowId((id) => (id === m.id ? null : m.id))}
+                      aria-label={t('chat.actions.react')}
+                      title={t('chat.actions.react')}
+                      className="self-center ml-1 h-7 w-7 rounded-full bg-surface text-fg-dim opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity flex-none hidden sm:flex items-center justify-center"
+                    >
+                      ☺
+                    </button>
                   </li>
                 )
               }
@@ -1528,7 +1553,7 @@ export function Chat() {
                 // A group-invite link I shared — show the join card
                 // (not a raw URL bubble) with the delivery state below.
                 return (
-                  <li key={row.id} id={`msg-${row.id}`} className={`flex justify-end rounded-lg transition-colors duration-500 ${highlightId === row.id ? 'bg-accent/15' : ''}`}>
+                  <li key={row.id} id={`msg-${row.id}`} className={`group flex justify-end rounded-lg transition-colors duration-500 ${item.cont ? '-mt-1' : ''} ${highlightId === row.id ? 'bg-accent/15' : ''}`}>
                     <div className="max-w-[80%] flex flex-col items-end gap-1">
                       <GroupJoinCard groupId={outInvite.id} host={outInvite.host} />
                       <div className="flex items-center justify-end gap-1 text-[10px] font-mono text-fg-dim">
@@ -1554,7 +1579,7 @@ export function Chat() {
               if (row.kind === 'photo' && row.mediaId && row.mediaKey) {
                 // A photo I sent — render the image bubble + delivery state.
                 return (
-                  <li key={row.id} id={`msg-${row.id}`} className={`flex justify-end rounded-lg transition-colors duration-500 ${highlightId === row.id ? 'bg-accent/15' : ''}`}>
+                  <li key={row.id} id={`msg-${row.id}`} className={`group flex justify-end rounded-lg transition-colors duration-500 ${item.cont ? '-mt-1' : ''} ${highlightId === row.id ? 'bg-accent/15' : ''}`}>
                     <div className="max-w-[80%] flex flex-col items-end gap-1">
                       <DecryptedImage mediaId={row.mediaId} mediaKey={row.mediaKey} apiBase={groupMediaBase} />
                       {row.text && (
@@ -1593,7 +1618,7 @@ export function Chat() {
                 // A video I sent (echoed from another device via a carbon) —
                 // render the player + delivery state.
                 return (
-                  <li key={row.id} id={`msg-${row.id}`} className={`flex justify-end rounded-lg transition-colors duration-500 ${highlightId === row.id ? 'bg-accent/15' : ''}`}>
+                  <li key={row.id} id={`msg-${row.id}`} className={`group flex justify-end rounded-lg transition-colors duration-500 ${item.cont ? '-mt-1' : ''} ${highlightId === row.id ? 'bg-accent/15' : ''}`}>
                     <div className="max-w-[80%] flex flex-col items-end gap-1">
                       <DecryptedVideo
                         mediaId={row.mediaId}
@@ -1618,7 +1643,7 @@ export function Chat() {
               if (row.kind === 'file' && row.mediaId && row.mediaKey) {
                 // A document I sent — render the download chip + delivery state.
                 return (
-                  <li key={row.id} id={`msg-${row.id}`} className={`flex justify-end rounded-lg transition-colors duration-500 ${highlightId === row.id ? 'bg-accent/15' : ''}`}>
+                  <li key={row.id} id={`msg-${row.id}`} className={`group flex justify-end rounded-lg transition-colors duration-500 ${item.cont ? '-mt-1' : ''} ${highlightId === row.id ? 'bg-accent/15' : ''}`}>
                     <div className="max-w-[80%] flex flex-col items-end gap-1">
                       <FileBubble
                         mediaId={row.mediaId}
@@ -1663,7 +1688,7 @@ export function Chat() {
                 // A still-unsupported media (voice/location) the user sent from
                 // another device, echoed here via a carbon.
                 return (
-                  <li key={row.id} id={`msg-${row.id}`} className={`flex justify-end rounded-lg transition-colors duration-500 ${highlightId === row.id ? 'bg-accent/15' : ''}`}>
+                  <li key={row.id} id={`msg-${row.id}`} className={`group flex justify-end rounded-lg transition-colors duration-500 ${item.cont ? '-mt-1' : ''} ${highlightId === row.id ? 'bg-accent/15' : ''}`}>
                     <div className="max-w-[80%] flex flex-col items-end gap-1">
                       <MediaPlaceholder mediaKind={row.mediaKind} />
                       <div className="flex items-center justify-end gap-1 text-[10px] font-mono text-fg-dim">
@@ -1677,7 +1702,7 @@ export function Chat() {
               const showActions = actionsForRowId === row.id
               const showReactionPicker = reactionForRowId === row.id
               return (
-              <li key={row.id} id={`msg-${row.id}`} className={`flex justify-end rounded-lg transition-colors duration-500 ${highlightId === row.id ? 'bg-accent/15' : ''}`} {...swipeReply(() => startReply(row))}>
+              <li key={row.id} id={`msg-${row.id}`} className={`group flex justify-end rounded-lg transition-colors duration-500 ${item.cont ? '-mt-1' : ''} ${highlightId === row.id ? 'bg-accent/15' : ''}`} {...swipeReply(() => startReply(row))}>
                 <div className="max-w-[80%] flex flex-col items-end gap-1">
                   {row.fwdName && (
                     <div className="font-mono text-[10px] uppercase tracking-wider text-fg-dim">
@@ -1761,11 +1786,6 @@ export function Chat() {
                         label={t('chat.actions.react')}
                         icon="☺"
                       />
-                      <ActionButton
-                        onClick={() => setReactionForRowId((id) => (id === row.id ? null : row.id))}
-                        label={t('chat.actions.react')}
-                        icon="☺"
-                      />
                       <ActionButton onClick={() => void deleteForEveryone(row)} label={t('chat.actions.delete')} icon="🗑" danger />
                     </div>
                   )}
@@ -1777,6 +1797,16 @@ export function Chat() {
                     />
                   )}
                 </div>
+                <button
+                  type="button"
+                  data-chat-menu
+                  onClick={() => setReactionForRowId((id) => (id === row.id ? null : row.id))}
+                  aria-label={t('chat.actions.react')}
+                  title={t('chat.actions.react')}
+                  className="self-center mr-1 order-first h-7 w-7 rounded-full bg-surface text-fg-dim opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity flex-none hidden sm:flex items-center justify-center"
+                >
+                  ☺
+                </button>
               </li>
             )
           })}

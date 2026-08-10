@@ -14,7 +14,7 @@ import { useI18n } from '../lib/i18n-context'
 
 interface Props {
   uin: number
-  onPick: (primaryCode: string) => void
+  onPick: (primaryCode: string, asset: string) => void
 }
 
 export function EmoticonPicker({ uin, onPick }: Props) {
@@ -62,13 +62,13 @@ export function EmoticonPicker({ uin, onPick }: Props) {
   )
 }
 
-function Grid({ items, onPick }: { items: PaletteEntry[]; onPick: (code: string) => void }) {
+function Grid({ items, onPick }: { items: PaletteEntry[]; onPick: (code: string, asset: string) => void }) {
   return (
     <div className="grid grid-cols-8 gap-1.5">
       {items.map((p) => (
         <button
           key={p.asset}
-          onClick={() => onPick(p.primaryCode)}
+          onClick={() => onPick(p.primaryCode, p.asset)}
           title={`${p.name}  ${p.primaryCode}`}
           className="w-9 h-9 flex items-center justify-center hover:bg-field rounded-md transition-colors"
         >

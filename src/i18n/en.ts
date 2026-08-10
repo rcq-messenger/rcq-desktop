@@ -535,11 +535,12 @@ export const en: Record<string, string> = {
   'settings.privacy.gender_visible': 'Gender visible to',
   'settings.privacy.gender_desc': 'Optional profile info with its own visibility.',
   'settings.privacy.gender_first': 'Set a gender on your profile to share it.',
+  'settings.privacy.calls': 'Who can call me',
+  'settings.privacy.calls_desc': 'Anyone you shut out here simply sees no call buttons, and the island refuses their call anyway.',
   'settings.privacy.group_invites': 'Group invites from',
   'settings.privacy.group_invites_desc':
     '"Contacts only" lets only your contacts add you to groups; "Nobody" blocks all invites.',
   'settings.privacy.trade_offers': 'Trade offers from',
-  'settings.privacy.calls': 'Calls from',
   'settings.privacy.footer.short': 'Last seen, gender, group invites, trade offers, calls.',
   'settings.privacy.footer':
     'Last seen — who sees your online timestamp. Gender — opt-in info that respects its own visibility scope. Group invites — "Contacts only" lets people in your contacts add you to groups; "Nobody" blocks unsolicited adds entirely. Trade offers — same shape; "Nobody" blocks every incoming trade. Calls — "Nobody" hides every call button across the app.',

@@ -24,7 +24,7 @@ import {
   type UserInfo,
   type UserStatus,
 } from '../lib/api'
-import { contactsCache } from '../lib/contacts-cache'
+import { contactsCache, persistSnapshot, restoreSnapshot } from '../lib/contacts-cache'
 import { memberCount } from '../lib/group-roster'
 import { usePeerUnread, useGroupUnread, useTotalUnread, peerUnreadCount, groupUnreadCount } from '../lib/incoming-store'
 import { useI18n } from '../lib/i18n-context'
@@ -101,6 +101,7 @@ export function Contacts() {
   // last-known contacts on the FIRST render — no "Загружаем" spinner flash
   // between the initial (empty) render and the effect that reads the cache.
   // A silent background refresh still runs to pick up changes in place.
+  if (identity) restoreSnapshot(identity.uin)
   const _cachedAtMount = identity ? contactsCache.get(identity.uin) : undefined
   const [contacts, setContacts] = useState<Contact[]>(() => _cachedAtMount?.contacts ?? [])
   const [groups, setGroups] = useState<RCQGroup[]>(() => _cachedAtMount?.groups ?? [])
@@ -145,7 +146,7 @@ export function Contacts() {
       setPending(pendingList)
       setMe(myInfo)
       setGroups(allGroups)
-      contactsCache.set(identity.uin, { contacts: list, groups: allGroups, pending: pendingList, me: myInfo })
+      persistSnapshot(identity.uin, { contacts: list, groups: allGroups, pending: pendingList, me: myInfo })
     } catch (e) {
       // On a background refresh keep the cached view; only surface errors on a cold load.
       if (!background) setError(e instanceof Error ? e.message : t('contacts.error'))
@@ -219,7 +220,7 @@ export function Contacts() {
       if (!prev || prev.status !== 'offline') return prev
       const updated = { ...prev, status: 'online' as UserStatus }
       const cached = contactsCache.get(identity.uin)
-      if (cached) contactsCache.set(identity.uin, { ...cached, me: updated })
+      if (cached) persistSnapshot(identity.uin, { ...cached, me: updated })
       return updated
     })
     // If the user added their OWN UIN as a contact, that row never gets a

@@ -13,9 +13,10 @@ import { onToast, useTotalUnread, type Toast } from '../lib/incoming-store'
 import { useIdentity } from '../lib/identity-context'
 import { useI18n } from '../lib/i18n-context'
 import { isTauri, notifyDesktop, setDesktopBadge, checkForUpdatesOnLaunch } from '../lib/desktop'
-import { lookupContactName, lookupGroupName, lookupContactStatus, lookupGroupAvatar } from '../lib/contacts-cache'
+import { lookupContactAvatar, lookupContactName, lookupGroupName, lookupContactStatus, lookupGroupAvatar } from '../lib/contacts-cache'
 import { EmoticonText } from './EmoticonText'
 import { GroupAvatar } from './GroupAvatar'
+import { PersonAvatar } from './PersonAvatar'
 import { StatusIcon } from './StatusIcon'
 
 interface LiveToast extends Toast {
@@ -106,6 +107,7 @@ export function MessageToasts() {
           toast.groupId != null ? lookupContactName(identity!.uin, toast.from) || `#${toast.from}` : null
         const senderStatus = lookupContactStatus(identity!.uin, toast.from)
         const groupAvatar = toast.groupId != null ? lookupGroupAvatar(identity!.uin, toast.groupId) : null
+        const senderAvatar = toast.groupId == null ? lookupContactAvatar(identity!.uin, toast.from) : null
         const body =
           toast.kind === 'photo' ? t('toast.photo')
           : toast.kind === 'video' ? t('chat.media.kind.video')
@@ -125,14 +127,24 @@ export function MessageToasts() {
           >
             <div className="flex items-start gap-2">
               {/* Group toast: lead with the group's avatar (#toast-avatars). */}
-              {toast.groupId != null && (
-                <div className="flex-none mt-0.5">
+              <div className="flex-none mt-0.5">
+                {toast.groupId != null ? (
                   <GroupAvatar size={28} mediaId={groupAvatar?.mediaId} mediaKey={groupAvatar?.mediaKey} />
-                </div>
-              )}
+                ) : (
+                  // The face, with the status badge on it — the same thing the
+                  // contact list shows. PersonAvatar falls back to the status
+                  // flower on its own when there is no picture, so the dot is
+                  // not lost for anyone who never set one.
+                  <PersonAvatar
+                    status={senderStatus ?? 'offline'}
+                    size={28}
+                    mediaId={senderAvatar?.mediaId}
+                    mediaKey={senderAvatar?.mediaKey}
+                  />
+                )}
+              </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
-                  {toast.groupId == null && senderStatus && <StatusIcon status={senderStatus} size={12} />}
                   <div className="text-sm font-semibold truncate">{title}</div>
                 </div>
                 {sender && (

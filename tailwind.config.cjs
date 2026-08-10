@@ -27,6 +27,11 @@ module.exports = {
           dim: 'rgb(var(--c-surface-dim) / <alpha-value>)',
         },
         line: 'rgb(var(--c-line) / <alpha-value>)',
+        // Interactive fills: an input, a soft button, a chip. Its own token
+        // because it must sit ABOVE whatever it lands on, and `surface-dim`
+        // cannot do that job any more — the true-black theme repurposed that
+        // one as the page background, so filling with it fills with nothing.
+        field: 'rgb(var(--c-field) / <alpha-value>)',
         fg: {
           primary: 'rgb(var(--c-fg-primary) / <alpha-value>)',
           secondary: 'rgb(var(--c-fg-secondary) / <alpha-value>)',

@@ -370,7 +370,7 @@ export function Settings() {
 
   return (
     <div className="min-h-screen bg-surface-dim">
-      <header className="sticky top-0 bg-surface border-b border-line z-10">
+      <header className="sticky top-0 bg-surface z-10">
         <div className="max-w-2xl mx-auto px-4 h-14 flex items-center gap-3">
           <Link to="/contacts" className="text-fg-secondary hover:text-fg-primary px-2">
             ←
@@ -382,7 +382,7 @@ export function Settings() {
       <main className="max-w-2xl mx-auto px-4 py-6 space-y-6">
         <Link
           to="/profile"
-          className="block bg-surface rounded-lg border border-line p-4 hover:bg-surface-dim transition-colors"
+          className="block bg-surface rounded-lg p-4 hover:bg-field transition-colors"
         >
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
@@ -397,7 +397,7 @@ export function Settings() {
           </div>
         </Link>
 
-        <section className="bg-surface rounded-lg border border-line p-4 space-y-2">
+        <section className="bg-surface rounded-lg p-4 space-y-2">
           <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
             {t('settings.section.account')}
           </div>
@@ -413,7 +413,7 @@ export function Settings() {
 
         <Link
           to="/market"
-          className="block bg-surface rounded-lg border border-line p-4 hover:bg-surface-dim transition-colors"
+          className="block bg-surface rounded-lg p-4 hover:bg-surface-dim transition-colors"
         >
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
@@ -426,7 +426,7 @@ export function Settings() {
           </div>
         </Link>
 
-        <section className="bg-surface rounded-lg border border-line p-4 space-y-3">
+        <section className="bg-surface rounded-lg p-4 space-y-3">
           <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
             {t('settings.section.qr')}
           </div>
@@ -435,7 +435,7 @@ export function Settings() {
 
         {/* Multihoming (federation v1): this account also registered on a
             second island, messages get deposited into both mailboxes. */}
-        <section className="bg-surface rounded-lg border border-line p-4 space-y-3">
+        <section className="bg-surface rounded-lg p-4 space-y-3">
           <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
             {t('settings.section.multihome')}
           </div>
@@ -490,14 +490,14 @@ export function Settings() {
                       <button
                         onClick={() => makePrimary(h.host)}
                         disabled={promoteBusy != null}
-                        className="h-8 px-3 rounded-md border border-line text-xs font-medium text-fg-secondary hover:bg-surface-dim transition-colors disabled:opacity-50"
+                        className="h-8 px-3 rounded-md bg-field text-xs font-medium text-fg-secondary hover:bg-line/50 transition-colors disabled:opacity-50"
                       >
                         {promoteBusy === h.host ? t('settings.multihome.promoting') : t('settings.multihome.make_primary')}
                       </button>
                       <button
                         onClick={() => removeBackup(h.host)}
                         disabled={promoteBusy != null}
-                        className="h-8 px-3 rounded-md border border-line text-xs font-medium text-fg-secondary hover:bg-surface-dim transition-colors disabled:opacity-50"
+                        className="h-8 px-3 rounded-md bg-field text-xs font-medium text-fg-secondary hover:bg-line/50 transition-colors disabled:opacity-50"
                       >
                         {t('settings.multihome.remove')}
                       </button>
@@ -507,7 +507,7 @@ export function Settings() {
               {!mhAdding ? (
                 <button
                   onClick={() => setMhAdding(true)}
-                  className="w-full h-10 rounded-md border border-line text-sm font-medium hover:bg-surface-dim transition-colors"
+                  className="w-full h-10 rounded-md bg-field text-sm font-medium hover:bg-line/50 transition-colors"
                 >
                   {t('settings.multihome.add')}
                 </button>
@@ -518,7 +518,7 @@ export function Settings() {
                     value={mhHost}
                     onChange={(e) => setMhHost(e.target.value)}
                     placeholder={t('settings.multihome.placeholder')}
-                    className="w-full h-10 px-3 rounded-md border border-line bg-surface-dim outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm font-mono"
+                    className="w-full h-10 px-3 rounded-md bg-field outline-none focus:ring-1 focus:ring-accent text-sm font-mono"
                     autoFocus
                     disabled={mhBusy}
                   />
@@ -554,7 +554,7 @@ export function Settings() {
             See pages/Privacy.tsx for the actual surface. */}
         <Link
           to="/privacy"
-          className="block bg-surface rounded-lg border border-line p-4 hover:bg-surface-dim transition-colors"
+          className="block bg-surface rounded-lg p-4 hover:bg-surface-dim transition-colors"
         >
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
@@ -569,7 +569,7 @@ export function Settings() {
           </div>
         </Link>
 
-        <section className="bg-surface rounded-lg border border-line p-4 space-y-2">
+        <section className="bg-surface rounded-lg p-4 space-y-2">
           <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
             {t('settings.section.language')}
           </div>
@@ -577,7 +577,7 @@ export function Settings() {
           <p className="text-xs text-fg-dim">{t('settings.language.footer')}</p>
         </section>
 
-        <section className="bg-surface rounded-lg border border-line p-4 space-y-3">
+        <section className="bg-surface rounded-lg p-4 space-y-3">
           <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
             {t('settings.section.theme')}
           </div>
@@ -594,7 +594,7 @@ export function Settings() {
           <p className="text-xs text-fg-dim">{t('settings.theme.footer')}</p>
         </section>
 
-        <section className="bg-surface rounded-lg border border-line p-4 space-y-3">
+        <section className="bg-surface rounded-lg p-4 space-y-3">
           <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
             {t('settings.section.sound')}
           </div>
@@ -631,7 +631,7 @@ export function Settings() {
 
         {/* Hall of Fame opt-in + optional avatar (federation-independent;
             same PUT /users/me as the mobile clients). */}
-        <section className="bg-surface rounded-lg border border-line p-4 space-y-3">
+        <section className="bg-surface rounded-lg p-4 space-y-3">
           <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
             {t('settings.section.hof')}
           </div>
@@ -684,7 +684,7 @@ export function Settings() {
         </section>
 
         {/* Report a problem — same /reports channel the mobile clients use. */}
-        <section className="bg-surface rounded-lg border border-line p-4 space-y-3">
+        <section className="bg-surface rounded-lg p-4 space-y-3">
           <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
             {t('settings.section.report')}
           </div>
@@ -702,7 +702,7 @@ export function Settings() {
                 rows={4}
                 maxLength={1000}
                 disabled={reportBusy}
-                className="w-full px-3 py-2 rounded-md border border-line bg-surface-dim outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm resize-y"
+                className="w-full px-3 py-2 rounded-md bg-field outline-none focus:ring-1 focus:ring-accent text-sm resize-y"
               />
               <div className="flex items-center gap-2 flex-wrap">
                 {reportFiles.map((f, i) => (
@@ -710,7 +710,7 @@ export function Settings() {
                     {f.type.startsWith('image/') ? (
                       <img src={URL.createObjectURL(f)} alt="" className="w-12 h-12 rounded-md object-cover" />
                     ) : (
-                      <div className="w-12 h-12 rounded-md bg-surface-dim flex items-center justify-center text-fg-secondary text-xs">▶</div>
+                      <div className="w-12 h-12 rounded-md bg-field flex items-center justify-center text-fg-secondary text-xs">▶</div>
                     )}
                     <button
                       onClick={() => setReportFiles(reportFiles.filter((_, j) => j !== i))}
@@ -719,7 +719,7 @@ export function Settings() {
                   </div>
                 ))}
                 {reportFiles.length < 3 && !reportBusy && (
-                  <label className="w-12 h-12 rounded-md border border-line flex items-center justify-center text-accent text-xl cursor-pointer hover:bg-accent/5">
+                  <label className="w-12 h-12 rounded-md bg-field flex items-center justify-center text-accent text-xl cursor-pointer hover:bg-accent/5">
                     +
                     <input
                       type="file"
@@ -751,7 +751,7 @@ export function Settings() {
         {/* Desktop only: the bundled sing-box. The webview proxy is fixed when
             the webview is built, so flipping this needs a restart. */}
         {bypass && (
-          <section className="bg-surface rounded-lg border border-line p-4 space-y-3">
+          <section className="bg-surface rounded-lg p-4 space-y-3">
             <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
               {t('settings.section.bypass')}
             </div>
@@ -784,7 +784,7 @@ export function Settings() {
                 </p>
                 <button
                   onClick={() => void relaunchApp()}
-                  className="shrink-0 h-8 px-3 rounded-md border border-line text-xs font-medium hover:bg-surface-dim transition-colors"
+                  className="shrink-0 h-8 px-3 rounded-md bg-field text-xs font-medium hover:bg-line/50 transition-colors"
                 >
                   {t('settings.bypass.restart_now')}
                 </button>
@@ -827,12 +827,12 @@ export function Settings() {
                     }}
                     placeholder={t('settings.bypass.key_placeholder')}
                     spellCheck={false}
-                    className="flex-1 min-w-0 h-9 px-3 rounded-md bg-surface-dim border border-line text-sm font-mono"
+                    className="flex-1 min-w-0 h-9 px-3 rounded-md bg-field text-sm font-mono"
                   />
                   <button
                     onClick={() => void saveKey()}
                     disabled={keyBusy || !keyInput.trim()}
-                    className="shrink-0 h-9 px-3 rounded-md border border-line text-xs font-medium hover:bg-surface-dim transition-colors disabled:opacity-40"
+                    className="shrink-0 h-9 px-3 rounded-md bg-field text-xs font-medium hover:bg-line/50 transition-colors disabled:opacity-40"
                   >
                     {keyBusy ? t('settings.bypass.key_checking') : t('common.save')}
                   </button>
@@ -861,12 +861,12 @@ export function Settings() {
                   }}
                   placeholder="rcq-relay://…"
                   spellCheck={false}
-                  className="flex-1 min-w-0 h-9 px-3 rounded-md bg-surface-dim border border-line text-sm font-mono"
+                  className="flex-1 min-w-0 h-9 px-3 rounded-md bg-field text-sm font-mono"
                 />
                 <button
                   onClick={() => void addRelay()}
                   disabled={!relayToken.trim()}
-                  className="shrink-0 h-9 px-3 rounded-md border border-line text-xs font-medium hover:bg-surface-dim transition-colors disabled:opacity-40"
+                  className="shrink-0 h-9 px-3 rounded-md bg-field text-xs font-medium hover:bg-line/50 transition-colors disabled:opacity-40"
                 >
                   {t('common.save')}
                 </button>
@@ -901,7 +901,7 @@ export function Settings() {
           </section>
         )}
 
-        <section className="bg-surface rounded-lg border border-line p-4 space-y-3">
+        <section className="bg-surface rounded-lg p-4 space-y-3">
           <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
             {t('settings.section.about')}
           </div>
@@ -935,7 +935,7 @@ export function Settings() {
               <button
                 onClick={() => void runUpdateCheck()}
                 disabled={updateBusy}
-                className="w-full h-10 rounded-md border border-line text-sm font-medium hover:bg-surface-dim disabled:opacity-40 transition-colors"
+                className="w-full h-10 rounded-md bg-field text-sm font-medium hover:bg-line/50 disabled:opacity-40 transition-colors"
               >
                 {updateBusy ? t('settings.about.update_checking') : t('settings.about.update_check')}
               </button>
@@ -952,13 +952,13 @@ export function Settings() {
           </a>
         </section>
 
-        <section className="bg-surface rounded-lg border border-line p-4 space-y-3">
+        <section className="bg-surface rounded-lg p-4 space-y-3">
           <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
             {t('settings.section.session')}
           </div>
           <button
             onClick={signOut}
-            className="w-full h-10 rounded-md border border-line text-sm font-medium hover:bg-surface-dim transition-colors"
+            className="w-full h-10 rounded-md bg-field text-sm font-medium hover:bg-line/50 transition-colors"
           >
             {t('settings.session.unlink')}
           </button>
@@ -969,7 +969,7 @@ export function Settings() {
             look (founder disliked the red lines): a NEUTRAL card with a single
             warning glyph; red is reserved for the one truly destructive action
             (the final confirm button) so it reads as deliberate, not alarming. */}
-        <section className="bg-surface rounded-lg border border-line p-4 space-y-3">
+        <section className="bg-surface rounded-lg p-4 space-y-3">
           <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-fg-secondary">
             <WarnIcon />
             {t('settings.section.danger')}
@@ -978,7 +978,7 @@ export function Settings() {
           {!confirming ? (
             <button
               onClick={() => setConfirming(true)}
-              className="w-full h-10 rounded-md border border-line text-sm font-medium text-red-600 hover:bg-line/40 transition-colors"
+              className="w-full h-10 rounded-md bg-field text-sm font-medium text-red-600 hover:bg-line/50 transition-colors"
             >
               {t('settings.danger.cta')}
             </button>
@@ -998,7 +998,7 @@ export function Settings() {
                 value={burnTyped}
                 onChange={(e) => setBurnTyped(e.target.value)}
                 placeholder={String(identity.uin)}
-                className="w-full h-10 px-3 rounded-md border border-line bg-surface-dim outline-none focus:border-accent focus:ring-1 focus:ring-accent text-sm font-mono text-center"
+                className="w-full h-10 px-3 rounded-md bg-field outline-none focus:ring-1 focus:ring-accent text-sm font-mono text-center"
                 autoFocus
               />
               <button
@@ -1106,7 +1106,7 @@ function BackupSection() {
   }
 
   return (
-    <section className="bg-surface rounded-lg border border-line p-4 space-y-3">
+    <section className="bg-surface rounded-lg p-4 space-y-3">
       <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
         {t('settings.backup.title')}
       </div>
@@ -1114,12 +1114,12 @@ function BackupSection() {
       <button
         onClick={() => void save()}
         disabled={busy}
-        className="w-full h-9 rounded-md border border-line bg-surface-dim hover:bg-line/40 text-sm font-medium disabled:opacity-40 transition-colors"
+        className="w-full h-9 rounded-md bg-field hover:bg-line/40 text-sm font-medium disabled:opacity-40 transition-colors"
       >
         {t('settings.backup.save')}
       </button>
       <p className="text-xs text-fg-dim leading-relaxed">{t('settings.backup.restore_body')}</p>
-      <label className="block w-full h-9 leading-9 text-center rounded-md border border-line bg-surface-dim hover:bg-line/40 text-sm font-medium cursor-pointer transition-colors">
+      <label className="block w-full h-9 leading-9 text-center rounded-md bg-field hover:bg-line/40 text-sm font-medium cursor-pointer transition-colors">
         {t('settings.backup.restore')}
         <input
           type="file"
@@ -1142,7 +1142,7 @@ function RecoveryPhraseSection() {
   const words = currentRecoveryPhrase()
   if (!words) return null
   return (
-    <section className="bg-surface rounded-lg border border-line p-4 space-y-3">
+    <section className="bg-surface rounded-lg p-4 space-y-3">
       <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
         {t('settings.recovery.title')}
       </div>
@@ -1150,13 +1150,13 @@ function RecoveryPhraseSection() {
       {!revealed ? (
         <button
           onClick={() => setRevealed(true)}
-          className="w-full h-9 rounded-md border border-line bg-surface-dim hover:bg-line/40 text-sm font-medium transition-colors"
+          className="w-full h-9 rounded-md bg-field hover:bg-line/40 text-sm font-medium transition-colors"
         >
           {t('settings.recovery.reveal')}
         </button>
       ) : (
         <div className="space-y-2">
-          <div className="grid grid-cols-3 gap-1.5 rounded-lg border border-line bg-surface-dim p-3">
+          <div className="grid grid-cols-3 gap-1.5 rounded-lg bg-surface-dim p-3">
             {words.map((w, i) => (
               <div key={i} className="flex items-baseline gap-1 text-sm">
                 <span className="font-mono text-[10px] text-fg-dim w-5 text-right shrink-0">{i + 1}</span>
@@ -1170,7 +1170,7 @@ function RecoveryPhraseSection() {
               setCopied(true)
               setTimeout(() => setCopied(false), 1500)
             }}
-            className="w-full h-9 rounded-md border border-line bg-surface-dim hover:bg-line/40 text-sm font-medium transition-colors"
+            className="w-full h-9 rounded-md bg-field hover:bg-line/40 text-sm font-medium transition-colors"
           >
             {copied ? t('login.phrase.copied') : t('login.phrase.copy')}
           </button>

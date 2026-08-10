@@ -79,12 +79,12 @@ export function StatusPickerButton({ current, onChange, avatarMediaId, avatarMed
         )}
       </button>
       {open && (
-        <div className="absolute top-full left-0 mt-1 bg-surface border border-line rounded-lg shadow-lg py-1 z-30 min-w-[160px]">
+        <div className="absolute top-full left-0 mt-1 bg-surface rounded-lg shadow-lg py-1 z-30 min-w-[160px]">
           {STATES.map((s) => (
             <button
               key={s}
               onClick={() => void pick(s)}
-              className="w-full px-3 py-2 flex items-center gap-2 text-sm hover:bg-surface-dim text-left"
+              className="w-full px-3 py-2 flex items-center gap-2 text-sm hover:bg-field text-left"
             >
               <StatusIcon status={s} size={18} />
               <span className={s === current ? 'font-semibold' : ''}>

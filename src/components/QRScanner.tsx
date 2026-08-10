@@ -113,7 +113,7 @@ export function QRScanner({ onScan, onError }: Props) {
 
   if (supported === false) {
     return (
-      <div className="text-xs text-fg-secondary bg-surface-dim border border-line rounded-md p-3">
+      <div className="text-xs text-fg-secondary bg-surface-dim rounded-md p-3">
         QR-scanner needs a browser with the BarcodeDetector API
         (Chrome / Edge / mobile Chrome). Safari and Firefox don't
         ship it yet — paste the linking blob instead.
@@ -123,7 +123,7 @@ export function QRScanner({ onScan, onError }: Props) {
 
   if (permissionDenied) {
     return (
-      <div className="text-xs text-fg-secondary bg-surface-dim border border-line rounded-md p-3">
+      <div className="text-xs text-fg-secondary bg-surface-dim rounded-md p-3">
         Camera permission denied. Allow camera access for chat.rcq.app
         in your browser settings, or paste the linking blob instead.
       </div>

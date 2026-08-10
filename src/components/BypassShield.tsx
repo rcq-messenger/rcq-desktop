@@ -116,7 +116,7 @@ export function BypassShield({ className = '' }: { className?: string }) {
       </button>
 
       {open && (
-        <div className="absolute top-full left-0 mt-1 w-64 bg-surface border border-line rounded-lg shadow-lg p-3 space-y-2 z-30">
+        <div className="absolute top-full left-0 mt-1 w-64 bg-surface rounded-lg shadow-lg p-3 space-y-2 z-30">
           <label
             className={
               'flex items-center justify-between gap-3 ' +
@@ -154,7 +154,7 @@ export function BypassShield({ className = '' }: { className?: string }) {
               <p className="text-xs text-fg-dim">{t('bypass.needs_relaunch')}</p>
               <button
                 onClick={() => void relaunchApp()}
-                className="shrink-0 h-7 px-2 rounded-md border border-line text-xs font-medium hover:bg-surface-dim transition-colors"
+                className="shrink-0 h-7 px-2 rounded-md bg-field text-xs font-medium hover:bg-line/50 transition-colors"
               >
                 {t('settings.bypass.restart')}
               </button>
@@ -170,7 +170,7 @@ export function BypassShield({ className = '' }: { className?: string }) {
               </p>
               <button
                 onClick={() => void relaunchApp()}
-                className="shrink-0 h-7 px-2 rounded-md border border-line text-xs font-medium hover:bg-surface-dim transition-colors"
+                className="shrink-0 h-7 px-2 rounded-md bg-field text-xs font-medium hover:bg-line/50 transition-colors"
               >
                 {t('settings.bypass.restart_now')}
               </button>

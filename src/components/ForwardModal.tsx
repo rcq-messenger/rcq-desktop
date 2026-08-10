@@ -80,14 +80,14 @@ export function ForwardModal({
           onClick={onClose}
         >
           <motion.div
-            className="w-full max-w-md max-h-[80vh] flex flex-col rounded-t-xl sm:rounded-xl bg-surface border border-line shadow-lg overflow-hidden"
+            className="w-full max-w-md max-h-[80vh] flex flex-col rounded-t-xl sm:rounded-xl bg-surface shadow-lg overflow-hidden"
             initial={{ y: 40, opacity: 0, scale: 0.98 }}
             animate={{ y: 0, opacity: 1, scale: 1 }}
             exit={{ y: 30, opacity: 0, scale: 0.98 }}
             transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
             onClick={(e) => e.stopPropagation()}
           >
-        <header className="flex items-center justify-between px-4 py-3 border-b border-line">
+        <header className="flex items-center justify-between px-4 py-3">
           <h2 className="text-sm font-semibold">{t('chat.forward.title')}</h2>
           <button
             onClick={onClose}
@@ -167,7 +167,7 @@ export function ForwardModal({
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="border-b border-line last:border-b-0">
+    <div>
       <div className="px-4 pt-3 pb-1 font-mono text-[10px] uppercase tracking-[0.2em] text-fg-dim">
         {title}
       </div>
@@ -190,7 +190,7 @@ function Row({
       <button
         onClick={onClick}
         disabled={busy}
-        className="w-full px-4 py-2.5 flex items-center gap-3 hover:bg-surface-dim disabled:opacity-50 disabled:cursor-progress transition-colors"
+        className="w-full px-4 py-2.5 flex items-center gap-3 hover:bg-field disabled:opacity-50 disabled:cursor-progress transition-colors"
       >
         {children}
       </button>

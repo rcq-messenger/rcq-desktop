@@ -728,6 +728,7 @@ export const en: Record<string, string> = {
   // Calls. The wire is shared with the phones, so the reasons below are the
   // ones their clients send when they hang up.
   'call.start.audio': 'Call',
+  'call.offline': 'No connection to the island — calls need it.',
   'call.start.video': 'Video call',
   'call.accept': 'Answer',
   'call.decline': 'Decline',

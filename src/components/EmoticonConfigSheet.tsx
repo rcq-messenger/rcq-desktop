@@ -43,7 +43,7 @@ export function EmoticonConfigSheet({ uin, open, onClose }: Props) {
         >
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
           <motion.div
-            className="relative z-10 w-full max-w-md border border-line bg-surface shadow-xl rounded-t-2xl sm:rounded-2xl"
+            className="relative z-10 w-full max-w-md bg-surface shadow-xl rounded-t-2xl sm:rounded-2xl"
             initial={{ y: 24, opacity: 0, scale: 0.98 }}
             animate={{ y: 0, opacity: 1, scale: 1 }}
             exit={{ y: 24, opacity: 0, scale: 0.98 }}
@@ -53,7 +53,7 @@ export function EmoticonConfigSheet({ uin, open, onClose }: Props) {
               <h3 className="text-base font-semibold text-fg-primary">{t('chat.picker.config.title')}</h3>
               <button
                 onClick={onClose}
-                className="rounded-md px-3 py-1 text-sm font-semibold text-accent transition-colors hover:bg-surface-dim"
+                className="rounded-md px-3 py-1 text-sm font-semibold text-accent transition-colors hover:bg-field"
               >
                 {t('common.done')}
               </button>

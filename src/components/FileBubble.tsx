@@ -52,7 +52,7 @@ export function FileBubble({ mediaId, mediaKey, fileName, mime, size, apiBase }:
   return (
     <button
       onClick={() => void download()}
-      className="flex items-center gap-3 rounded-lg border border-line bg-surface-dim px-3 py-2.5 text-left hover:bg-line/40 transition-colors max-w-[18rem]"
+      className="flex items-center gap-3 rounded-lg bg-field px-3 py-2.5 text-left hover:bg-line/40 transition-colors max-w-[18rem]"
       title={t('chat.media.download')}
     >
       <span className="flex h-9 w-9 flex-none items-center justify-center rounded-md bg-accent/15 text-accent">

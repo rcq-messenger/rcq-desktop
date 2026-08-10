@@ -72,7 +72,7 @@ export function DecryptedVideo({ mediaId, mediaKey, thumbnailB64, durationSec, a
           src={url}
           controls
           autoPlay
-          className="max-h-72 max-w-[18rem] w-auto rounded-lg border border-line bg-black"
+          className="max-h-72 max-w-[18rem] w-auto rounded-lg bg-black"
         />
         <button onClick={() => void download()} className="text-[11px] text-fg-dim hover:text-accent">
           ↓ {t('chat.media.download')}
@@ -82,7 +82,7 @@ export function DecryptedVideo({ mediaId, mediaKey, thumbnailB64, durationSec, a
   }
 
   return (
-    <div className="relative overflow-hidden rounded-lg border border-line bg-surface-dim">
+    <div className="relative overflow-hidden rounded-lg bg-surface-dim">
       {poster ? (
         <img src={poster} alt="" className="max-h-64 max-w-[16rem] w-auto object-cover" draggable={false} />
       ) : (

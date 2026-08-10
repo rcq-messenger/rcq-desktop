@@ -21,6 +21,7 @@
   --c-fg-dim: 156 163 175;
   --c-bubble-self: 220 252 231;
   --c-bubble-other: 243 244 246;
+  --c-field: 242 243 245;
 }
 
 html.dark {
@@ -40,6 +41,7 @@ html.dark {
   --c-fg-dim: 107 114 128;
   --c-bubble-self: 6 78 59;
   --c-bubble-other: 38 40 47;
+  --c-field: 38 40 47;
 }
 
 /* A true-black ("AMOLED") dark theme. Only the background tokens go black —
@@ -56,6 +58,7 @@ html.dark {
   --c-surface: 20 20 23;       /* panels, cards, composer — lifted off black */
   --c-line: 38 40 47;          /* borders read against pure black */
   --c-bubble-other: 32 32 37;  /* incoming bubbles */
+  --c-field: 32 32 37;         /* inputs, soft buttons, chips */
 }
 
 /* This interface was drawn for a phone held at arm's length. In a 1100px

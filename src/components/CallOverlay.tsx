@@ -10,7 +10,7 @@ import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useCall } from '../lib/call'
 import { PersonAvatar } from './PersonAvatar'
-import { lookupContactAvatar } from '../pages/Contacts'
+import { lookupContactAvatar } from '../lib/contacts-cache'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
 

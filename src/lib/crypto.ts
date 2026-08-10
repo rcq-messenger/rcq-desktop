@@ -127,6 +127,18 @@ export interface VideoEnvelope {
   reply?: ReplyContext
 }
 
+/// A geographic point. No blob — the coordinates ride in the envelope itself.
+/// Wire keys match the phones exactly (`lat` / `lng` / `caption`), so a point
+/// sent from the web opens on Android and iOS as a location and not as text.
+export interface LocationEnvelope {
+  kind: 'location'
+  id: string // uppercase UUID
+  lat: number
+  lng: number
+  caption?: string
+  reply?: ReplyContext
+}
+
 /// File / document. Mirrors iOS `Envelope.file`: the raw bytes are an
 /// AES-256-GCM blob at `/media/{mediaID}`, decrypted with `mediaKey`; the
 /// terse wire keys `fname`/`mime`/`size` carry the display name, content type,
@@ -230,6 +242,7 @@ export type Envelope =
   | PhotoEnvelope
   | VideoEnvelope
   | FileEnvelope
+  | LocationEnvelope
   | CarbonEnvelope
   | PollEnvelope
   | EditEnvelope

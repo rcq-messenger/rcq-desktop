@@ -5,6 +5,7 @@
 // disabled. Proper phone<->web linking (web as a secondary device) is
 // a separate future feature; until then web is a standalone account.
 
+import { AnimatePresence, motion } from 'framer-motion'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import QRCode from 'qrcode'
@@ -181,6 +182,7 @@ function LinkPane({ onDone }: { onDone: (id: WebIdentity) => void }) {
   const [qr, setQr] = useState<string | null>(null)
   const [state, setState] = useState<'waiting' | 'expired' | 'error'>('waiting')
   const [gen, setGen] = useState(0) // bump → fresh token + QR
+  const [zoomed, setZoomed] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -216,7 +218,7 @@ function LinkPane({ onDone }: { onDone: (id: WebIdentity) => void }) {
       }
       let res: Response
       try {
-        res = await fetch(`${DEFAULT_API_BASE}/link/${token}`)
+        res = await fetch(`${rememberedIsland()}/link/${token}`)
       } catch {
         // Network blip — keep polling.
         setTimeout(poll, 2000)
@@ -247,40 +249,74 @@ function LinkPane({ onDone }: { onDone: (id: WebIdentity) => void }) {
   return (
     <div className="space-y-4 text-center">
       <p className="text-sm text-fg-secondary">{t('login.link.scan_body')}</p>
+      {/* The code is smaller than it was: at 252px it dominated a screen whose
+          job is to explain what linking costs you, and a phone camera does not
+          need it that big from 30cm. It grows a little under the cursor and
+          opens centred on a blurred page when tapped, for the case where the
+          phone is held further away or the screen is small. */}
       <div className="flex items-center justify-center">
         <div className="relative flex items-center justify-center">
           {/* Calm green sonar waves rippling out from behind the QR while we
               wait for the phone. Three rings on a slow 2.7s loop, staggered. */}
           {qr && state === 'waiting' && (
             <>
-              <span className="rcq-wave absolute inset-0 m-auto w-[224px] h-[224px] rounded-2xl bg-accent/25" />
-              <span className="rcq-wave absolute inset-0 m-auto w-[224px] h-[224px] rounded-2xl bg-accent/25" style={{ animationDelay: '0.9s' }} />
-              <span className="rcq-wave absolute inset-0 m-auto w-[224px] h-[224px] rounded-2xl bg-accent/25" style={{ animationDelay: '1.8s' }} />
+              <span className="rcq-wave absolute inset-0 m-auto w-[152px] h-[152px] rounded-2xl bg-accent/25" />
+              <span className="rcq-wave absolute inset-0 m-auto w-[152px] h-[152px] rounded-2xl bg-accent/25" style={{ animationDelay: '0.9s' }} />
+              <span className="rcq-wave absolute inset-0 m-auto w-[152px] h-[152px] rounded-2xl bg-accent/25" style={{ animationDelay: '1.8s' }} />
             </>
           )}
-          <div className="relative rounded-xl bg-white p-3 w-[252px] h-[252px] flex items-center justify-center shadow-lg shadow-accent/10">
-            {qr ? (
-              <img src={qr} alt="Link QR" width={228} height={228} />
-            ) : (
-              <Spinner />
-            )}
-          </div>
+          <button
+            type="button"
+            onClick={() => qr && setZoomed(true)}
+            disabled={!qr}
+            aria-label={t('login.link.enlarge')}
+            title={t('login.link.enlarge')}
+            className="relative rounded-xl bg-white p-2.5 w-[168px] h-[168px] flex items-center justify-center shadow-lg shadow-accent/10 transition-transform duration-200 hover:scale-105 disabled:cursor-default"
+          >
+            {qr ? <img src={qr} alt="Link QR" width={148} height={148} /> : <Spinner />}
+          </button>
         </div>
       </div>
+
+      <AnimatePresence>
+        {zoomed && qr && (
+          <motion.div
+            key="qr-zoom"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.16 }}
+            onClick={() => setZoomed(false)}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-md p-6"
+          >
+            <motion.div
+              initial={{ scale: 0.92, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.92, opacity: 0 }}
+              transition={{ duration: 0.18 }}
+              onClick={(e) => e.stopPropagation()}
+              className="rounded-2xl bg-white p-5 shadow-2xl"
+            >
+              <img src={qr} alt="Link QR" className="w-[min(72vw,340px)] h-[min(72vw,340px)]" />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Honest, jargon-free note about the multi-device → simpler-encryption
           trade-off (convenience vs max security), not an alarm. The "learn
           more" link deep-links to the FAQ answer that explains it in full. */}
-      <p className="text-xs text-fg-dim leading-relaxed">
-        {t('login.link.security_note')}{' '}
+      <div className="space-y-1">
+        <p className="text-xs text-fg-dim leading-relaxed">{t('login.link.security_note')}</p>
         <a
           href="https://rcq.app/faq#web-link"
           target="_blank"
           rel="noreferrer"
-          className="text-accent underline-offset-2 hover:underline"
+          className="inline-block text-xs text-accent whitespace-nowrap underline-offset-2 hover:underline"
         >
           {t('login.link.security_more')}
         </a>
-      </p>
+      </div>
       {state === 'waiting' && (
         <p className="text-xs text-fg-dim">{t('login.link.waiting')}</p>
       )}
@@ -415,44 +451,88 @@ function Spinner() {
   )
 }
 
-/// The island to create or recover on. Collapsed by default: the flagship is
-/// the right answer for almost everyone, and a server field on a sign-up screen
-/// asks a question most people cannot answer. It opens for the ones who can.
+/// The island to create or recover on.
+///
+/// Collapsed to a single quiet line by default: the flagship is the right
+/// answer for almost everyone, and a bare "server" field on a sign-up screen
+/// asks a question most people cannot answer and makes the ones who can't feel
+/// they are missing something. It opens for the ones who run their own.
 function IslandField() {
   const { t } = useI18n()
   const [base, setBase] = useState(() => rememberedIsland())
+  const [draft, setDraft] = useState(() => islandLabel(rememberedIsland()))
   const [open, setOpen] = useState(() => rememberedIsland() !== DEFAULT_API_BASE)
+  const custom = base !== DEFAULT_API_BASE
+
+  /// Settle what was typed into a usable base URL. On blur and on submit, not
+  /// on every keystroke: normalising as you type means an empty field fills
+  /// itself back in and a half-typed host is rewritten under the cursor.
+  function commit(text: string) {
+    const next = normaliseIsland(text)
+    setBase(next)
+    setDraft(islandLabel(next))
+    rememberIsland(next)
+  }
+
   if (!open) {
     return (
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="text-xs text-fg-dim hover:text-fg-secondary transition-colors"
+        className="flex items-center gap-2 w-full rounded-md bg-field px-3 py-2 text-left hover:bg-line/50 transition-colors"
       >
-        {t('login.island.change', { host: islandLabel(base) })}
+        <GlobeIcon />
+        <span className="min-w-0 flex-1">
+          <span className="block text-[11px] uppercase tracking-wide text-fg-dim">{t('login.island')}</span>
+          <span className="block text-sm font-mono truncate">{islandLabel(base)}</span>
+        </span>
+        <span className="flex-none text-xs text-fg-dim">{t('login.island.change')}</span>
       </button>
     )
   }
+
   return (
-    <div className="space-y-1">
-      <label className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
-        {t('login.island')}
-      </label>
+    <div className="rounded-md bg-field px-3 py-2.5 space-y-2">
+      <div className="flex items-center gap-2">
+        <GlobeIcon />
+        <span className="text-[11px] uppercase tracking-wide text-fg-dim flex-1">{t('login.island')}</span>
+        {custom && (
+          <button
+            type="button"
+            onClick={() => commit('')}
+            className="text-xs text-fg-dim hover:text-fg-secondary transition-colors"
+          >
+            {t('login.island.reset')}
+          </button>
+        )}
+      </div>
       <input
         type="text"
-        value={islandLabel(base)}
-        onChange={(e) => {
-          const next = normaliseIsland(e.target.value)
-          setBase(next)
-          rememberIsland(next)
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={(e) => commit(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            commit((e.target as HTMLInputElement).value)
+          }
         }}
         placeholder={islandLabel(DEFAULT_API_BASE)}
         spellCheck={false}
         autoCorrect="off"
         autoCapitalize="off"
-        className="w-full h-10 px-3 rounded-md bg-field outline-none focus:ring-1 focus:ring-accent text-sm font-mono"
+        className="w-full h-9 px-3 rounded-md bg-surface outline-none focus:ring-1 focus:ring-accent text-sm font-mono"
       />
       <p className="text-xs text-fg-dim">{t('login.island.hint')}</p>
     </div>
+  )
+}
+
+function GlobeIcon() {
+  return (
+    <svg className="flex-none text-fg-secondary" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18z" />
+    </svg>
   )
 }

@@ -76,6 +76,14 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
   // supersede each other's websocket and share one offline-queue cursor.
   // Only the token changes, so no reload: whoever holds the old jwt in a
   // closure is holding a session that still works.
+  // Re-read the roster whenever the active account changes. Creating, recovering
+  // or linking all set the identity, and all of them add a row.
+  useEffect(() => {
+    if (!hydrated) return
+    setAccountScope(identity?.uin ?? null)
+    setAccounts(listStoredIdentities())
+  }, [identity, hydrated])
+
   const claimedRef = useRef(false)
   useEffect(() => {
     if (!identity || claimedRef.current) return

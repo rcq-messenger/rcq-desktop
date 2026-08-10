@@ -25,6 +25,10 @@ export interface OutgoingRow {
   mediaId?: string
   mediaKey?: string
   mediaKind?: string // for 'other': the original envelope kind
+  /// Coordinates, for mediaKind === 'location'. No blob is involved: a point is
+  /// small enough to ride in the envelope, which the phones have always done.
+  lat?: number
+  lng?: number
   thumbnailB64?: string // for 'video': base64 JPEG poster
   durationSec?: number // for 'video': length in seconds
   fileName?: string // for 'file': original name
@@ -177,7 +181,16 @@ function outgoingRowFromInner(inner: Envelope): OutgoingRow | null {
   // they sent something here rather than a silent gap.
   const loose = inner as { kind?: string; id?: string; caption?: string }
   if (loose.id && (loose.kind === 'voice' || loose.kind === 'location')) {
-    return { id: loose.id, text: loose.caption ?? '', sentAt: Date.now(), state: 'sent', kind: 'other', mediaKind: loose.kind }
+    const geo = loose as { lat?: number; lng?: number }
+    return {
+      id: loose.id,
+      text: loose.caption ?? '',
+      sentAt: Date.now(),
+      state: 'sent',
+      kind: 'other',
+      mediaKind: loose.kind,
+      ...(geo.lat != null && geo.lng != null ? { lat: geo.lat, lng: geo.lng } : {}),
+    }
   }
   return null
 }

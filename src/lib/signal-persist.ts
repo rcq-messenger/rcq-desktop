@@ -4,7 +4,13 @@
 // chat history. Values are structured-cloned, so Uint8Array fields survive
 // without base64. One DB ('rcq-web'), one object store ('kv').
 
-const DB_NAME = 'rcq-web'
+// Per-account, for the same reason the localStorage keys are: two accounts
+// sharing one device store would share libsignal sessions and decrypted
+// history. Read once, when the connection is first opened — a database name
+// cannot change under a live connection, which is why every account switch is
+// a hard reload.
+import { scopedDbName } from './account-scope'
+
 const STORE = 'kv'
 
 let _dbp: Promise<IDBDatabase> | null = null
@@ -12,7 +18,7 @@ let _dbp: Promise<IDBDatabase> | null = null
 function db(): Promise<IDBDatabase> {
   if (_dbp) return _dbp
   _dbp = new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1)
+    const req = indexedDB.open(scopedDbName(), 1)
     req.onupgradeneeded = () => {
       const d = req.result
       if (!d.objectStoreNames.contains(STORE)) d.createObjectStore(STORE)

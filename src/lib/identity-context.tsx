@@ -6,19 +6,35 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { WebIdentity } from './crypto'
 import {
+  activateStoredIdentity,
   adoptMigratedUin,
   claimInstallToken,
   clearIdentity,
+  listStoredIdentities,
   loadStoredIdentity,
   persistIdentity,
+  removeStoredIdentity,
   wipeLocalAccountData,
 } from './auth'
+import { migrateFlatDataInto, setAccountScope } from './account-scope'
 import { Api, setUnauthorizedHandler } from './api'
 import { idbClearAll } from './signal-persist'
 
 interface IdentityCtx {
   identity: WebIdentity | null
   setIdentity: (id: WebIdentity | null) => void
+  /// Every account this browser holds, active one first.
+  accounts: WebIdentity[]
+  /// Switch to another held account. A HARD reload follows, because every
+  /// module-level cache on this page is keyed to the account that is leaving —
+  /// the socket, the libsignal device, the incoming store, the contacts cache.
+  /// Swapping them in place would mean auditing each one forever.
+  switchAccount: (uin: number) => void
+  /// Leave the login screen open to add a second account without signing the
+  /// first one out.
+  addAccount: () => void
+  /// Forget ONE account and stay signed in to the rest.
+  signOutAccount: (uin: number) => void
   signOut: () => void
   /// Call BEFORE asking the server to change this account's UIN, and pair it
   /// with endMigration() if the request fails. It shields the browser from
@@ -39,8 +55,18 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
 
   // One-shot rehydrate from localStorage on first mount. Until it
   // finishes we render nothing — Routes downstream gate on this.
+  const [accounts, setAccounts] = useState<WebIdentity[]>([])
+
   useEffect(() => {
-    setIdentity(loadStoredIdentity())
+    const stored = loadStoredIdentity()
+    // ⚠ BEFORE anything reads a store. Every local key and the device database
+    // are namespaced by the active account, and a read taken without a scope
+    // would land in the flat namespace — which is the pre-multi-account world
+    // and belongs to nobody in particular.
+    setAccountScope(stored?.uin ?? null)
+    if (stored) migrateFlatDataInto(stored.uin)
+    setIdentity(stored)
+    setAccounts(listStoredIdentities())
     setHydrated(true)
   }, [])
 
@@ -98,6 +124,28 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
     () => ({
       identity,
       setIdentity,
+      accounts,
+      switchAccount: (uin: number) => {
+        if (uin === identity?.uin) return
+        if (!activateStoredIdentity(uin)) return
+        window.location.assign('/')
+      },
+      addAccount: () => {
+        // The roster keeps every account; clearing only the ACTIVE slot lands
+        // on the login screen with the others still here, so "add" cannot
+        // become "sign out of everything" by accident.
+        clearIdentity()
+        window.location.assign('/')
+      },
+      signOutAccount: (uin: number) => {
+        // Tell the ACCOUNT BEING SIGNED OUT that this session is gone, not
+        // whichever one happens to be active — otherwise leaving account B
+        // would revoke account A's session on the phone.
+        const leaving = accounts.find((a) => a.uin === uin)
+        if (leaving) void Api.unlinkSelf(leaving).catch(() => {})
+        removeStoredIdentity(uin)
+        window.location.assign('/')
+      },
       // Sign-out / unlink: wipe ALL account-scoped local data (identity,
       // per-thread message logs, contacts state, device keys + decrypted
       // history in IndexedDB), then HARD-reload to '/'. The reload is the
@@ -138,7 +186,7 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
         window.location.assign(to)
       },
     }),
-    [identity],
+    [identity, accounts],
   )
 
   if (!hydrated) return null

@@ -24,6 +24,7 @@ import {
 import { defaultHome } from '../lib/routing'
 import { isTauri } from '../lib/desktop'
 import { bytesToB64, newLinkEphemeral, openLinkSeal, type WebIdentity } from '../lib/crypto'
+import { islandLabel, normaliseIsland, rememberIsland, rememberedIsland } from '../lib/island-choice'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
 
@@ -130,7 +131,7 @@ function RecoverPane({ onDone }: { onDone: (id: WebIdentity) => void }) {
     setError(null)
     setBusy(true)
     try {
-      const id = await recoverFromPhrase(phrase)
+      const id = await recoverFromPhrase(phrase, rememberedIsland())
       onDone(id)
     } catch (e) {
       const code = e instanceof RecoverError ? e.code : 'network'
@@ -319,7 +320,7 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
     setError(null)
     setBusy(true)
     try {
-      const id = await createNewAccount(nickname)
+      const id = await createNewAccount(nickname, rememberedIsland())
       const words = currentRecoveryPhrase()
       if (words) setPending({ id, words })
       else onDone(id) // shouldn't happen for a fresh account; fail open
@@ -383,8 +384,10 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
         <p className="text-xs text-fg-dim">{t('login.create.nickname_hint')}</p>
       </div>
 
+      <IslandField />
+
       {error && (
-        <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md p-2">
+        <div className="text-sm text-red-600 bg-red-500/10 rounded-md p-2">
           {error}
         </div>
       )}
@@ -409,5 +412,47 @@ function Spinner() {
       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
       <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
     </svg>
+  )
+}
+
+/// The island to create or recover on. Collapsed by default: the flagship is
+/// the right answer for almost everyone, and a server field on a sign-up screen
+/// asks a question most people cannot answer. It opens for the ones who can.
+function IslandField() {
+  const { t } = useI18n()
+  const [base, setBase] = useState(() => rememberedIsland())
+  const [open, setOpen] = useState(() => rememberedIsland() !== DEFAULT_API_BASE)
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="text-xs text-fg-dim hover:text-fg-secondary transition-colors"
+      >
+        {t('login.island.change', { host: islandLabel(base) })}
+      </button>
+    )
+  }
+  return (
+    <div className="space-y-1">
+      <label className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+        {t('login.island')}
+      </label>
+      <input
+        type="text"
+        value={islandLabel(base)}
+        onChange={(e) => {
+          const next = normaliseIsland(e.target.value)
+          setBase(next)
+          rememberIsland(next)
+        }}
+        placeholder={islandLabel(DEFAULT_API_BASE)}
+        spellCheck={false}
+        autoCorrect="off"
+        autoCapitalize="off"
+        className="w-full h-10 px-3 rounded-md bg-field outline-none focus:ring-1 focus:ring-accent text-sm font-mono"
+      />
+      <p className="text-xs text-fg-dim">{t('login.island.hint')}</p>
+    </div>
   )
 }

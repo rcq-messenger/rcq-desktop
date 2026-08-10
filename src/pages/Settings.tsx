@@ -33,6 +33,7 @@ import {
 } from '../lib/desktop'
 import { uploadReportAttachment } from '../lib/media'
 import { useI18n } from '../lib/i18n-context'
+import { DEFAULT_API_BASE } from '../lib/auth'
 import { useIdentity } from '../lib/identity-context'
 import { isPresenceSoundEnabled, isSoundEnabled, setPresenceSoundEnabled, setSoundEnabled } from '../lib/sounds'
 import { useTheme, type ThemePref } from '../lib/theme-context'
@@ -49,7 +50,7 @@ import { publishHomeIslandRecord } from '../lib/federation-publish'
 import { pushHomeRecordToContacts } from '../lib/federation-gossip'
 
 export function Settings() {
-  const { identity, signOut } = useIdentity()
+  const { identity, accounts, switchAccount, addAccount, signOutAccount, signOut } = useIdentity()
   const { t } = useI18n()
   const navigate = useNavigate()
   const [confirming, setConfirming] = useState(false)
@@ -396,6 +397,60 @@ export function Settings() {
             <span className="text-fg-dim">→</span>
           </div>
         </Link>
+
+        {/* Accounts. A browser could only ever hold one, so there was no way to
+            keep a second number here or to move between them without signing
+            out — the phones have had both for as long as they have existed. */}
+        <section className="bg-surface rounded-lg p-4 space-y-2">
+          <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+            {t('settings.accounts')}
+          </div>
+          <ul className="space-y-1">
+            {accounts.map((a) => (
+              <li key={a.uin} className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => switchAccount(a.uin)}
+                  disabled={a.uin === identity?.uin}
+                  className={`flex-1 min-w-0 text-left rounded-md px-3 py-2 text-sm transition-colors ${
+                    a.uin === identity?.uin ? 'bg-accent/15 text-accent' : 'hover:bg-field'
+                  }`}
+                >
+                  <span className="font-mono">#{a.uin}</span>
+                  {a.uin === identity?.uin && (
+                    <span className="ml-2 text-[10px] uppercase tracking-wider">
+                      {t('settings.accounts.active')}
+                    </span>
+                  )}
+                  {/* The island, but only when it is not the usual one: a host
+                      beside every row is noise for the people who never leave
+                      the flagship, which is most of them. */}
+                  {a.apiBase !== DEFAULT_API_BASE && (
+                    <span className="ml-2 text-[11px] text-fg-dim">
+                      {a.apiBase.replace(/^https?:\/\//, '')}
+                    </span>
+                  )}
+                </button>
+                {accounts.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => signOutAccount(a.uin)}
+                    className="shrink-0 text-xs text-fg-dim hover:text-red-500 transition-colors px-2"
+                  >
+                    {t('settings.accounts.forget')}
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            onClick={addAccount}
+            className="w-full h-9 rounded-md bg-field hover:bg-line/50 text-sm font-medium transition-colors"
+          >
+            {t('settings.accounts.add')}
+          </button>
+        </section>
 
         <section className="bg-surface rounded-lg p-4 space-y-2">
           <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">

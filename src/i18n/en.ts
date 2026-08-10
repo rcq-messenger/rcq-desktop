@@ -50,6 +50,9 @@ export const en: Record<string, string> = {
   'login.create.body':
     'Creates a fresh RCQ account that lives in this browser, with its own UIN and keys.',
   'login.create.nickname': 'Nickname',
+  'login.island': 'Island',
+  'login.island.hint': 'The server that will hold this account. Leave it alone unless you run your own.',
+  'login.island.change': 'Island: {host} · change',
   'login.create.nickname_hint': 'You can change it later in Settings.',
   'login.create.cta': 'Create account',
   'login.create.busy': 'Creating…',
@@ -172,6 +175,10 @@ export const en: Record<string, string> = {
 
   // Settings
   'settings.title': 'Settings',
+  'settings.accounts': 'Accounts',
+  'settings.accounts.active': 'active',
+  'settings.accounts.add': 'Add an account',
+  'settings.accounts.forget': 'sign out',
   'settings.section.account': 'Account',
   'settings.field.uin': 'UIN',
   'settings.field.api_host': 'API host',

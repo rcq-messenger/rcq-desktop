@@ -9,6 +9,7 @@
 // deduped by the inner message's id (so the origin device — which already has
 // the row — no-ops its own carbon).
 
+import { scopedKey } from './account-scope'
 import type { Envelope, CarbonEnvelope, ReplyContext } from './crypto'
 
 export interface OutgoingRow {
@@ -40,10 +41,14 @@ export interface OutgoingRow {
   edited?: boolean
 }
 
-/// Per-thread storage key for the outgoing log. Keys look like
-/// `rcq.web.outgoing.peer.123` / `.group.42`.
+/// Per-thread storage key for the outgoing log, inside the ACTIVE account's
+/// scope: `rcq.web.<uin>.outgoing.peer.123` / `.group.42`.
+///
+/// It used to be flat, which was fine while a browser could only ever hold one
+/// account — and would have merged two conversations into one the moment it
+/// could hold two.
 export function storageKey(isGroup: boolean, idNum: number): string {
-  return `rcq.web.outgoing.${isGroup ? 'group' : 'peer'}.${idNum}`
+  return scopedKey(`outgoing.${isGroup ? 'group' : 'peer'}.${idNum}`)
 }
 
 /// Cap on persisted rows per thread so localStorage stays bounded.

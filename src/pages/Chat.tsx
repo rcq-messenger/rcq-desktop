@@ -369,6 +369,7 @@ export function Chat() {
       if (el?.closest('[data-chat-menu]')) return
       setActionsForRowId(null)
       setReactionForRowId(null)
+      setShowPicker(false)
     }
     document.addEventListener('keydown', onKey)
     document.addEventListener('mousedown', onDown)
@@ -1864,7 +1865,7 @@ export function Chat() {
                         <ActionButton onClick={() => pinMessage(row.text)} label={t('chat.actions.pin')} icon="📌" />
                       )}
                       <ActionButton onClick={() => setForwardingRow({ text: row.text, author: myNickname })} label={t('chat.actions.forward')} icon="↗" />
-                      <ActionButton onClick={() => void deleteForEveryone(row)} label={t('chat.actions.delete')} icon="🗑" danger />
+                      <ActionButton onClick={() => void deleteForEveryone(row)} label={t('chat.actions.delete')} danger />
                     </div>
                   )}
                   <AnimatePresence>
@@ -2153,17 +2154,17 @@ export function Chat() {
   )
 }
 
-function ActionButton({ onClick, label, icon, danger }: { onClick: () => void; label: string; icon: string; danger?: boolean }) {
+function ActionButton({ onClick, label, icon, danger }: { onClick: () => void; label: string; icon?: string; danger?: boolean }) {
   return (
     <button
       onClick={onClick}
       className={`flex items-center gap-1 rounded px-2 py-1 font-mono text-[10px] uppercase tracking-wider transition-colors ${
         danger
-          ? 'text-red-500 hover:bg-red-50 hover:text-red-600'
-          : 'text-fg-secondary hover:bg-surface-dim hover:text-ink-black'
+          ? 'text-red-500 hover:bg-red-500/15'
+          : 'text-fg-secondary hover:bg-field hover:text-fg-primary'
       }`}
     >
-      <span>{icon}</span>
+      {icon && <span>{icon}</span>}
       <span>{label}</span>
     </button>
   )

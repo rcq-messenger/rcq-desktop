@@ -557,6 +557,25 @@ export const Api = {
   },
 }
 
+// -----------------------------------------------------------
+// News — the operator's announcement feed, same one the phones read.
+// -----------------------------------------------------------
+
+export interface NewsPost {
+  id: number
+  body: string
+  author_label: string | null
+  published_at: string
+  attachments?: unknown
+}
+
+/// The feed is public and the GET is unauthenticated server-side; it rides the
+/// authed helper because every caller here already has an identity and the
+/// island should still see which account is reading.
+export function fetchNews(id: WebIdentity): Promise<{ items: NewsPost[]; latest_id: number | null }> {
+  return request<{ items: NewsPost[]; latest_id: number | null }>(id, 'GET', '/news')
+}
+
 /// Convert a server `UserInfo` / `Contact` row to the `PeerBundle`
 /// shape `crypto.encryptV1` expects.
 export function peerBundleFrom(info: { uin: number; identity_key: string; signing_key: string }): PeerBundle {

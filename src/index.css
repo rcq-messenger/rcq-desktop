@@ -68,6 +68,18 @@ html.desktop {
   font-size: 17.5px;
 }
 
+/* And the same in a browser, which is the half that was left out. The gate
+   above exists because lifting the root on a phone would grow the whole layout,
+   but chat.rcq.app on a monitor is the same window with the same problem — the
+   desktop build got the fix and the web did not, for no reason a user could
+   see. A width query separates the two cases properly: a phone browser is never
+   this wide, and the Tauri window keeps its class whatever size it is. */
+@media (min-width: 1024px) {
+  html {
+    font-size: 17.5px;
+  }
+}
+
 html, body, #root {
   height: 100%;
 }

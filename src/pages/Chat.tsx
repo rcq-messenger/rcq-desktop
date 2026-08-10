@@ -893,6 +893,10 @@ export function Chat() {
   function startReplyTo(id: string, text: string, authorName: string) {
     setReplyTo({ id, snippet: buildSnippet(text), authorName })
     setActionsForRowId(null)
+    // Without this, replying showed a strip and left the caret wherever it was:
+    // on a desktop, where nothing else moves, that reads as the button doing
+    // nothing at all.
+    requestAnimationFrame(() => taRef.current?.focus())
   }
   function startReply(row: OutgoingRow) {
     startReplyTo(row.id, row.text, myNickname)
@@ -1332,7 +1336,7 @@ export function Chat() {
                       {senderName && (
                         <Link
                           to={`/profile/${m.from}`}
-                          className="flex items-center gap-1.5 font-mono text-[10px] text-fg-dim px-1 hover:text-accent hover:underline"
+                          className="flex items-center gap-1.5 font-mono text-[10px] text-fg-dim px-1 hover:text-accent transition-colors"
                         >
                           {/* Beside the nick, never instead of it, and only
                               when there is a picture. */}
@@ -1352,7 +1356,7 @@ export function Chat() {
                         <div className="flex flex-col items-start gap-1">
                           <DecryptedImage mediaId={m.mediaId} mediaKey={m.mediaKey} apiBase={groupMediaBase} />
                           {m.text && (
-                            <div className="rounded-lg px-3 py-2 text-sm bg-surface-dim border border-line">
+                            <div className="rounded-lg px-3 py-2 text-sm bg-bubble-other">
                               <EmoticonText text={m.text} emoticonSize={18} />
                             </div>
                           )}
@@ -1367,7 +1371,7 @@ export function Chat() {
                             apiBase={groupMediaBase}
                           />
                           {m.text && (
-                            <div className="rounded-lg px-3 py-2 text-sm bg-surface-dim border border-line">
+                            <div className="rounded-lg px-3 py-2 text-sm bg-bubble-other">
                               <EmoticonText text={m.text} emoticonSize={18} />
                             </div>
                           )}
@@ -1383,7 +1387,7 @@ export function Chat() {
                             apiBase={groupMediaBase}
                           />
                           {m.text && (
-                            <div className="rounded-lg px-3 py-2 text-sm bg-surface-dim border border-line">
+                            <div className="rounded-lg px-3 py-2 text-sm bg-bubble-other">
                               <EmoticonText text={m.text} emoticonSize={18} />
                             </div>
                           )}
@@ -1396,7 +1400,7 @@ export function Chat() {
                         <button
                           onClick={() => toggleActions(m.id)}
                           onContextMenu={(e) => { e.preventDefault(); toggleActions(m.id) }}
-                          className="rounded-lg px-3 py-2 text-sm text-left bg-surface-dim border border-line hover:bg-line/40 transition-colors"
+                          className="rounded-lg px-3 py-2 text-sm text-left bg-bubble-other hover:brightness-110 transition-colors"
                         >
                           <EmoticonText text={m.text} emoticonSize={18} />
                           {m.edited && <span className="ml-1 text-[10px] text-fg-dim italic">{t('chat.edit.edited')}</span>}
@@ -1743,9 +1747,9 @@ export function Chat() {
               <span>{t('chat.owner_only.notice')}</span>
             </div>
           ) : (
-          <div className="space-y-2">
+          <div className="relative">
           {editingRow && (
-            <div className="flex items-start gap-2 rounded-2xl border border-accent/40 bg-accent/5 px-3 py-2 text-xs">
+            <div className="absolute bottom-full inset-x-0 mb-2 z-10 flex items-start gap-2 rounded-2xl border border-accent/40 bg-surface shadow-lg px-3 py-2 text-xs">
               <div className="border-l-2 border-accent/60 pl-2 flex-1 min-w-0">
                 <div className="font-mono text-[10px] text-accent uppercase tracking-wider">
                   {t('chat.edit.editing')}
@@ -1761,7 +1765,7 @@ export function Chat() {
             </div>
           )}
           {replyTo && !editingRow && (
-            <div className="flex items-start gap-2 rounded-2xl border border-line bg-surface-dim px-3 py-2 text-xs">
+            <div className="absolute bottom-full inset-x-0 mb-2 z-10 flex items-start gap-2 rounded-2xl border border-line bg-surface shadow-lg px-3 py-2 text-xs">
               <div className="border-l-2 border-accent/60 pl-2 flex-1 min-w-0">
                 <div className="font-mono text-[10px] text-fg-dim">
                   {t('chat.reply.replying_to', { name: replyTo.authorName })}
@@ -2020,7 +2024,7 @@ function MediaPlaceholder({ mediaKind }: { mediaKind?: string }) {
     mediaKind === 'location' ? '📍' : '📎'
   const label = mediaKind ? t(`chat.media.kind.${mediaKind}`) : t('chat.media.kind.file')
   return (
-    <div className="rounded-lg px-3 py-2 bg-surface-dim border border-line">
+    <div className="rounded-lg px-3 py-2 bg-bubble-other">
       <div className="text-sm">{icon} {label}</div>
       <div className="text-[10px] text-fg-dim">{t('chat.media.in_app_only')}</div>
     </div>
@@ -2122,7 +2126,7 @@ function PinnedRichText({ text, group }: { text: string; group: RCQGroup }) {
       const uin = Number(m[3])
       const nick = group.members.find((x) => x.uin === uin)?.nickname
       nodes.push(
-        <Link key={key++} to={`/profile/${uin}`} className="text-accent hover:underline">{nick ?? `#${uin}`}</Link>,
+        <Link key={key++} to={`/profile/${uin}`} className="text-accent hover:text-accent-dim transition-colors">{nick ?? `#${uin}`}</Link>,
       )
     }
   }
@@ -2153,7 +2157,7 @@ function PollBubble({ poll }: { poll: PollRow }) {
     try { setTally(await Api.votePoll(identity, poll.pollId, i)) } catch { /* ignore */ }
   }
   return (
-    <div className="rounded-lg px-3 py-2 bg-surface-dim border border-line w-[18rem] max-w-full">
+    <div className="rounded-lg px-3 py-2 bg-bubble-other w-[18rem] max-w-full">
       <div className="text-sm font-semibold">{poll.question}</div>
       <div className="text-[10px] text-fg-dim mb-2">
         {poll.single ? t('poll.single') : t('poll.multi')}

@@ -308,13 +308,31 @@ function persistUnread() {
   }
 }
 
+/// Draining a mailbox rather than receiving live traffic.
+///
+/// Everything in a queue is "new" to this store, so on open the whole backlog
+/// used to arrive as a wall of banners with a chime behind each one — the thing
+/// a real push is careful never to do, because none of it is news: the user is
+/// looking at the app right now and the unread badges already say it. A counter
+/// rather than a flag, because several drains overlap (the primary queue, the
+/// backup islands, every visited island's guest mailbox).
+let _catchingUp = 0
+export function beginCatchUp() {
+  _catchingUp++
+}
+export function endCatchUp() {
+  _catchingUp = Math.max(0, _catchingUp - 1)
+}
+
 /// Bump unread + fire a toast for a genuinely-new (post-dedupe) incoming
-/// row, unless its thread is the one currently open.
+/// row, unless its thread is the one currently open — or unless we are catching
+/// up on a mailbox, where the unread count is the whole notification.
 function bumpUnread(threadKey: string, row: IncomingRow, groupId: number | null) {
   if (threadKey !== _activeThread) {
     unread.set(threadKey, (unread.get(threadKey) ?? 0) + 1)
     persistUnread()
     emitUnread()
+    if (_catchingUp > 0) return
     playSound('message_incoming')
     // Media kinds pass through for a typed preview; text/poll/undefined show
     // their text (poll text is the question).

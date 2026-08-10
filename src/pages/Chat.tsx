@@ -194,8 +194,11 @@ export function Chat() {
   const [error, setError] = useState<string | null>(null)
   const [actionsForRowId, setActionsForRowId] = useState<string | null>(null)
   const [reactionForRowId, setReactionForRowId] = useState<string | null>(null)
-  const [forwardingRow, setForwardingRow] = useState<OutgoingRow | null>(null)
+  /// What is being forwarded: just the text and who wrote it. It used to be an
+  /// OutgoingRow, which quietly limited forwarding to your own messages.
+  const [forwardingRow, setForwardingRow] = useState<{ text: string; author: string } | null>(null)
   const [replyTo, setReplyTo] = useState<ReplyContext | null>(null)
+  const [highlightId, setHighlightId] = useState<string | null>(null)
   // The own message currently being edited (composer is in edit mode), or null.
   const [editingRow, setEditingRow] = useState<OutgoingRow | null>(null)
   const [transientNotice, setTransientNotice] = useState<string | null>(null)
@@ -906,6 +909,24 @@ export function Chat() {
     setReplyTo(null)
   }
 
+  /// Scroll to the message a quote refers to and flash it.
+  ///
+  /// Tapping a quote did nothing at all before — no handler, and no anchors to
+  /// scroll to. The flash matters as much as the scroll: landing mid-thread
+  /// with nothing marked leaves you hunting for which line you were sent to.
+  /// A quote can also point at a message that is not loaded (older than this
+  /// thread's window, or deleted), and saying so beats scrolling nowhere.
+  function jumpToMessage(id: string) {
+    const el = document.getElementById(`msg-${id}`)
+    if (!el) {
+      setTransientNotice(t('chat.reply.not_loaded'))
+      return
+    }
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    setHighlightId(id)
+    window.setTimeout(() => setHighlightId((cur) => (cur === id ? null : cur)), 1400)
+  }
+
   /// Copy a message's text to the clipboard (action-menu "copy").
   function copyText(text: string) {
     void navigator.clipboard?.writeText(text).catch(() => {})
@@ -978,10 +999,12 @@ export function Chat() {
   /// target, and writes the row into the *target* thread's storage
   /// so navigating there reveals it. We don't append it to the
   /// current thread's log.
-  async function forwardTo(row: OutgoingRow, target: ForwardTarget) {
+  async function forwardTo(row: { text: string; author: string }, target: ForwardTarget) {
     if (!identity) return
     const newId = newUUIDv4()
-    const fwdName = myNickname
+    // Credit the ORIGINAL author, not whoever pressed forward. Sending my own
+    // name on somebody else's words is the one thing a forward must not do.
+    const fwdName = row.author
     const env: TextEnvelope = { kind: 'text', id: newId, text: row.text, fwdName }
     try {
       if (target.kind === 'group') {
@@ -1331,7 +1354,7 @@ export function Chat() {
                 const showActions = actionsForRowId === m.id
                 const showReactionPicker = reactionForRowId === m.id
                 return (
-                  <li key={`in-${m.id}`} className="flex justify-start" {...swipeReply(() => startReplyTo(m.id, m.text, replyAuthor))}>
+                  <li key={`in-${m.id}`} id={`msg-${m.id}`} className={`flex justify-start rounded-lg transition-colors duration-500 ${highlightId === m.id ? 'bg-accent/15' : ''}`} {...swipeReply(() => startReplyTo(m.id, m.text, replyAuthor))}>
                     <div className="max-w-[80%] flex flex-col items-start gap-1">
                       {senderName && (
                         <Link
@@ -1345,10 +1368,14 @@ export function Chat() {
                         </Link>
                       )}
                       {m.replyTo && (
-                        <div className="border-l-2 border-accent/60 pl-2 max-w-full">
+                        <button
+                          type="button"
+                          onClick={() => jumpToMessage(m.replyTo!.id)}
+                          className="border-l-2 border-accent/60 pl-2 max-w-full text-left rounded-r hover:bg-line/30 transition-colors cursor-pointer"
+                        >
                           <div className="font-mono text-[10px] text-fg-dim">{m.replyTo.authorName}</div>
                           <div className="text-[11px] text-fg-secondary line-clamp-3 break-words max-w-[18rem]">{m.replyTo.snippet}</div>
-                        </div>
+                        </button>
                       )}
                       {m.kind === 'poll' && m.poll ? (
                         <PollBubble poll={m.poll} />
@@ -1419,10 +1446,27 @@ export function Chat() {
                           {canPin && (
                             <ActionButton onClick={() => pinMessage(m.text)} label={t('chat.actions.pin')} icon="📌" />
                           )}
+                          {m.kind === 'text' && (
+                            <ActionButton
+                              onClick={() => { setForwardingRow({ text: m.text, author: replyAuthor }); setActionsForRowId(null) }}
+                              label={t('chat.actions.forward')}
+                              icon="↗"
+                            />
+                          )}
                           <ActionButton
                             onClick={() => setReactionForRowId((id) => (id === m.id ? null : m.id))}
                             label={t('chat.actions.react')}
                             icon="☺"
+                          />
+                          {/* Hides it HERE only. There is no deleting somebody
+                              else's message off their device, and offering a
+                              button that looks like it might is worse than not
+                              offering one — hence the wording, not "delete". */}
+                          <ActionButton
+                            onClick={() => { markDeleted(m.id); setActionsForRowId(null) }}
+                            label={t('chat.actions.hide')}
+                            icon="🗑"
+                            danger
                           />
                         </div>
                       )}
@@ -1443,7 +1487,7 @@ export function Chat() {
                 // A group-invite link I shared — show the join card
                 // (not a raw URL bubble) with the delivery state below.
                 return (
-                  <li key={row.id} className="flex justify-end">
+                  <li key={row.id} id={`msg-${row.id}`} className={`flex justify-end rounded-lg transition-colors duration-500 ${highlightId === row.id ? 'bg-accent/15' : ''}`}>
                     <div className="max-w-[80%] flex flex-col items-end gap-1">
                       <GroupJoinCard groupId={outInvite.id} host={outInvite.host} />
                       <div className="flex items-center justify-end gap-1 text-[10px] font-mono text-fg-dim">
@@ -1469,7 +1513,7 @@ export function Chat() {
               if (row.kind === 'photo' && row.mediaId && row.mediaKey) {
                 // A photo I sent — render the image bubble + delivery state.
                 return (
-                  <li key={row.id} className="flex justify-end">
+                  <li key={row.id} id={`msg-${row.id}`} className={`flex justify-end rounded-lg transition-colors duration-500 ${highlightId === row.id ? 'bg-accent/15' : ''}`}>
                     <div className="max-w-[80%] flex flex-col items-end gap-1">
                       <DecryptedImage mediaId={row.mediaId} mediaKey={row.mediaKey} apiBase={groupMediaBase} />
                       {row.text && (
@@ -1508,7 +1552,7 @@ export function Chat() {
                 // A video I sent (echoed from another device via a carbon) —
                 // render the player + delivery state.
                 return (
-                  <li key={row.id} className="flex justify-end">
+                  <li key={row.id} id={`msg-${row.id}`} className={`flex justify-end rounded-lg transition-colors duration-500 ${highlightId === row.id ? 'bg-accent/15' : ''}`}>
                     <div className="max-w-[80%] flex flex-col items-end gap-1">
                       <DecryptedVideo
                         mediaId={row.mediaId}
@@ -1533,7 +1577,7 @@ export function Chat() {
               if (row.kind === 'file' && row.mediaId && row.mediaKey) {
                 // A document I sent — render the download chip + delivery state.
                 return (
-                  <li key={row.id} className="flex justify-end">
+                  <li key={row.id} id={`msg-${row.id}`} className={`flex justify-end rounded-lg transition-colors duration-500 ${highlightId === row.id ? 'bg-accent/15' : ''}`}>
                     <div className="max-w-[80%] flex flex-col items-end gap-1">
                       <FileBubble
                         mediaId={row.mediaId}
@@ -1578,7 +1622,7 @@ export function Chat() {
                 // A still-unsupported media (voice/location) the user sent from
                 // another device, echoed here via a carbon.
                 return (
-                  <li key={row.id} className="flex justify-end">
+                  <li key={row.id} id={`msg-${row.id}`} className={`flex justify-end rounded-lg transition-colors duration-500 ${highlightId === row.id ? 'bg-accent/15' : ''}`}>
                     <div className="max-w-[80%] flex flex-col items-end gap-1">
                       <MediaPlaceholder mediaKind={row.mediaKind} />
                       <div className="flex items-center justify-end gap-1 text-[10px] font-mono text-fg-dim">
@@ -1592,7 +1636,7 @@ export function Chat() {
               const showActions = actionsForRowId === row.id
               const showReactionPicker = reactionForRowId === row.id
               return (
-              <li key={row.id} className="flex justify-end" {...swipeReply(() => startReply(row))}>
+              <li key={row.id} id={`msg-${row.id}`} className={`flex justify-end rounded-lg transition-colors duration-500 ${highlightId === row.id ? 'bg-accent/15' : ''}`} {...swipeReply(() => startReply(row))}>
                 <div className="max-w-[80%] flex flex-col items-end gap-1">
                   {row.fwdName && (
                     <div className="font-mono text-[10px] uppercase tracking-wider text-fg-dim">
@@ -1600,12 +1644,16 @@ export function Chat() {
                     </div>
                   )}
                   {row.replyTo && (
-                    <div className="border-l-2 border-accent/60 pl-2 max-w-full">
+                    <button
+                      type="button"
+                      onClick={() => jumpToMessage(row.replyTo!.id)}
+                      className="border-l-2 border-accent/60 pl-2 max-w-full text-left rounded-r hover:bg-line/30 transition-colors cursor-pointer"
+                    >
                       <div className="font-mono text-[10px] text-fg-dim">{row.replyTo.authorName}</div>
                       <div className="text-[11px] text-fg-secondary line-clamp-3 break-words max-w-[18rem]">
                         {row.replyTo.snippet}
                       </div>
-                    </div>
+                    </button>
                   )}
                   <button
                     onClick={() => toggleActions(row.id)}
@@ -1665,7 +1713,12 @@ export function Chat() {
                       {canPin && (
                         <ActionButton onClick={() => pinMessage(row.text)} label={t('chat.actions.pin')} icon="📌" />
                       )}
-                      <ActionButton onClick={() => setForwardingRow(row)} label={t('chat.actions.forward')} icon="↗" />
+                      <ActionButton onClick={() => setForwardingRow({ text: row.text, author: myNickname })} label={t('chat.actions.forward')} icon="↗" />
+                      <ActionButton
+                        onClick={() => setReactionForRowId((id) => (id === row.id ? null : row.id))}
+                        label={t('chat.actions.react')}
+                        icon="☺"
+                      />
                       <ActionButton
                         onClick={() => setReactionForRowId((id) => (id === row.id ? null : row.id))}
                         label={t('chat.actions.react')}

@@ -102,6 +102,16 @@ export function lookupContactName(viewerUin: number, uin: number): string | null
 export function lookupContactStatus(viewerUin: number, uin: number): UserStatus | null {
   return _contactsCache.get(viewerUin)?.contacts.find((c) => c.uin === uin)?.status ?? null
 }
+/// A contact's avatar media off the warm cache. The call overlay is the reason
+/// this exists: it showed a big letter of the nick where every other surface in
+/// the app shows the person's face.
+export function lookupContactAvatar(
+  viewerUin: number,
+  uin: number,
+): { mediaId?: string | null; mediaKey?: string | null } | null {
+  const c = _contactsCache.get(viewerUin)?.contacts.find((x) => x.uin === uin)
+  return c ? { mediaId: c.avatar_media_id, mediaKey: c.avatar_media_key } : null
+}
 export function lookupGroupName(viewerUin: number, id: number): string | null {
   return _contactsCache.get(viewerUin)?.groups.find((g) => g.id === id)?.name || null
 }

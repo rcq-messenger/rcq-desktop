@@ -9,7 +9,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useCall } from '../lib/call'
+import { PersonAvatar } from './PersonAvatar'
+import { lookupContactAvatar } from '../pages/Contacts'
 import { useI18n } from '../lib/i18n-context'
+import { useIdentity } from '../lib/identity-context'
 
 export function CallOverlay() {
   const call = useCall()
@@ -82,16 +85,24 @@ function endedKey(reason: string): string {
 function Portrait({ subtitle }: { subtitle: string }) {
   const { info, phase, connectedAt, deviceError, remoteStream } = useCall()
   const { t } = useI18n()
+  const { identity } = useIdentity()
   if (!info) return null
-  const initial = (info.peerName || '#').replace('#', '').slice(0, 1).toUpperCase()
+  // The person's actual face, like everywhere else in the app. A call is the
+  // one screen where you look at nothing but this, and it was the one screen
+  // showing a letter. PersonAvatar falls back on its own when there is no
+  // picture, so there is nothing to branch on here.
+  const avatar = identity ? lookupContactAvatar(identity.uin, info.peerUin) : null
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center gap-4 px-6 text-center">
       {/* Remote audio has to be attached to an element or nothing is heard. */}
       <RemoteAudio stream={remoteStream} />
-      <div className="w-28 h-28 rounded-full bg-surface border border-line flex items-center justify-center text-4xl font-medium text-fg-secondary">
-        {initial}
-      </div>
+      <PersonAvatar
+        status={'offline'}
+        size={112}
+        mediaId={avatar?.mediaId}
+        mediaKey={avatar?.mediaKey}
+      />
       <div>
         <div className="text-2xl font-medium">{info.peerName}</div>
         <div className="font-mono text-sm text-fg-dim">#{info.peerUin}</div>

@@ -12,7 +12,7 @@ import { useWS } from '../lib/ws'
 import { listRequests, clearRequest, blockRequest, type CrossIslandRequest } from '../lib/crossisland-requests'
 import { saveCrossIsland } from '../lib/crossisland-store'
 import { fetchPeerKeyCard } from '../lib/federation-send'
-import { addIncoming } from '../lib/incoming-store'
+import { addIncoming, beginCatchUp, endCatchUp } from '../lib/incoming-store'
 
 export function PendingRequests() {
   const { identity } = useIdentity()
@@ -46,7 +46,15 @@ export function PendingRequests() {
         statusMessage: card.status_message ?? null,
       })
       const held = clearRequest(r.uin, r.host)
-      held?.msgs.forEach((m) => addIncoming(r.uin, m)) // surface the held messages
+      // Held messages are a backlog being released by an explicit accept, not
+      // traffic arriving now: a banner per quarantined message would fire a
+      // burst at the exact moment the user is looking at the request.
+      beginCatchUp()
+      try {
+        held?.msgs.forEach((m) => addIncoming(r.uin, m)) // surface the held messages
+      } finally {
+        endCatchUp()
+      }
       setCi(listRequests())
       navigate(`/chat/${r.uin}?i=${encodeURIComponent(r.host)}`)
     } catch {

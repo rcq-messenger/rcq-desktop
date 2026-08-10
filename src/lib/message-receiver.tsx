@@ -7,7 +7,7 @@ import { useEffect } from 'react'
 import { useIdentity } from './identity-context'
 import { useWS } from './ws'
 import { decryptIncoming, getDevice } from './signal-device'
-import { addIncoming, addGroupIncoming, hydrateIncoming } from './incoming-store'
+import { addIncoming, addGroupIncoming, hydrateIncoming, beginCatchUp, endCatchUp } from './incoming-store'
 import { fileOutgoingCarbon } from './outgoing-store'
 import { publishHomeIslandRecord } from './federation-publish'
 import { applyPushedRecord, drainBackupQueues, listBackupHomes } from './multihome'
@@ -117,6 +117,12 @@ export function MessageReceiver() {
       // Advertise sender-keys support so others broadcast to us (encrypt-once)
       // instead of the legacy per-member fan-out. Fire-and-forget.
       void Api.advertiseCapabilities(identity, true).catch(() => {})
+      // A queue drain is history, not news. Without this the backlog arrives as
+      // a wall of banners with a chime behind each one, every time the app is
+      // opened or the socket reconnects — and the unread badges have already
+      // said all of it. Live WS traffic below is untouched: that IS the case
+      // where a banner is the point.
+      beginCatchUp()
       try {
         const res = await fetch(`${identity.apiBase}/messages/queue`, {
           headers: { Authorization: `Bearer ${identity.jwt}` },
@@ -136,6 +142,8 @@ export function MessageReceiver() {
         }
       } catch {
         /* network hiccup — next reconnect drains again (queue isn't acked here) */
+      } finally {
+        endCatchUp()
       }
     })()
     return () => {
@@ -150,9 +158,16 @@ export function MessageReceiver() {
   useEffect(() => {
     if (!identity) return
     let cancelled = false
+    let firstTick = true
     const tick = async () => {
       if (cancelled || listBackupHomes().length === 0) return
       await ensureHydrated(identity.uin) // dedup needs the seen-set first
+      // Only the first sweep is backlog. Every later one IS the live delivery
+      // path whenever the primary island is down, and silencing those would
+      // mean the outage that makes this loop matter also makes it invisible.
+      const catchingUp = firstTick
+      firstTick = false
+      if (catchingUp) beginCatchUp()
       await drainBackupQueues(identity, async (row, host) => {
         if (cancelled) return
         const got = await decryptIncoming(identity, row.payload)
@@ -162,6 +177,7 @@ export function MessageReceiver() {
         const gid = typeof row.group_id === 'number' ? aliasFor(host, row.group_id) : row.group_id
         route(got.senderUIN, got.senderHost, got.envelope, gid, identity.uin, hostOf(identity.apiBase), got.senderSigningKey, identity)
       })
+      if (catchingUp) endCatchUp()
     }
     void tick()
     const handle = setInterval(() => void tick(), 30_000)
@@ -180,9 +196,15 @@ export function MessageReceiver() {
   useEffect(() => {
     if (!identity) return
     let cancelled = false
+    let firstTick = true
     const tick = async () => {
       if (cancelled || listVisitedIslands().length === 0) return
       await ensureHydrated(identity.uin) // dedup needs the seen-set first
+      // Same as the backup poller: the first sweep is a mailbox we have not
+      // read yet, everything after it is live.
+      const catchingUp = firstTick
+      firstTick = false
+      if (catchingUp) beginCatchUp()
       await drainVisitedQueues(identity, async (row, host) => {
         if (cancelled) return
         const got = await decryptIncoming(identity, row.payload)
@@ -190,6 +212,7 @@ export function MessageReceiver() {
         const gid = typeof row.group_id === 'number' ? aliasFor(host, row.group_id) : row.group_id
         route(got.senderUIN, got.senderHost, got.envelope, gid, identity.uin, hostOf(identity.apiBase), got.senderSigningKey, identity)
       })
+      if (catchingUp) endCatchUp()
     }
     void tick()
     const handle = setInterval(() => void tick(), 30_000)

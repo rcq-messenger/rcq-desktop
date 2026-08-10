@@ -407,7 +407,7 @@ export function Contacts() {
             Always on top, like the native apps. The server never lists your
             own UIN in /contacts, so this is the only entry point. */}
         {me && (
-          <ul className="bg-surface rounded-lg border border-line [&_li:first-child_a]:rounded-t-lg [&_li:last-child_a]:rounded-b-lg">
+          <ul className="bg-surface rounded-lg border border-line [&_li:first-child>*]:rounded-t-lg [&_li:last-child>*]:rounded-b-lg">
             <li>
               <Link
                 to={`/chat/${me.uin}`}
@@ -614,11 +614,14 @@ function Section({
         {rightAction}
       </div>
       {/* NOT overflow-hidden — that clipped the absolutely-positioned contact
-          action menu (the three-dots dropdown). Instead round the full-row
-          hover targets (the row links) at the section edges so the hover bg
-          doesn't poke past the rounded corners. */}
+          action menu (the three-dots dropdown). So round the element that
+          PAINTS the hover instead. It used to say `li:first-child a`, and a
+          contact row paints its hover on a wrapper div with the anchor inside,
+          so the corner was rounded on a child of the square that was covering
+          it: hovering the first or last row visibly cut the list's corner.
+          `> *` takes whatever the row leads with, div or anchor. */}
       {!isCollapsed && (
-        <ul className="bg-surface rounded-lg border border-line divide-y divide-line [&_li:first-child_a]:rounded-t-lg [&_li:last-child_a]:rounded-b-lg">
+        <ul className="bg-surface rounded-lg border border-line divide-y divide-line [&_li:first-child>*]:rounded-t-lg [&_li:last-child>*]:rounded-b-lg">
           {children}
         </ul>
       )}

@@ -9,6 +9,8 @@
 // for display + future safety-number verification; the actual send re-resolves
 // via federation-send so a moved peer still gets reached.
 
+import { scopedKey } from './account-scope'
+
 export interface CrossIslandContact {
   uin: number
   host: string
@@ -22,7 +24,12 @@ export interface CrossIslandContact {
   statusMessage?: string | null
 }
 
-const KEY = 'rcq.web.crossisland.v1'
+// ⚠ This was a FLAT key while every other local store had already moved to
+// per-account scoping, so cross-island contacts outlived the account that
+// added them: unlink, create a fresh account, and a stranger from another
+// island was sitting in the new roster. Same class of bug the comment in
+// `account-scope.ts` describes, in the one store that was missed.
+const KEY = () => scopedKey('crossisland.v1')
 
 export function ciKey(uin: number, host: string): string {
   return `${uin}@${host.toLowerCase()}`
@@ -30,14 +37,14 @@ export function ciKey(uin: number, host: string): string {
 
 function loadAll(): Record<string, CrossIslandContact> {
   try {
-    return JSON.parse(localStorage.getItem(KEY) || '{}') as Record<string, CrossIslandContact>
+    return JSON.parse(localStorage.getItem(KEY()) || '{}') as Record<string, CrossIslandContact>
   } catch {
     return {}
   }
 }
 
 function saveAll(map: Record<string, CrossIslandContact>): void {
-  localStorage.setItem(KEY, JSON.stringify(map))
+  localStorage.setItem(KEY(), JSON.stringify(map))
 }
 
 export function getCrossIsland(uin: number, host: string): CrossIslandContact | null {

@@ -23,6 +23,8 @@ import {
   registerOnIsland,
 } from './multihome'
 
+import { scopedKey } from './account-scope'
+
 export interface VisitedIsland {
   host: string
   uin: number // per-island uin of this identity (same keys as primary)
@@ -36,19 +38,19 @@ interface ForeignGroupRef {
   aliasId: number // negative, stable per account
 }
 
-const VISITED_KEY = 'rcq.web.visited.v1'
-const ALIAS_KEY = 'rcq.web.fgroup-alias.v1'
+const VISITED_KEY = () => scopedKey('visited.v1')
+const ALIAS_KEY = () => scopedKey('fgroup-alias.v1')
 
 export function listVisitedIslands(): VisitedIsland[] {
   try {
-    return JSON.parse(localStorage.getItem(VISITED_KEY) || '[]') as VisitedIsland[]
+    return JSON.parse(localStorage.getItem(VISITED_KEY()) || '[]') as VisitedIsland[]
   } catch {
     return []
   }
 }
 
 function saveVisited(list: VisitedIsland[]): void {
-  localStorage.setItem(VISITED_KEY, JSON.stringify(list))
+  localStorage.setItem(VISITED_KEY(), JSON.stringify(list))
 }
 
 /// Guest credentials for `hostInput`, registering (recover-first) on first
@@ -97,14 +99,14 @@ export function guestIdentityFor(identity: WebIdentity, host: string): WebIdenti
 
 function loadAliases(): ForeignGroupRef[] {
   try {
-    return JSON.parse(localStorage.getItem(ALIAS_KEY) || '[]') as ForeignGroupRef[]
+    return JSON.parse(localStorage.getItem(ALIAS_KEY()) || '[]') as ForeignGroupRef[]
   } catch {
     return []
   }
 }
 
 function saveAliases(list: ForeignGroupRef[]): void {
-  localStorage.setItem(ALIAS_KEY, JSON.stringify(list))
+  localStorage.setItem(ALIAS_KEY(), JSON.stringify(list))
 }
 
 export function isForeignGroupId(id: number): boolean {

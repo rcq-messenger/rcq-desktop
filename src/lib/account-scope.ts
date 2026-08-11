@@ -40,7 +40,11 @@ export function scopedDbName(): string {
   return _uin == null ? 'rcq-web' : `rcq-web-${_uin}`
 }
 
-const MIGRATED_FLAG = 'rcq.web.scoped.v1'
+// ⚠ v2, not v1: the first wave (outgoing logs only) already ran in most
+// browsers and set the flag, so reusing it would skip the federation stores
+// added to the list in 0.3.3 for exactly the people who have them. Re-running
+// the copy is safe — it never overwrites a scoped key that already exists.
+const MIGRATED_FLAG = 'rcq.web.scoped.v2'
 
 /// Move the flat-namespace data into this account's scope, once.
 ///
@@ -64,10 +68,17 @@ export function migrateFlatDataInto(uin: number) {
     // Skip anything already scoped (starts with digits + '.'), and the keys
     // that are about the BROWSER rather than an account.
     if (/^\d+\./.test(rest)) continue
-    // Only the outgoing logs. `rcq.web.unread.<uin>` already carries its
-    // owner — a different shape, but scoped all the same, and copying it would
-    // produce `rcq.web.<uin>.unread.<uin>` that nothing ever reads.
-    if (!rest.startsWith('outgoing.')) continue
+    // The outgoing logs, plus the federation stores. `rcq.web.unread.<uin>`
+    // already carries its owner — a different shape, but scoped all the same,
+    // and copying it would produce `rcq.web.<uin>.unread.<uin>` that nothing
+    // ever reads.
+    //
+    // ⚠ The federation four were flat until 0.3.3 and are the reason this list
+    // grew: cross-island contacts, held message requests, the blocked list and
+    // the visited-island records all survived an unlink and showed up in the
+    // next account created in this browser. They are scoped now; this copy is
+    // what keeps the person who HAD them from losing them in the process.
+    if (!rest.startsWith('outgoing.') && !FLAT_FEDERATION_KEYS.has(rest)) continue
     moved.push(k)
   }
   for (const k of moved) {
@@ -78,5 +89,20 @@ export function migrateFlatDataInto(uin: number) {
     // newer than a copy of the pre-scope world.
     if (localStorage.getItem(target) == null) localStorage.setItem(target, v)
   }
+  // These, unlike the message logs, are DELETED after copying. Leaving them is
+  // the bug: a flat key is readable by every account in this browser, and the
+  // whole point of the move is that the next account does not inherit them.
+  for (const k of moved) {
+    if (FLAT_FEDERATION_KEYS.has(k.slice(prefix.length))) localStorage.removeItem(k)
+  }
   localStorage.setItem(MIGRATED_FLAG, String(uin))
 }
+
+/// Suffixes (after `rcq.web.`) of the stores that federation kept flat.
+const FLAT_FEDERATION_KEYS = new Set([
+  'crossisland.v1',
+  'ci-requests.v1',
+  'ci-blocked.v1',
+  'visited.v1',
+  'fgroup-alias.v1',
+])

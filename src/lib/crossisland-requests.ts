@@ -12,8 +12,10 @@
 
 import type { Envelope } from './crypto'
 
-const KEY = 'rcq.web.ci-requests.v1'
-const BLOCKED_KEY = 'rcq.web.ci-blocked.v1'
+import { scopedKey } from './account-scope'
+
+const KEY = () => scopedKey('ci-requests.v1')
+const BLOCKED_KEY = () => scopedKey('ci-blocked.v1')
 const MAX_HELD = 20 // cap held messages per pending sender
 
 export interface CrossIslandRequest {
@@ -29,19 +31,19 @@ function reqKey(uin: number, host: string): string {
 
 function loadAll(): Record<string, CrossIslandRequest> {
   try {
-    return JSON.parse(localStorage.getItem(KEY) || '{}') as Record<string, CrossIslandRequest>
+    return JSON.parse(localStorage.getItem(KEY()) || '{}') as Record<string, CrossIslandRequest>
   } catch {
     return {}
   }
 }
 
 function saveAll(map: Record<string, CrossIslandRequest>): void {
-  localStorage.setItem(KEY, JSON.stringify(map))
+  localStorage.setItem(KEY(), JSON.stringify(map))
 }
 
 function loadBlocked(): Record<string, true> {
   try {
-    return JSON.parse(localStorage.getItem(BLOCKED_KEY) || '{}') as Record<string, true>
+    return JSON.parse(localStorage.getItem(BLOCKED_KEY()) || '{}') as Record<string, true>
   } catch {
     return {}
   }
@@ -93,5 +95,5 @@ export function blockRequest(uin: number, host: string): void {
   clearRequest(uin, host)
   const b = loadBlocked()
   b[reqKey(uin, host)] = true
-  localStorage.setItem(BLOCKED_KEY, JSON.stringify(b))
+  localStorage.setItem(BLOCKED_KEY(), JSON.stringify(b))
 }

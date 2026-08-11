@@ -6,6 +6,7 @@ import { WSProvider } from './lib/ws'
 import { MessageReceiver } from './lib/message-receiver'
 import { MessageToasts } from './components/MessageToasts'
 import { CallProvider } from './lib/call'
+import { ToastProvider } from './lib/toast'
 import { CallOverlay } from './components/CallOverlay'
 import { Login } from './pages/Login'
 import { Contacts } from './pages/Contacts'
@@ -44,6 +45,7 @@ export default function App() {
         <IdentityProvider>
           <WSProvider>
             <CallProvider>
+            <ToastProvider>
             <MessageReceiver />
             <Router>
             <MessageToasts />
@@ -165,6 +167,7 @@ export default function App() {
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Router>
+            </ToastProvider>
             </CallProvider>
           </WSProvider>
         </IdentityProvider>

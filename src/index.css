@@ -13,15 +13,21 @@
   --c-accent: 34 197 94;
   --c-accent-dim: 22 163 74;
   --c-accent-soft: 220 252 231;
-  --c-surface: 255 255 255;
-  --c-surface-dim: 250 250 250;
-  --c-line: 229 231 235;
+  /* Warm white rather than 255,255,255. Pure white on a bright screen is the
+     one colour the eye reads as "unfinished page" — it glares next to the
+     black type and makes every neighbouring grey look blue. A couple of points
+     of warmth reads as paper instead, and nothing else in the palette has to
+     move. The greys below are shifted the same way so they stay in the same
+     family (a neutral grey next to a warm white looks faintly blue). */
+  --c-surface: 253 252 250;
+  --c-surface-dim: 249 247 244;
+  --c-line: 231 228 223;
   --c-fg-primary: 10 10 10;
   --c-fg-secondary: 75 85 99;
   --c-fg-dim: 156 163 175;
   --c-bubble-self: 220 252 231;
-  --c-bubble-other: 243 244 246;
-  --c-field: 242 243 245;
+  --c-bubble-other: 244 242 238;
+  --c-field: 243 241 237;
 }
 
 html.dark {
@@ -146,6 +152,21 @@ html.dark .rcq-wave {
   background-color: rgb(var(--c-surface-dim) / 0.72);
   backdrop-filter: blur(16px) saturate(150%);
   -webkit-backdrop-filter: blur(16px) saturate(150%);
+}
+/* An expanded pin hangs OVER the conversation rather than pushing it down, so
+   it needs to be readable against whatever happens to be behind it. The bar's
+   own 0.72 is right for a strip a few pixels tall with nothing but its own
+   label on it; for a panel of text it left the messages showing through the
+   words. Same blur, nearly opaque. */
+.rcq-floating-panel {
+  background-color: rgb(var(--c-surface-dim) / 0.94);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+}
+@supports not (backdrop-filter: blur(1px)) {
+  .rcq-floating-panel {
+    background-color: rgb(var(--c-surface-dim));
+  }
 }
 /* The group's pinned bar gets the same treatment for the same reason: it is a
    strip that floats over the thread, and as flat grey it read as a third

@@ -33,6 +33,7 @@ import {
 } from '../lib/desktop'
 import { uploadReportAttachment } from '../lib/media'
 import { useI18n } from '../lib/i18n-context'
+import { useToast } from '../lib/toast'
 import type { UserInfo } from '../lib/api'
 import { DEFAULT_API_BASE } from '../lib/auth'
 import { snapshotFor } from '../lib/contacts-cache'
@@ -60,7 +61,7 @@ export function Settings() {
   const [confirming, setConfirming] = useState(false)
   const [burnTyped, setBurnTyped] = useState('')
   const [burning, setBurning] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const { toast } = useToast()
   const [soundOn, setSoundOnState] = useState<boolean>(() => isSoundEnabled())
   const [presenceSoundOn, setPresenceSoundOnState] = useState<boolean>(() => isPresenceSoundEnabled())
   const { pref: themePref, setPref: setThemePref } = useTheme()
@@ -373,13 +374,12 @@ export function Settings() {
 
   async function burn() {
     setBurning(true)
-    setError(null)
     try {
       await Api.burnAccount(identity!)
       signOut()
       navigate('/', { replace: true })
     } catch (e) {
-      setError(e instanceof Error ? e.message : t('settings.danger.error'))
+      toast(e instanceof Error ? e.message : t('settings.danger.error'), 'error')
     } finally {
       setBurning(false)
     }
@@ -1116,11 +1116,6 @@ export function Settings() {
               </button>
             </div>
           )}
-          {error && (
-            <div className="text-sm text-red-600 bg-red-500/5 rounded-md p-2">
-              {error}
-            </div>
-          )}
         </section>
       </main>
     </div>
@@ -1150,14 +1145,13 @@ function BackupSection() {
   const { t } = useI18n()
   const { identity } = useIdentity()
   const [busy, setBusy] = useState(false)
-  const [note, setNote] = useState<string | null>(null)
-  const [err, setErr] = useState<string | null>(null)
+  const { toast } = useToast()
   const words = currentRecoveryPhrase()
   if (!identity || !words) return null
   const phrase = words.join(' ')
 
   async function save() {
-    setBusy(true); setErr(null); setNote(null)
+    setBusy(true)
     try {
       const blob = await exportBackup(identity!.uin, phrase)
       const url = URL.createObjectURL(blob)
@@ -1174,9 +1168,9 @@ function BackupSection() {
         a.remove()
         URL.revokeObjectURL(url)
       }, 60_000)
-      setNote(t('settings.backup.saved'))
+      toast(t('settings.backup.saved'))
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e))
+      toast(e instanceof Error ? e.message : String(e), 'error')
     } finally {
       setBusy(false)
     }
@@ -1184,7 +1178,7 @@ function BackupSection() {
 
   async function restore(file: File | null) {
     if (!file) return
-    setBusy(true); setErr(null); setNote(null)
+    setBusy(true)
     try {
       const r = await importBackup(await file.arrayBuffer(), phrase, identity!.uin)
       // What could not be read and what the browser cannot hold are said out
@@ -1193,9 +1187,9 @@ function BackupSection() {
       if (r.unreadable > 0) parts.push(t('settings.backup.restoredUnreadable', { n: r.unreadable }))
       if (r.mediaIgnored > 0) parts.push(t('settings.backup.restoredMediaIgnored', { n: r.mediaIgnored }))
       if (r.expired > 0) parts.push(t('settings.backup.restoredExpired', { n: r.expired }))
-      setNote(parts.join(' '))
+      toast(parts.join(' '))
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e))
+      toast(e instanceof Error ? e.message : String(e), 'error')
     } finally {
       setBusy(false)
     }
@@ -1224,8 +1218,6 @@ function BackupSection() {
           onChange={(e) => void restore(e.target.files?.[0] ?? null)}
         />
       </label>
-      {note && <p className="text-xs text-accent">{note}</p>}
-      {err && <p className="text-xs text-red-500">{err}</p>}
       <p className="text-xs text-fg-dim leading-relaxed">{t('settings.backup.warning')}</p>
     </section>
   )
@@ -1233,8 +1225,8 @@ function BackupSection() {
 
 function RecoveryPhraseSection() {
   const { t } = useI18n()
+  const { toast } = useToast()
   const [revealed, setRevealed] = useState(false)
-  const [copied, setCopied] = useState(false)
   const words = currentRecoveryPhrase()
   if (!words) return null
   return (
@@ -1263,12 +1255,11 @@ function RecoveryPhraseSection() {
           <button
             onClick={() => {
               void navigator.clipboard?.writeText(words.join(' ')).catch(() => {})
-              setCopied(true)
-              setTimeout(() => setCopied(false), 1500)
+              toast(t('login.phrase.copied'))
             }}
             className="w-full h-9 rounded-md bg-field hover:bg-line/40 text-sm font-medium transition-colors"
           >
-            {copied ? t('login.phrase.copied') : t('login.phrase.copy')}
+            {t('login.phrase.copy')}
           </button>
         </div>
       )}

@@ -262,23 +262,53 @@ export async function checkForUpdatesOnLaunch(t: Translate): Promise<void> {
 
 /// What a manual check found, so the caller can say so in the UI. The launch
 /// check stays silent instead, because nobody asked it a question.
-export type UpdateCheck = 'unsupported' | 'current' | 'found' | 'failed'
+///
+/// ⚠ `install_failed` exists because it used to be indistinguishable from
+/// `failed`: one try/catch wrapped BOTH the check and the download-and-install,
+/// so a build that downloaded fine and then failed to apply told the user
+/// "could not check for updates", which sent everyone looking at their network
+/// instead of at the installer. They are separate now, and the reason string
+/// travels with the result — an updater that cannot say why it stopped is an
+/// updater nobody can debug from a report.
+export type UpdateCheck =
+  | { kind: 'unsupported' | 'current' | 'found' }
+  | { kind: 'failed' | 'install_failed'; reason: string }
+
+function reasonOf(e: unknown): string {
+  if (e instanceof Error) return e.message
+  if (typeof e === 'string') return e
+  try {
+    return JSON.stringify(e)
+  } catch {
+    return String(e)
+  }
+}
 
 /// Check on demand, from a button. Unlike the launch check this one runs every
 /// time it's called and reports back — being told "you're up to date" is the
 /// whole point of pressing it.
 export async function checkForUpdatesNow(t: Translate): Promise<UpdateCheck> {
-  if (!isTauri()) return 'unsupported'
+  if (!isTauri()) return { kind: 'unsupported' }
+  let update: Awaited<ReturnType<typeof import('@tauri-apps/plugin-updater')['check']>>
   try {
     const { check } = await import('@tauri-apps/plugin-updater')
-    const update = await check()
-    if (!update) return 'current'
-    updateChecked = true
-    await promptAndInstall(update, t)
-    return 'found'
-  } catch {
-    return 'failed'
+    update = await check()
+  } catch (e) {
+    console.error('[updater] check failed', e)
+    return { kind: 'failed', reason: reasonOf(e) }
   }
+  if (!update) return { kind: 'current' }
+  updateChecked = true
+  try {
+    await promptAndInstall(update, t)
+  } catch (e) {
+    // Download, signature check and the swap itself all land here. The message
+    // is the only thing that distinguishes "no disk space" from "signature did
+    // not verify", and the user is the one who has to read it back to us.
+    console.error('[updater] install failed', e)
+    return { kind: 'install_failed', reason: reasonOf(e) }
+  }
+  return { kind: 'found' }
 }
 
 export interface RelayKeyStatus {

@@ -293,6 +293,7 @@ export const en: Record<string, string> = {
   'settings.about.update_checking': 'Checking…',
   'settings.about.update_current': 'You have the latest version.',
   'settings.about.update_failed': 'Could not check for updates. Try again later.',
+  'settings.about.update_install_failed': 'Could not install the update. Download the new version from rcq.app.',
   'settings.section.session': 'Session',
   'settings.session.unlink': 'Sign out',
   'settings.session.unlink_footer':

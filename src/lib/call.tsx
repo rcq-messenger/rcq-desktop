@@ -311,7 +311,22 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
   const newPeerConnection = useCallback(
     async (): Promise<RTCPeerConnection> => {
-      const pc = new RTCPeerConnection({ iceServers: await iceServers() })
+      const servers = await iceServers()
+      // ⚠ Calls used to run with the default ICE policy, which puts host and
+      // srflx candidates in the SDP: the peer learns your LAN addresses and
+      // your real public IP before a word is spoken. `relay` forces media
+      // through our TURN server, so the peer sees the TURN address and nothing
+      // else. Media transits our box now, which costs bandwidth and a little
+      // latency, and that is the trade.
+      //
+      // Only when a TURN server actually came back: under `relay` with none
+      // there are no candidates at all and the call silently never connects.
+      // `iceServers()` above already retries and falls through to STUN-only.
+      const haveTurn = servers.some((s) => 'username' in s && !!s.username)
+      const pc = new RTCPeerConnection({
+        iceServers: servers,
+        ...(haveTurn ? { iceTransportPolicy: 'relay' as const } : {}),
+      })
 
       pc.onicecandidate = (ev) => {
         const l = live.current

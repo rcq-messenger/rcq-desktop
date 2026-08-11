@@ -34,6 +34,7 @@ import {
   markDeleted,
   isDeleted,
   useDeletedVersion,
+  noteOwnEnvelope,
   type PollRow,
 } from '../lib/incoming-store'
 import { sendV2 } from '../lib/signal-device'
@@ -482,10 +483,17 @@ export function Chat() {
     if (!SHIPPABLE_KINDS.has(envelope.kind)) {
       return { ok: false, error: `unsupported envelope kind: ${envelope.kind}` }
     }
-    // Saved Messages ("Заметки") stays LOCAL — same as iOS, which skips the
-    // wire for a send to self. The optimistic row is the message; no delivery,
-    // no carbon (the row already persists to this device's localStorage log).
-    if (isSelf) return { ok: true }
+    // ⚠ Saved Messages ("Заметки") used to stop here, never touching the wire:
+    // the note lived in this browser's localStorage and nowhere else. That is
+    // why a note written on the desktop never appeared on the phone, while the
+    // other direction worked — Android has always sent notes through the sealed
+    // path to itself (report #469). A note is now shipped like any other
+    // message, to our own number, so every device on the account receives it.
+    // The echo that comes straight back is dropped by `noteOwnEnvelope`, which
+    // is what keeps this device from showing the note twice.
+    // Reactions in Saved Messages stay local (see below), so only the kinds
+    // that carry an id of their own are registered.
+    if (isSelf && 'id' in envelope) noteOwnEnvelope(envelope.id)
     // The server ships this as the ws packet `type` to the recipient (so a web
     // receiver routes a control envelope live) and gates owner_only posts +
     // pushes on it. Reaction/edit/delete carry their own type; content is

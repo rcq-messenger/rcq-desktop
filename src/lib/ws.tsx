@@ -43,6 +43,10 @@ interface WsCtx {
 
 const Ctx = createContext<WsCtx | undefined>(undefined)
 
+/// How long a socket has to hold before its backoff is forgiven. Longer than
+/// the 25s heartbeat, so "opened, pinged once, died" is not a healthy session.
+const STABLE_MS = 60_000
+
 export function WSProvider({ children }: { children: ReactNode }) {
   const { identity, signOut } = useIdentity()
   const [connected, setConnected] = useState(false)
@@ -50,6 +54,9 @@ export function WSProvider({ children }: { children: ReactNode }) {
   const listenersRef = useRef<Map<string, Set<Listener>>>(new Map())
   const backoffRef = useRef(0)
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /// When the live socket opened, or null when none is up. Only a socket that
+  /// outlived [STABLE_MS] forgives the backoff.
+  const openedAtRef = useRef<number | null>(null)
   const pingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const closedByUserRef = useRef(false)
 
@@ -79,7 +86,14 @@ export function WSProvider({ children }: { children: ReactNode }) {
     sockRef.current = ws
 
     ws.addEventListener('open', () => {
-      backoffRef.current = 0
+      // ⚠ NOT `backoffRef.current = 0`. Opening is not the same as staying
+      // open: a socket that dies a second later would clear the backoff on the
+      // way in, and the curve never got past its first step. Measured on prod
+      // 11.08 — thousands of sockets an hour, one account opening one every two
+      // seconds for hours, which is also what "отправка идёт с большой
+      // задержкой" looks like from the outside. The reset moved into `close`,
+      // where the socket's actual lifetime is known.
+      openedAtRef.current = Date.now()
       setConnected(true)
       // Keepalive heartbeat. The backend derives "online" from last_seen
       // freshness AND drops sockets that go silent (~90s) — without a ping
@@ -111,6 +125,13 @@ export function WSProvider({ children }: { children: ReactNode }) {
       if (closedByUserRef.current || ev.code === 4401 || ev.code === 4403) return
       // Exponential backoff capped at 30s. Mirrors common WS-client
       // behaviour; prevents thundering-herd on backend bounces.
+      //
+      // A session that HELD earns a clean slate; one that died on arrival does
+      // not, so a run of short-lived sockets climbs the curve instead of
+      // redialling once a second forever.
+      const lived = openedAtRef.current ? Date.now() - openedAtRef.current : 0
+      if (lived >= STABLE_MS) backoffRef.current = 0
+      openedAtRef.current = null
       const delay = Math.min(30_000, 1000 * 2 ** backoffRef.current)
       backoffRef.current = Math.min(backoffRef.current + 1, 5)
       // A socket that keeps dying is the first sign of a network that started

@@ -387,7 +387,7 @@ export function Contacts() {
             <li>
               <Link
                 to={`/chat/${me.uin}`}
-                className="flex items-center gap-3 px-4 py-3 hover:bg-field transition-colors"
+                className="flex items-center gap-3 px-4 py-3 lg:py-2 hover:bg-field transition-colors"
               >
                 <span className="flex h-7 w-7 flex-none items-center justify-center rounded-full bg-accent/15 text-accent">
                   <BookmarkGlyph />
@@ -429,7 +429,7 @@ export function Contacts() {
               <li key={`${ci.uin}@${ci.host}`} className="relative">
                 <Link
                   to={`/chat/${ci.uin}?i=${encodeURIComponent(ci.host)}`}
-                  className="flex items-center gap-3 px-4 py-3"
+                  className="flex items-center gap-3 px-4 py-3 lg:py-2"
                 >
                   {/* The same greyed flower every other cross-island row uses
                       (StatusIcon's `crossIsland`), not a globe emoji: presence
@@ -466,7 +466,7 @@ export function Contacts() {
           }
         >
           {normalGroups.length === 0 ? (
-            <li className="px-4 py-3 text-xs text-fg-dim">{t('section.groups.empty')}</li>
+            <li className="px-4 py-3 lg:py-2 text-xs text-fg-dim">{t('section.groups.empty')}</li>
           ) : (
             normalGroups.map((g) => <GroupRow key={g.id} group={g} onChanged={refresh} />)
           )}
@@ -639,7 +639,7 @@ function ContactRow({
   const alias = aliasFor(contact.uin)
   return (
     <li className="relative">
-      <div className={'flex items-center gap-3 px-4 py-3 ' + (archived ? 'opacity-60' : '')}>
+      <div className={'flex items-center gap-3 px-4 py-3 lg:py-2 ' + (archived ? 'opacity-60' : '')}>
         {/* Tapping the card opens the CHAT (the primary action). The
             profile is a dedicated button below. */}
         <Link
@@ -716,7 +716,7 @@ function GroupRow({ group, onChanged }: { group: RCQGroup; onChanged: () => void
   // opens"). Mirrors ContactRow. Links are siblings, never nested <a>.
   return (
     <li className="relative">
-      <div className={'flex items-center gap-3 px-4 py-3 hover:bg-field transition-colors ' + (isArchived ? 'opacity-60' : '')}>
+      <div className={'flex items-center gap-3 px-4 py-3 lg:py-2 hover:bg-field transition-colors ' + (isArchived ? 'opacity-60' : '')}>
         <Link to={`/chat/g/${group.id}`} className="flex items-center gap-3 flex-1 min-w-0">
           <GroupAvatar size={28} mediaId={group.avatar_media_id} mediaKey={group.avatar_media_key} />
           <div className="flex-1 min-w-0">

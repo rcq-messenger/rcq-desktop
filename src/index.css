@@ -153,6 +153,22 @@ html.dark .rcq-wave {
   backdrop-filter: blur(16px) saturate(150%);
   -webkit-backdrop-filter: blur(16px) saturate(150%);
 }
+/* The little ☺ that opens the reaction picker beside a bubble. It only makes
+   sense where something can hover it, so it used to be gated on `sm:` — width
+   as a stand-in for "this is a desktop". The stand-in is wrong in the one case
+   a desktop user notices: narrow the window on a PC and the button vanishes
+   while the cursor is still right there, reported as "кнопки реакции на пост
+   нету, когда окно узкое". Gate it on the actual capability instead. A touch
+   screen keeps reaching reactions through the message menu, as before. */
+.rcq-hover-only {
+  display: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .rcq-hover-only {
+    display: flex;
+  }
+}
+
 /* An expanded pin hangs OVER the conversation rather than pushing it down, so
    it needs to be readable against whatever happens to be behind it. The bar's
    own 0.72 is right for a strip a few pixels tall with nothing but its own

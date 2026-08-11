@@ -2351,7 +2351,11 @@ function pinPreview(text: string): string {
 function PinnedBanner({ text, group, expanded, onToggle }: { text: string; group: RCQGroup; expanded: boolean; onToggle: () => void }) {
   const { t } = useI18n()
   return (
-    <div className="flex-none bg-field">
+    // Same treatment as the header (see `.rcq-header`): the pin is a bar that
+    // floats over the thread, so it takes the page's own colour at reduced
+    // alpha with a blur behind it. The grey `bg-field` it used to have made it
+    // read as a third surface stacked between the header and the messages.
+    <div className="rcq-floating-bar flex-none">
       <div className="max-w-2xl mx-auto w-full">
         <button
           type="button"

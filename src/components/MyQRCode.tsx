@@ -3,6 +3,7 @@
 // add-contact action for this UIN. Rendered in Settings so someone can
 // scan the web user's code from their phone to add them.
 
+import { AnimatePresence, motion } from 'framer-motion'
 import { useEffect, useState } from 'react'
 import QRCode from 'qrcode'
 import { useIdentity } from '../lib/identity-context'
@@ -15,6 +16,7 @@ export function MyQRCode() {
   const { identity } = useIdentity()
   const { t } = useI18n()
   const [dataUrl, setDataUrl] = useState<string | null>(null)
+  const [zoomed, setZoomed] = useState(false)
 
   useEffect(() => {
     if (!identity) return
@@ -56,15 +58,55 @@ export function MyQRCode() {
 
   return (
     <div className="flex flex-col items-center gap-3">
-      <div className="bg-white p-3 rounded-xl">
+      {/* Tap to enlarge, same gesture and same presentation as the link QR on
+          the login screen: a 176px code is fine to look at and awkward to scan
+          off a screen from arm's length, which is the only reason this code
+          exists. */}
+      <button
+        type="button"
+        onClick={() => dataUrl && setZoomed(true)}
+        disabled={!dataUrl}
+        aria-label={t('settings.qr.zoom')}
+        className="bg-white p-3 rounded-xl transition-transform hover:scale-[1.02] active:scale-[0.99] disabled:cursor-default"
+      >
         {dataUrl ? (
           <img src={dataUrl} alt="QR" width={176} height={176} className="block" draggable={false} />
         ) : (
           <div className="w-44 h-44 animate-pulse bg-gray-200 rounded" />
         )}
-      </div>
+      </button>
       <div className="font-mono text-sm">#{identity.uin}</div>
       <p className="text-xs text-fg-dim text-center max-w-xs">{t('settings.qr.hint')}</p>
+
+      <AnimatePresence>
+        {zoomed && dataUrl && (
+          <motion.div
+            key="qr-zoom"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.16 }}
+            onClick={() => setZoomed(false)}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-md p-6"
+          >
+            <motion.div
+              initial={{ scale: 0.92, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.92, opacity: 0 }}
+              transition={{ duration: 0.18 }}
+              onClick={(e) => e.stopPropagation()}
+              className="rounded-2xl bg-white p-5 shadow-2xl"
+            >
+              <img
+                src={dataUrl}
+                alt="QR"
+                className="w-[min(72vw,340px)] h-[min(72vw,340px)]"
+                draggable={false}
+              />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

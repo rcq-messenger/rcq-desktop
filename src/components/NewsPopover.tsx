@@ -154,14 +154,20 @@ export function NewsButton({ className }: { className?: string }) {
         aria-label={t('news.title')}
         aria-expanded={open}
       >
-        <MegaphoneIcon />
+        <NewspaperIcon />
         {unread > 0 && (
           <span className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full bg-red-500" />
         )}
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-1 w-[min(22rem,calc(100vw-2rem))] max-h-[26rem] overflow-y-auto rounded-lg bg-surface shadow-xl z-30 p-3 space-y-3">
+        // ⚠ The height cap has to be relative to the WINDOW, not a constant.
+        // At 26rem the panel hangs past the bottom of a laptop window (and of
+        // the desktop app's default one): the inner scroll existed, but its
+        // last rows sat below the viewport edge where nothing could reach
+        // them, so an expanded post simply ended mid-sentence. 8rem covers the
+        // header plus the panel's own offset.
+        <div className="absolute right-0 top-full mt-1 w-[min(22rem,calc(100vw-2rem))] max-h-[min(26rem,calc(100vh-8rem))] overflow-y-auto overscroll-contain rounded-lg bg-surface shadow-xl z-30 p-3 space-y-3">
           <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
             {t('news.title')}
           </div>
@@ -185,12 +191,18 @@ export function NewsButton({ className }: { className?: string }) {
   )
 }
 
-function MegaphoneIcon() {
+/// ⚠ Was a megaphone, whose cone plus two arcs is the same shape every OS uses
+/// for VOLUME — next to a theme toggle and a settings gear it read as an audio
+/// control, not as an announcement feed. A newspaper has no such twin in this
+/// header.
+function NewspaperIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z" />
-      <path d="M15.5 8.5a4 4 0 0 1 0 7" />
-      <path d="M18.5 6a7.5 7.5 0 0 1 0 12" />
+      <path d="M4 5h12a1 1 0 0 1 1 1v12a2 2 0 0 0 2 2H6a2 2 0 0 1-2-2V5z" />
+      <path d="M17 9h2a1 1 0 0 1 1 1v8a2 2 0 0 1-2 2" />
+      <line x1="7.5" y1="8.5" x2="13.5" y2="8.5" />
+      <line x1="7.5" y1="12" x2="13.5" y2="12" />
+      <line x1="7.5" y1="15.5" x2="11" y2="15.5" />
     </svg>
   )
 }

@@ -11,6 +11,7 @@ import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
 import { getCrossIsland } from '../lib/crossisland-store'
 import { useContactAliases } from '../lib/local-store'
+import { lookupContactName } from '../lib/contacts-cache'
 import { uploadEncryptedImage } from '../lib/media'
 
 const GENDER_OPTIONS: { value: string; key: string }[] = [
@@ -59,7 +60,25 @@ export function Profile() {
         const data = await Api.userInfo(identity, targetUIN)
         setInfo(data)
       } catch (e) {
-        setError(e instanceof Error ? e.message : t('profile.error'))
+        // Not a contact: the island will not hand out their card, and that used
+        // to end here with a red error and no screen. But the one thing this
+        // page offers for a stranger — MY OWN name for them — is device-local
+        // and needs no card at all, so refusing to draw the page took away a
+        // feature the server was never part of.
+        //
+        // Reported from a group: renaming a member who is not a contact showed
+        // "not in your contacts", and the new name then appeared on replies
+        // anyway, because the rename had in fact been saved. Same confusion in
+        // both directions. So fall back to the little we do know (their name
+        // from the roster we already have cached, otherwise their number) and
+        // let the page work read-only.
+        const cached = lookupContactName(identity.uin, targetUIN)
+        setInfo({
+          uin: targetUIN,
+          nickname: cached || `#${targetUIN}`,
+          status: 'offline',
+        } as UserInfo)
+        if (import.meta.env.DEV) console.warn('profile: no card for', targetUIN, e)
       }
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps

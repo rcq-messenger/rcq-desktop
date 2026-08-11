@@ -29,6 +29,7 @@ import { isTauri } from '../lib/desktop'
 import { bytesToB64, newLinkEphemeral, openLinkSeal, type WebIdentity } from '../lib/crypto'
 import { islandLabel, normaliseIsland, rememberIsland, rememberedIsland } from '../lib/island-choice'
 import { useI18n } from '../lib/i18n-context'
+import { useToast } from '../lib/toast'
 import { useIdentity } from '../lib/identity-context'
 
 export function Login() {
@@ -365,6 +366,7 @@ function LinkPane({ onDone }: { onDone: (id: WebIdentity) => void }) {
 
 function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
   const { t } = useI18n()
+  const { toast } = useToast()
   const [nickname, setNickname] = useState(() => suggestNickname())
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -372,7 +374,6 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
   // mandatory backup card BEFORE entering the app — losing the phrase means
   // losing the account (and the ability to move it to a phone).
   const [pending, setPending] = useState<{ id: WebIdentity; words: string[] } | null>(null)
-  const [copied, setCopied] = useState(false)
 
   async function submit() {
     setError(null)
@@ -401,12 +402,11 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
         <button
           onClick={() => {
             void navigator.clipboard?.writeText(pending.words.join(' ')).catch(() => {})
-            setCopied(true)
-            setTimeout(() => setCopied(false), 1500)
+            toast(t('login.phrase.copied'))
           }}
           className="w-full h-9 rounded-md bg-field hover:bg-line/40 text-sm font-medium transition-colors"
         >
-          {copied ? t('login.phrase.copied') : t('login.phrase.copy')}
+          {t('login.phrase.copy')}
         </button>
         <div className="text-xs text-fg-dim bg-amber-500/10 border border-amber-500/30 rounded-md p-2 leading-relaxed">
           {t('login.phrase.warning')}

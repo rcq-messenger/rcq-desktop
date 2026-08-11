@@ -72,6 +72,7 @@ import { FileBubble } from '../components/FileBubble'
 import { uploadEncryptedImage, uploadEncryptedFile } from '../lib/media'
 import { emoticonAssetURL } from '../lib/emoticons'
 import { useI18n } from '../lib/i18n-context'
+import { useToast } from '../lib/toast'
 import { useIdentity } from '../lib/identity-context'
 import { playSound } from '../lib/sounds'
 import { useCall } from '../lib/call'
@@ -109,6 +110,7 @@ const _groupCache = new Map<number, RCQGroup>()
 export function Chat() {
   const { identity } = useIdentity()
   const { t } = useI18n()
+  const { toast } = useToast()
   const call = useCall()
   const navigate = useNavigate()
   const params = useParams<{ uin?: string; groupId?: string }>()
@@ -199,7 +201,6 @@ export function Chat() {
   const [matchIdx, setMatchIdx] = useState(0)
   // The own message currently being edited (composer is in edit mode), or null.
   const [editingRow, setEditingRow] = useState<OutgoingRow | null>(null)
-  const [transientNotice, setTransientNotice] = useState<string | null>(null)
   const [pinExpanded, setPinExpanded] = useState(false)
   // Decrypted incoming messages, fed by the app-wide MessageReceiver (ws +
   // offline-queue → libsignal decrypt). 1:1 keyed by peer, group by group_id.
@@ -466,11 +467,6 @@ export function Chat() {
 
   // Auto-clear the transient notice (forward toast) after a moment
   // so it doesn't linger on the screen.
-  useEffect(() => {
-    if (!transientNotice) return
-    const handle = setTimeout(() => setTransientNotice(null), 2200)
-    return () => clearTimeout(handle)
-  }, [transientNotice])
 
   if (!identity) {
     navigate('/', { replace: true })
@@ -698,7 +694,7 @@ export function Chat() {
     setOutgoing((rows) => rows.map((r) => (r.id === target.id ? { ...r, text: trimmed, edited: true } : r)))
     const env: EditEnvelope = { kind: 'edit', targetID: target.id, text: trimmed }
     const res = await shipEnvelopeToCurrentThread(env)
-    if (!res.ok) setTransientNotice(t('chat.error.send_failed'))
+    if (!res.ok) toast(t('chat.error.send_failed'), 'error')
   }
 
   /// Delete one of MY messages for everyone: send a `delete` envelope, remove
@@ -712,7 +708,7 @@ export function Chat() {
     setOutgoing((rows) => rows.filter((r) => r.id !== row.id))
     const env: DeleteEnvelope = { kind: 'delete', targetID: row.id }
     const res = await shipEnvelopeToCurrentThread(env)
-    if (!res.ok) setTransientNotice(t('chat.error.send_failed'))
+    if (!res.ok) toast(t('chat.error.send_failed'), 'error')
   }
 
   async function send() {
@@ -754,7 +750,7 @@ export function Chat() {
       await Api.blockContact(identity, peer.uin, false)
       setPeer({ ...peer, blocked: false })
     } catch (e) {
-      setTransientNotice(e instanceof Error ? e.message : t('chat.error.send_failed'))
+      toast(e instanceof Error ? e.message : t('chat.error.send_failed'), 'error')
     }
   }
 
@@ -768,7 +764,7 @@ export function Chat() {
     try {
       const up = await uploadEncryptedImage(identity.apiBase, file, isGroup ? gctx?.host ?? undefined : peer?.host)
       if (!up) {
-        setTransientNotice(t('chat.error.upload_failed'))
+        toast(t('chat.error.upload_failed'), 'error')
         return
       }
       // Whatever is already typed becomes the caption, the way every web
@@ -805,7 +801,7 @@ export function Chat() {
     if (!identity) return
     setAttachMenuOpen(false)
     if (!navigator.geolocation) {
-      setTransientNotice(t('chat.error.no_geolocation'))
+      toast(t('chat.error.no_geolocation'), 'error')
       return
     }
     const pos = await new Promise<GeolocationPosition | null>((resolve) => {
@@ -816,7 +812,7 @@ export function Chat() {
       )
     })
     if (!pos) {
-      setTransientNotice(t('chat.error.no_location'))
+      toast(t('chat.error.no_location'), 'error')
       return
     }
     const caption = input.trim()
@@ -843,14 +839,14 @@ export function Chat() {
   async function sendFile(file: File) {
     if (!identity || uploadingFile) return
     if (file.size > MAX_FILE_BYTES) {
-      setTransientNotice(t('chat.error.file_too_large', { mb: Math.round(MAX_FILE_BYTES / (1024 * 1024)) }))
+      toast(t('chat.error.file_too_large', { mb: Math.round(MAX_FILE_BYTES / (1024 * 1024)) }), 'error')
       return
     }
     setUploadingFile(true)
     try {
       const up = await uploadEncryptedFile(identity.apiBase, file, isGroup ? gctx?.host ?? undefined : peer?.host)
       if (!up) {
-        setTransientNotice(t('chat.error.file_upload_failed'))
+        toast(t('chat.error.file_upload_failed'), 'error')
         return
       }
       const row: OutgoingRow = {
@@ -914,7 +910,7 @@ export function Chat() {
     const res = await shipEnvelopeToCurrentThread(env)
     if (!res.ok) {
       applyReaction(targetId, myUin, current)
-      setTransientNotice(res.error)
+      toast(res.error, 'error')
       return
     }
     // Echo to your OWN other devices (linked phone / second browser): seal the
@@ -974,7 +970,7 @@ export function Chat() {
   function startCall(media: 'audio' | 'video') {
     if (!peer) return
     if (!call.callable) {
-      setTransientNotice(t('call.offline'))
+      toast(t('call.offline'), 'error')
       return
     }
     call.start(peer.uin, peer.nickname ?? `#${peer.uin}`, media)
@@ -990,7 +986,7 @@ export function Chat() {
   function jumpToMessage(id: string) {
     const el = document.getElementById(`msg-${id}`)
     if (!el) {
-      setTransientNotice(t('chat.reply.not_loaded'))
+      toast(t('chat.reply.not_loaded'), 'error')
       return
     }
     el.scrollIntoView({ behavior: 'smooth', block: 'center' })
@@ -1002,8 +998,7 @@ export function Chat() {
   function copyText(text: string) {
     void navigator.clipboard?.writeText(text).catch(() => {})
     setActionsForRowId(null)
-    setTransientNotice(t('chat.copied'))
-    setTimeout(() => setTransientNotice(null), 1200)
+    toast(t('chat.copied'))
   }
 
   /// Owner / info-moderator may pin a chat message into the group's single
@@ -1114,9 +1109,9 @@ export function Chat() {
       playSound('message_sent')
       setForwardingRow(null)
       setActionsForRowId(null)
-      setTransientNotice(`${t('chat.forward.sent')}: ${target.name}`)
+      toast(`${t('chat.forward.sent')}: ${target.name}`)
     } catch (e) {
-      setTransientNotice(e instanceof Error ? e.message : t('chat.error.send_failed'))
+      toast(e instanceof Error ? e.message : t('chat.error.send_failed'), 'error')
     }
   }
 
@@ -1423,7 +1418,11 @@ export function Chat() {
       </header>
 
       {searchOpen && (
-        <div className="flex-none bg-surface px-4 py-2 flex items-center gap-2 max-w-2xl w-full mx-auto">
+        /* Same floating treatment as the header and the pin: the search strip
+           sits over the thread, and as a flat `bg-surface` fill it read as a
+           grey slab wedged between them, the one bar in the column that did not
+           belong to the theme. */
+        <div className="rcq-floating-bar flex-none px-4 py-2 flex items-center gap-2 max-w-2xl w-full mx-auto">
           <input
             autoFocus
             value={query}
@@ -1468,26 +1467,6 @@ export function Chat() {
         />
       )}
 
-      {transientNotice && (
-        // ⚠ This used to be `bg-ink-black/85 text-white` stretched across the
-        // full column. Two problems, both visible only in one theme: the
-        // `--c-ink-black` token is 240 240 240 in DARK mode (it is named for
-        // the class, not the colour), so white text sat on a near-white bar and
-        // could not be read; and a full-width bar for two words reads as an
-        // error banner rather than a confirmation. Now it is a pill that hugs
-        // its text, coloured by inverting the page's own tokens so it has
-        // contrast in both themes, and it fades in instead of appearing.
-        <div className="sticky top-14 z-10 mx-auto max-w-2xl w-full px-4 pt-2 flex justify-center pointer-events-none">
-          <motion.div
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.16, ease: 'easeOut' }}
-            className="rounded-full bg-fg-primary/90 text-surface-dim text-xs font-medium px-3.5 py-1.5 shadow-lg"
-          >
-            {transientNotice}
-          </motion.div>
-        </div>
-      )}
 
       <main
         ref={scrollRef}
@@ -1990,11 +1969,14 @@ export function Chat() {
         </div>
       )}
 
-      {/* Composer: the bar has NO background (floats on the page); the
-          input is a bordered round pill, side buttons are round, and the
-          emoji panel is a floating overlay ABOVE the composer — it does
-          not push the input down or the messages up. */}
-      <div className="flex-none pb-[env(safe-area-inset-bottom)]">
+      {/* Composer: the input is a bordered round pill, side buttons are round,
+          and the emoji panel is a floating overlay ABOVE the composer — it does
+          not push the input down or the messages up.
+          The bar itself carries the same translucent blur as the header: the
+          thread scrolls UNDER it, and with no background at all the last bubble
+          slid beneath the pill and stayed legible through it, which read as a
+          rendering fault rather than as depth. */}
+      <div className="rcq-floating-bar flex-none pb-[env(safe-area-inset-bottom)]">
         <div className="relative max-w-lg mx-auto px-3 py-3">
           {/* Everything that floats above the composer lives in ONE stack: the
               emoji panel on top, the reply/edit strip under it, both over the
@@ -2368,8 +2350,8 @@ function PinnedBanner({ text, group, expanded, onToggle }: { text: string; group
     // floats over the thread, so it takes the page's own colour at reduced
     // alpha with a blur behind it. The grey `bg-field` it used to have made it
     // read as a third surface stacked between the header and the messages.
-    <div className="rcq-floating-bar flex-none">
-      <div className="max-w-2xl mx-auto w-full">
+    <div className="rcq-floating-bar flex-none relative z-20">
+      <div className="max-w-2xl mx-auto w-full relative">
         <button
           type="button"
           onClick={onToggle}
@@ -2385,7 +2367,14 @@ function PinnedBanner({ text, group, expanded, onToggle }: { text: string; group
         </button>
         {/* Smooth expand/collapse (#pin-animate). overflow-hidden clips the
             height tween; the inner box keeps its own scroll + bottom padding so
-            the last group card never touches the edge (#pin-card-padding). */}
+            the last group card never touches the edge (#pin-card-padding).
+
+            Absolute, hanging off the bottom of the bar rather than sitting in
+            the column: expanding used to add height to a flex-none row, which
+            pushed the whole thread down and shoved the messages you were
+            reading off the screen. Opening a pin is a glance, not a
+            re-layout, so it now unfolds OVER the conversation and carries the
+            bar's own blur so the thread stays visible behind it. */}
         <AnimatePresence initial={false}>
           {expanded && (
             <motion.div
@@ -2394,7 +2383,7 @@ function PinnedBanner({ text, group, expanded, onToggle }: { text: string; group
               animate={{ height: 'auto', opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
               transition={{ duration: 0.22, ease: 'easeOut' }}
-              className="overflow-hidden"
+              className="rcq-floating-panel absolute left-0 right-0 top-full overflow-hidden shadow-lg shadow-black/5"
             >
               <div className="px-4 pt-1 pb-3 max-h-96 overflow-y-auto text-[13px] text-fg-secondary">
                 <PinnedRichText text={text} group={group} />

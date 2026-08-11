@@ -137,7 +137,32 @@ html.dark .rcq-wave {
    gone, it moved: it is now what a header control lights up with under the
    pointer, so the panel colour appears where something is actually happening. */
 .rcq-header {
-  background-color: rgb(var(--c-surface-dim));
+  /* Translucent + blurred rather than a flat fill: the header is sticky, so
+     content scrolls UNDER it, and a solid block makes that content vanish at a
+     hard edge. Blurred, the page stays visible as it passes behind, which is
+     what tells the eye the header is floating above the list rather than
+     cropping it. The alpha is high enough that text over a busy avatar row
+     stays readable. */
+  background-color: rgb(var(--c-surface-dim) / 0.72);
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+}
+/* The group's pinned bar gets the same treatment for the same reason: it is a
+   strip that floats over the thread, and as flat grey it read as a third
+   surface wedged between the header and the messages. */
+.rcq-floating-bar {
+  background-color: rgb(var(--c-surface-dim) / 0.72);
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+}
+/* Safari on iOS and older WebKit ignore backdrop-filter inside some stacking
+   contexts; without this these bars would be a translucent smear over the
+   content. Fall back to the opaque fill they had before. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .rcq-header,
+  .rcq-floating-bar {
+    background-color: rgb(var(--c-surface-dim));
+  }
 }
 /* Every icon control in a header: the buttons, and the links that are icons
    (they all carry an aria-label, the name link next to the avatar does not, so

@@ -15,9 +15,11 @@ import { Logo } from '../components/Logo'
 import {
   DEFAULT_API_BASE,
   RecoverError,
+  activateStoredIdentity,
   adoptLinkBlob,
   createNewAccount,
   currentRecoveryPhrase,
+  listStoredIdentities,
   parseLinkBlob,
   recoverFromPhrase,
   suggestNickname,
@@ -33,6 +35,14 @@ export function Login() {
   const { setIdentity } = useIdentity()
   const navigate = useNavigate()
   const { t } = useI18n()
+
+  // "Add account" in Settings clears the ACTIVE slot and lands here, with the
+  // other accounts still in the roster. Until this existed there was no way
+  // back: the only exits from this screen were creating or linking an account,
+  // so a mistap forced you to make one. Any stored identity means we got here
+  // from a signed-in session, so offer to go back to it.
+  const [stored] = useState(() => listStoredIdentities())
+  const resume = stored[0]
 
   return (
     <div className="relative min-h-screen flex items-center justify-center bg-surface-dim px-4 py-6">
@@ -59,6 +69,18 @@ export function Login() {
               navigate(defaultHome(), { replace: true })
             }}
           />
+
+          {resume && (
+            <button
+              type="button"
+              onClick={() => {
+                if (activateStoredIdentity(resume.uin)) window.location.assign('/')
+              }}
+              className="w-full text-center text-sm text-fg-secondary hover:text-fg-primary transition-colors"
+            >
+              {t('login.cancel_add').replace('{nick}', `#${resume.uin}`)}
+            </button>
+          )}
         </div>
       </div>
     </div>

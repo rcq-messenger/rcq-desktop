@@ -15,6 +15,7 @@ import { CreateGroupSheet } from '../components/CreateGroupSheet'
 import { GroupAvatar } from '../components/GroupAvatar'
 import { NewsButton } from '../components/NewsPopover'
 import { PersonAvatar } from '../components/PersonAvatar'
+import { StatusIcon } from '../components/StatusIcon'
 import { StatusPickerButton } from '../components/StatusPicker'
 import { ThemeToggle } from '../components/ThemeToggle'
 import {
@@ -430,7 +431,13 @@ export function Contacts() {
                   to={`/chat/${ci.uin}?i=${encodeURIComponent(ci.host)}`}
                   className="flex items-center gap-3 px-4 py-3"
                 >
-                  <span className="text-fg-dim text-lg flex-none">🌐</span>
+                  {/* The same greyed flower every other cross-island row uses
+                      (StatusIcon's `crossIsland`), not a globe emoji: presence
+                      does not cross islands, so the icon says "person, status
+                      unknown" exactly like it does further down the list. */}
+                  <span className="flex-none">
+                    <StatusIcon status="offline" size={20} crossIsland />
+                  </span>
                   <div className="flex-1 min-w-0">
                     <div className="truncate font-medium">{ci.nickname || `${ci.uin}@${ci.host}`}</div>
                     <div className="text-xs text-fg-dim font-mono truncate">

@@ -19,6 +19,7 @@ export const ru: Record<string, string> = {
 
   // Login
   'login.tagline': 'Та же душа, современная криптография.',
+  'login.cancel_add': 'Отмена, вернуться в {nick}',
   'login.mode.create': 'Новый аккаунт',
   'login.mode.recover': 'Восстановить',
   'login.mode.link': 'Телефон',
@@ -197,6 +198,7 @@ export const ru: Record<string, string> = {
     'Переводы добавляются постепенно — недостающие строки временно отображаются на английском.',
   'settings.section.qr': 'Мой QR-код',
   'settings.qr.hint': 'Отсканируйте его из приложения RCQ на телефоне, чтобы добавить вас в контакты.',
+  'settings.qr.zoom': 'Увеличить QR-код',
   'settings.section.hof': 'Зал славы',
   'settings.hof.toggle': 'Показывать меня в зале славы',
   'settings.hof.add_image': 'Добавить картинку / GIF',

@@ -19,6 +19,7 @@ export const en: Record<string, string> = {
 
   // Login — two-mode entry surface
   'login.tagline': 'Same soul, modern crypto.',
+  'login.cancel_add': 'Cancel, back to {nick}',
   'login.mode.create': 'New account',
   'login.mode.recover': 'Recover',
   'login.mode.link': 'Connect phone',
@@ -198,6 +199,7 @@ export const en: Record<string, string> = {
     'Translations roll out incrementally — missing strings fall back to English.',
   'settings.section.qr': 'My QR code',
   'settings.qr.hint': 'Scan this from the RCQ app on a phone to add you as a contact.',
+  'settings.qr.zoom': 'Enlarge QR code',
   'settings.section.hof': 'Hall of Fame',
   'settings.hof.toggle': 'Show me in the Hall of Fame',
   'settings.hof.add_image': 'Add image / GIF',

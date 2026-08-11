@@ -1,0 +1,13 @@
+Звонки снова соединяются в сетях, где сервер ретрансляции недоступен. В прошлой версии звонок шёл только через ретранслятор, чтобы собеседник не видел ваш адрес, но включалось это по факту выданных ключей, а не по тому, отвечает ли сам сервер. Там, где он недоступен, у соединения не оставалось ни одного пути и вызов обрывался по тайм-ауту. Теперь доступность проверяется один раз за сеанс: ретранслятор отвечает, значит адрес по-прежнему скрыт, не отвечает, значит звонок соединяется как раньше.
+
+Обновление больше не срывается, когда две версии выходят одна за другой. Раньше описание обновления ссылалось на файлы с постоянными именами, и следующий выпуск подменял байты под уже скачанным описанием, так что проверка подписи не сходилась. Теперь ссылки привязаны к версии.
+
+И если установка всё же не удалась, приложение пишет, что именно произошло. Раньше любая ошибка показывалась как «не удалось проверить обновление», и человек шёл разбираться со своей сетью вместо настоящей причины.
+
+---
+
+Calls connect again on networks where the relay server cannot be reached. The previous version routed every call through the relay so the other side never sees your address, but it decided that from the credentials being issued, not from the server answering. Where it does not answer, the connection was left with no path at all and the call died on the timeout. Reachability is now measured once per session: if the relay answers your address stays hidden, and if it does not the call connects the way it used to.
+
+Updates no longer break when two versions ship close together. The update manifest used to point at files with stable names, so the next release replaced the bytes underneath a manifest that had already been downloaded and the signature check failed. The links are pinned to a version now.
+
+And if an install does fail, the app says what actually happened. Every error used to be reported as "could not check for updates", which sent people to look at their network instead of the real cause.

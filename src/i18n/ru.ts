@@ -292,6 +292,7 @@ export const ru: Record<string, string> = {
   'settings.about.update_checking': 'Проверяем…',
   'settings.about.update_current': 'У вас последняя версия.',
   'settings.about.update_failed': 'Не удалось проверить обновления. Попробуйте позже.',
+  'settings.about.update_install_failed': 'Не удалось установить обновление. Скачайте новую версию с rcq.app.',
   'settings.section.session': 'Сессия',
   'settings.session.unlink': 'Выйти',
   'settings.session.unlink_footer':

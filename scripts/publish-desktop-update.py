@@ -162,13 +162,39 @@ def verify(data: bytes, signature: str) -> bool:
     return True
 
 
+def versioned_name(name: str, version: str) -> str:
+    """`RCQ.app.tar.gz` + 0.3.3 -> `RCQ-0.3.3.app.tar.gz`.
+
+    Splits on the FIRST dot so multi-part suffixes (.app.tar.gz, .AppImage.tar.gz)
+    survive intact.
+    """
+    stem, dot, ext = name.partition(".")
+    return f"{stem}-{version}{dot}{ext}" if dot else f"{name}-{version}"
+
+
 def manifest(work, version, notes, pub_date):
     platforms = {}
     for target, name in PLATFORMS.items():
         signature = (work / f"{name}.sig").read_text().strip()
         if not verify((work / name).read_bytes(), signature):
             die(f"{name}: signature does not verify against {PUBKEY.name}")
-        platforms[target] = {"signature": signature, "url": f"{BASE_URL}/{name}"}
+        # ⚠ The manifest points at a VERSIONED copy, never at the stable name.
+        #
+        # Every hosted artefact has a stable filename (RCQ.app.tar.gz), and the
+        # signature in the manifest is over its CONTENT. Publish twice in one
+        # session and the second upload replaces the bytes the first manifest
+        # was signed for: a client that fetched the older manifest, then
+        # downloads, gets a file whose signature does not verify and reports
+        # "could not check for updates". That is exactly what happened between
+        # 0.3.2 and 0.3.3 on 2026-08-11 — 45 minutes apart, same filename.
+        #
+        # A versioned URL pins each manifest to the bytes it was signed for, so
+        # an old manifest keeps working until its client restarts and sees the
+        # new one. The stable names stay on disk: the SITE links to those.
+        platforms[target] = {
+            "signature": signature,
+            "url": f"{BASE_URL}/{versioned_name(name, version)}",
+        }
         print(f"  ok {target:24s} {name}")
     return {
         "version": version,
@@ -198,6 +224,18 @@ def upload(work, version, names):
          f"{HOST}:{REMOTE}/"],
         check=True,
     )
+    # A second copy under the versioned name the manifest actually points at.
+    # Cheap in disk (these are the same bytes as the stable name) and it is what
+    # keeps an in-flight updater from downloading a different build than the one
+    # its manifest was signed for.
+    subprocess.run(
+        ["ssh", HOST,
+         f"cd {REMOTE} && " + " && ".join(
+             f"cp -a '{n}' '{versioned_name(n, version)}'" for n in names
+         )],
+        check=True,
+    )
+    print(f"  pinned copies: {', '.join(versioned_name(n, version) for n in names)}")
     subprocess.run(
         ["ssh", HOST, f"cd {REMOTE} && chown www-data:www-data * && chmod 644 *"],
         check=True,

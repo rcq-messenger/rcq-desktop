@@ -197,8 +197,14 @@ export function Settings() {
     setUpdateNote(null)
     const outcome = await checkForUpdatesNow(t)
     setUpdateBusy(false)
-    if (outcome === 'current') setUpdateNote(t('settings.about.update_current'))
-    else if (outcome === 'failed') setUpdateNote(t('settings.about.update_failed'))
+    if (outcome.kind === 'current') setUpdateNote(t('settings.about.update_current'))
+    // The reason is appended verbatim. It is not pretty, and it is the only
+    // thing that turns "it didn't work" into a report anybody can act on.
+    else if (outcome.kind === 'failed') {
+      setUpdateNote(`${t('settings.about.update_failed')} ${outcome.reason}`.trim())
+    } else if (outcome.kind === 'install_failed') {
+      setUpdateNote(`${t('settings.about.update_install_failed')} ${outcome.reason}`.trim())
+    }
   }
 
   if (!identity) {

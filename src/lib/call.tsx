@@ -137,6 +137,46 @@ interface Live {
   accepting: boolean
 }
 
+/// Can this network actually get a relay candidate? Measured once per session
+/// on a throwaway connection with no media: cheap, and the alternative is
+/// guessing from the presence of credentials, which says nothing about
+/// reachability.
+let relayProbe: Promise<boolean> | null = null
+
+function relayReachable(servers: RTCIceServer[]): Promise<boolean> {
+  if (!servers.some((s) => 'username' in s && !!s.username)) return Promise.resolve(false)
+  if (relayProbe) return relayProbe
+  relayProbe = new Promise<boolean>((resolve) => {
+    let pc: RTCPeerConnection | null = null
+    let done = false
+    const finish = (ok: boolean) => {
+      if (done) return
+      done = true
+      try {
+        pc?.close()
+      } catch {
+        /* already gone */
+      }
+      resolve(ok)
+    }
+    try {
+      pc = new RTCPeerConnection({ iceServers: servers, iceTransportPolicy: 'relay' })
+      pc.onicecandidate = (ev) => {
+        if (!ev.candidate) return finish(false) // gathering finished, nothing relayed
+        if (ev.candidate.candidate.includes(' typ relay')) finish(true)
+      }
+      pc.createDataChannel('relay-probe')
+      void pc.createOffer().then((o) => pc?.setLocalDescription(o)).catch(() => finish(false))
+    } catch {
+      finish(false)
+    }
+    // Long enough for an allocation on a slow link, short enough not to hold a
+    // call the user is placing right now.
+    setTimeout(() => finish(false), 4000)
+  })
+  return relayProbe
+}
+
 export function CallProvider({ children }: { children: ReactNode }) {
   const { identity } = useIdentity()
   const { t } = useI18n()
@@ -319,10 +359,13 @@ export function CallProvider({ children }: { children: ReactNode }) {
       // else. Media transits our box now, which costs bandwidth and a little
       // latency, and that is the trade.
       //
-      // Only when a TURN server actually came back: under `relay` with none
-      // there are no candidates at all and the call silently never connects.
-      // `iceServers()` above already retries and falls through to STUN-only.
-      const haveTurn = servers.some((s) => 'username' in s && !!s.username)
+      // ⚠⚠ But relay-only is only safe to demand when a relay candidate can
+      // actually be obtained HERE. Android shipped this keyed on "credentials
+      // exist" and three people reported calls ringing and then dying on the
+      // timeout, on networks that cannot reach TURN: under `relay` with no
+      // reachable server there are no candidates at all. So measure it, once,
+      // and cache the answer for this session.
+      const haveTurn = await relayReachable(servers)
       const pc = new RTCPeerConnection({
         iceServers: servers,
         ...(haveTurn ? { iceTransportPolicy: 'relay' as const } : {}),

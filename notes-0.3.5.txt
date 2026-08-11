@@ -1,0 +1,29 @@
+Панель ввода и строка поиска больше не выглядят вырезанными из другого приложения: у них тот же полупрозрачный фон с размытием, что и у шапки, и переписка проходит под ними, а не упирается в серую плашку.
+
+Закреплённое сообщение раскрывается поверх переписки. Раньше оно раздвигало окно и уводило вниз то, что вы читали.
+
+Светлая тема стала теплее. Чистый белый на ярком экране светится и делает соседние серые синеватыми, поэтому фон теперь ближе к бумаге.
+
+Все короткие уведомления собраны в одном месте внизу экрана и появляются плавно: «скопировано», результат сохранения копии переписки, ошибки. Раньше это были четыре разных способа в четырёх местах, включая кнопку, которая переименовывала сама себя.
+
+Профиль человека, которого нет в ваших контактах, теперь открывается. Остров не отдаёт его карточку, и страница останавливалась на ошибке, хотя своё имя для него вы задать можете: оно хранится только на вашем устройстве. Из-за этого переименование участника группы показывало ошибку, а имя всё равно менялось.
+
+Кнопка реакции рядом с сообщением больше не пропадает, когда окно узкое. Она показывается там, где есть курсор, а не там, где окно шире определённой ширины.
+
+Строки в списке чатов стали компактнее на широком окне.
+
+---
+
+The composer and the search strip no longer look like they came from another app: they carry the same translucent blur as the header, and the conversation passes under them instead of stopping at a grey slab.
+
+A pinned message now unfolds over the conversation. It used to push the thread down and take what you were reading off the screen.
+
+The light theme is warmer. Pure white glares on a bright screen and makes the greys next to it look blue, so the background is closer to paper now.
+
+Every short notice appears in one place at the bottom of the screen, with a fade: "copied", the result of saving a backup, errors. These used to be four different idioms in four places, including a button that renamed itself.
+
+The profile of someone who is not in your contacts now opens. The island will not hand out their card and the page stopped at an error, even though the name you give them is yours alone and lives only on your device. That is also why renaming a group member showed an error while the name changed anyway.
+
+The reaction button beside a message no longer disappears when the window is narrow. It appears where there is a cursor, rather than where the window is wide enough.
+
+Rows in the chat list are tighter in a wide window.

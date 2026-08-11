@@ -411,6 +411,38 @@ export function activateStoredIdentity(uin: number): boolean {
 /// are scoped by uin, so they harm nobody by staying, and a sign-out that also
 /// destroys history is a thing people do by accident. Wiping everything is
 /// still what the full sign-out does.
+/// UINs whose session this browser knows is dead: the phone unlinked this
+/// device, or the token expired. Kept OUT of the per-account scope on purpose —
+/// it is a fact about this browser's copy of an account, and the account it
+/// describes is exactly the one we can no longer authenticate as.
+///
+/// ⚠ The row is NOT deleted when this happens. A stored identity carries the
+/// account's private keys, and for a web-native account this browser may be
+/// the only place they exist: dropping it because a token died would destroy
+/// the account for anyone who never wrote down their recovery phrase. So the
+/// row stays, marked, and the user decides.
+const REVOKED_KEY = 'rcq.web.revoked.v1'
+
+export function markSessionRevoked(uin: number): void {
+  const list = revokedAccounts()
+  if (list.includes(uin)) return
+  localStorage.setItem(REVOKED_KEY, JSON.stringify([...list, uin]))
+}
+
+export function revokedAccounts(): number[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(REVOKED_KEY) || '[]')
+    return Array.isArray(raw) ? raw.filter((n) => typeof n === 'number') : []
+  } catch {
+    return []
+  }
+}
+
+export function clearSessionRevoked(uin: number): void {
+  const list = revokedAccounts().filter((n) => n !== uin)
+  localStorage.setItem(REVOKED_KEY, JSON.stringify(list))
+}
+
 export function removeStoredIdentity(uin: number): WebIdentity | null {
   const list = readAccounts().filter((a) => a.uin !== uin)
   writeAccounts(list)

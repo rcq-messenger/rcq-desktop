@@ -10,8 +10,10 @@ import {
   adoptMigratedUin,
   claimInstallToken,
   clearIdentity,
+  clearSessionRevoked,
   listStoredIdentities,
   loadStoredIdentity,
+  markSessionRevoked,
   persistIdentity,
   removeStoredIdentity,
   wipeLocalAccountData,
@@ -122,6 +124,11 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     setUnauthorizedHandler(() => {
       if (migrating.current) return
+      // Mark before clearing: once the identity is gone we no longer know
+      // which account died, and the Settings list would show a row that
+      // silently bounces to login every time it is tapped ("зайти не даёт").
+      const dying = loadStoredIdentity()
+      if (dying) markSessionRevoked(dying.uin)
       clearIdentity()
       setIdentity(null)
     })
@@ -152,7 +159,14 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
         const leaving = accounts.find((a) => a.uin === uin)
         if (leaving) void Api.unlinkSelf(leaving).catch(() => {})
         removeStoredIdentity(uin)
-        window.location.assign('/')
+        clearSessionRevoked(uin)
+        // Stay on the page the removal was made from. This used to send
+        // everyone to the chat list, which is jarring when the button that
+        // did it lives in Settings and the next thing you want is the row
+        // below it. If nothing is left to be signed in as, login is the only
+        // honest destination.
+        const remaining = listStoredIdentities()
+        window.location.assign(remaining.length ? window.location.pathname : '/')
       },
       // Sign-out / unlink: wipe ALL account-scoped local data (identity,
       // per-thread message logs, contacts state, device keys + decrypted

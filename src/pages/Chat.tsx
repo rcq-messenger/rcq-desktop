@@ -1469,10 +1469,23 @@ export function Chat() {
       )}
 
       {transientNotice && (
-        <div className="sticky top-14 z-10 mx-auto max-w-2xl w-full px-4 pt-2">
-          <div className="rounded-md bg-ink-black/85 text-white text-xs px-3 py-2 text-center">
+        // ⚠ This used to be `bg-ink-black/85 text-white` stretched across the
+        // full column. Two problems, both visible only in one theme: the
+        // `--c-ink-black` token is 240 240 240 in DARK mode (it is named for
+        // the class, not the colour), so white text sat on a near-white bar and
+        // could not be read; and a full-width bar for two words reads as an
+        // error banner rather than a confirmation. Now it is a pill that hugs
+        // its text, coloured by inverting the page's own tokens so it has
+        // contrast in both themes, and it fades in instead of appearing.
+        <div className="sticky top-14 z-10 mx-auto max-w-2xl w-full px-4 pt-2 flex justify-center pointer-events-none">
+          <motion.div
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.16, ease: 'easeOut' }}
+            className="rounded-full bg-fg-primary/90 text-surface-dim text-xs font-medium px-3.5 py-1.5 shadow-lg"
+          >
             {transientNotice}
-          </div>
+          </motion.div>
         </div>
       )}
 

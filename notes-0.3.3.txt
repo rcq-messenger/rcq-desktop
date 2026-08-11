@@ -1,0 +1,17 @@
+Контакты и заявки с других островов больше не переходят между аккаунтами в одном браузере. Раньше они хранились общими для всех аккаунтов, поэтому после отвязки и создания нового аккаунта в нём оказывался чужой контакт. Старые общие записи удаляются при первом запуске, так что межостровные контакты придётся добавить заново.
+
+Если сессия завершена с телефона, аккаунт в списке теперь так и подписан, и его можно убрать, даже когда он остался единственным. Раньше он молча выкидывал на экран входа.
+
+Удаление аккаунта из списка больше не уводит на список чатов, вы остаётесь в настройках.
+
+Уведомление «Скопировано» стало компактным и читается в обеих темах: раньше в тёмной теме белый текст оказывался на почти белой полосе.
+
+---
+
+Cross-island contacts and message requests no longer carry over between accounts in the same browser. They used to be stored globally, so unlinking and creating a new account left a stranger in the new roster. The old shared records are deleted on first launch, so cross-island contacts have to be added again.
+
+When a session has been ended from the phone, the account row now says so and can be removed even if it is the only one left. It used to bounce to the login screen with no explanation.
+
+Removing an account no longer throws you back to the chat list, you stay in Settings.
+
+The "Copied" notice is compact and readable in both themes: in dark mode its white text used to sit on a near-white bar.

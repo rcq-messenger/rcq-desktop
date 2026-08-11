@@ -13,3 +13,6 @@ src-tauri/binaries/
 crypto-wasm-spike/
 .mh-test/
 .claude/
+
+# Python bytecode from scripts/
+__pycache__/

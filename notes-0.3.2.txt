@@ -1,0 +1,17 @@
+Новости теперь помещаются в окно: раньше панель обрывалась за нижним краем, и конец длинного поста было не прочитать. Значок новостей больше не путается с громкостью.
+
+Шапка и закреплённое сообщение в группах стали полупрозрачными с размытием, вместо сплошной серой полосы.
+
+QR-код в настройках открывается крупно по нажатию, чтобы его можно было отсканировать с экрана.
+
+Если нажать «Добавить аккаунт» и передумать, теперь можно вернуться назад, а не создавать новый.
+
+---
+
+News now fits the window: the panel used to run past the bottom edge, so the end of a long post was unreachable. The news icon no longer looks like a volume control.
+
+The header and a group's pinned message are translucent and blurred instead of a flat grey bar.
+
+The QR code in Settings opens enlarged when tapped, so it can be scanned off the screen.
+
+If you tap "Add account" and change your mind, you can now go back instead of having to create one.

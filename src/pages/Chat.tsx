@@ -1667,7 +1667,7 @@ export function Chat() {
                       onClick={() => setReactionForRowId((id) => (id === m.id ? null : m.id))}
                       aria-label={t('chat.actions.react')}
                       title={t('chat.actions.react')}
-                      className="self-center ml-1 h-7 w-7 rounded-full bg-surface text-fg-dim opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity flex-none hidden sm:flex items-center justify-center"
+                      className="self-center ml-1 h-7 w-7 rounded-full bg-surface text-fg-dim opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity flex-none rcq-hover-only items-center justify-center"
                     >
                       ☺
                     </button>
@@ -1936,7 +1936,7 @@ export function Chat() {
                   onClick={() => setReactionForRowId((id) => (id === row.id ? null : row.id))}
                   aria-label={t('chat.actions.react')}
                   title={t('chat.actions.react')}
-                  className="self-center mr-1 order-first h-7 w-7 rounded-full bg-surface text-fg-dim opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity flex-none hidden sm:flex items-center justify-center"
+                  className="self-center mr-1 order-first h-7 w-7 rounded-full bg-surface text-fg-dim opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity flex-none rcq-hover-only items-center justify-center"
                 >
                   ☺
                 </button>

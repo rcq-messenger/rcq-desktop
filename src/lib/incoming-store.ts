@@ -128,6 +128,27 @@ function rowFromEnvelope(from: number, env: Envelope): IncomingRow | null {
 const byPeer = new Map<number, IncomingRow[]>() // 1:1, keyed by peer UIN
 const byGroup = new Map<number, IncomingRow[]>() // groups, keyed by group_id
 const seen = new Set<string>() // dedupe (queue + ws can double-deliver)
+
+/// Envelope ids this device itself put on the wire. Saved Messages ("Заметки")
+/// is a thread whose peer is your own number, so a note now goes through the
+/// same sealed path as any message — that is the only way the other devices on
+/// the account ever see it — and comes straight back to the sender as an
+/// ordinary incoming envelope. The optimistic row is already on screen, so the
+/// echo has to be dropped here; a note written on ANOTHER device is not in this
+/// set and shows normally, which is the whole point of the change.
+const ownEnvelopes = new Set<string>()
+
+export function noteOwnEnvelope(id: string): void {
+  ownEnvelopes.add(id)
+  // Unbounded growth is not a risk worth code, but a very long session with
+  // thousands of sends should not hold every id forever either.
+  if (ownEnvelopes.size > 5000) {
+    for (const v of ownEnvelopes) {
+      ownEnvelopes.delete(v)
+      if (ownEnvelopes.size <= 4000) break
+    }
+  }
+}
 const listeners = new Set<() => void>()
 const EMPTY: IncomingRow[] = []
 
@@ -532,6 +553,8 @@ export function addIncoming(from: number, env: Envelope): void {
   const row = rowFromEnvelope(from, env)
   if (!row) return
   if (deletedIds.has(row.id)) return
+  // Our own note bouncing back off the island (see [ownEnvelopes]).
+  if (from === _activeUin && ownEnvelopes.has(row.id)) return
   const key = `p:${from}:${row.id}`
   if (seen.has(key)) return
   seen.add(key)

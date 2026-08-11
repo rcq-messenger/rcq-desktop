@@ -1,6 +1,6 @@
 // Inline chat photo. Fetches the encrypted blob and AES-256-GCM
 // decrypts it (lib/media.ts) into an object URL; renders a small
-// rounded thumbnail that opens full-size in a new tab on click.
+// rounded thumbnail that opens full-size in a lightbox over the app.
 // Shows a skeleton while loading and a placeholder on failure so a
 // photo never collapses into a broken-image icon.
 
@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react'
 import { useIdentity } from '../lib/identity-context'
 import { loadEncryptedImage } from '../lib/media'
 import { useI18n } from '../lib/i18n-context'
+import { MediaLightbox } from './MediaLightbox'
 
 interface Props {
   mediaId: string
@@ -22,6 +23,7 @@ export function DecryptedImage({ mediaId, mediaKey, apiBase }: Props) {
   const { t } = useI18n()
   const [url, setUrl] = useState<string | null>(null)
   const [failed, setFailed] = useState(false)
+  const [zoomed, setZoomed] = useState(false)
 
   const base = apiBase ?? identity?.apiBase
 
@@ -51,18 +53,28 @@ export function DecryptedImage({ mediaId, mediaKey, apiBase }: Props) {
     return <div className="h-40 w-56 max-w-full animate-pulse rounded-lg bg-surface-dim" />
   }
   return (
-    <button
-      type="button"
-      onClick={() => window.open(url, '_blank', 'noopener')}
-      className="block overflow-hidden rounded-lg"
-      title={t('chat.media.open')}
-    >
-      <img
-        src={url}
-        alt=""
-        className="max-h-64 max-w-[16rem] w-auto object-cover"
-        draggable={false}
-      />
-    </button>
+    <>
+      <button
+        type="button"
+        onClick={() => setZoomed(true)}
+        className="block overflow-hidden rounded-lg"
+        title={t('chat.media.open')}
+      >
+        <img
+          src={url}
+          alt=""
+          className="max-h-64 max-w-[16rem] w-auto object-cover"
+          draggable={false}
+        />
+      </button>
+      <MediaLightbox open={zoomed} onClose={() => setZoomed(false)}>
+        <img
+          src={url}
+          alt=""
+          className="max-h-[85vh] max-w-[90vw] w-auto rounded-lg object-contain"
+          draggable={false}
+        />
+      </MediaLightbox>
+    </>
   )
 }

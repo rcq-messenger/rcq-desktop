@@ -190,6 +190,7 @@ export const ru: Record<string, string> = {
   'settings.accounts.active': 'активный',
   'settings.accounts.add': 'Добавить аккаунт',
   'settings.accounts.forget': 'выйти',
+  'settings.accounts.revoked': 'Сессия завершена, войдите заново',
   'settings.section.account': 'Аккаунт',
   'settings.field.uin': 'UIN',
   'settings.field.api_host': 'API-сервер',

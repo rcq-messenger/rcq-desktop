@@ -68,17 +68,10 @@ export function migrateFlatDataInto(uin: number) {
     // Skip anything already scoped (starts with digits + '.'), and the keys
     // that are about the BROWSER rather than an account.
     if (/^\d+\./.test(rest)) continue
-    // The outgoing logs, plus the federation stores. `rcq.web.unread.<uin>`
-    // already carries its owner — a different shape, but scoped all the same,
-    // and copying it would produce `rcq.web.<uin>.unread.<uin>` that nothing
-    // ever reads.
-    //
-    // ⚠ The federation four were flat until 0.3.3 and are the reason this list
-    // grew: cross-island contacts, held message requests, the blocked list and
-    // the visited-island records all survived an unlink and showed up in the
-    // next account created in this browser. They are scoped now; this copy is
-    // what keeps the person who HAD them from losing them in the process.
-    if (!rest.startsWith('outgoing.') && !FLAT_FEDERATION_KEYS.has(rest)) continue
+    // Only the outgoing logs. `rcq.web.unread.<uin>` already carries its
+    // owner — a different shape, but scoped all the same, and copying it would
+    // produce `rcq.web.<uin>.unread.<uin>` that nothing ever reads.
+    if (!rest.startsWith('outgoing.')) continue
     moved.push(k)
   }
   for (const k of moved) {
@@ -89,20 +82,34 @@ export function migrateFlatDataInto(uin: number) {
     // newer than a copy of the pre-scope world.
     if (localStorage.getItem(target) == null) localStorage.setItem(target, v)
   }
-  // These, unlike the message logs, are DELETED after copying. Leaving them is
-  // the bug: a flat key is readable by every account in this browser, and the
-  // whole point of the move is that the next account does not inherit them.
-  for (const k of moved) {
-    if (FLAT_FEDERATION_KEYS.has(k.slice(prefix.length))) localStorage.removeItem(k)
-  }
+  dropFlatFederationData()
   localStorage.setItem(MIGRATED_FLAG, String(uin))
 }
 
-/// Suffixes (after `rcq.web.`) of the stores that federation kept flat.
-const FLAT_FEDERATION_KEYS = new Set([
+/// Suffixes (after `rcq.web.`) of the federation stores that stayed flat until
+/// 0.3.3: cross-island contacts, held message requests, the blocked list, and
+/// the visited-island records with their group aliases.
+const FLAT_FEDERATION_KEYS = [
   'crossisland.v1',
   'ci-requests.v1',
   'ci-blocked.v1',
   'visited.v1',
   'fgroup-alias.v1',
-])
+]
+
+/// Delete the pre-0.3.3 flat federation data outright.
+///
+/// ⚠ These are DELETED, not copied into the current account like the message
+/// logs above. A flat key was readable by every account in this browser, which
+/// is exactly the bug: one cross-island contact showed up in ALL of them, and
+/// after an unlink it greeted whoever created the next account. Since the data
+/// says nothing about which account added it, handing it to whichever account
+/// happens to boot first would just move the same mistake to a new owner, and
+/// on this founder's browser that owner would be the wrong one.
+///
+/// The cost is that a genuine cross-island contact has to be added again. It is
+/// a handful of rows, re-addable from the peer's `uin@host`, and it is the only
+/// version of this that ends with nobody holding somebody else's data.
+function dropFlatFederationData() {
+  for (const suffix of FLAT_FEDERATION_KEYS) localStorage.removeItem(`rcq.web.${suffix}`)
+}

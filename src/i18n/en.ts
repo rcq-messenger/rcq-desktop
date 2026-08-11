@@ -191,6 +191,7 @@ export const en: Record<string, string> = {
   'settings.accounts.active': 'active',
   'settings.accounts.add': 'Add an account',
   'settings.accounts.forget': 'sign out',
+  'settings.accounts.revoked': 'Session ended, sign in again',
   'settings.section.account': 'Account',
   'settings.field.uin': 'UIN',
   'settings.field.api_host': 'API host',

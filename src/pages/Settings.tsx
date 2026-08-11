@@ -7,7 +7,7 @@
 
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { currentRecoveryPhrase } from '../lib/auth'
+import { currentRecoveryPhrase, revokedAccounts } from '../lib/auth'
 import { exportBackup, importBackup } from '../lib/backup-data'
 import { Dropdown, type DropdownOption } from '../components/Dropdown'
 import { LanguagePicker } from '../components/LanguagePicker'
@@ -54,6 +54,7 @@ import { pushHomeRecordToContacts } from '../lib/federation-gossip'
 
 export function Settings() {
   const { identity, accounts, switchAccount, addAccount, signOutAccount, signOut } = useIdentity()
+  const [revoked] = useState<number[]>(() => revokedAccounts())
   const { t } = useI18n()
   const navigate = useNavigate()
   const [confirming, setConfirming] = useState(false)
@@ -446,10 +447,18 @@ export function Settings() {
                             leave the flagship, which is most of them. */}
                         {a.apiBase !== DEFAULT_API_BASE && ` · ${a.apiBase.replace(/^https?:\/\//, '')}`}
                       </span>
+                      {/* Without this the row just bounced to login on every
+                          tap, with nothing on screen saying the session had
+                          been ended from the phone. */}
+                      {revoked.includes(a.uin) && (
+                        <span className="block text-xs text-fg-dim">
+                          {t('settings.accounts.revoked')}
+                        </span>
+                      )}
                     </span>
                     {isActive && <span className="flex-none text-accent text-sm">✓</span>}
                   </button>
-                  {accounts.length > 1 && (
+                  {(accounts.length > 1 || revoked.includes(a.uin)) && (
                     <button
                       type="button"
                       onClick={() => signOutAccount(a.uin)}

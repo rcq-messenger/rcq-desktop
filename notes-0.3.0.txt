@@ -1,0 +1,57 @@
+Обход блокировок стал двухпрыжковым.
+
+Раньше десктоп ходил через один релей, и этот релей видел сразу и ваш адрес, и остров, на который вы идёте. Телефоны так не делают уже давно, а десктоп остался с одним прыжком, и заметить это было негде. Теперь цепочка из двух: вход знает, кто вы, но не знает куда; выход знает куда, но не знает кто. Вход закрепляется и не перевыбирается на каждом запуске.
+
+Приватный пул релеев.
+
+Появилось поле для ключа: оплаченные узлы, на которых больше никого нет. Ваш узел становится входом в цепочку, потому что провайдер видит именно его, а публичные входы лежат в открытом списке и блокируются все разом. Ключ применяется сразу, перезапускать приложение не нужно.
+
+Чат переписан.
+
+Меню сообщения наконец работает — ответить, переслать, закрепить, копировать, удалить. Реакция ставится одним нажатием, панель всплывает поверх ленты и больше её не двигает. Клик по цитате переносит к исходному сообщению и подсвечивает его. Сообщения подряд от одного человека склеиваются в один блок. Появился поиск по переписке.
+
+Смайлики стали смайликами.
+
+В поле ввода и в цитатах они больше не выглядят как «:cool:» — вы видите колобка, пока печатаете, и вставка идёт туда, где стоит курсор.
+
+Уведомления перестали приходить пачкой.
+
+При запуске всё, что накопилось, сваливалось разом с отдельным звуком на каждое сообщение. Теперь при открытии считаются непрочитанные, а всплывает только то, что пришло, пока вы здесь.
+
+Несколько аккаунтов и выбор острова.
+
+Можно держать в приложении несколько номеров и переключаться между ними, не выходя. При создании аккаунта можно указать свой остров или чужой — не только наш.
+
+Внешний вид.
+
+Убраны рамки, которыми было обведено почти всё. Входящие сообщения перестали сливаться с фоном на тёмной теме. Крупный шрифт, аватары вместо букв в звонках и уведомлениях, аккуратные отметки об отправке.
+
+---
+
+Circumvention now takes two hops.
+
+The desktop used to route through a single relay, and that relay saw your address and the island you were reaching at the same time. The phones stopped doing that long ago; the desktop was left on one hop and there was nowhere to notice. Now there are two: the entry knows who you are and not where you are going, the exit knows where and not who. The entry is pinned rather than re-picked every launch.
+
+Private relay pool.
+
+There is a field for the key now: paid endpoints with nobody else on them. Your node becomes the entry, because the entry is the address a network operator actually sees, and every public entry sits in an open list that gets blocked all at once. The key takes effect immediately, with no restart.
+
+The chat was rewritten.
+
+The message menu finally works — reply, forward, pin, copy, delete. A reaction takes one press, and its panel floats over the thread instead of pushing it around. Tapping a quote jumps to the message it quotes and marks it. Consecutive messages from one person read as a single turn. There is a search inside a conversation.
+
+Emoticons look like emoticons.
+
+In the composer and in quotes they are no longer ":cool:" — you see the kolobok as you type, and the picker inserts where your cursor is.
+
+Notifications stopped arriving in a heap.
+
+Opening the app used to dump the entire backlog at once with a sound for each message. Now the backlog only counts toward unread, and a banner is for what arrives while you are here.
+
+More than one account, and a choice of island.
+
+You can keep several numbers in the app and move between them without signing out. When you create an account you can point it at another island — your own or somebody else's, not only ours.
+
+Appearance.
+
+The outlines drawn around nearly everything are gone. Incoming messages no longer blend into the background on the dark theme. Bigger type, faces instead of letters in calls and notifications, and proper delivery marks.

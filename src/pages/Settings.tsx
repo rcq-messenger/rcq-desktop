@@ -5,7 +5,7 @@
 // took up too much vertical space inline. Settings now just shows
 // a nav-row that opens the dedicated surface.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { currentRecoveryPhrase, revokedAccounts } from '../lib/auth'
 import { exportBackup, importBackup } from '../lib/backup-data'
@@ -40,7 +40,13 @@ import { snapshotFor } from '../lib/contacts-cache'
 import { PersonAvatar } from '../components/PersonAvatar'
 import { useIdentity } from '../lib/identity-context'
 import { isPresenceSoundEnabled, isSoundEnabled, setPresenceSoundEnabled, setSoundEnabled } from '../lib/sounds'
-import { FONT_SCALES, getFontScale, setFontScale, type FontScale } from '../lib/fontscale'
+import {
+  FONT_SCALES,
+  getFontScale,
+  setFontScale,
+  subscribeFontScale,
+  type FontScale,
+} from '../lib/fontscale'
 import { useTheme, type ThemePref } from '../lib/theme-context'
 import {
   addBackupIsland,
@@ -66,7 +72,7 @@ export function Settings() {
   const [soundOn, setSoundOnState] = useState<boolean>(() => isSoundEnabled())
   const [presenceSoundOn, setPresenceSoundOnState] = useState<boolean>(() => isPresenceSoundEnabled())
   const { pref: themePref, setPref: setThemePref } = useTheme()
-  const [fontScalePref, setFontScalePref] = useState<FontScale>(() => getFontScale())
+  const fontScalePref = useSyncExternalStore(subscribeFontScale, getFontScale)
   const [backups, setBackups] = useState<BackupHome[]>(() => listBackupHomes())
   const [mhAdding, setMhAdding] = useState(false)
   const [mhHost, setMhHost] = useState('')
@@ -713,10 +719,7 @@ export function Settings() {
               value: opt,
               label: t(`settings.textsize.${opt}`),
             }))}
-            onChange={(next) => {
-              setFontScale(next)
-              setFontScalePref(next)
-            }}
+            onChange={setFontScale}
             ariaLabel={t('settings.section.textsize')}
             variant="row"
           />

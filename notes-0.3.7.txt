@@ -1,0 +1,21 @@
+Окно запоминает, где оно стояло и какого было размера. Раньше каждый запуск открывал его по центру одного и того же размера, сколько бы вы его ни двигали.
+
+Появился размер текста, четыре шага, как в приложении на телефоне. Настройки, «Размер текста». Меняется весь интерфейс, а не только текст сообщений.
+
+Появился раздел «Мои обращения». Отправить сообщение о проблеме было можно и раньше, а прочитать ответ на него нельзя: он приходил на остров и оставался там. Теперь видно, что вы отправляли, что ответили и в каком состоянии обращение.
+
+Группа открывается на том месте, где вы остановились. Перед первым непрочитанным появилась черта, и переписка открывается на ней, а не в самом низу, куда приходилось прокручивать всю историю вручную.
+
+Заметка самому себе снова отправляется. С прошлой версии заметки уходят по сети, и первая же из них падала с ошибкой про ключ.
+
+---
+
+The window remembers where it was and how big you made it. Every launch used to open it centred at the same size, however you had left it.
+
+Text size, four steps, the same ones the phone app has. Settings, "Text size". It scales the whole interface, not just the message text.
+
+There is a "My reports" section now. You could always send a report; you could not read the answer to it, because the answer went to the island and stayed there. Now you can see what you sent, what came back, and where it stands.
+
+A group opens where you stopped reading. A line marks the first unread message and the conversation opens on it, instead of at the very bottom with the whole history to scroll through by hand.
+
+Notes to self send again. Notes started travelling over the network in the last version, and the first one failed on a key error.

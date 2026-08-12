@@ -216,6 +216,25 @@ export const ru: Record<string, string> = {
   'settings.report.sent': 'Спасибо, сообщение отправлено.',
   'settings.report.error': 'Не удалось отправить. Попробуйте ещё раз.',
   'settings.report.rate_limited': 'Слишком много сообщений. Попробуйте позже.',
+
+  'chat.unread_divider': 'Непрочитанные',
+
+  // Мои обращения — ответы на то, что вы отправили (#475).
+  'myreports.title': 'Мои обращения',
+  'settings.myreports.footer.short': 'Ваши обращения и ответы на них.',
+  'myreports.empty': 'Вы ещё не отправляли обращений. Если отправите, ответ появится здесь.',
+  'myreports.answer': 'Ответ',
+  'myreports.status.open': 'Ждёт ответа',
+  'myreports.status.answered': 'Есть ответ',
+  'myreports.status.resolved': 'Решено',
+  'myreports.status.dismissed': 'Отклонено',
+  'myreports.status.duplicate': 'Дубликат',
+  'myreports.copy': 'Копировать',
+  'myreports.delete': 'Удалить',
+  'myreports.delete_confirm': 'Удалить это обращение? Ответ удалится вместе с ним.',
+  'myreports.delete_refused': 'Это обращение ещё рассматривается, поэтому удалить его пока нельзя.',
+  'myreports.delete_error': 'Не удалось удалить. Попробуйте ещё раз.',
+  'myreports.load_error': 'Не удалось загрузить обращения. Попробуйте ещё раз.',
   'settings.section.about': 'О RCQ',
   'settings.about.body':
     'RCQ это анонимный мессенджер со сквозным шифрованием, без номера телефона и почты. Это веб-клиент, он работает со своим аккаунтом в этом браузере.',
@@ -466,6 +485,14 @@ export const ru: Record<string, string> = {
   'settings.theme.system': 'Системное',
   'settings.theme.footer':
     'Системное следует за настройкой ОС и переключается автоматически при смене темы.',
+
+  'settings.section.textsize': 'Размер текста',
+  'settings.textsize.small': 'Мелкий',
+  'settings.textsize.normal': 'Обычный',
+  'settings.textsize.large': 'Крупный',
+  'settings.textsize.largest': 'Максимальный',
+  'settings.textsize.footer':
+    'Меняет размер всего интерфейса, а не только текста сообщений. Те же четыре шага, что в приложении на телефоне.',
 
   // Секции на главном
   'section.favorites': 'Избранные',

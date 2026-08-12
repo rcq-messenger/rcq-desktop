@@ -154,7 +154,7 @@ export function GroupJoinCard({ groupId, host }: Props) {
           <GroupAvatar size={40} />
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-medium">{t('group_join.island_title')}</div>
-            <div className="truncate font-mono text-[11px] text-fg-dim">{foreignHost}</div>
+            <div className="truncate font-mono text-[0.6875rem] text-fg-dim">{foreignHost}</div>
           </div>
         </div>
         <div className="mt-3">
@@ -166,8 +166,8 @@ export function GroupJoinCard({ groupId, host }: Props) {
             {joining ? t('group_join.joining') : t('group_join.button')}
           </button>
         </div>
-        <div className="mt-2 text-[10px] text-fg-dim">{t('group_join.island_hint')}</div>
-        {actionError && <div className="mt-2 text-[10px] text-red-500">{actionError}</div>}
+        <div className="mt-2 text-[0.625rem] text-fg-dim">{t('group_join.island_hint')}</div>
+        {actionError && <div className="mt-2 text-[0.625rem] text-red-500">{actionError}</div>}
       </div>
     )
   }
@@ -195,12 +195,12 @@ export function GroupJoinCard({ groupId, host }: Props) {
         <GroupAvatar size={40} mediaId={preview.avatar_media_id} mediaKey={preview.avatar_media_key} />
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-medium">{preview.name}</div>
-          <div className="truncate text-[11px] text-fg-dim">
+          <div className="truncate text-[0.6875rem] text-fg-dim">
             {t('section.groups.members', { n: preview.member_count })}
             {preview.owner_nickname ? ` · ${t('group_join.owner', { name: preview.owner_nickname })}` : ''}
           </div>
           {foreignHost && (
-            <div className="truncate font-mono text-[10px] text-fg-dim">{foreignHost}</div>
+            <div className="truncate font-mono text-[0.625rem] text-fg-dim">{foreignHost}</div>
           )}
         </div>
       </div>
@@ -232,10 +232,10 @@ export function GroupJoinCard({ groupId, host }: Props) {
       </div>
 
       {closedToMe && (
-        <div className="mt-2 text-[10px] text-fg-dim">{t('group_join.closed_hint')}</div>
+        <div className="mt-2 text-[0.625rem] text-fg-dim">{t('group_join.closed_hint')}</div>
       )}
       {actionError && (
-        <div className="mt-2 text-[10px] text-red-500">{actionError}</div>
+        <div className="mt-2 text-[0.625rem] text-red-500">{actionError}</div>
       )}
     </div>
   )

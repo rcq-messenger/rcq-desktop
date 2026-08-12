@@ -72,9 +72,24 @@ html.dark {
    уродский мелкий шрифт" (tester, 2026-08-04). Every size and spacing in the
    app is in rem, so lifting the root is the whole fix: text, padding and
    controls grow together and nothing is re-laid-out by hand. Gated on the
-   desktop class, so the browser at chat.rcq.app is untouched. */
+   desktop class, so the browser at chat.rcq.app is untouched.
+
+   `--rcq-font-scale` is the user's own multiplier on top of that (#477, "нет
+   возможности регулировать размер шрифта"), written as an inline style on
+   <html> by lib/fontscale.ts. One knob for all three cases below.
+
+   The base on a phone browser is `100%`, not a number: below 1024px this is
+   the ONLY font-size rule on the root, so writing 16px here would override
+   whatever the reader set as their browser's default text size — replacing an
+   accessibility setting with a hardcoded one, in the change whose whole point
+   is accessibility. */
+:root {
+  --rcq-font-scale: 1;
+  font-size: calc(100% * var(--rcq-font-scale));
+}
+
 html.desktop {
-  font-size: 17.5px;
+  font-size: calc(17.5px * var(--rcq-font-scale));
 }
 
 /* And the same in a browser, which is the half that was left out. The gate
@@ -82,10 +97,14 @@ html.desktop {
    but chat.rcq.app on a monitor is the same window with the same problem — the
    desktop build got the fix and the web did not, for no reason a user could
    see. A width query separates the two cases properly: a phone browser is never
-   this wide, and the Tauri window keeps its class whatever size it is. */
+   this wide, and the Tauri window keeps its class whatever size it is.
+
+   `:root`, not `html`: a media query adds no specificity of its own, so a
+   type selector (0,0,1) here would lose to the `:root` rule above (0,1,0) and
+   the wide browser would silently drop back to the phone size. */
 @media (min-width: 1024px) {
-  html {
-    font-size: 17.5px;
+  :root {
+    font-size: calc(17.5px * var(--rcq-font-scale));
   }
 }
 

@@ -18,6 +18,7 @@ import { Profile } from './pages/Profile'
 import { GroupInfo } from './pages/GroupInfo'
 import { JoinGroup } from './pages/JoinGroup'
 import { Diagnostics } from './pages/Diagnostics'
+import { MyReports } from './pages/MyReports'
 import { Privacy } from './pages/Privacy'
 import { Market } from './pages/Market'
 import { defaultHome } from './lib/routing'
@@ -147,6 +148,14 @@ export default function App() {
                 element={
                   <Authed>
                     <Diagnostics />
+                  </Authed>
+                }
+              />
+              <Route
+                path="/reports"
+                element={
+                  <Authed>
+                    <MyReports />
                   </Authed>
                 }
               />

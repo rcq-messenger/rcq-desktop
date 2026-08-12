@@ -27,6 +27,8 @@ import {
   useIncoming,
   useGroupIncoming,
   setActiveThread,
+  groupUnreadCount,
+  peerUnreadCount,
   applyReaction,
   reactionsForTarget,
   aggregateReactions,
@@ -216,6 +218,45 @@ export function Chat() {
   // foreign rows under the alias, and `group.id` is the server-side id.
   const groupIncoming = useGroupIncoming(isGroup ? groupId : null)
   const incoming = isGroup ? groupIncoming : peerIncoming
+
+  // How many unread messages this thread had at the moment it was opened —
+  // the only thing anywhere that knows where reading stopped (#462). Nothing
+  // on the server does: `queue_cursor` is a per-device delivery ack, not a
+  // read position, so this has to be answered locally, the same way Android
+  // answers it.
+  //
+  // Read during RENDER, on purpose. The effect below marks the thread active,
+  // which clears the counter — by the time any effect runs the answer is gone.
+  // Guarded on the thread key so the second render StrictMode does, and every
+  // re-render after it, keeps the first answer instead of re-reading a counter
+  // we have since zeroed.
+  const unreadOnOpenRef = useRef<{ key: string; n: number } | null>(null)
+  if (persistKey && unreadOnOpenRef.current?.key !== persistKey) {
+    unreadOnOpenRef.current = {
+      key: persistKey,
+      n:
+        isGroup && groupId != null
+          ? groupUnreadCount(groupId)
+          : peerUIN != null
+            ? peerUnreadCount(peerUIN)
+            : 0,
+    }
+  }
+  /// The message the unread run starts at, and the thread that answer belongs
+  /// to. Decided once per thread and never recomputed as new messages arrive:
+  /// deriving it from the current length makes the marker slide down the
+  /// thread while it is being read, a regression Android has already paid for
+  /// and documented. `id: null` is a decision too — it means "open at the
+  /// newest, there is no divider".
+  const [unreadAnchor, setUnreadAnchor] = useState<{ key: string; id: string | null } | null>(null)
+  const unreadAnchorId = unreadAnchor?.key === persistKey ? unreadAnchor.id : null
+  const anchorDecidedRef = useRef<string | null>(null)
+  const unreadDividerRef = useRef<HTMLLIElement>(null)
+  const didUnreadScrollRef = useRef<string | null>(null)
+  /// What the list is currently being held against: the newest message, the
+  /// unread divider, or nothing (the user has taken over).
+  const pinTargetRef = useRef<'bottom' | 'unread' | null>('bottom')
+
   // Re-render this view whenever ANY reaction changes (received or our own
   // optimistic toggle); the per-row chips read the store directly.
   useReactionsVersion()
@@ -407,6 +448,7 @@ export function Chat() {
    *  tapping the jump button. */
   function stickToBottom() {
     atBottomRef.current = true
+    pinTargetRef.current = 'bottom'
     setAtBottom(true)
     setUnseenBelow(0)
     const jump = () => {
@@ -420,6 +462,88 @@ export function Chat() {
     jump()
     requestAnimationFrame(jump)
   }
+  /** Put the unread divider at the top of the pane. Measured rather than read
+   *  off `offsetTop`, because the divider's offsetParent is not this element;
+   *  and driven through `scrollRef` rather than `scrollIntoView`, which was
+   *  tried for the open scroll before and landed short (see the note on
+   *  `scrollRef` above). */
+  function scrollToUnreadDivider() {
+    const el = scrollRef.current
+    const div = unreadDividerRef.current
+    if (!el || !div) return
+    el.scrollTop += div.getBoundingClientRect().top - el.getBoundingClientRect().top
+  }
+
+  /** The user took the wheel. Stop holding the view against the divider, or
+   *  the next image that finishes decrypting drags them back to it. */
+  function releaseUnreadPin() {
+    if (pinTargetRef.current === 'unread') pinTargetRef.current = null
+  }
+
+  // Where reading stopped. Decided once per thread, and only once the store
+  // has rows to count back over: hydration is awaited behind the socket, so on
+  // a cold open `incoming` is briefly empty and there is nothing to point at.
+  useEffect(() => {
+    if (!persistKey) return
+    if (anchorDecidedRef.current === persistKey) return
+    if (incoming.length === 0) return
+    anchorDecidedRef.current = persistKey
+
+    const n = unreadOnOpenRef.current?.key === persistKey ? unreadOnOpenRef.current.n : 0
+    // n larger than the history we still hold means the counter outran it — a
+    // restored backup, a pruned log, a fresh install replaying a month of
+    // queue. We genuinely do not know where reading stopped there, so the
+    // newest message is the answer; guessing the very top would be this report
+    // again in the other direction. n EQUAL to the length is different and
+    // common (a group opened for the first time): everything held is unread,
+    // and the divider belongs above all of it.
+    if (n < 1 || n > incoming.length) {
+      setUnreadAnchor({ key: persistKey, id: null })
+      return
+    }
+
+    let seen = 0
+    let anchor: string | null = null
+    for (let i = incoming.length - 1; i >= 0; i--) {
+      // Count back over other people's messages only. `addGroupIncoming` has
+      // no self-echo guard, so a carbon of our own can sit in here, and
+      // counting it puts the divider inside the unread run rather than above
+      // it — the exact complaint Android's own comment records.
+      if (identity && incoming[i].from === identity.uin) continue
+      seen += 1
+      if (seen === n) {
+        anchor = incoming[i].id
+        break
+      }
+    }
+    setUnreadAnchor({ key: persistKey, id: anchor })
+  }, [persistKey, incoming, identity])
+
+  // ...and go there, once, as soon as the divider is in the DOM.
+  useEffect(() => {
+    if (!persistKey || unreadAnchor?.key !== persistKey) return
+    if (didUnreadScrollRef.current === persistKey) return
+    const el = scrollRef.current
+    if (!el) return
+    didUnreadScrollRef.current = persistKey
+
+    if (!unreadAnchor.id) {
+      pinTargetRef.current = 'bottom'
+      atBottomRef.current = true
+      setAtBottom(true)
+      el.scrollTo({ top: el.scrollHeight, behavior: 'auto' })
+      return
+    }
+    pinTargetRef.current = 'unread'
+    atBottomRef.current = false
+    setAtBottom(false)
+    // The jump button now carries the backlog rather than starting at zero, so
+    // the way back to the newest message is one click from the moment the
+    // thread opens.
+    setUnseenBelow(unreadOnOpenRef.current?.n ?? 0)
+    scrollToUnreadDivider()
+  }, [persistKey, unreadAnchor])
+
   const lastCountRef = useRef(0)
   useEffect(() => {
     const switched = lastThreadRef.current !== persistKey
@@ -427,9 +551,18 @@ export function Chat() {
     const total = outgoing.length + incoming.length
     const grew = switched ? 0 : Math.max(0, total - lastCountRef.current)
     lastCountRef.current = total
+    // Opening a thread that has unread messages is the one case where the
+    // newest message is NOT where the user wants to land, so the bottom jump
+    // is left to the effect above, which knows whether a divider exists.
+    const openingOnUnread = switched && (unreadOnOpenRef.current?.n ?? 0) > 0
     if (switched) {
-      setAtBottom(true)
-      setUnseenBelow(0)
+      if (openingOnUnread) {
+        pinTargetRef.current = null
+      } else {
+        pinTargetRef.current = 'bottom'
+        setAtBottom(true)
+        setUnseenBelow(0)
+      }
     } else if (grew && !atBottomRef.current) {
       // Arrived while the user is reading further up: count it for the jump
       // button instead of yanking the list, which is what the early return
@@ -443,6 +576,7 @@ export function Chat() {
     // and the last bubbles hide under the composer.
     requestAnimationFrame(() => {
       if (switched) {
+        if (openingOnUnread) return
         el.scrollTo({ top: el.scrollHeight, behavior: 'auto' })
         atBottomRef.current = true
         return
@@ -462,6 +596,14 @@ export function Chat() {
     const content = contentRef.current
     if (!el || !content || typeof ResizeObserver === 'undefined') return
     const ro = new ResizeObserver(() => {
+      // Same problem at the other end of the thread: a photo above the divider
+      // grows from its skeleton to its real height after the open scroll has
+      // already run, and the marker slides down out of view. Hold it there
+      // until the user scrolls.
+      if (pinTargetRef.current === 'unread') {
+        scrollToUnreadDivider()
+        return
+      }
       if (atBottomRef.current) el.scrollTo({ top: el.scrollHeight })
     })
     ro.observe(content)
@@ -1168,7 +1310,7 @@ export function Chat() {
             title={c.asset}
           >
             <img src={emoticonAssetURL(c.asset)} alt={c.asset} className="h-4 w-4 select-none" draggable={false} />
-            {c.count > 1 && <span className="font-mono text-[10px] text-fg-secondary">{c.count}</span>}
+            {c.count > 1 && <span className="font-mono text-[0.625rem] text-fg-secondary">{c.count}</span>}
           </button>
         ))}
       </div>
@@ -1258,16 +1400,27 @@ export function Chat() {
     // enough that the two are no longer one thought.
     const RUN_GAP_MS = 5 * 60 * 1000
     const out: Array<
-      ((typeof items)[number] & { cont?: boolean }) | { kind: 'day'; at: number }
+      | ((typeof items)[number] & { cont?: boolean })
+      | { kind: 'day'; at: number }
+      | { kind: 'unread'; at: number }
     > = []
     let lastDay = ''
     let lastAuthor: string | null = null
     let lastAt = 0
+    let dividerPlaced = false
     for (const it of items) {
       const day = new Date(it.at).toDateString()
       if (day !== lastDay) {
         out.push({ kind: 'day', at: it.at })
         lastDay = day
+        lastAuthor = null
+      }
+      // Where reading stopped, once. The run grouping is broken across it as
+      // well, so the first unread message carries its own name and avatar
+      // instead of reading as a continuation of the last one already seen.
+      if (!dividerPlaced && unreadAnchorId && (it.kind === 'in' ? it.msg.id : it.row.id) === unreadAnchorId) {
+        out.push({ kind: 'unread', at: it.at })
+        dividerPlaced = true
         lastAuthor = null
       }
       const author = it.kind === 'out' ? 'me' : `in:${it.msg.from}`
@@ -1277,7 +1430,7 @@ export function Chat() {
       lastAt = it.at
     }
     return out
-  }, [outgoing, incoming, deletedVersion])
+  }, [outgoing, incoming, deletedVersion, unreadAnchorId])
 
   /// Ids of the messages containing the query, newest last — the same order
   /// they sit in the thread, so stepping through them walks the conversation
@@ -1286,7 +1439,7 @@ export function Chat() {
     const q = query.trim().toLowerCase()
     if (!q) return [] as string[]
     return timeline.flatMap((it) => {
-      if (it.kind === 'day') return []
+      if (it.kind === 'day' || it.kind === 'unread') return []
       const text = it.kind === 'out' ? it.row.text : it.msg.text
       const id = it.kind === 'out' ? it.row.id : it.msg.id
       return text && text.toLowerCase().includes(q) ? [id] : []
@@ -1499,6 +1652,8 @@ export function Chat() {
 
       <main
         ref={scrollRef}
+        onWheel={releaseUnreadPin}
+        onTouchStart={releaseUnreadPin}
         onScroll={(e) => {
           const el = e.currentTarget
           const bottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
@@ -1543,9 +1698,20 @@ export function Chat() {
               if (item.kind === 'day') {
                 return (
                   <li key={`day-${item.at}`} className="flex justify-center py-2">
-                    <span className="px-2 py-0.5 rounded-full bg-surface text-fg-dim text-[11px] font-medium">
+                    <span className="px-2 py-0.5 rounded-full bg-surface text-fg-dim text-[0.6875rem] font-medium">
                       {dayLabel(item.at)}
                     </span>
+                  </li>
+                )
+              }
+              if (item.kind === 'unread') {
+                return (
+                  <li key="unread-divider" ref={unreadDividerRef} className="flex items-center gap-3 py-2">
+                    <span className="flex-1 h-px bg-accent/40" />
+                    <span className="text-[0.6875rem] font-medium text-accent">
+                      {t('chat.unread_divider')}
+                    </span>
+                    <span className="flex-1 h-px bg-accent/40" />
                   </li>
                 )
               }
@@ -1565,7 +1731,7 @@ export function Chat() {
                       {senderName && !item.cont && (
                         <Link
                           to={`/profile/${m.from}`}
-                          className="flex items-center gap-1.5 font-mono text-[10px] text-fg-dim px-1 hover:text-accent transition-colors"
+                          className="flex items-center gap-1.5 font-mono text-[0.625rem] text-fg-dim px-1 hover:text-accent transition-colors"
                         >
                           {/* Beside the nick, never instead of it, and only
                               when there is a picture. */}
@@ -1579,8 +1745,8 @@ export function Chat() {
                           onClick={() => jumpToMessage(m.replyTo!.id)}
                           className="border-l-2 border-accent/60 pl-2 max-w-full text-left rounded-r hover:bg-line/30 transition-colors cursor-pointer"
                         >
-                          <div className="font-mono text-[10px] text-fg-dim">{m.replyTo.authorName}</div>
-                          <div className="text-[11px] text-fg-secondary line-clamp-3 break-words max-w-[18rem]"><EmoticonText text={m.replyTo.snippet} emoticonSize={14} /></div>
+                          <div className="font-mono text-[0.625rem] text-fg-dim">{m.replyTo.authorName}</div>
+                          <div className="text-[0.6875rem] text-fg-secondary line-clamp-3 break-words max-w-[18rem]"><EmoticonText text={m.replyTo.snippet} emoticonSize={14} /></div>
                         </button>
                       )}
                       {m.kind === 'poll' && m.poll ? (
@@ -1637,11 +1803,11 @@ export function Chat() {
                           className="rounded-lg px-3 py-2 text-sm text-left bg-bubble-other hover:brightness-110 transition-colors"
                         >
                           <EmoticonText text={m.text} emoticonSize={18} />
-                          {m.edited && <span className="ml-1 text-[10px] text-fg-dim italic">{t('chat.edit.edited')}</span>}
+                          {m.edited && <span className="ml-1 text-[0.625rem] text-fg-dim italic">{t('chat.edit.edited')}</span>}
                         </button>
                       )}
                       {renderReactions(m.id, 'start')}
-                      <div className="text-[10px] font-mono text-fg-dim">
+                      <div className="text-[0.625rem] font-mono text-fg-dim">
                         {new Date(m.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </div>
                       {isPlainText && showActions && (
@@ -1712,7 +1878,7 @@ export function Chat() {
                   <li key={row.id} id={`msg-${row.id}`} className={`group flex justify-end rounded-lg transition-colors duration-500 ${item.cont ? '-mt-1' : ''} ${highlightId === row.id ? 'bg-accent/15' : ''}`}>
                     <div className="relative max-w-[80%] flex flex-col items-end gap-1">
                       <GroupJoinCard groupId={outInvite.id} host={outInvite.host} />
-                      <div className="flex items-center justify-end gap-1 text-[10px] font-mono text-fg-dim">
+                      <div className="flex items-center justify-end gap-1 text-[0.625rem] font-mono text-fg-dim">
                         {new Date(row.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         {row.state === 'sending' && <ClockMark />}
                         {row.state === 'sent' && <TickMark />}
@@ -1744,7 +1910,7 @@ export function Chat() {
                         </div>
                       )}
                       {renderReactions(row.id, 'end')}
-                      <div className="flex items-center justify-end gap-1 text-[10px] font-mono text-fg-dim">
+                      <div className="flex items-center justify-end gap-1 text-[0.625rem] font-mono text-fg-dim">
                         {new Date(row.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         {row.state === 'sending' && <ClockMark />}
                         {row.state === 'sent' && <TickMark />}
@@ -1788,7 +1954,7 @@ export function Chat() {
                           <EmoticonText text={row.text} emoticonSize={18} />
                         </div>
                       )}
-                      <div className="flex items-center justify-end gap-1 text-[10px] font-mono text-fg-dim">
+                      <div className="flex items-center justify-end gap-1 text-[0.625rem] font-mono text-fg-dim">
                         {new Date(row.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         <span className="text-accent">✓</span>
                       </div>
@@ -1814,7 +1980,7 @@ export function Chat() {
                           <EmoticonText text={row.text} emoticonSize={18} />
                         </div>
                       )}
-                      <div className="flex items-center justify-end gap-1 text-[10px] font-mono text-fg-dim">
+                      <div className="flex items-center justify-end gap-1 text-[0.625rem] font-mono text-fg-dim">
                         {new Date(row.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         {row.state === 'sending' && <ClockMark />}
                         {row.state === 'sent' && <TickMark />}
@@ -1847,7 +2013,7 @@ export function Chat() {
                   <li key={row.id} id={`msg-${row.id}`} className={`group flex justify-end rounded-lg transition-colors duration-500 ${item.cont ? '-mt-1' : ''} ${highlightId === row.id ? 'bg-accent/15' : ''}`}>
                     <div className="relative max-w-[80%] flex flex-col items-end gap-1">
                       <MediaPlaceholder mediaKind={row.mediaKind} />
-                      <div className="flex items-center justify-end gap-1 text-[10px] font-mono text-fg-dim">
+                      <div className="flex items-center justify-end gap-1 text-[0.625rem] font-mono text-fg-dim">
                         {new Date(row.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         <span className="text-accent">✓</span>
                       </div>
@@ -1861,7 +2027,7 @@ export function Chat() {
               <li key={row.id} id={`msg-${row.id}`} className={`group flex justify-end rounded-lg transition-colors duration-500 ${item.cont ? '-mt-1' : ''} ${highlightId === row.id ? 'bg-accent/15' : ''}`} {...swipeReply(() => startReply(row))}>
                 <div className="relative max-w-[80%] flex flex-col items-end gap-1">
                   {row.fwdName && (
-                    <div className="font-mono text-[10px] uppercase tracking-wider text-fg-dim">
+                    <div className="font-mono text-[0.625rem] uppercase tracking-wider text-fg-dim">
                       ↗ {t('chat.forwarded_label', { name: row.fwdName })}
                     </div>
                   )}
@@ -1871,8 +2037,8 @@ export function Chat() {
                       onClick={() => jumpToMessage(row.replyTo!.id)}
                       className="border-l-2 border-accent/60 pl-2 max-w-full text-left rounded-r hover:bg-line/30 transition-colors cursor-pointer"
                     >
-                      <div className="font-mono text-[10px] text-fg-dim">{row.replyTo.authorName}</div>
-                      <div className="text-[11px] text-fg-secondary line-clamp-3 break-words max-w-[18rem]">
+                      <div className="font-mono text-[0.625rem] text-fg-dim">{row.replyTo.authorName}</div>
+                      <div className="text-[0.6875rem] text-fg-secondary line-clamp-3 break-words max-w-[18rem]">
                         <EmoticonText text={row.replyTo.snippet} emoticonSize={14} />
                       </div>
                     </button>
@@ -1894,10 +2060,10 @@ export function Chat() {
                     }`}
                   >
                     <EmoticonText text={row.text} emoticonSize={18} />
-                    {row.edited && <span className="ml-1 text-[10px] text-fg-dim italic">{t('chat.edit.edited')}</span>}
+                    {row.edited && <span className="ml-1 text-[0.625rem] text-fg-dim italic">{t('chat.edit.edited')}</span>}
                   </button>
                   {renderReactions(row.id, 'end')}
-                  <div className="flex items-center justify-end gap-1 text-[10px] font-mono text-fg-dim">
+                  <div className="flex items-center justify-end gap-1 text-[0.625rem] font-mono text-fg-dim">
                     {new Date(row.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     {row.state === 'sending' && <ClockMark />}
                     {row.state === 'sent' && <TickMark />}
@@ -1920,7 +2086,7 @@ export function Chat() {
                     )}
                   </div>
                   {row.state === 'failed' && row.error && (
-                    <div className="text-right text-[10px] text-red-500/80 max-w-full break-words">
+                    <div className="text-right text-[0.625rem] text-red-500/80 max-w-full break-words">
                       {row.error}
                     </div>
                   )}
@@ -2033,14 +2199,14 @@ export function Chat() {
                   className="flex items-start gap-2 rounded-2xl bg-surface shadow-lg px-3 py-2 text-xs"
                 >
                   <div className="border-l-2 border-accent/60 pl-2 flex-1 min-w-0">
-                    <div className="font-mono text-[10px] text-accent uppercase tracking-wider">
+                    <div className="font-mono text-[0.625rem] text-accent uppercase tracking-wider">
                       {t('chat.edit.editing')}
                     </div>
                     <div className="text-fg-secondary truncate">{editingRow.text}</div>
                   </div>
                   <button
                     onClick={cancelEdit}
-                    className="font-mono text-[10px] uppercase tracking-wider text-fg-dim hover:text-fg-primary"
+                    className="font-mono text-[0.625rem] uppercase tracking-wider text-fg-dim hover:text-fg-primary"
                   >
                     × {t('chat.reply.cancel')}
                   </button>
@@ -2056,14 +2222,14 @@ export function Chat() {
                   className="flex items-start gap-2 rounded-2xl bg-surface shadow-lg px-3 py-2 text-xs"
                 >
                   <div className="border-l-2 border-accent/60 pl-2 flex-1 min-w-0">
-                    <div className="font-mono text-[10px] text-fg-dim">
+                    <div className="font-mono text-[0.625rem] text-fg-dim">
                       {t('chat.reply.replying_to', { name: replyTo.authorName })}
                     </div>
                     <div className="text-fg-secondary truncate"><EmoticonText text={replyTo.snippet} emoticonSize={14} /></div>
                   </div>
                   <button
                     onClick={cancelReply}
-                    className="font-mono text-[10px] uppercase tracking-wider text-fg-dim hover:text-fg-primary"
+                    className="font-mono text-[0.625rem] uppercase tracking-wider text-fg-dim hover:text-fg-primary"
                   >
                     × {t('chat.reply.cancel')}
                   </button>
@@ -2185,7 +2351,7 @@ export function Chat() {
             </button>
             <EmoticonInput
               ref={taRef}
-              className="flex-1 rounded-2xl bg-surface px-4 py-2.5 text-sm outline-none leading-snug focus:ring-1 focus:ring-accent transition-colors max-h-[140px] overflow-y-auto"
+              className="flex-1 rounded-2xl bg-surface px-4 py-2.5 text-sm outline-none leading-snug focus:ring-1 focus:ring-accent transition-colors max-h-[8.75rem] overflow-y-auto"
               placeholder={
                 isGroup && group
                   ? t('chat.placeholder.group', { name: group.name })
@@ -2240,7 +2406,7 @@ function ActionButton({ onClick, label, icon, danger }: { onClick: () => void; l
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-1 rounded px-2 py-1 font-mono text-[10px] uppercase tracking-wider transition-colors ${
+      className={`flex items-center gap-1 rounded px-2 py-1 font-mono text-[0.625rem] uppercase tracking-wider transition-colors ${
         danger
           ? 'text-red-500 hover:bg-red-500/15'
           : 'text-fg-secondary hover:bg-field hover:text-fg-primary'
@@ -2353,7 +2519,7 @@ function MediaPlaceholder({ mediaKind }: { mediaKind?: string }) {
   return (
     <div className="rounded-lg px-3 py-2 bg-bubble-other">
       <div className="text-sm">{icon} {label}</div>
-      <div className="text-[10px] text-fg-dim">{t('chat.media.in_app_only')}</div>
+      <div className="text-[0.625rem] text-fg-dim">{t('chat.media.in_app_only')}</div>
     </div>
   )
 }
@@ -2388,9 +2554,9 @@ function PinnedBanner({ text, group, expanded, onToggle }: { text: string; group
         >
           <PinIcon />
           {expanded ? (
-            <div className="flex-1 min-w-0 text-[13px] font-medium text-fg-secondary">{t('chat.pin.title')}</div>
+            <div className="flex-1 min-w-0 text-[0.8125rem] font-medium text-fg-secondary">{t('chat.pin.title')}</div>
           ) : (
-            <div className="flex-1 min-w-0 truncate text-[13px] text-fg-secondary">{pinPreview(text)}</div>
+            <div className="flex-1 min-w-0 truncate text-[0.8125rem] text-fg-secondary">{pinPreview(text)}</div>
           )}
           <span className="text-fg-dim text-xs shrink-0">{expanded ? '▲' : '▼'}</span>
         </button>
@@ -2414,7 +2580,7 @@ function PinnedBanner({ text, group, expanded, onToggle }: { text: string; group
               transition={{ duration: 0.22, ease: 'easeOut' }}
               className="rcq-floating-panel absolute left-0 right-0 top-full overflow-hidden shadow-lg shadow-black/5"
             >
-              <div className="px-4 pt-1 pb-3 max-h-96 overflow-y-auto text-[13px] text-fg-secondary">
+              <div className="px-4 pt-1 pb-3 max-h-96 overflow-y-auto text-[0.8125rem] text-fg-secondary">
                 <PinnedRichText text={text} group={group} />
               </div>
             </motion.div>
@@ -2497,7 +2663,7 @@ function PollBubble({ poll }: { poll: PollRow }) {
   return (
     <div className="rounded-lg px-3 py-2 bg-bubble-other w-[18rem] max-w-full">
       <div className="text-sm font-semibold">{poll.question}</div>
-      <div className="text-[10px] text-fg-dim mb-2">
+      <div className="text-[0.625rem] text-fg-dim mb-2">
         {poll.single ? t('poll.single') : t('poll.multi')}
         {poll.anon ? ` · ${t('poll.anon')}` : ''}
       </div>
@@ -2515,7 +2681,7 @@ function PollBubble({ poll }: { poll: PollRow }) {
               className="relative text-left rounded-md overflow-hidden bg-field px-2 py-1.5 disabled:cursor-default"
             >
               <div className="absolute inset-y-0 left-0 bg-accent/20" style={{ width: `${pct}%` }} />
-              <div className="relative flex items-center gap-2 text-[13px]">
+              <div className="relative flex items-center gap-2 text-[0.8125rem]">
                 <span className="flex-1 truncate">{mine ? '✓ ' : ''}{opt}</span>
                 <span className="text-fg-secondary tabular-nums whitespace-nowrap">{count} · {pct}%</span>
               </div>
@@ -2523,7 +2689,7 @@ function PollBubble({ poll }: { poll: PollRow }) {
           )
         })}
       </div>
-      <div className="text-[11px] text-fg-dim mt-2">
+      <div className="text-[0.6875rem] text-fg-dim mt-2">
         {t('poll.votes', { n: total })}{closed ? ` · ${t('poll.closed')}` : ''}
       </div>
     </div>

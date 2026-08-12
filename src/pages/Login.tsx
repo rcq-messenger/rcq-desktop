@@ -133,7 +133,7 @@ function PhraseGrid({ words }: { words: string[] }) {
     <div className="grid grid-cols-3 gap-1.5 rounded-lg bg-surface-dim p-3">
       {words.map((w, i) => (
         <div key={i} className="flex items-baseline gap-1 text-sm">
-          <span className="font-mono text-[10px] text-fg-dim w-5 text-right shrink-0">{i + 1}</span>
+          <span className="font-mono text-[0.625rem] text-fg-dim w-5 text-right shrink-0">{i + 1}</span>
           <span className="font-medium break-all">{w}</span>
         </div>
       ))}
@@ -505,7 +505,7 @@ function IslandField() {
       >
         <GlobeIcon />
         <span className="min-w-0 flex-1">
-          <span className="block text-[11px] uppercase tracking-wide text-fg-dim">{t('login.island')}</span>
+          <span className="block text-[0.6875rem] uppercase tracking-wide text-fg-dim">{t('login.island')}</span>
           <span className="block text-sm font-mono truncate">{islandLabel(base)}</span>
         </span>
         <span className="flex-none text-xs text-fg-dim">{t('login.island.change')}</span>
@@ -517,7 +517,7 @@ function IslandField() {
     <div className="rounded-md bg-field px-3 py-2.5 space-y-2">
       <div className="flex items-center gap-2">
         <GlobeIcon />
-        <span className="text-[11px] uppercase tracking-wide text-fg-dim flex-1">{t('login.island')}</span>
+        <span className="text-[0.6875rem] uppercase tracking-wide text-fg-dim flex-1">{t('login.island')}</span>
         {custom && (
           <button
             type="button"

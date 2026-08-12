@@ -267,7 +267,7 @@ export function Market() {
           </button>
           <div className="flex-1 flex items-center justify-center gap-2">
             <Logo size={20} spin />
-            <span className="text-[15px] font-semibold tracking-tight">{t('brand.name')}</span>
+            <span className="text-[0.9375rem] font-semibold tracking-tight">{t('brand.name')}</span>
           </div>
           <div className="w-9" aria-hidden />
         </div>
@@ -298,7 +298,7 @@ export function Market() {
 
         {/* CLAIM — the primary action. Type leads, the field is the hero. */}
         <section className="pt-3">
-          <h1 className="text-[26px] sm:text-[32px] font-bold tracking-tight leading-[1.1]">
+          <h1 className="text-[1.625rem] sm:text-[2rem] font-bold tracking-tight leading-[1.1]">
             {t('uin_market.headline')}
           </h1>
           <p className="mt-2 text-sm text-fg-secondary max-w-sm leading-relaxed">
@@ -413,12 +413,12 @@ export function Market() {
             entirely on an island too old to answer /uin/mine. */}
         {mine && (
           <section className="mt-11">
-            <h2 className="text-[13px] font-semibold uppercase tracking-wider text-fg-secondary mb-3">
+            <h2 className="text-[0.8125rem] font-semibold uppercase tracking-wider text-fg-secondary mb-3">
               {t('uin_market.mine.label')}
             </h2>
 
             <div className="rounded-2xl bg-fg-primary/[0.04] px-5 py-4">
-              <div className="text-[11px] uppercase tracking-wider text-fg-dim">{t('uin_market.mine.active')}</div>
+              <div className="text-[0.6875rem] uppercase tracking-wider text-fg-dim">{t('uin_market.mine.active')}</div>
               <div className="mt-1 font-mono text-3xl font-semibold tracking-tight tabular-nums">#{mine.active}</div>
             </div>
 
@@ -455,7 +455,7 @@ export function Market() {
         {/* AVAILABLE NOW — discovery from the live suggestions endpoint. */}
         <section className="mt-11">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-[13px] font-semibold uppercase tracking-wider text-fg-secondary">
+            <h2 className="text-[0.8125rem] font-semibold uppercase tracking-wider text-fg-secondary">
               {t('uin_market.suggest.label')}
             </h2>
             <button
@@ -499,7 +499,7 @@ export function Market() {
 
         {/* PRICING — clean list, the active length quietly highlighted. */}
         <section className="mt-11">
-          <h2 className="text-[13px] font-semibold uppercase tracking-wider text-fg-secondary mb-1.5">
+          <h2 className="text-[0.8125rem] font-semibold uppercase tracking-wider text-fg-secondary mb-1.5">
             {t('uin_market.tiers.label')}
           </h2>
           <div>
@@ -742,9 +742,9 @@ function FoundationCard({
           <span className="grid place-items-center h-9 w-9 rounded-xl bg-fg-primary/[0.06] text-fg-secondary shrink-0">
             {icon}
           </span>
-          <h3 className="text-[15px] font-semibold tracking-tight truncate">{title}</h3>
+          <h3 className="text-[0.9375rem] font-semibold tracking-tight truncate">{title}</h3>
         </div>
-        <span className="shrink-0 rounded-full bg-fg-primary/[0.06] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-fg-dim">
+        <span className="shrink-0 rounded-full bg-fg-primary/[0.06] px-2.5 py-1 text-[0.6875rem] font-semibold uppercase tracking-wide text-fg-dim">
           {soon}
         </span>
       </div>
@@ -757,8 +757,8 @@ function FoundationCard({
 function InfoRow({ title, body }: { title: string; body: string }) {
   return (
     <div className="space-y-1">
-      <div className="text-[13px] font-semibold text-fg-primary">{title}</div>
-      <div className="text-[13px] text-fg-secondary leading-relaxed">{body}</div>
+      <div className="text-[0.8125rem] font-semibold text-fg-primary">{title}</div>
+      <div className="text-[0.8125rem] text-fg-secondary leading-relaxed">{body}</div>
     </div>
   )
 }

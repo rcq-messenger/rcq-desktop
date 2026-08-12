@@ -74,7 +74,15 @@ src-tauri/target/universal-apple-darwin/release/bundle/dmg/RCQ_<version>_univers
   **release** build (in `tauri dev` the content is served by Vite, which
   sends no CSP).
 - **Window:** 1100×760 default, min 380×560 (matches the narrow mobile
-  layout), centered.
+  layout), centered. Those are the *first launch*; after that the size,
+  position, maximized and fullscreen state come back from
+  `.window-state.json` in the app config dir (`tauri-plugin-window-state`,
+  third file there alongside `bypass.json` and `broker.json`). Visibility is
+  deliberately NOT remembered — the close button hides to the tray, so the
+  saved value would nearly always be `false` and the next launch would come up
+  with no window. The plugin only writes on `RunEvent::Exit`, which this app
+  frequently never reaches, so `lib.rs` also saves on close-to-tray and 800 ms
+  after the window stops moving.
 
 ## v1 scope (this build)
 

@@ -294,6 +294,35 @@ export interface TurnCredentials {
   ttl: number
 }
 
+/// One of this account's own reports, as `/reports/mine` returns it.
+/// `reply` is the operator's answer and is an empty string until there is
+/// one; the operator's internal notes are deliberately not exposed. An older
+/// island may omit the field entirely, hence the optional.
+export interface MyReport {
+  id: number
+  reason: string
+  /// 'open' | 'resolved' | 'dismissed' | 'duplicate' — a plain server string,
+  /// not an enum, so unknown values must fall back rather than render a key.
+  status: string
+  created_at: string
+  reply?: string
+  replied_at?: string | null
+}
+
+/// The platform tag glued to the front of a bug report so the admin queue can
+/// tell where it came from — the same convention as Android's `[Android 0.110]`.
+export const REPORT_TAG = '[Web]'
+
+/// The server caps `reason` at 1000 characters AFTER the tag is prepended, so
+/// a composer capped at a flat 1000 lets the user type a report the island
+/// then rejects with a 422 that reads to them as a network failure. Android
+/// learned this the same way and does the same arithmetic.
+export const REPORT_MAX_REASON = 1000
+
+export function reportTextLimit(tag: string = REPORT_TAG): number {
+  return REPORT_MAX_REASON - tag.length - 1
+}
+
 // -----------------------------------------------------------
 
 export const Api = {
@@ -485,19 +514,38 @@ export const Api = {
 
   /// Submit a bug report / feedback. Rides the same `/reports` channel as the
   /// mobile clients' in-app bug bounty: target_uin = self, context =
-  /// "bug_bounty", the body prefixed "[Web]" so the admin queue shows the
-  /// platform. Server rate-limits to 5/hr per uin.
+  /// "bug_bounty", the body prefixed with the platform tag so the admin queue
+  /// shows where it came from. Server rate-limits bug reports to 20/hr per uin
+  /// (abuse reports about another user are the 5/hr budget).
   sendReport(
     id: WebIdentity,
     text: string,
     attachments: { media_id: string; key: string; mime: string; size: number }[] = [],
+    tag: string = REPORT_TAG,
   ): Promise<{ id: number }> {
     return request<{ id: number }>(id, 'POST', '/reports', {
       target_uin: id.uin,
-      reason: `[Web] ${text}`,
+      reason: `${tag} ${text}`,
       context: 'bug_bounty',
       attachments,
     })
+  },
+
+  /// The reports this account filed, newest first (server caps at 50), with
+  /// the operator's answer when there is one.
+  ///
+  /// Deliberately NOT gated on the island's "reports open" switch: intake can
+  /// be closed, but an answer already written must always be readable.
+  myReports(id: WebIdentity): Promise<MyReport[]> {
+    return request<MyReport[]>(id, 'GET', '/reports/mine')
+  },
+
+  /// Withdraw one of your own reports. 404 when it is not yours, 409
+  /// `under_review` when it is an open accusation about someone else — that
+  /// one is not yours to erase. The deletion is real: no tombstone, and the
+  /// evidence blob goes with it.
+  deleteMyReport(id: WebIdentity, reportId: number): Promise<void> {
+    return request<void>(id, 'DELETE', `/reports/mine/${reportId}`)
   },
 
   // UIN market ----------------------------------------------

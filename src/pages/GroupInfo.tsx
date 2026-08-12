@@ -154,10 +154,10 @@ export function GroupInfo() {
                             </span>
                           )}
                         </div>
-                        <div className="font-mono text-[10px] text-fg-dim">#{m.uin}</div>
+                        <div className="font-mono text-[0.625rem] text-fg-dim">#{m.uin}</div>
                       </div>
                       {m.role === 'owner' && (
-                        <span className="text-[10px] font-bold text-accent uppercase tracking-wider">
+                        <span className="text-[0.625rem] font-bold text-accent uppercase tracking-wider">
                           {t('group.info.owner')}
                         </span>
                       )}

@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.3.6"
+version = "0.3.7"
 description = "RCQ desktop client"
 authors = ["RCQ"]
 license = "AGPL-3.0"
@@ -53,6 +53,7 @@ webkit2gtk = { version = "=2.0.2", features = ["v2_40"] }
 [target."cfg(not(any(target_os = \"android\", target_os = \"ios\")))".dependencies]
 tauri-plugin-single-instance = "2"
 tauri-plugin-updater = "2"
+tauri-plugin-window-state = "2"
 tauri-plugin-process = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-shell = "2"

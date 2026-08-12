@@ -243,14 +243,28 @@ def upload(work, version, names):
     print(f"  uploaded {len(names)} files + latest.json")
 
 
+# Cloudflare answers `Python-urllib/x.y` with a 403 on these URLs, so the
+# self-check used to fail on EVERY release after a publish that had in fact
+# succeeded — a verification step that always cries wolf is worse than none,
+# because you learn to ignore it. A browser UA is all it wants.
+_UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/126.0 Safari/537.36"
+)
+
+
+def _get(url):
+    return urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": _UA}))
+
+
 def verify_live():
     """Re-check every entry over the public URLs, the way a client would."""
-    live = json.loads(urllib.request.urlopen(f"{BASE_URL}/latest.json").read())
+    live = json.loads(_get(f"{BASE_URL}/latest.json").read())
     cache, bad = {}, 0
     for target, entry in live["platforms"].items():
         url = entry["url"]
         if url not in cache:
-            with urllib.request.urlopen(url) as resp:
+            with _get(url) as resp:
                 expected = int(resp.headers["content-length"])
                 cache[url] = resp.read()
             if len(cache[url]) != expected:

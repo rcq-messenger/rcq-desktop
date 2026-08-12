@@ -390,15 +390,6 @@ export const en: Record<string, string> = {
   'settings.section.profile': 'Profile',
   'settings.profile.cta': 'View and edit your profile',
 
-  // Shop / buy tokens
-  'shop.title': 'Buy tokens',
-  'shop.kicker': 'SHOP',
-  'shop.subtitle': '2 tokens = 1 box opened.',
-  'shop.tokens_n': '{n} tokens',
-  'shop.best_value': 'BEST VALUE',
-  'shop.balance':
-    'Tokens are spent two-per-box and live on the server. Real payment integration is coming — for testing, packs above credit your wallet instantly.',
-
   // Chat — emoticon picker
   'chat.emoticons': 'Emoticons',
   'chat.picker.section.base': 'Kolobok',
@@ -557,7 +548,6 @@ export const en: Record<string, string> = {
   'random.ended.peer_disconnected': 'The stranger disconnected.',
   'random.ended.default': 'Session ended.',
 
-  // UIN market — buy a custom 3-9 digit handle (mirrors iOS UINShopView)
   'uin_market.title': 'UIN market',
   'uin_market.hero.label': 'Claim a UIN',
   'uin_market.hero.current': 'now {uin}',

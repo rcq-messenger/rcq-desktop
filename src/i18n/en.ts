@@ -390,86 +390,6 @@ export const en: Record<string, string> = {
   'settings.section.profile': 'Profile',
   'settings.profile.cta': 'View and edit your profile',
 
-  // Inventory + items
-  'inventory.title': 'Inventory',
-  'inventory.tokens': 'Tokens',
-  'inventory.gems': 'Gems',
-  'inventory.button.open': 'Open box',
-  'inventory.button.buy_more': 'Buy more',
-  'inventory.empty': 'Empty inventory. Open your first box to fill it.',
-  'inventory.empty.filter': 'Nothing matches that rarity.',
-  'inventory.error': 'Could not load inventory.',
-  'inventory.filter.all': 'All',
-
-  // Rarity (also used by lootbox reveal + item detail)
-  'rarity.common': 'Common',
-  'rarity.uncommon': 'Uncommon',
-  'rarity.rare': 'Rare',
-  'rarity.epic': 'Epic',
-  'rarity.legendary': 'Legendary',
-
-  // Lootbox
-  'lootbox.title': 'Lootbox',
-  'lootbox.kicker': 'OPEN A BOX',
-  'lootbox.heading': 'Inside',
-  'lootbox.subhead': 'A smiley pack, a relic, or a handful of gems.',
-  'lootbox.cost': 'Per open',
-  'lootbox.button.pull': 'Open box',
-  'lootbox.button.pulling': 'Opening…',
-  'lootbox.opening': 'Opening…',
-  'lootbox.cant_afford': 'Not enough tokens',
-  'lootbox.tap_to_skip': 'Tap to skip',
-  'lootbox.remaining': 'TOKENS',
-  'lootbox.buy_more': 'BUY MORE',
-  'lootbox.cost.per_open': '{n} per open',
-  'lootbox.recent': 'RECENT',
-  'lootbox.recent.empty': 'Open your first box to start filling this list.',
-  'lootbox.reveal.you_pulled': 'YOU PULLED',
-  'lootbox.reveal.essence': 'Essence',
-  'lootbox.reveal.gems': 'Gems',
-  'lootbox.reveal.repeat': 'Open another',
-  'lootbox.reveal.to_inventory': 'To inventory',
-
-  // Item detail
-  'item.stat.essence': 'Essence',
-  'item.stat.purity': 'Purity',
-  'item.stat.level': 'Level',
-  'item.stat.mint': 'Mint',
-  'item.stat.acquired': 'Acquired',
-  'item.equipped': 'Equipped',
-  'item.purity.pristine': 'Pristine',
-  'item.purity.flawless': 'Flawless',
-  'item.lucky.first': '#1 / FIRST',
-  'item.action.equip': 'Equip',
-  'item.action.unequip': 'Unequip',
-  'item.action.disassemble': 'Disassemble',
-  'item.disassemble.warn':
-    'Disassembling destroys the item permanently. You\'ll receive gems based on its rarity and level.',
-
-  'item.temper.title': 'Temper',
-  'item.temper.cost': 'Cost',
-  'item.temper.chance': 'Success',
-  'item.temper.scrolls_unit': 'gems',
-  'item.temper.wallet_balance': 'You have {n} gems.',
-  'item.temper.cta': 'Temper · {cost} gems · {chance}%',
-  'item.temper.cta_no_scrolls': 'Not enough gems',
-  'item.temper.confirm': 'Roll',
-  'item.temper.warn':
-    '{chance}% to bump the level by one. {burn}% to burn the item to ash. Gems are spent either way.',
-  'item.temper.maxed': 'This item is at the maximum temper level. There is no further to climb.',
-
-  'item.history.title': 'Provenance',
-  'item.history.drop': 'Pulled from a lootbox.',
-  'item.history.drop_to': 'Pulled by UIN {uin}.',
-  'item.history.gift': 'Gifted from {from} to {to}.',
-  'item.history.trade': 'Traded {from} → {to}.',
-  'item.history.temper_success': 'Tempered +{before} → +{after}.',
-  'item.history.temper_burn': 'Burned in tempering at +{level}.',
-  'item.history.disassemble': 'Disassembled.',
-
-  'item.pack.title': "What's inside",
-  'item.pack.footer': 'These emoticons join the picker when the pack is equipped. Codes work in chat anywhere — receivers see them too.',
-
   // Shop / buy tokens
   'shop.title': 'Buy tokens',
   'shop.kicker': 'SHOP',
@@ -478,21 +398,6 @@ export const en: Record<string, string> = {
   'shop.best_value': 'BEST VALUE',
   'shop.balance':
     'Tokens are spent two-per-box and live on the server. Real payment integration is coming — for testing, packs above credit your wallet instantly.',
-
-  // Trades
-  'trades.title': 'Trades',
-  'trades.section.incoming': 'Incoming',
-  'trades.section.outgoing': 'Outgoing',
-  'trades.empty.title': 'No pending trades',
-  'trades.empty.body': 'Trade offers from your contacts show up here.',
-  'trades.error': 'Could not load trades.',
-  'trades.accept': 'Accept',
-  'trades.decline': 'Decline',
-  'trades.cancel': 'Cancel offer',
-  'trade.summary.you_offer': 'You offer',
-  'trade.summary.they_offer': 'They offer',
-  'trade.summary.you_ask': 'You ask',
-  'trade.summary.they_ask': 'They ask',
 
   // Chat — emoticon picker
   'chat.emoticons': 'Emoticons',
@@ -506,7 +411,6 @@ export const en: Record<string, string> = {
   'chat.picker.hint.panel': 'Tap to add emoticons to your composer panel (up to 40).',
   'chat.picker.hint.reactions': 'Tap to choose your quick reactions (up to 6).',
 
-  // Contacts header — inventory link
   'contacts.inventory': 'Inventory',
 
   // Status picker (own status in header)
@@ -517,8 +421,6 @@ export const en: Record<string, string> = {
   'status.offline': 'Offline',
   'status.picker': 'Change status',
 
-  // Lootbox pool view
-  'lootbox.view_pool': 'View pool',
   'pool.title': 'Pool',
   'pool.share': '{n}% of pulls',
   'pool.cap': 'cap {n}',
@@ -526,32 +428,6 @@ export const en: Record<string, string> = {
   'pool.gems.title': 'Gem bundle',
   'pool.gems.range': '{min}–{max} gems per drop',
 
-  'inventory.section.smileys': 'Smileys',
-  'inventory.section.voices': 'Voices',
-  'inventory.section.skins': 'Skins',
-  'inventory.section.relics': 'Relics',
-  'inventory.section.founders': 'Founders',
-
-  // Propose trade
-  'trade.propose.title': 'Propose trade',
-  'trade.with': 'with {nick}',
-  'trade.section.your': 'Your offer',
-  'trade.section.theirs': "{nick}'s side",
-  'trade.note': 'Note (optional)',
-  'trade.note.placeholder': 'Add a quick note',
-  'trade.send': 'Send offer',
-  'trade.sending': 'Sending…',
-  'trade.sent': 'Sent ✓',
-  'trade.preflight.empty': 'Add at least one item or a currency amount on either side.',
-  'trade.peer_private': "This user's inventory is private.",
-  'trade.no_items.you': "You don't own any items yet — you can still gift or buy with currency.",
-  'trade.no_items.peer': "They don't own any items yet.",
-  'trade.kind.gift': 'Gift',
-  'trade.kind.buy': 'Buy request',
-  'trade.kind.trade': 'Trade',
-  'trade.kind.swap': 'Currency swap',
-
-  // Profile — propose trade entry
   'profile.cta.propose_trade': 'Propose trade',
 
   // Settings — privacy + sound

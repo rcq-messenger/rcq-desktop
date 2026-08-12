@@ -23,6 +23,10 @@
 
 export type FontScale = 'small' | 'normal' | 'large' | 'largest'
 
+/// Anyone rendering the current step. Declared up here because both the setter
+/// and the cross-tab listener below notify through it.
+const listeners = new Set<() => void>()
+
 /// Order matters — this is the order the picker lists them in.
 export const FONT_SCALES: FontScale[] = ['small', 'normal', 'large', 'largest']
 
@@ -62,6 +66,7 @@ export function setFontScale(pref: FontScale) {
     // this session rather than refusing to change at all.
   }
   applyFontScale(pref)
+  for (const l of listeners) l()
 }
 
 /// Called from main.tsx before React mounts, so the first paint is already at
@@ -72,6 +77,17 @@ export function initFontScale() {
   // chat.rcq.app is commonly open in two tabs. `storage` fires in the OTHER
   // tabs only, which is exactly what is wanted here.
   window.addEventListener('storage', (e) => {
-    if (e.key === STORAGE_KEY) applyFontScale(getFontScale())
+    if (e.key === STORAGE_KEY) {
+      applyFontScale(getFontScale())
+      for (const l of listeners) l()
+    }
   })
+}
+
+/// Let a component follow the value rather than only seed itself from it —
+/// otherwise the picker in Settings keeps showing the old step after another
+/// tab changed the size, while the page around it is already scaled.
+export function subscribeFontScale(cb: () => void): () => void {
+  listeners.add(cb)
+  return () => listeners.delete(cb)
 }

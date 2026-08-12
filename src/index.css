@@ -101,10 +101,16 @@ html.desktop {
 
    `:root`, not `html`: a media query adds no specificity of its own, so a
    type selector (0,0,1) here would lose to the `:root` rule above (0,1,0) and
-   the wide browser would silently drop back to the phone size. */
+   the wide browser would silently drop back to the phone size.
+
+   And a percentage rather than 17.5px, for the same reason the rule above is
+   `100%`: this is a browser, where the reader may have raised their own
+   default text size. 109.375% is 17.5px at the usual 16px default — identical
+   to what it replaced — but it multiplies that default instead of discarding
+   it. */
 @media (min-width: 1024px) {
   :root {
-    font-size: calc(17.5px * var(--rcq-font-scale));
+    font-size: calc(109.375% * var(--rcq-font-scale));
   }
 }
 

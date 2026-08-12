@@ -52,6 +52,13 @@ fn save_window_state_now(app: &tauri::AppHandle) {
 
 // Dragging a window emits a Moved per frame, so the write is coalesced: the
 // first event arms a one-shot, and everything until it fires is free.
+//
+// ⚠ The spawned thread is a TIMER ONLY. Saving reads the window's geometry,
+// and those getters block on a reply from the event loop while the plugin's
+// own move/resize handler is holding its cache mutex on that same loop — call
+// it off the main thread and the two can wait on each other with the whole app
+// frozen. So the work is bounced back with `run_on_main_thread`, where every
+// getter takes the in-thread fast path and nothing is contended.
 #[cfg(desktop)]
 fn schedule_window_state_save(app: &tauri::AppHandle) {
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -64,7 +71,10 @@ fn schedule_window_state_save(app: &tauri::AppHandle) {
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_millis(800));
         PENDING.store(false, Ordering::SeqCst);
-        save_window_state_now(&app);
+        let inner = app.clone();
+        // Fails only once the event loop is gone, and then the plugin's own
+        // Exit handler has already written the file.
+        let _ = app.run_on_main_thread(move || save_window_state_now(&inner));
     });
 }
 

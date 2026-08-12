@@ -30,6 +30,10 @@ export function MyReports() {
   const { toast } = useToast()
   const [items, setItems] = useState<MyReport[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  /// Kept apart from `error` on purpose: `error` is about the LOAD and gates
+  /// the loading and empty branches below, so putting a failed delete in it
+  /// would blank the list and then never clear.
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const [refused, setRefused] = useState(false)
 
   useEffect(() => {
@@ -64,6 +68,7 @@ export function MyReports() {
     // your own words and the answer to them.
     if (!window.confirm(t('myreports.delete_confirm'))) return
     setRefused(false)
+    setDeleteError(null)
     try {
       await Api.deleteMyReport(identity, report.id)
       setItems((prev) => (prev ? prev.filter((r) => r.id !== report.id) : prev))
@@ -72,7 +77,13 @@ export function MyReports() {
         setRefused(true)
         return
       }
-      setError(t('myreports.delete_error'))
+      // 404 means it is already gone — from another device, or from the
+      // operator's side. Dropping the row is the honest answer, not an error.
+      if (e instanceof ApiError && e.status === 404) {
+        setItems((prev) => (prev ? prev.filter((r) => r.id !== report.id) : prev))
+        return
+      }
+      setDeleteError(t('myreports.delete_error'))
     }
   }
 
@@ -115,6 +126,10 @@ export function MyReports() {
           </div>
         )}
 
+        {deleteError && (
+          <div className="bg-surface rounded-lg p-3 text-sm text-red-600">{deleteError}</div>
+        )}
+
         {items === null && !error && (
           <div className="text-center text-sm text-fg-secondary py-12">
             {t('contacts.loading')}
@@ -139,7 +154,14 @@ export function MyReports() {
           // The platform tag the client glued on when sending is ours, not
           // something the reporter wrote. Showing it back to them reads as
           // their own text having been mangled.
-          const reason = r.reason.replace(/^\[[^\]]{1,32}\]\s*/, '')
+          //
+          // Only OUR tags, not any leading bracket: reports also arrive from
+          // the abuse flow with no tag at all, and a report that opens with
+          // "[важно] ..." is the reporter's own emphasis, not ours to eat.
+          const reason = r.reason.replace(
+            /^\[(Web|Desktop [^\]]{0,24}|Android [^\]]{0,12}|iOS [^\]]{0,12})\]\s*/,
+            '',
+          )
 
           return (
             <section key={r.id} className="bg-surface rounded-lg p-4 space-y-2">

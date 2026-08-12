@@ -294,6 +294,14 @@ export function Chat() {
     setError(null)
     setShowPicker(false)
     setAttachMenuOpen(false)
+    // The unread machinery too. This component is not keyed by route, so a
+    // chat-to-chat jump reuses the instance — and the anchor effect below
+    // bails before claiming the key when the new thread has no rows yet, which
+    // would leave the PREVIOUS thread's decision in place and paint its
+    // divider again on the way back.
+    setUnreadAnchor(null)
+    anchorDecidedRef.current = null
+    didUnreadScrollRef.current = null
   }, [persistKey])
 
   // Persist on every change. Cheaper than a debounce here — the
@@ -472,6 +480,20 @@ export function Chat() {
     const div = unreadDividerRef.current
     if (!el || !div) return
     el.scrollTop += div.getBoundingClientRect().top - el.getBoundingClientRect().top
+
+    // Where we ACTUALLY ended up, which is not always where we aimed: a thread
+    // barely longer than the pane cannot scroll the divider to the top, and
+    // then the list is still showing the newest message. Saying otherwise
+    // would leave it marked "the user is reading further up" for good — it
+    // would stop following new arrivals and offer a jump button that jumps
+    // nowhere. Re-derived on every re-pin rather than once, because the
+    // decrypting photos above the divider keep changing the answer.
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 80) {
+      pinTargetRef.current = 'bottom'
+      atBottomRef.current = true
+      setAtBottom(true)
+      setUnseenBelow(0)
+    }
   }
 
   /** The user took the wheel. Stop holding the view against the divider, or
@@ -537,10 +559,12 @@ export function Chat() {
     pinTargetRef.current = 'unread'
     atBottomRef.current = false
     setAtBottom(false)
-    // The jump button now carries the backlog rather than starting at zero, so
-    // the way back to the newest message is one click from the moment the
-    // thread opens.
+    // The jump button carries the backlog rather than starting at zero, so the
+    // way back to the newest message is one click from the moment the thread
+    // opens.
     setUnseenBelow(unreadOnOpenRef.current?.n ?? 0)
+    // May correct all of the above on the spot, if the thread turns out to be
+    // too short to scroll.
     scrollToUnreadDivider()
   }, [persistKey, unreadAnchor])
 
@@ -1160,6 +1184,10 @@ export function Chat() {
       toast(t('chat.reply.not_loaded'), 'error')
       return
     }
+    // The user has asked to be somewhere specific, so stop holding the view
+    // against the unread divider: this moves the list without a wheel or a
+    // touch, and the next image to finish decrypting would drag them back.
+    releaseUnreadPin()
     el.scrollIntoView({ behavior: 'smooth', block: 'center' })
     setHighlightId(id)
     window.setTimeout(() => setHighlightId((cur) => (cur === id ? null : cur)), 1400)
@@ -1657,6 +1685,10 @@ export function Chat() {
         onScroll={(e) => {
           const el = e.currentTarget
           const bottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+          // Reaching the bottom means the divider is behind you whatever moved
+          // the list — a wheel, a key, or the jump a reply quote performs. The
+          // wheel/touch handlers cannot see those.
+          if (bottom) releaseUnreadPin()
           atBottomRef.current = bottom
           setAtBottom((was) => {
             if (was !== bottom && bottom) setUnseenBelow(0)

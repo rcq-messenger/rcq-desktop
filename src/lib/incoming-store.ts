@@ -239,17 +239,29 @@ export function isDeleted(targetId: string): boolean {
 export function markDeleted(targetId: string, opts?: { senderUin?: number; fromSelf?: boolean }): void {
   if (deletedIds.has(targetId)) return
   let removed = false
-  const drop = (map: Map<number, IncomingRow[]>) => {
+  const drop = (map: Map<number, IncomingRow[]>, threadKey: (id: number) => string) => {
     for (const [key, rows] of map) {
       const next = rows.filter((r) => !(r.id === targetId && (opts?.senderUin == null || r.from === opts.senderUin)))
       if (next.length !== rows.length) {
         map.set(key, next)
         removed = true
+        // The row is gone from the array, so a count that still includes it no
+        // longer describes anything: the unread run is measured by counting
+        // back from the end, and every undecremented delete slides that
+        // boundary one message the wrong way.
+        const tk = threadKey(key)
+        const n = unread.get(tk) ?? 0
+        if (n > 0) {
+          if (n > 1) unread.set(tk, n - 1)
+          else unread.delete(tk)
+          persistUnread()
+          emitUnread()
+        }
       }
     }
   }
-  drop(byPeer)
-  drop(byGroup)
+  drop(byPeer, peerKey)
+  drop(byGroup, groupKey)
   // Only tombstone when we either removed the sender's own incoming message or
   // it's our own delete — never let a peer tombstone (and thus hide) a message
   // that wasn't theirs.

@@ -276,13 +276,34 @@ export function Chat() {
         } else if (isSelf && peerUIN != null) {
           // Saved Messages — synthesise the self-peer (the server never returns
           // your own UIN in /contacts). No fetch, no "not in contacts" error.
+          //
+          // ⚠ The keys are OUR OWN, and they have to be real. They were two
+          // empty strings for as long as a note never left the browser; the
+          // moment notes started shipping over the wire (#469) the first note
+          // sent from the desktop died on "recipient identityKey is not 32
+          // bytes", because that is what an empty string decodes to.
+          //
+          // The key comes from the island rather than from this browser's own
+          // copy, on purpose: what matters is that the OTHER devices of the
+          // account can open the note, and the island's copy is the one every
+          // sender in the network seals to. The local public key is the
+          // fallback for an island that will not answer — better a note this
+          // device can still read than a send that fails.
+          let selfKeys = { identity_key: bytesToB64(identity.identityPub), signing_key: bytesToB64(identity.signingPub) }
+          try {
+            const me = await Api.userInfo(identity, peerUIN)
+            if (me.identity_key) {
+              selfKeys = { identity_key: me.identity_key, signing_key: me.signing_key || selfKeys.signing_key }
+            }
+          } catch {
+            // island unreachable — keep the local copy
+          }
           setPeer({
             uin: peerUIN,
             nickname: t('chat.saved.title'),
             status: 'online',
             blocked: false,
-            identity_key: '',
-            signing_key: '',
+            ...selfKeys,
           })
         } else if (islandHost && peerUIN != null) {
           // Cross-island peer — load from the local store (the flagship /contacts

@@ -390,84 +390,12 @@ export const ru: Record<string, string> = {
   'settings.profile.cta': 'Посмотреть и изменить свой профиль',
 
   // Инвентарь
-  'inventory.title': 'Инвентарь',
-  'inventory.tokens': 'Жетоны',
-  'inventory.gems': 'Гемы',
-  'inventory.button.open': 'Открыть',
-  'inventory.button.buy_more': 'Купить ещё',
-  'inventory.empty': 'Инвентарь пуст. Откройте первую коробку.',
-  'inventory.empty.filter': 'Под этот фильтр ничего не подходит.',
-  'inventory.error': 'Не удалось загрузить инвентарь.',
-  'inventory.filter.all': 'Все',
 
   // Редкость
-  'rarity.common': 'Обычный',
-  'rarity.uncommon': 'Необычный',
-  'rarity.rare': 'Редкий',
-  'rarity.epic': 'Эпический',
-  'rarity.legendary': 'Легендарный',
 
   // Лутбокс
-  'lootbox.title': 'Лутбокс',
-  'lootbox.kicker': 'ОТКРЫТЬ КОРОБКУ',
-  'lootbox.heading': 'Внутри',
-  'lootbox.subhead': 'Пак смайликов, реликвия или горсть гемов.',
-  'lootbox.cost': 'За открытие',
-  'lootbox.button.pull': 'Открыть коробку',
-  'lootbox.button.pulling': 'Открываем…',
-  'lootbox.opening': 'Открываем…',
-  'lootbox.cant_afford': 'Не хватает жетонов',
-  'lootbox.tap_to_skip': 'Нажмите чтобы пропустить',
-  'lootbox.remaining': 'ЖЕТОНЫ',
-  'lootbox.buy_more': 'КУПИТЬ',
-  'lootbox.cost.per_open': '{n} за открытие',
-  'lootbox.recent': 'НЕДАВНИЕ',
-  'lootbox.recent.empty': 'Открой первую коробку — список начнёт заполняться.',
-  'lootbox.reveal.you_pulled': 'ВЫПАЛО',
-  'lootbox.reveal.essence': 'Сущность',
-  'lootbox.reveal.gems': 'Гемы',
-  'lootbox.reveal.repeat': 'Открыть ещё',
-  'lootbox.reveal.to_inventory': 'В инвентарь',
 
   // Карточка предмета
-  'item.stat.essence': 'Сущность',
-  'item.stat.purity': 'Чистота',
-  'item.stat.level': 'Уровень',
-  'item.stat.mint': 'Тираж',
-  'item.stat.acquired': 'Получено',
-  'item.equipped': 'Экипировано',
-  'item.purity.pristine': 'Чистый',
-  'item.purity.flawless': 'Безупречный',
-  'item.lucky.first': '#1 / Первый',
-  'item.action.equip': 'Экипировать',
-  'item.action.unequip': 'Снять',
-  'item.action.disassemble': 'Разобрать',
-  'item.disassemble.warn':
-    'Разбор уничтожит предмет навсегда. Вы получите гемы в зависимости от качества и уровня.',
-
-  'item.temper.title': 'Улучшение',
-  'item.temper.cost': 'Стоимость',
-  'item.temper.chance': 'Шанс',
-  'item.temper.scrolls_unit': 'гемов',
-  'item.temper.wallet_balance': 'У вас {n} гемов.',
-  'item.temper.cta': 'Улучшить · {cost} гемов · {chance}%',
-  'item.temper.cta_no_scrolls': 'Недостаточно гемов',
-  'item.temper.confirm': 'Бросить кости',
-  'item.temper.warn':
-    '{chance}% — поднять уровень на один. {burn}% — предмет сгорит в пепел. Гемы тратятся в любом случае.',
-  'item.temper.maxed': 'Предмет уже на максимальном уровне. Дальше расти некуда.',
-
-  'item.history.title': 'История',
-  'item.history.drop': 'Выпал из коробки.',
-  'item.history.drop_to': 'Выпал у UIN {uin}.',
-  'item.history.gift': 'Подарок от {from} к {to}.',
-  'item.history.trade': 'Обмен {from} → {to}.',
-  'item.history.temper_success': 'Улучшение +{before} → +{after}.',
-  'item.history.temper_burn': 'Сгорел при улучшении на уровне +{level}.',
-  'item.history.disassemble': 'Разобран.',
-
-  'item.pack.title': 'Что внутри',
-  'item.pack.footer': 'Эти смайлики появятся в пикере, когда пак экипирован. Коды работают в чате везде — получатель тоже их видит.',
 
   // Магазин
   'shop.title': 'Купить жетоны',
@@ -479,19 +407,6 @@ export const ru: Record<string, string> = {
     'Жетоны тратятся по два за коробку и хранятся на сервере. Реальная оплата будет позже — пока что пакеты пополняют кошелёк сразу для тестирования.',
 
   // Обмены
-  'trades.title': 'Обмены',
-  'trades.section.incoming': 'Входящие',
-  'trades.section.outgoing': 'Исходящие',
-  'trades.empty.title': 'Активных обменов нет',
-  'trades.empty.body': 'Здесь появятся предложения обмена от ваших контактов.',
-  'trades.error': 'Не удалось загрузить обмены.',
-  'trades.accept': 'Принять',
-  'trades.decline': 'Отклонить',
-  'trades.cancel': 'Отменить',
-  'trade.summary.you_offer': 'Вы предлагаете',
-  'trade.summary.they_offer': 'Они предлагают',
-  'trade.summary.you_ask': 'Вы запрашиваете',
-  'trade.summary.they_ask': 'Они запрашивают',
 
   // Чат — пикер смайликов
   'chat.emoticons': 'Смайлики',
@@ -517,7 +432,6 @@ export const ru: Record<string, string> = {
   'status.picker': 'Сменить статус',
 
   // Пул лутбокса
-  'lootbox.view_pool': 'Пул наград',
   'pool.title': 'Пул',
   'pool.share': '{n}% выпадений',
   'pool.cap': 'лимит {n}',
@@ -525,30 +439,7 @@ export const ru: Record<string, string> = {
   'pool.gems.title': 'Связка гемов',
   'pool.gems.range': '{min}–{max} гемов за выпадение',
 
-  'inventory.section.smileys': 'Смайлики',
-  'inventory.section.voices': 'Звуки',
-  'inventory.section.skins': 'Темы',
-  'inventory.section.relics': 'Реликвии',
-  'inventory.section.founders': 'Основатели',
-
   // Предложить обмен
-  'trade.propose.title': 'Предложить обмен',
-  'trade.with': 'с {nick}',
-  'trade.section.your': 'Ваше предложение',
-  'trade.section.theirs': 'Сторона {nick}',
-  'trade.note': 'Записка (необязательно)',
-  'trade.note.placeholder': 'Короткая записка',
-  'trade.send': 'Отправить',
-  'trade.sending': 'Отправляем…',
-  'trade.sent': 'Отправлено ✓',
-  'trade.preflight.empty': 'Добавьте хотя бы один предмет или валюту на любую сторону.',
-  'trade.peer_private': 'Инвентарь скрыт.',
-  'trade.no_items.you': 'У вас пока нет предметов — но можно подарить или купить за валюту.',
-  'trade.no_items.peer': 'У собеседника пока нет предметов.',
-  'trade.kind.gift': 'Подарок',
-  'trade.kind.buy': 'Запрос',
-  'trade.kind.trade': 'Обмен',
-  'trade.kind.swap': 'Обмен валюты',
 
   // Профиль — кнопка предложить обмен
   'profile.cta.propose_trade': 'Предложить обмен',

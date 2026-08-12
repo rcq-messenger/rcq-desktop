@@ -108,7 +108,7 @@ export function CreateGroupSheet({ contacts, onClose, onCreated }: Props) {
                     </span>
                     <span
                       className={
-                        'w-5 h-5 rounded-full border-2 flex items-center justify-center text-[10px] font-bold ' +
+                        'w-5 h-5 rounded-full border-2 flex items-center justify-center text-[0.625rem] font-bold ' +
                         (on
                           ? 'bg-accent border-accent text-white'
                           : 'border-line')

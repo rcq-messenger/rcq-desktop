@@ -62,8 +62,12 @@ function emoticonImg(asset: string, code: string, size: number): HTMLImageElemen
   img.alt = code
   img.title = code
   img.dataset.code = code
-  img.width = size
-  img.height = size
+  // rem, not the width/height attributes: `size` is pixels at the default root
+  // size, and the composer has to track the reader's text size like everything
+  // else does (#477). Pinned in px, the smiley the user just inserted would
+  // stay put while the text around it grew.
+  img.style.width = `${size / 16}rem`
+  img.style.height = `${size / 16}rem`
   img.draggable = false
   img.className = 'inline-block align-middle mx-0.5'
   return img

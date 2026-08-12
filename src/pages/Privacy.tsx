@@ -164,7 +164,7 @@ function ScopePicker({
           combined block at the bottom). */}
       {description && <p className="text-xs text-fg-dim">{description}</p>}
       {disabled && disabledHint && (
-        <p className="text-[10px] text-fg-dim">{disabledHint}</p>
+        <p className="text-[0.625rem] text-fg-dim">{disabledHint}</p>
       )}
     </div>
   )

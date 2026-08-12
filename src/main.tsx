@@ -6,6 +6,7 @@ import { bypassStatus, isTauri } from './lib/desktop'
 import { installFrontRouting, refreshFrontRouting, setFrontHost } from './lib/front'
 import { wipeLocalAccountData } from './lib/auth'
 import { idbClearAll } from './lib/signal-persist'
+import { initFontScale } from './lib/fontscale'
 
 // Desktop (Tauri) build only: mark the root so the desktop-sized root font in
 // index.css applies. The palette is no longer keyed off this — both surfaces
@@ -13,6 +14,11 @@ import { idbClearAll } from './lib/signal-persist'
 // window on a monitor, and lifting it in the browser would grow the layout on
 // phones too.
 if (isTauri()) document.documentElement.classList.add('desktop')
+
+// The user's own multiplier on that root size (#477). Applied here rather than
+// from a component for the same reason as the class above: after the first
+// paint it is a visible jump.
+initFontScale()
 
 // Desktop only: put the Cloudflare front in front of the flagship, so a
 // blocked island has an answer that does not need the tunnel (which on this

@@ -67,7 +67,7 @@ export function FileBubble({ mediaId, mediaKey, fileName, mime, size, apiBase }:
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium">{name}</span>
-        <span className="block text-[11px] text-fg-dim">
+        <span className="block text-[0.6875rem] text-fg-dim">
           {failed ? t('chat.media.unavailable') : sizeLabel ? `${sizeLabel} · ${t('chat.media.download')}` : t('chat.media.download')}
         </span>
       </span>

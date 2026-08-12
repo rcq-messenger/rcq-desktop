@@ -13,7 +13,7 @@ import { Dropdown, type DropdownOption } from '../components/Dropdown'
 import { LanguagePicker } from '../components/LanguagePicker'
 import { Logo } from '../components/Logo'
 import { MyQRCode } from '../components/MyQRCode'
-import { Api } from '../lib/api'
+import { Api, REPORT_TAG, reportTextLimit } from '../lib/api'
 import {
   appVersion,
   bypassStatus,
@@ -40,6 +40,7 @@ import { snapshotFor } from '../lib/contacts-cache'
 import { PersonAvatar } from '../components/PersonAvatar'
 import { useIdentity } from '../lib/identity-context'
 import { isPresenceSoundEnabled, isSoundEnabled, setPresenceSoundEnabled, setSoundEnabled } from '../lib/sounds'
+import { FONT_SCALES, getFontScale, setFontScale, type FontScale } from '../lib/fontscale'
 import { useTheme, type ThemePref } from '../lib/theme-context'
 import {
   addBackupIsland,
@@ -65,6 +66,7 @@ export function Settings() {
   const [soundOn, setSoundOnState] = useState<boolean>(() => isSoundEnabled())
   const [presenceSoundOn, setPresenceSoundOnState] = useState<boolean>(() => isPresenceSoundEnabled())
   const { pref: themePref, setPref: setThemePref } = useTheme()
+  const [fontScalePref, setFontScalePref] = useState<FontScale>(() => getFontScale())
   const [backups, setBackups] = useState<BackupHome[]>(() => listBackupHomes())
   const [mhAdding, setMhAdding] = useState(false)
   const [mhHost, setMhHost] = useState('')
@@ -263,6 +265,13 @@ export function Settings() {
     await setHofAvatarUpload(dataUri)
   }
 
+  // The tag the admin queue sees. Every desktop report used to arrive as
+  // "[Web]", which on a Windows app is simply wrong and hid the platform of
+  // the three reports this very build answers. Android has named itself
+  // "[Android 0.110]" for a long time.
+  const reportTag =
+    platform && desktopVersion ? `[Desktop ${desktopVersion} ${platform}]` : REPORT_TAG
+
   async function submitReport() {
     setReportBusy(true)
     setReportError(null)
@@ -270,13 +279,14 @@ export function Settings() {
       const atts = (await Promise.all(
         reportFiles.map((f) => uploadReportAttachment(identity!.apiBase, f)),
       )).filter((a): a is NonNullable<typeof a> => a != null)
-      await Api.sendReport(identity!, reportText.trim(), atts)
+      await Api.sendReport(identity!, reportText.trim(), atts, reportTag)
       setReportSent(true)
       setReportText('')
       setReportFiles([])
     } catch (e) {
       const msg = e instanceof Error ? e.message : ''
-      // 429 = the server's 5/hr per-uin rate limit on the reports channel.
+      // 429 = the server's per-uin rate limit on the reports channel
+      // (20/hr for bug reports; the 5/hr budget is for abuse reports).
       setReportError(
         msg.includes('429') ? t('settings.report.rate_limited') : t('settings.report.error'),
       )
@@ -690,6 +700,29 @@ export function Settings() {
           <p className="text-xs text-fg-dim">{t('settings.theme.footer')}</p>
         </section>
 
+        {/* Text size (#477). Its own card rather than a row inside the theme
+            one: the RU header there reads «Оформление», but the EN header is
+            "Theme", and text size is not a theme. */}
+        <section className="bg-surface rounded-lg p-4 space-y-3">
+          <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+            {t('settings.section.textsize')}
+          </div>
+          <Dropdown<FontScale>
+            value={fontScalePref}
+            options={FONT_SCALES.map<DropdownOption<FontScale>>((opt) => ({
+              value: opt,
+              label: t(`settings.textsize.${opt}`),
+            }))}
+            onChange={(next) => {
+              setFontScale(next)
+              setFontScalePref(next)
+            }}
+            ariaLabel={t('settings.section.textsize')}
+            variant="row"
+          />
+          <p className="text-xs text-fg-dim">{t('settings.textsize.footer')}</p>
+        </section>
+
         <section className="bg-surface rounded-lg p-4 space-y-3">
           <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
             {t('settings.section.sound')}
@@ -796,7 +829,11 @@ export function Settings() {
                 onChange={(e) => setReportText(e.target.value)}
                 placeholder={t('settings.report.placeholder')}
                 rows={4}
-                maxLength={1000}
+                // The server's 1000 counts the tag we prepend, so a flat 1000
+                // here let a full-length report be typed and then refused with
+                // a 422 the UI reported as "could not send" — a network error
+                // for a report the network delivered perfectly.
+                maxLength={reportTextLimit(reportTag)}
                 disabled={reportBusy}
                 className="w-full px-3 py-2 rounded-md bg-field outline-none focus:ring-1 focus:ring-accent text-sm resize-y"
               />
@@ -810,7 +847,7 @@ export function Settings() {
                     )}
                     <button
                       onClick={() => setReportFiles(reportFiles.filter((_, j) => j !== i))}
-                      className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-black/60 text-white text-[10px] leading-none"
+                      className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-black/60 text-white text-[0.625rem] leading-none"
                     >×</button>
                   </div>
                 ))}
@@ -843,6 +880,26 @@ export function Settings() {
             <div className="text-sm text-red-600 bg-red-500/5 rounded-md p-2">{reportError}</div>
           )}
         </section>
+
+        {/* The other half of the channel above: what you sent and what came
+            back (#475). Directly under the form, because the question a
+            reporter has after sending is "did anyone answer". */}
+        <Link
+          to="/reports"
+          className="block bg-surface rounded-lg p-4 hover:bg-surface-dim transition-colors"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+                {t('myreports.title')}
+              </div>
+              <div className="text-xs text-fg-dim mt-0.5 truncate">
+                {t('settings.myreports.footer.short')}
+              </div>
+            </div>
+            <span className="text-fg-dim">→</span>
+          </div>
+        </Link>
 
         {/* Desktop only: the bundled sing-box. The webview proxy is fixed when
             the webview is built, so flipping this needs a restart. */}
@@ -1247,7 +1304,7 @@ function RecoveryPhraseSection() {
           <div className="grid grid-cols-3 gap-1.5 rounded-lg bg-surface-dim p-3">
             {words.map((w, i) => (
               <div key={i} className="flex items-baseline gap-1 text-sm">
-                <span className="font-mono text-[10px] text-fg-dim w-5 text-right shrink-0">{i + 1}</span>
+                <span className="font-mono text-[0.625rem] text-fg-dim w-5 text-right shrink-0">{i + 1}</span>
                 <span className="font-medium break-all">{w}</span>
               </div>
             ))}

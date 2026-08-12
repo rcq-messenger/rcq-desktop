@@ -110,7 +110,7 @@ export function BypassShield({ className = '' }: { className?: string }) {
         aria-expanded={open}
         className={'flex-none p-1 rounded-md hover:bg-surface-dim transition-colors ' + className}
       >
-        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" className={'w-[18px] h-[18px] ' + tone}>
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" className={'w-[1.125rem] h-[1.125rem] ' + tone}>
           <path d="M12 2 4 5.5v6c0 4.6 3.2 8.9 8 10.5 4.8-1.6 8-5.9 8-10.5v-6L12 2Z" />
         </svg>
       </button>

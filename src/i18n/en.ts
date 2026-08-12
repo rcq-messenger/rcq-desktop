@@ -217,6 +217,25 @@ export const en: Record<string, string> = {
   'settings.report.sent': 'Thanks — your report was sent.',
   'settings.report.error': 'Could not send the report. Try again.',
   'settings.report.rate_limited': 'Too many reports for now. Try again later.',
+
+  'chat.unread_divider': 'Unread messages',
+
+  // My reports — the answers to what you sent (#475).
+  'myreports.title': 'My reports',
+  'settings.myreports.footer.short': 'Your reports and the answers to them.',
+  'myreports.empty': 'You have not sent any reports. If you do, the answer appears here.',
+  'myreports.answer': 'Answer',
+  'myreports.status.open': 'Waiting',
+  'myreports.status.answered': 'Answered',
+  'myreports.status.resolved': 'Resolved',
+  'myreports.status.dismissed': 'Declined',
+  'myreports.status.duplicate': 'Duplicate',
+  'myreports.copy': 'Copy',
+  'myreports.delete': 'Delete',
+  'myreports.delete_confirm': 'Delete this report? The answer goes with it.',
+  'myreports.delete_refused': 'This one is still under review, so it cannot be deleted yet.',
+  'myreports.delete_error': 'Could not delete it. Try again.',
+  'myreports.load_error': 'Could not load your reports. Try again.',
   'settings.section.about': 'About',
   'settings.about.body':
     'RCQ is an anonymous, end-to-end encrypted messenger — no phone number, no email. This is the web client; it runs its own account in this browser.',
@@ -452,6 +471,14 @@ export const en: Record<string, string> = {
   'settings.theme.system': 'System',
   'settings.theme.footer':
     'System follows your OS preference and updates live when the OS toggles between light and dark.',
+
+  'settings.section.textsize': 'Text size',
+  'settings.textsize.small': 'Small',
+  'settings.textsize.normal': 'Normal',
+  'settings.textsize.large': 'Large',
+  'settings.textsize.largest': 'Largest',
+  'settings.textsize.footer':
+    'Scales the whole interface, not just the message text. The same four steps as the phone app.',
 
   // Sections on Contacts list
   'section.favorites': 'Favorites',

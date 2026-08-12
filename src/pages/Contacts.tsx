@@ -309,7 +309,7 @@ export function Contacts() {
                 <span className="font-semibold text-sm truncate">
                   {me.nickname || `#${me.uin}`}
                 </span>
-                <span className="font-mono text-[10px] text-fg-dim">#{me.uin}</span>
+                <span className="font-mono text-[0.625rem] text-fg-dim">#{me.uin}</span>
               </Link>
               {/* Desktop only, and only while a relay is actually carrying us. */}
               <BypassShield />
@@ -332,7 +332,7 @@ export function Contacts() {
             >
               <BellIcon />
               {pending.length + requestCount() > 0 && (
-                <span className="absolute top-0.5 right-0.5 min-w-[16px] h-[16px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+                <span className="absolute top-0.5 right-0.5 min-w-[1rem] h-[1rem] px-1 rounded-full bg-red-500 text-white text-[0.625rem] font-bold flex items-center justify-center">
                   {pending.length + requestCount()}
                 </span>
               )}
@@ -588,7 +588,7 @@ function Section({
           {title}
           <span className="text-fg-dim font-mono">·{count}</span>
           {unread > 0 && (
-            <span className="ml-1 inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[10px] font-bold tracking-normal">
+            <span className="ml-1 inline-flex items-center justify-center min-w-[1rem] h-4 px-1 rounded-full bg-red-500 text-white text-[0.625rem] font-bold tracking-normal">
               {unread > 99 ? '99+' : unread}
             </span>
           )}
@@ -836,7 +836,7 @@ function BlockedIcon() {
 /// Unread-count pill, accent-filled. Caps the display at 99+.
 function UnreadBadge({ n }: { n: number }) {
   return (
-    <span className="flex-none min-w-[20px] h-5 px-1.5 rounded-full bg-accent text-white text-[11px] font-bold flex items-center justify-center">
+    <span className="flex-none min-w-[1.25rem] h-5 px-1.5 rounded-full bg-accent text-white text-[0.6875rem] font-bold flex items-center justify-center">
       {n > 99 ? '99+' : n}
     </span>
   )

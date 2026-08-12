@@ -123,7 +123,7 @@ export function ForwardModal({
                     <StatusIcon status={c.status} size={18} />
                     <div className="flex-1 min-w-0">
                       <div className="text-sm truncate">{c.nickname}</div>
-                      <div className="font-mono text-[10px] text-fg-dim">#{c.uin}</div>
+                      <div className="font-mono text-[0.625rem] text-fg-dim">#{c.uin}</div>
                     </div>
                   </Row>
                 )
@@ -143,12 +143,12 @@ export function ForwardModal({
                       void handlePick({ kind: 'group', id: g.id, name: g.name, group: g })
                     }
                   >
-                    <div className="w-[18px] h-[18px] rounded-full bg-accent/15 text-accent flex items-center justify-center text-[10px] font-bold flex-none">
+                    <div className="w-[1.125rem] h-[1.125rem] rounded-full bg-accent/15 text-accent flex items-center justify-center text-[0.625rem] font-bold flex-none">
                       {g.name.slice(0, 1).toUpperCase()}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="text-sm truncate">{g.name}</div>
-                      <div className="font-mono text-[10px] text-fg-dim">
+                      <div className="font-mono text-[0.625rem] text-fg-dim">
                         {memberCount(g)}
                       </div>
                     </div>
@@ -168,7 +168,7 @@ export function ForwardModal({
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
-      <div className="px-4 pt-3 pb-1 font-mono text-[10px] uppercase tracking-[0.2em] text-fg-dim">
+      <div className="px-4 pt-3 pb-1 font-mono text-[0.625rem] uppercase tracking-[0.2em] text-fg-dim">
         {title}
       </div>
       <ul>{children}</ul>

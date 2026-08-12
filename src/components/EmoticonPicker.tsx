@@ -43,12 +43,12 @@ export function EmoticonPicker({ uin, onPick }: Props) {
         ) : (
           <div className="max-h-56 overflow-y-auto p-2">
             <div className="flex items-center justify-between px-1 pb-1">
-              <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-fg-dim">
+              <span className="font-mono text-[0.625rem] uppercase tracking-[0.2em] text-fg-dim">
                 {t('chat.picker.section.base')}
               </span>
               <button
                 onClick={() => setShowConfig(true)}
-                className="text-[11px] font-semibold text-accent hover:underline"
+                className="text-[0.6875rem] font-semibold text-accent hover:underline"
               >
                 {t('chat.picker.edit')}
               </button>

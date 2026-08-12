@@ -501,8 +501,10 @@ export function adoptMigratedUin(current: WebIdentity, newUin: number, newToken:
 /// account data — they're how this browser is set up).
 const PRESERVED_KEYS = new Set<string>([
   'rcq.web.chat.theme',
+  'rcq.web.chat.fontscale',
   'rcq.web.language',
   'rcq.web.sounds.enabled',
+  'rcq.web.sounds.presence',
   // Which browser this is, not who is signed in. Re-minting it on sign-out
   // would leave the account's old cursor behind holding its queue.
   'rcq.web.install.id',

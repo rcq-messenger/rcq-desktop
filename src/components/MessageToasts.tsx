@@ -148,7 +148,7 @@ export function MessageToasts() {
                   <div className="text-sm font-semibold truncate">{title}</div>
                 </div>
                 {sender && (
-                  <div className="flex items-center gap-1 text-[10px] text-fg-dim truncate">
+                  <div className="flex items-center gap-1 text-[0.625rem] text-fg-dim truncate">
                     {senderStatus && <StatusIcon status={senderStatus} size={10} />}
                     <span className="truncate">{sender}</span>
                   </div>

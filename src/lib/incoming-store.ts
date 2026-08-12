@@ -497,6 +497,14 @@ export async function hydrateIncoming(uin: number): Promise<void> {
       for (const [k, v] of Object.entries(JSON.parse(raw) as Record<string, number>)) {
         if (typeof v === 'number' && v > 0) unread.set(k, v)
       }
+      // ...except for the thread that is open right now. Hydration is awaited
+      // behind the socket, so on a reload straight onto a chat URL it lands
+      // long after Chat cleared an empty map — and then nothing ever clears it
+      // again, because bumpUnread skips the active thread. The count for the
+      // conversation the user is looking at stayed stuck forever, showing as a
+      // phantom in the tab title and, once there is an unread divider, putting
+      // it N messages from the end of a thread that has been read.
+      if (_activeThread && unread.delete(_activeThread)) persistUnread()
       emitUnread()
     }
   } catch {

@@ -21,6 +21,53 @@ use tauri::{
 };
 use tauri::{Manager, WindowEvent};
 
+// What the window remembers between launches: size, position, maximized and
+// fullscreen — everything EXCEPT visibility.
+//
+// VISIBLE has to stay out. The plugin restores `show()` only when the saved
+// visible flag is true, and in this app the window is usually hidden when the
+// app exits: closing it goes to the tray rather than quitting. Saving that
+// would mean the next launch decides whether to draw a window based on how the
+// last one ended, and anyone who later gives the builder `.visible(false)`
+// (the usual cure for the restore flicker) would get a launch with no window
+// at all, just a tray icon.
+#[cfg(desktop)]
+fn window_state_flags() -> tauri_plugin_window_state::StateFlags {
+    use tauri_plugin_window_state::StateFlags;
+    StateFlags::all() & !StateFlags::VISIBLE
+}
+
+// The plugin only writes the file on RunEvent::Exit, and this app spends most
+// of its life not reaching that: the close button hides to the tray, so a
+// Windows restart or a killed process takes the geometry with it. Saving is a
+// small JSON write, so it is cheaper to do it whenever the window settles than
+// to reason about which exits are clean.
+#[cfg(desktop)]
+fn save_window_state_now(app: &tauri::AppHandle) {
+    use tauri_plugin_window_state::AppHandleExt;
+    if let Err(e) = app.save_window_state(window_state_flags()) {
+        log::error!("could not save the window geometry: {e}");
+    }
+}
+
+// Dragging a window emits a Moved per frame, so the write is coalesced: the
+// first event arms a one-shot, and everything until it fires is free.
+#[cfg(desktop)]
+fn schedule_window_state_save(app: &tauri::AppHandle) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static PENDING: AtomicBool = AtomicBool::new(false);
+
+    if PENDING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(800));
+        PENDING.store(false, Ordering::SeqCst);
+        save_window_state_now(&app);
+    });
+}
+
 // Bring the main window to the foreground (used by the tray, single-instance
 // re-launch, and macOS dock re-click).
 #[cfg(desktop)]
@@ -156,6 +203,15 @@ pub fn run() {
                 focus_main(app);
             }))
             .plugin(tauri_plugin_updater::Builder::new().build())
+            // Remember where the window was and how big it got (#474). The
+            // builder below still sets 1100x760 centered — that is the first
+            // launch, and the fallback when the saved position lands on a
+            // monitor that is no longer there.
+            .plugin(
+                tauri_plugin_window_state::Builder::default()
+                    .with_state_flags(window_state_flags())
+                    .build(),
+            )
             .plugin(tauri_plugin_process::init())
             .plugin(tauri_plugin_dialog::init())
             .plugin(tauri_plugin_shell::init())
@@ -335,11 +391,20 @@ pub fn run() {
         // Closing the window hides it to the tray instead of quitting, so the
         // app keeps running and OS notifications still arrive. Real quit is
         // Cmd+Q or the tray's Quit item.
-        .on_window_event(|window, event| {
-            if let WindowEvent::CloseRequested { api, .. } = event {
+        .on_window_event(|window, event| match event {
+            WindowEvent::CloseRequested { api, .. } => {
+                // Before the hide, not after: a hidden window is no longer a
+                // reliable thing to read a position off.
+                #[cfg(desktop)]
+                save_window_state_now(window.app_handle());
                 let _ = window.hide();
                 api.prevent_close();
             }
+            #[cfg(desktop)]
+            WindowEvent::Moved(_) | WindowEvent::Resized(_) => {
+                schedule_window_state_save(window.app_handle());
+            }
+            _ => {}
         })
         .build(tauri::generate_context!())
         .expect("error while running tauri application");

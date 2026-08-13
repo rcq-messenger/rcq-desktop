@@ -118,6 +118,14 @@ html, body, #root {
   height: 100%;
 }
 
+/* The page background belongs on <html> as well as <body>: the root element is
+   what the browser paints over the whole canvas during a reload, before the
+   body box exists. Without it a reload showed the UA's white for a frame even
+   with the palette already decided in <head>. */
+html {
+  background-color: rgb(var(--c-surface-dim));
+}
+
 body {
   margin: 0;
   font-family: ui-sans-serif, system-ui, -apple-system, "Inter", "Segoe UI", Roboto, sans-serif;

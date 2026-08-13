@@ -362,7 +362,7 @@ export const ru: Record<string, string> = {
 
   // Добавить контакт
   'add.title': 'Добавить контакт',
-  'add.placeholder': '#UIN, ник, город…',
+  'add.placeholder': '#UIN, ник…',
   'add.hint': 'Введите хотя бы один символ. Точный номер ищется через #: #134.',
   'add.no_match': 'Ничего не найдено.',
   'add.cta': 'Добавить',
@@ -373,9 +373,9 @@ export const ru: Record<string, string> = {
   'profile.title.self': 'Ваш профиль',
   'profile.title.peer': 'Профиль',
   'profile.error': 'Не удалось загрузить профиль.',
-  'profile.edit': 'Изменить',
   'profile.save': 'Сохранить',
   'profile.saving': 'Сохраняем…',
+  'profile.saved': 'Профиль сохранён.',
   'profile.cta.send_message': 'Написать',
   'profile.section.personal': 'О себе',
   'profile.section.location': 'Где',
@@ -629,14 +629,14 @@ export const ru: Record<string, string> = {
     'UIN это ваш номер в RCQ, его добавляют, чтобы написать вам. Короткий проще запомнить и сообщить.',
   'uin_market.info.migrate.title': 'Взять номер это не сменить себя',
   'uin_market.info.migrate.body':
-    'Номер попадает в вашу коллекцию, а отвечаете вы по-прежнему как сейчас. Перейти на него это отдельное действие в разделе «Ваши номера», и оно обратимо: номер, с которого вы уходите, тоже остаётся вашим, занять его никто не сможет.',
+    "Номер попадает в вашу коллекцию, а отвечаете вы по-прежнему как сейчас. Перейти на него это отдельное действие в разделе «Ваши UIN'ы», и оно обратимо: номер, с которого вы уходите, тоже остаётся вашим, занять его никто не сможет.",
   'uin_market.confirm.body':
     'Номер попадёт в вашу коллекцию. Отвечать вы продолжите как сейчас, а перейти на новый номер сможете в любой момент.',
   'uin_market.confirm.cta': 'Подтвердить',
   'uin_market.bought.title': 'Готово',
   'uin_market.bought.body': 'Номер {uin} теперь ваш.',
   'uin_market.switched.body': 'Вы отвечаете как {uin}.',
-  'uin_market.mine.label': 'Ваши номера',
+  'uin_market.mine.label': "Ваши UIN'ы",
   'uin_market.mine.active': 'Вы отвечаете как',
   'uin_market.mine.empty': 'Пока пусто. Номера, которые вы взяли, но на которые не перешли, появятся здесь.',
   'uin_market.mine.use': 'Перейти',

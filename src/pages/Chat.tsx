@@ -624,18 +624,29 @@ export function Chat() {
     const el = scrollRef.current
     const content = contentRef.current
     if (!el || !content || typeof ResizeObserver === 'undefined') return
-    const ro = new ResizeObserver(() => {
-      // Same problem at the other end of the thread: a photo above the divider
-      // grows from its skeleton to its real height after the open scroll has
-      // already run, and the marker slides down out of view. Hold it there
-      // until the user scrolls.
-      if (pinTargetRef.current === 'unread') {
+    const ro = new ResizeObserver((entries) => {
+      // Which box moved decides what to do about it. CONTENT growing can drag
+      // the unread marker out of view (a photo above it swelling from its
+      // skeleton), so that case holds the divider in place until the user
+      // scrolls. The PANE shrinking cannot move the divider at all — it is the
+      // composer taking room from below — and re-pinning to the divider there
+      // would yank the list back the moment you started typing a reply.
+      const paneOnly = entries.every((e) => e.target === el)
+      if (!paneOnly && pinTargetRef.current === 'unread') {
         scrollToUnreadDivider()
         return
       }
       if (atBottomRef.current) el.scrollTo({ top: el.scrollHeight })
     })
     ro.observe(content)
+    // And the PANE itself, not just what is in it. The list is `flex-1` between
+    // the header and the composer, so anything that makes the composer taller —
+    // a draft wrapping to a second line, a reply strip, the font-size knob —
+    // takes that height away from the list from BELOW. The content never
+    // changed, so a content-only observer stayed silent while the newest
+    // message slid under the composer: "своё сообщение появляется под полем
+    // ввода". Android re-pins on every keyboard-inset frame for exactly this.
+    ro.observe(el)
     return () => ro.disconnect()
   }, [persistKey])
 
@@ -985,6 +996,11 @@ export function Chat() {
       setOutgoing((rows) => [...rows, row])
       if (caption) setInput('')
       setReplyTo(null)
+      // Sending is "put me at the bottom" whatever was sent. Only the text
+      // path used to say so, so a photo, a file or a location sent while the
+      // list was a few pixels off the bottom landed below the fold, under the
+      // composer. Android has had one rule for all of them from the start.
+      stickToBottom()
       await attemptSendRow(row)
     } finally {
       setUploadingPhoto(false)
@@ -1030,6 +1046,7 @@ export function Chat() {
     setOutgoing((rows) => [...rows, row])
     if (caption) setInput('')
     setReplyTo(null)
+    stickToBottom()
     await attemptSendRow(row)
   }
 
@@ -1064,6 +1081,7 @@ export function Chat() {
       }
       setOutgoing((rows) => [...rows, row])
       setReplyTo(null)
+      stickToBottom()
       await attemptSendRow(row)
     } finally {
       setUploadingFile(false)
@@ -1564,9 +1582,14 @@ export function Chat() {
             className="flex items-center gap-2 flex-1 min-w-0 hover:opacity-80"
           >
             {!isGroup && isSelf && <BookmarkIcon />}
+            {/* The picture stays the picture while the peer types: only the UIN
+                line below turns into "typing…" (see headerSub). Swapping the
+                flower for a pencil hid the one thing the header is for —
+                whether the person is online — and made the avatar change on
+                every keystroke. Android never did the swap; this is parity. */}
             {!isGroup && !isSelf && peer && (
               <PersonAvatar
-                status={peerTyping ? 'typing' : peer.status}
+                status={peer.status}
                 size={28}
                 mediaId={peer.avatar_media_id}
                 mediaKey={peer.avatar_media_key}

@@ -5,7 +5,7 @@
 import type { UserStatus } from '../lib/api'
 
 interface Props {
-  status: UserStatus | 'typing'
+  status: UserStatus
   size?: number
   className?: string
   /// Cross-island peer (§5c): presence isn't tracked across islands, so render
@@ -13,13 +13,15 @@ interface Props {
   crossIsland?: boolean
 }
 
-const SRC: Record<UserStatus | 'typing', string> = {
+// No `typing` entry: a person who is typing is still online/away/dnd, and the
+// header says so in words on the line under the name. The pencil art stays in
+// /statuses/ for iOS parity but nothing in this client asks for it.
+const SRC: Record<UserStatus, string> = {
   online: '/statuses/status_online.png',
   away: '/statuses/status_away.png',
   dnd: '/statuses/status_dnd.png',
   invisible: '/statuses/status_invisible.png',
   offline: '/statuses/status_offline.png',
-  typing: '/statuses/status_typing.png',
 }
 
 export function StatusIcon({ status, size = 16, className = '', crossIsland = false }: Props) {

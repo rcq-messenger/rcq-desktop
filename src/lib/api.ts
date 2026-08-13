@@ -17,8 +17,12 @@ export class ApiError extends Error {
 // Retry button, we hand off to a registered handler (the IdentityProvider)
 // that drops the identity and routes back to login. Registered once at app
 // start; null in tests / before mount.
-let unauthorizedHandler: (() => void) | null = null
-export function setUnauthorizedHandler(fn: (() => void) | null) {
+// The handler is told WHOSE token died. Without that it can only ask "which
+// account is active now?", and answer for a 401 that belonged to a different
+// one — a request in flight for an account being signed out took the account
+// that stays down with it.
+let unauthorizedHandler: ((uin: number) => void) | null = null
+export function setUnauthorizedHandler(fn: ((uin: number) => void) | null) {
   unauthorizedHandler = fn
 }
 
@@ -43,7 +47,7 @@ async function request<T>(
   })
   const text = await res.text()
   if (!res.ok) {
-    if (res.status === 401 && !identity.guest) unauthorizedHandler?.()
+    if (res.status === 401 && !identity.guest) unauthorizedHandler?.(identity.uin)
     throw new ApiError(res.status, text)
   }
   if (!text) return undefined as T

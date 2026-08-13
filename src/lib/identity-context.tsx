@@ -19,6 +19,7 @@ import {
   wipeLocalAccountData,
 } from './auth'
 import { migrateFlatDataInto, setAccountScope } from './account-scope'
+import { defaultHome } from './routing'
 import { Api, setUnauthorizedHandler } from './api'
 import { idbClearAll } from './signal-persist'
 
@@ -122,13 +123,20 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
   // "401: device revoked" error — both live (on the next request after
   // an unlink) and on a hard reload with a now-dead token.
   useEffect(() => {
-    setUnauthorizedHandler(() => {
+    setUnauthorizedHandler((uin: number) => {
       if (migrating.current) return
       // Mark before clearing: once the identity is gone we no longer know
       // which account died, and the Settings list would show a row that
       // silently bounces to login every time it is tapped ("зайти не даёт").
       const dying = loadStoredIdentity()
-      if (dying) markSessionRevoked(dying.uin)
+      // ⚠ Only the ACTIVE account's 401 ends this session. Signing another
+      // account out fires `DELETE /devices/me` with ITS token, and that call
+      // answers 401 whenever the phone had already revoked it — which used to
+      // sign the user out of the account they were keeping, and mark it
+      // "session ended" on the way. A 401 for anybody else is a fact about
+      // them, not about us.
+      if (!dying || dying.uin !== uin) return
+      markSessionRevoked(dying.uin)
       clearIdentity()
       setIdentity(null)
     })
@@ -158,15 +166,28 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
         // would revoke account A's session on the phone.
         const leaving = accounts.find((a) => a.uin === uin)
         if (leaving) void Api.unlinkSelf(leaving).catch(() => {})
+        const wasActive = uin === identity?.uin
         removeStoredIdentity(uin)
         clearSessionRevoked(uin)
-        // Stay on the page the removal was made from. This used to send
-        // everyone to the chat list, which is jarring when the button that
-        // did it lives in Settings and the next thing you want is the row
-        // below it. If nothing is left to be signed in as, login is the only
-        // honest destination.
+        // Removing SOMEONE ELSE'S row touches nothing the running session
+        // holds: the caches, the socket and the local stores are all scoped to
+        // the account that stays active, and removeStoredIdentity deliberately
+        // leaves the removed account's own logs alone. So just re-read the
+        // roster. It used to reload the document for this too, which in the
+        // desktop app meant a white flash and a visible re-entry through the
+        // login screen for a row that was not even signed in as.
+        if (!wasActive) {
+          setAccounts(listStoredIdentities())
+          return
+        }
+        // The ACTIVE account is going: every module-level cache (websocket,
+        // signal device, incoming store, media URLs) still holds its data, and
+        // only a document reload is guaranteed to drop all of it.
+        // removeStoredIdentity has already promoted the next account into the
+        // active slot, so this lands signed in as that one — but at the app's
+        // home, not on the chat of the account that just left.
         const remaining = listStoredIdentities()
-        window.location.assign(remaining.length ? window.location.pathname : '/')
+        window.location.assign(remaining.length ? defaultHome() : '/')
       },
       // Sign-out / unlink: wipe ALL account-scoped local data (identity,
       // per-thread message logs, contacts state, device keys + decrypted

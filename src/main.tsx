@@ -2,7 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
 import './index.css'
-import { bypassStatus, isTauri } from './lib/desktop'
+import { bypassStatus, installExternalLinkHandler, isTauri } from './lib/desktop'
 import { installFrontRouting, refreshFrontRouting, setFrontHost } from './lib/front'
 import { wipeLocalAccountData } from './lib/auth'
 import { idbClearAll } from './lib/signal-persist'
@@ -19,6 +19,11 @@ if (isTauri()) document.documentElement.classList.add('desktop')
 // from a component for the same reason as the class above: after the first
 // paint it is a visible jump.
 initFontScale()
+
+// Desktop only: send external links to the real browser. In the shell they are
+// `target="_blank"`, which means window.open, which wry does not implement, so
+// every link in the app was dead on click.
+installExternalLinkHandler()
 
 // Desktop only: put the Cloudflare front in front of the flagship, so a
 // blocked island has an answer that does not need the tunnel (which on this

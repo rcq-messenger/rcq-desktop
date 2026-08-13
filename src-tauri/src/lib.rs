@@ -199,6 +199,30 @@ fn desktop_platform() -> &'static str {
     }
 }
 
+/// Hand a link to the real browser.
+///
+/// Every external link in the app is an `<a target="_blank">`, which in a
+/// webview means `window.open` — and wry implements no window.open, so the
+/// click did nothing at all: the cursor changed, the underline appeared, and
+/// that was the whole of it (founder, 2026-08-13). The `on_navigation` hook
+/// below cannot help, because a `_blank` link never navigates THIS window.
+///
+/// ⚠ http/https only. This is reachable from the page, so it must not become a
+/// way to launch `file://`, a custom scheme, or anything else the OS would
+/// hand to an application.
+#[cfg(desktop)]
+#[tauri::command]
+fn open_external(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    let parsed = url::Url::parse(&url).map_err(|e| e.to_string())?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err(format!("refusing to open scheme {}", parsed.scheme()));
+    }
+    #[allow(deprecated)]
+    tauri_plugin_shell::ShellExt::shell(&app)
+        .open(parsed.as_str(), None)
+        .map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default();
@@ -234,7 +258,8 @@ pub fn run() {
                 relay_key_set,
                 relay_key_status,
                 network_diagnostics,
-                desktop_platform
+                desktop_platform,
+                open_external
             ]);
     }
 

@@ -349,3 +349,46 @@ export async function setRelayKey(
     return { verdict: 'offline', private_count: 0 }
   }
 }
+
+/** Open a link in the user's real browser.
+ *
+ *  Needed because every external link in this app is `<a target="_blank">`,
+ *  which in a webview means `window.open` — and wry implements none, so on the
+ *  desktop those links did nothing at all. In a browser this is a no-op and the
+ *  anchor behaves normally.
+ *
+ *  Returns whether it took the link, so the caller knows whether to let the
+ *  default happen. */
+export async function openExternal(url: string): Promise<boolean> {
+  if (!isTauri()) return false
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    await invoke('open_external', { url })
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** Catch every click on an external link, once, at the document root.
+ *
+ *  A handler per link would mean touching every place that renders one, and
+ *  missing the next one somebody adds. Capture phase so it runs before React's
+ *  own listeners, and it only acts on plain left clicks with no modifier: a
+ *  middle click or cmd-click is the user asking for something else. */
+export function installExternalLinkHandler() {
+  if (!isTauri()) return
+  document.addEventListener(
+    'click',
+    (e) => {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+      const a = (e.target as HTMLElement | null)?.closest?.('a')
+      if (!a) return
+      const href = a.getAttribute('href') ?? ''
+      if (!/^https?:\/\//i.test(href)) return
+      e.preventDefault()
+      void openExternal(href)
+    },
+    true,
+  )
+}

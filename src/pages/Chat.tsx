@@ -441,6 +441,11 @@ export function Chat() {
       if (el?.closest('[data-chat-menu]')) return
       setActionsForRowId(null)
       setReactionForRowId(null)
+      // The emoticon panel and the button that opens it are not "outside".
+      // This handler runs on mousedown, i.e. BEFORE the click it belongs to, so
+      // without this the panel closed under the pointer that was reaching for
+      // it and the click landed on nothing (founder, 2026-08-13).
+      if (el?.closest('[data-emoji-panel]')) return
       setShowPicker(false)
     }
     document.addEventListener('keydown', onKey)
@@ -2213,11 +2218,12 @@ export function Chat() {
           <div className="absolute bottom-full inset-x-0 px-3 mb-2 z-10 flex flex-col gap-2 pointer-events-none [&>*]:pointer-events-auto">
             <AnimatePresence>
               {showPicker && (
-                <EmoticonPicker
-                  key="picker"
-                  uin={identity!.uin}
-                  onPick={(code, asset) => insertEmoticon(code, asset)}
-                />
+                <div key="picker" data-emoji-panel>
+                  <EmoticonPicker
+                    uin={identity!.uin}
+                    onPick={(code, asset) => insertEmoticon(code, asset)}
+                  />
+                </div>
               )}
             </AnimatePresence>
             <AnimatePresence>
@@ -2365,6 +2371,7 @@ export function Chat() {
               </AnimatePresence>
             </div>
             <button
+              data-emoji-panel
               onClick={() => setShowPicker((v) => !v)}
               className={`h-10 w-10 rounded-full flex items-center justify-center flex-none transition-colors ${
                 showPicker ? 'bg-accent/15 ring-1 ring-accent/40' : 'hover:bg-line/60'

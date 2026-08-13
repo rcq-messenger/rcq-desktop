@@ -34,6 +34,7 @@ import {
   type ReactNode,
 } from 'react'
 import { Api } from './api'
+import { logCall } from './outgoing-store'
 import { notifyDesktop, raiseDesktopWindow } from './desktop'
 import { useI18n } from './i18n-context'
 import { useIdentity } from './identity-context'
@@ -54,6 +55,44 @@ export interface CallInfo {
 /// How long an unanswered call rings before it gives up on its own. The caller
 /// stops ringing first so the callee never keeps ringing for a call the caller
 /// has already abandoned.
+/// The line a finished call leaves in the conversation, in the phones' shape:
+/// direction and kind, then either how long it lasted or why it did not.
+///
+/// The reasons come off the wire from whichever side hung up, so anything
+/// unrecognised falls back to "ended" rather than to a blank row.
+function logFinishedCall(info: CallInfo | null, reason: string, connectedAt: number | null): void {
+  if (!info) return
+  const secs = connectedAt ? Math.max(0, Math.round((Date.now() - connectedAt) / 1000)) : 0
+  const connected = connectedAt !== null && secs >= 1
+  // A call that rang here and was never answered is MISSED, whatever word the
+  // other side put on the wire. The caller who gives up sends `ended`, not
+  // `no_answer` — that one only fires on their own 60-second timeout — so
+  // keying off the reason alone filed "A rang, I was away, A hung up" as an
+  // ordinary finished call, grey arrow and all. The phones call it missed;
+  // now so does this.
+  const missed = !connected && !info.outgoing
+  const parts = [
+    info.media === 'video' ? 'call.log.video' : 'call.log.voice',
+    info.outgoing ? 'call.log.outgoing' : 'call.log.incoming',
+  ]
+  const tail = connected
+    ? `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`
+    : reason === 'declined' || reason === 'declinedElsewhere'
+      ? 'call.log.declined'
+      : reason === 'busy'
+        ? 'call.log.busy'
+        : // Nothing connected and it was not refused: for us it is "missed"
+          // when it rang here, and "no answer" when it rang there.
+          missed
+          ? 'call.log.missed'
+          : info.outgoing
+            ? 'call.log.no_answer'
+            : 'call.log.ended'
+  // The keys are resolved at RENDER time, not here: the row outlives the
+  // language the app happened to be in when the call ended.
+  logCall(info.peerUin, `${parts[0]}|${parts[1]}|${tail}`, missed, Date.now())
+}
+
 const RING_TIMEOUT_MS = 60_000
 const INCOMING_TIMEOUT_MS = 70_000
 /// Answered, but no media path came up. Long enough for a slow TURN allocation
@@ -188,6 +227,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const [localStream, setLocalStream] = useState<MediaStream | null>(null)
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null)
   const [connectedAt, setConnectedAt] = useState<number | null>(null)
+  // teardown() is a stable callback and cannot read the state above; the ref
+  // is what tells it whether the call was ever actually connected, which is
+  // the difference between "5 min" and "missed".
+  const connectedAtRef = useRef<number | null>(null)
   const [muted, setMuted] = useState(false)
   const [cameraOff, setCameraOff] = useState(false)
   const [incomingUpgrade, setIncomingUpgrade] = useState(false)
@@ -245,6 +288,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
         /* already closed */
       }
       const had = l.info
+      // The record this call leaves in the conversation. Written here, at the
+      // single junction every ending passes through, and while `connectedAt`
+      // and `l.info` are still readable — a moment later they are null.
+      const startedAt = connectedAtRef.current
       l.pc = null
       l.local = null
       l.info = null
@@ -256,6 +303,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       setLocalStream(null)
       setRemoteStream(null)
       setConnectedAt(null)
+      connectedAtRef.current = null
       setMuted(false)
       setCameraOff(false)
       setIncomingUpgrade(false)
@@ -268,6 +316,9 @@ export function CallProvider({ children }: { children: ReactNode }) {
         setEndedReason('')
         return
       }
+      // Log it before the ended card, so the row is already in the thread when
+      // the user closes the card and looks at the conversation.
+      logFinishedCall(had, reason, startedAt)
       setEndedReason(reason)
       setPhase('ended')
       playEndTone()
@@ -412,7 +463,11 @@ export function CallProvider({ children }: { children: ReactNode }) {
             l.graceTimer = null
           }
           stopTone()
-          setConnectedAt((prev) => prev ?? Date.now())
+          setConnectedAt((prev) => {
+            const at = prev ?? Date.now()
+            connectedAtRef.current = at
+            return at
+          })
           return
         }
         if (state === 'failed') {

@@ -1,0 +1,102 @@
+Ссылки в приложении снова открываются. Любая внешняя ссылка вела в никуда: в
+окне приложения нет вкладок, и открывать их было некому. Теперь такая ссылка
+уходит в ваш обычный браузер.
+
+Панель смайликов перестала закрываться сама. Она исчезала в тот же миг, что и
+появлялась: обработчик «клик мимо» срабатывал раньше самого клика и считал
+нажатие на кнопку панели промахом.
+
+Экран больше не съезжает вбок от трекпада. В браузере это жест браузера и он
+остаётся, а окно приложения никуда двигаться не должно.
+
+Свой профиль открывается сразу для правки. Раньше между вами и полями была
+промежуточная страница, на которой надо было ещё раз нажать «изменить».
+
+Статус на аватарке сдвинут левее и ниже, ровно как в приложениях на телефоне.
+
+Своё сообщение больше не прячется под полем ввода. Причин было две: к низу
+прижималась только текстовая отправка, а фото, файл и геопозиция нет; и никто
+не поправлял список, когда поле ввода вырастало на вторую строку и забирало у
+переписки высоту снизу.
+
+Пока собеседник печатает, его картинка статуса остаётся на месте — меняется
+только строчка под именем.
+
+Закреплённое сообщение открывается окном, а не разворачивается на пол-экрана, и
+ссылки на группы внутри него стали компактными строками вместо больших карточек.
+
+Заявки в контакты и добавление контакта стали окнами поверх списка. В заявках
+появилась вторая вкладка «Отправленные» — раньше на компьютере не было видно
+вовсе, отправили вы заявку или нет.
+
+У владельца группы появились настройки: название, описание, картинка,
+закреплённое сообщение, а также кто может писать, закрытая ли группа и видно ли
+участникам друг друга. Владелец теперь показан первым в списке участников.
+
+В звонке с аватарки убран статус, а после звонка в переписке остаётся запись —
+как в приложениях на телефоне.
+
+Обновление видно сразу, как только оно вышло. Приложение спрашивает об этом само
+раз в несколько часов, а не только при запуске, и показывает в шапке кнопку
+«Обновить до …», которая ставит новую версию и перезапускает.
+
+В списке устройств на телефоне это окно теперь называет себя по-человечески —
+«RCQ Desktop · macOS» или именем браузера, а не словом Desktop.
+
+Добавление и удаление аккаунта больше не мигает белым экраном, а удаление
+другого аккаунта не перезагружает приложение вовсе.
+
+Две учётные записи на одном устройстве больше не делят одну цепочку ключей.
+
+---
+
+Links in the app open again. Every external link went nowhere: an app window
+has no tabs, and nothing was there to open one. Such a link now goes to your
+normal browser.
+
+The emoticon panel stopped closing itself. It vanished the instant it appeared:
+the click-outside handler ran before the click did, and counted the panel's own
+button as a miss.
+
+The screen no longer slides sideways under a trackpad. In a browser that is the
+browser's gesture and it stays; an app window has no business moving.
+
+Your own profile opens ready to edit. There used to be a page in between, with
+an "edit" button to press before anything could be changed.
+
+The status badge on a picture moved left and down, exactly where the phone apps
+put it.
+
+Your own message no longer hides under the composer. Two causes: only a text
+send pinned the list to the bottom — a photo, a file and a location did not —
+and nothing re-pinned the list when the composer grew to a second line and took
+that height from the conversation.
+
+While someone is typing, their status picture stays put; only the line under
+their name changes.
+
+A pinned message opens as a window instead of unfolding over half the screen,
+and group links inside it are compact rows now, not large cards.
+
+Contact requests and adding a contact became windows over the list. Requests
+gained a second tab, "Sent" — on a computer there was previously no way to see
+whether a request had gone out at all.
+
+A group's owner has settings now: name, description, picture, pinned message,
+plus who may post, whether the group is closed, and whether members can see each
+other. The owner is also shown first in the member list.
+
+A call no longer draws a status badge on the picture, and when it ends it leaves
+a record in the conversation, the way the phone apps do.
+
+An update is visible as soon as it ships. The app asks about it by itself every
+few hours, not only at startup, and shows an "Update to …" button in the header
+that installs it and restarts.
+
+In the phone's linked-devices list this window now names itself properly — "RCQ
+Desktop · macOS", or the name of your browser — instead of the word Desktop.
+
+Adding and removing an account no longer flashes a white screen, and removing a
+different account does not reload the app at all.
+
+Two accounts on one device no longer share one inbound key chain.

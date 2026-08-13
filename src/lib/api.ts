@@ -121,6 +121,15 @@ export interface UserInfo {
   hof_avatar?: string | null
 }
 
+export interface OutgoingRequest {
+  id: number
+  to_uin: number
+  nickname: string
+  /// pending — they have not answered; declined — they said no and this row is
+  /// how you find out.
+  state: 'pending' | 'declined'
+}
+
 export interface PendingRequest {
   id: number
   from_uin: number
@@ -173,6 +182,10 @@ export interface RCQGroup {
   // Owner-set display gate: hide the member roster from Group Info for
   // non-owners. Mirrors the iOS/backend `members_hidden`.
   members_hidden?: boolean
+  /// The island sends both of these already; the web type simply never
+  /// declared them, so nothing on this client could show or edit either.
+  description?: string | null
+  is_closed?: boolean
   // CLIENT-SIDE only: the island a cross-island group lives on (set at the
   // fetch boundary; never sent by a server).
   host?: string
@@ -363,6 +376,21 @@ export const Api = {
     return request<unknown>(id, 'POST', '/contacts/request', { to_uin: toUIN })
   },
 
+  /// Requests WE sent that are still pending, plus ones the other side
+  /// declined (there is no push for a decline, so the row IS the answer).
+  /// The island has served these since the phones got them; the web simply
+  /// never asked, so a request sent from the desktop vanished with no trace
+  /// of whether it had been seen.
+  outgoingRequests(id: WebIdentity): Promise<OutgoingRequest[]> {
+    return request<OutgoingRequest[]>(id, 'GET', '/contacts/outgoing')
+  },
+
+  /// Withdraw a still-pending request, or dismiss a declined one. Pulls it out
+  /// of the recipient's incoming list too.
+  cancelOutgoing(id: WebIdentity, toUin: number): Promise<void> {
+    return request<void>(id, 'DELETE', `/contacts/outgoing/${toUin}`)
+  },
+
   respondToRequest(id: WebIdentity, requestId: number, accept: boolean): Promise<{ state: string }> {
     return request<{ state: string }>(id, 'POST', '/contacts/respond', {
       request_id: requestId,
@@ -442,6 +470,40 @@ export const Api = {
 
   renameGroup(id: WebIdentity, groupId: number, name: string): Promise<RCQGroup> {
     return request<RCQGroup>(id, 'PATCH', `/groups/${groupId}`, { name })
+  },
+
+  /// Everything an owner (or a member they granted `info`) can change about a
+  /// group, in the shape the phones use. Only the keys you pass are sent;
+  /// an empty string CLEARS description, pin and avatar, which is how the
+  /// island reads "remove" on those three.
+  patchGroup(
+    id: WebIdentity,
+    groupId: number,
+    body: {
+      name?: string
+      description?: string
+      pinned_text?: string
+      post_policy?: 'all' | 'owner_only'
+      is_closed?: boolean
+      members_hidden?: boolean
+      avatar_media_id?: string
+      avatar_media_key?: string
+    },
+  ): Promise<RCQGroup> {
+    return request<RCQGroup>(id, 'PATCH', `/groups/${groupId}`, body)
+  },
+
+  /// Grant / revoke a member's moderator capabilities. Owner only, server-side
+  /// too. Returns the whole group, roster included.
+  setMemberPermissions(
+    id: WebIdentity,
+    groupId: number,
+    uin: number,
+    permissions: string[],
+  ): Promise<RCQGroup> {
+    return request<RCQGroup>(id, 'POST', `/groups/${groupId}/members/${uin}/permissions`, {
+      permissions,
+    })
   },
 
   /// Set the group's single pinned-announcement slot. Used by both the

@@ -11,8 +11,17 @@ import { useI18n } from '../lib/i18n-context'
 import { bytesToB64 } from '../lib/crypto'
 import { getDevice } from '../lib/signal-device'
 import { buildContactLink } from '../lib/federation'
+import { PersonAvatar } from './PersonAvatar'
+import type { UserStatus } from '../lib/api'
 
-export function MyQRCode() {
+/// [me] is the caller's own card, used only to put their face in the middle of
+/// the code (iOS/Android parity). Optional: with nothing passed, or with no
+/// picture set, the middle stays empty exactly as it was.
+export function MyQRCode({
+  me,
+}: {
+  me?: { status?: UserStatus; avatar_media_id?: string | null; avatar_media_key?: string | null } | null
+}) {
   const { identity } = useIdentity()
   const { t } = useI18n()
   const [dataUrl, setDataUrl] = useState<string | null>(null)
@@ -70,7 +79,25 @@ export function MyQRCode() {
         className="bg-white p-3 rounded-xl transition-transform hover:scale-[1.02] active:scale-[0.99] disabled:cursor-default"
       >
         {dataUrl ? (
-          <img src={dataUrl} alt="QR" width={176} height={176} className="block" draggable={false} />
+          <span className="relative block">
+            <img src={dataUrl} alt="QR" width={176} height={176} className="block" draggable={false} />
+            {/* The face goes in the middle of the code, because the code is
+                held up to a stranger and that is who they are looking for.
+                ⚠ 34px over 176 is ~3.7% of the AREA; error correction is level
+                'M', good for about 15%, so this must not grow much. */}
+            {me?.avatar_media_id && (
+              <span className="absolute inset-0 flex items-center justify-center">
+                <span className="flex rounded-full bg-white p-[3px]">
+                  <PersonAvatar
+                    status={me.status ?? 'offline'}
+                    size={34}
+                    mediaId={me.avatar_media_id}
+                    mediaKey={me.avatar_media_key}
+                  />
+                </span>
+              </span>
+            )}
+          </span>
         ) : (
           <div className="w-44 h-44 animate-pulse bg-gray-200 rounded" />
         )}
@@ -97,12 +124,26 @@ export function MyQRCode() {
               onClick={(e) => e.stopPropagation()}
               className="rounded-2xl bg-white p-5 shadow-2xl"
             >
-              <img
-                src={dataUrl}
-                alt="QR"
-                className="w-[min(72vw,340px)] h-[min(72vw,340px)]"
-                draggable={false}
-              />
+              <div className="relative">
+                <img
+                  src={dataUrl}
+                  alt="QR"
+                  className="w-[min(72vw,340px)] h-[min(72vw,340px)]"
+                  draggable={false}
+                />
+                {me?.avatar_media_id && (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="flex rounded-full bg-white p-1">
+                      <PersonAvatar
+                        status={me.status ?? 'offline'}
+                        size={64}
+                        mediaId={me.avatar_media_id}
+                        mediaKey={me.avatar_media_key}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
             </motion.div>
           </motion.div>
         )}

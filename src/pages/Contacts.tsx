@@ -13,6 +13,9 @@ import { ContactActionsMenu } from '../components/ContactActionsMenu'
 import { GroupActionsMenu } from '../components/GroupActionsMenu'
 import { CreateGroupSheet } from '../components/CreateGroupSheet'
 import { GroupAvatar } from '../components/GroupAvatar'
+import { UpdateBadge } from '../components/UpdateBadge'
+import { RequestsModal } from '../components/RequestsModal'
+import { AddContactModal } from '../components/AddContactModal'
 import { NewsButton } from '../components/NewsPopover'
 import { PersonAvatar } from '../components/PersonAvatar'
 import { StatusIcon } from '../components/StatusIcon'
@@ -112,6 +115,8 @@ export function Contacts() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(() => !_cachedAtMount)
   const [showCreateGroup, setShowCreateGroup] = useState(false)
+  const [showRequests, setShowRequests] = useState(false)
+  const [showAdd, setShowAdd] = useState(false)
 
   const favorites = useFavorites()
   const archive = useArchive()
@@ -316,16 +321,22 @@ export function Contacts() {
             </>
           )}
           <div className="ml-auto flex items-center gap-0.5">
-            <Link
-              to="/add"
+            {/* Windows, not detours. Both of these used to be full-page routes
+                that took the whole desktop window away from the list you were
+                reading and had to be navigated back out of. The routes stay
+                alive for deep links and for a phone-sized screen. */}
+            <button
+              type="button"
+              onClick={() => setShowAdd(true)}
               className="text-fg-secondary hover:text-fg-primary p-2 rounded-md hover:bg-field"
               title={t('contacts.add')}
               aria-label={t('contacts.add')}
             >
               <PlusIcon />
-            </Link>
-            <Link
-              to="/pending"
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowRequests(true)}
               className="relative text-fg-secondary hover:text-fg-primary p-2 rounded-md hover:bg-surface-dim"
               title={t('pending.title')}
               aria-label={t('pending.title')}
@@ -336,11 +347,14 @@ export function Contacts() {
                   {pending.length + requestCount()}
                 </span>
               )}
-            </Link>
+            </button>
             {/* The market moved out of the header: it is already a row in
                 Settings, so this was the same door twice, and the header had no
                 door at all to the one thing that is genuinely new — the
                 operator's announcements. */}
+            {/* Desktop only, and only while there IS one: an update the app
+                has already found, waiting for a moment that suits you. */}
+            <UpdateBadge className="mr-1" />
             <NewsButton className="relative text-fg-secondary hover:text-fg-primary p-2 rounded-md" />
             <ThemeToggle className="text-fg-secondary hover:text-fg-primary p-2 rounded-md hover:bg-surface-dim transition-colors" />
             <Link
@@ -534,6 +548,16 @@ export function Contacts() {
         )}
       </main>
 
+      {showRequests && (
+        <RequestsModal
+          incomingCount={pending.length + requestCount()}
+          onClose={() => {
+            setShowRequests(false)
+            void refresh()
+          }}
+        />
+      )}
+      {showAdd && <AddContactModal onClose={() => setShowAdd(false)} />}
       {showCreateGroup && (
         <CreateGroupSheet
           contacts={contacts}

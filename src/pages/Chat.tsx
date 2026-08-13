@@ -13,6 +13,7 @@
 // so the forwarded message shows up there when the user navigates.
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { EmoticonInput, insertEmoticonAt, serialize as serializeComposer } from '../components/EmoticonInput'
@@ -1491,6 +1492,11 @@ export function Chat() {
     if (!q) return [] as string[]
     return timeline.flatMap((it) => {
       if (it.kind === 'day' || it.kind === 'unread') return []
+      // A call row's "text" is a pipe-joined list of i18n KEYS, not anything
+      // anyone wrote, so searching it matched things like "video" against a
+      // conversation that never contained the word — and stepping to the hit
+      // did nothing, because the row carries no `msg-` anchor to scroll to.
+      if (it.kind === 'out' && it.row.kind === 'call') return []
       const text = it.kind === 'out' ? it.row.text : it.msg.text
       const id = it.kind === 'out' ? it.row.id : it.msg.id
       return text && text.toLowerCase().includes(q) ? [id] : []
@@ -1772,6 +1778,21 @@ export function Chat() {
                       {t('chat.unread_divider')}
                     </span>
                     <span className="flex-1 h-px bg-accent/40" />
+                  </li>
+                )
+              }
+              // A finished call is not a bubble from either side: it is a
+              // note the conversation keeps, centred, the way both phones
+              // draw it. Rendered before the ordinary outgoing branch because
+              // it lives in the same log.
+              if (item.kind === 'out' && item.row.kind === 'call') {
+                const [media, dir, tail] = item.row.text.split('|')
+                return (
+                  <li key={`call-${item.row.id}`} className="flex justify-center py-1">
+                    <span className="flex items-center gap-1.5 px-2 py-0.5 text-[0.6875rem] text-fg-dim">
+                      <CallLogIcon missed={!!item.row.callMissed} outgoing={dir === 'call.log.outgoing'} />
+                      {t(media)} · {tail.includes(':') ? tail : t(tail)}
+                    </span>
                   </li>
                 )
               }
@@ -2600,6 +2621,15 @@ function pinPreview(text: string): string {
     .trim()
 }
 
+/// The pinned message: a one-line bar under the header, and the whole text in
+/// a bounded dialog when you tap it.
+///
+/// It used to unfold in place, `max-h-96` hanging off the bar. On a desktop
+/// that root is 17.5px, so those 24rem were 420px before the font-size knob and
+/// 546px at its largest step, in a column up to 955px wide — a slab covering
+/// most of the conversation, which is the "открывается на весь экран" in the
+/// report. A dialog capped at `80vh` cannot outgrow the window whatever the
+/// text size, and it is the same surface every other overlay in the app uses.
 function PinnedBanner({ text, group, expanded, onToggle }: { text: string; group: RCQGroup; expanded: boolean; onToggle: () => void }) {
   const { t } = useI18n()
   return (
@@ -2615,40 +2645,66 @@ function PinnedBanner({ text, group, expanded, onToggle }: { text: string; group
           className="w-full px-4 py-2 flex items-center gap-2 text-left hover:bg-line/30"
         >
           <PinIcon />
-          {expanded ? (
-            <div className="flex-1 min-w-0 text-[0.8125rem] font-medium text-fg-secondary">{t('chat.pin.title')}</div>
-          ) : (
-            <div className="flex-1 min-w-0 truncate text-[0.8125rem] text-fg-secondary">{pinPreview(text)}</div>
-          )}
-          <span className="text-fg-dim text-xs shrink-0">{expanded ? '▲' : '▼'}</span>
+          {/* A pin made only of invite links strips to nothing, and the bar
+              then read as an icon and a chevron with a blank between them. */}
+          <div className="flex-1 min-w-0 truncate text-[0.8125rem] text-fg-secondary">
+            {pinPreview(text) || t('chat.pin.title')}
+          </div>
+          <span className="text-fg-dim text-xs shrink-0">›</span>
         </button>
-        {/* Smooth expand/collapse (#pin-animate). overflow-hidden clips the
-            height tween; the inner box keeps its own scroll + bottom padding so
-            the last group card never touches the edge (#pin-card-padding).
-
-            Absolute, hanging off the bottom of the bar rather than sitting in
-            the column: expanding used to add height to a flex-none row, which
-            pushed the whole thread down and shoved the messages you were
-            reading off the screen. Opening a pin is a glance, not a
-            re-layout, so it now unfolds OVER the conversation and carries the
-            bar's own blur so the thread stays visible behind it. */}
-        <AnimatePresence initial={false}>
-          {expanded && (
+      </div>
+      {/* ⚠ Through a portal, and this is not decoration. `.rcq-floating-bar`
+          carries `backdrop-filter`, and per Filter Effects a backdrop-filtered
+          element becomes the CONTAINING BLOCK for `position: fixed`
+          descendants — so a `fixed inset-0` child of this 39px bar is a 39px
+          strip, and the panel hangs off it instead of covering the window.
+          Measured: the overlay came out 1100x39, and the card's top landed 140
+          to 421px ABOVE the viewport with its close button out of reach. The
+          same trap waits for anything fixed added to the composer or the
+          search strip, which use the same class. */}
+      {createPortal(
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            key="pin-modal"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.16 }}
+            onClick={onToggle}
+            className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-md sm:items-center"
+          >
             <motion.div
-              key="pin-body"
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.22, ease: 'easeOut' }}
-              className="rcq-floating-panel absolute left-0 right-0 top-full overflow-hidden shadow-lg shadow-black/5"
+              initial={{ y: 16, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 16, opacity: 0 }}
+              transition={{ duration: 0.18 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md max-h-[80vh] flex flex-col rounded-t-xl sm:rounded-xl bg-surface shadow-lg overflow-hidden"
             >
-              <div className="px-4 pt-1 pb-3 max-h-96 overflow-y-auto text-[0.8125rem] text-fg-secondary">
+              <header className="flex items-center justify-between gap-2 px-4 py-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <PinIcon />
+                  <span className="truncate text-sm font-semibold">{t('chat.pin.title')}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={onToggle}
+                  aria-label={t('common.close')}
+                  className="text-fg-secondary hover:text-fg-primary px-1"
+                >
+                  ✕
+                </button>
+              </header>
+              <div className="flex-1 overflow-y-auto px-4 pb-4 text-[0.8125rem] text-fg-secondary">
                 <PinnedRichText text={text} group={group} />
               </div>
             </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+          </motion.div>
+        )}
+      </AnimatePresence>,
+      document.body,
+      )}
     </div>
   )
 }
@@ -2680,7 +2736,10 @@ function PinnedRichText({ text, group }: { text: string; group: RCQGroup }) {
     if (m[1]) {
       const inv = parseGroupInvite(m[1])
       if (inv != null) {
-        nodes.push(<div key={key++} className="my-1.5"><GroupJoinCard groupId={inv.id} host={inv.host} /></div>)
+        // Slim row, not the message-bubble card: a pin often IS a list of
+        // invites, and three cards with their own Join buttons were the "too
+        // big" half of the report. Same shape the phones use here.
+        nodes.push(<div key={key++} className="my-1.5"><GroupJoinCard groupId={inv.id} host={inv.host} compact /></div>)
       } else {
         pushText(m[0])
       }
@@ -2755,5 +2814,35 @@ function PollBubble({ poll }: { poll: PollRow }) {
         {t('poll.votes', { n: total })}{closed ? ` · ${t('poll.closed')}` : ''}
       </div>
     </div>
+  )
+}
+
+/// Direction arrow for a call row: down-left for incoming, up-right for
+/// outgoing, red when nobody picked up. Same vocabulary the phones use.
+function CallLogIcon({ missed, outgoing }: { missed: boolean; outgoing: boolean }) {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={missed ? 'text-red-500' : 'text-fg-dim'}
+    >
+      {outgoing ? (
+        <>
+          <line x1="7" y1="17" x2="17" y2="7" />
+          <polyline points="9 7 17 7 17 15" />
+        </>
+      ) : (
+        <>
+          <line x1="17" y1="7" x2="7" y2="17" />
+          <polyline points="15 17 7 17 7 9" />
+        </>
+      )}
+    </svg>
   )
 }

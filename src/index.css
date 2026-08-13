@@ -261,6 +261,15 @@ html.dark .rcq-header a[aria-label]:hover {
 html.desktop {
   -webkit-user-select: none;
   user-select: none;
+  /* A trackpad swipe sideways slid the whole app a few pixels and let it
+     spring back. Harmless, and it reads as a web page in a window rather than
+     an application — nothing here scrolls horizontally, so there is nothing to
+     rubber-band against. In a browser this stays on: overscroll there is the
+     browser's own gesture (back/forward), not ours to take away. */
+  overscroll-behavior-x: none;
+}
+html.desktop body {
+  overscroll-behavior-x: none;
 }
 html.desktop input,
 html.desktop textarea,

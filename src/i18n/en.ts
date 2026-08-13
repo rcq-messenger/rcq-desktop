@@ -363,7 +363,7 @@ export const en: Record<string, string> = {
 
   // Add contact
   'add.title': 'Add contact',
-  'add.placeholder': 'Search #UIN, nickname, city…',
+  'add.placeholder': 'Search #UIN, nickname…',
   'add.hint': 'Type at least one character. A # finds an exact number: #134.',
   'add.no_match': 'No matches.',
   'add.cta': 'Add',
@@ -374,9 +374,9 @@ export const en: Record<string, string> = {
   'profile.title.self': 'Your profile',
   'profile.title.peer': 'Profile',
   'profile.error': 'Could not load profile.',
-  'profile.edit': 'Edit',
   'profile.save': 'Save',
   'profile.saving': 'Saving…',
+  'profile.saved': 'Profile saved.',
   'profile.cta.send_message': 'Send message',
   'profile.section.personal': 'Personal',
   'profile.section.location': 'Location',
@@ -614,14 +614,14 @@ export const en: Record<string, string> = {
     'Your UIN is your handle on RCQ, the number people add to reach you. A shorter one is easier to share and remember.',
   'uin_market.info.migrate.title': 'Taking a number does not change who you are',
   'uin_market.info.migrate.body':
-    'The number joins your collection and you keep answering as you do now. Moving onto it is a separate step under Your numbers, and it is reversible: the number you leave stays yours too, so nobody else can take it.',
+    'The number joins your collection and you keep answering as you do now. Moving onto it is a separate step under Your UINs, and it is reversible: the number you leave stays yours too, so nobody else can take it.',
   'uin_market.confirm.body':
     'The number joins your collection. You keep answering as you do now, and you can move onto it whenever you like.',
   'uin_market.confirm.cta': 'Confirm',
   'uin_market.bought.title': 'Done',
   'uin_market.bought.body': 'You now hold {uin}.',
   'uin_market.switched.body': 'You now answer as {uin}.',
-  'uin_market.mine.label': 'Your numbers',
+  'uin_market.mine.label': 'Your UINs',
   'uin_market.mine.active': 'You answer as',
   'uin_market.mine.empty': 'Nothing held yet. Numbers you take without moving onto them show up here.',
   'uin_market.mine.use': 'Switch',
@@ -630,7 +630,7 @@ export const en: Record<string, string> = {
     'Contacts, groups and your profile move onto this number. {prev} stays yours and stays on this screen, so you can move back whenever you like. Secure sessions reset and re-handshake on the next message.',
   'uin_market.mine.confirm.cta': 'Switch',
   'uin_market.held.body':
-    'It is in your collection and you still answer as {prev}. Move onto it now, or later from Your numbers.',
+    'It is in your collection and you still answer as {prev}. Move onto it now, or later from Your UINs.',
   'uin_market.held.now': 'Move onto it',
   'uin_market.held.later': 'Later',
   'uin_market.error.taken': 'That UIN was just taken. Try another.',

@@ -18,7 +18,7 @@ import { loadEncryptedImage } from '../lib/media'
 import { StatusIcon } from './StatusIcon'
 
 interface Props {
-  status: UserStatus | 'typing'
+  status: UserStatus
   size?: number
   className?: string
   mediaId?: string | null
@@ -68,6 +68,13 @@ export function PersonAvatar({
   // Big enough to read on a 24px row avatar, small enough not to swallow a
   // large profile one.
   const badge = Math.min(26, Math.max(12, Math.round(size * 0.36)))
+  // The badge sits ON the picture's lower-left edge and sticks out past it,
+  // exactly as Android draws it (Common.kt: offset(x = -badge/4, y = badge/4))
+  // and as the site draws it in the Hall of Fame. Pinned flush to the square's
+  // corner it landed in the gap the round image never reaches, so it read as
+  // half-swallowed and sat too high. Same quarter-badge overhang on both axes.
+  const out = -Math.round(badge / 4)
+  const pos = { width: badge, height: badge, left: out, bottom: out }
   return (
     <span className={`relative inline-block flex-none ${className}`} style={{ width: size, height: size }}>
       <img
@@ -80,16 +87,16 @@ export function PersonAvatar({
         <button
           type="button"
           onClick={onStatusClick}
-          className="absolute bottom-0 left-0 rounded-full bg-bg flex items-center justify-center"
-          style={{ width: badge, height: badge }}
+          className="absolute rounded-full bg-bg flex items-center justify-center"
+          style={pos}
           aria-label={status}
         >
           <StatusIcon status={status} size={Math.round(badge * 0.86)} />
         </button>
       ) : (
         <span
-          className="absolute bottom-0 left-0 rounded-full bg-bg flex items-center justify-center"
-          style={{ width: badge, height: badge }}
+          className="absolute rounded-full bg-bg flex items-center justify-center"
+          style={pos}
         >
           <StatusIcon status={status} size={Math.round(badge * 0.86)} />
         </span>

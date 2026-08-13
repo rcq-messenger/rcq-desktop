@@ -6,6 +6,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#0A0A0A" />
     <title>RCQ Chat</title>
+    <script>
+      // Decide the palette BEFORE the first paint. The theme class is written
+      // by the React provider, which cannot run until the bundle is parsed, so
+      // every reload used to paint one light frame first — a white flash on a
+      // black window, most visible in the desktop app where adding or removing
+      // an account reloads the page on purpose.
+      //
+      // Same key and same rule as lib/theme-context.tsx; keep them together.
+      // Wrapped in try/catch because localStorage throws outright in a webview
+      // with site data disabled, and a theme must never cost us the app.
+      try {
+        var p = localStorage.getItem('rcq.web.chat.theme')
+        var dark =
+          p === 'dark' ||
+          ((!p || p === 'system') &&
+            window.matchMedia('(prefers-color-scheme: dark)').matches)
+        if (dark) {
+          document.documentElement.classList.add('dark')
+          document.documentElement.style.colorScheme = 'dark'
+        }
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

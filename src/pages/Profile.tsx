@@ -1,7 +1,14 @@
-// Profile surface — own (with edit mode) and peer (read-only).
+// Profile surface — own (editable) and peer (read-only).
 // Route: `/profile` for own, `/profile/:uin` for peer. The same
 // component handles both: it inspects `useParams()` and the active
 // identity to decide.
+//
+// Own profile opens straight into the form. It used to land on a read-only
+// copy of what you had just been looking at, with an "Edit" button in the
+// corner — a page whose only purpose was to ask for one more tap before the
+// thing you came for. Nobody visits their own profile to read it; every route
+// that points here (Settings, the Contacts header, the self-chat header, your
+// own row in a group) means "let me change this".
 
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
@@ -13,6 +20,7 @@ import { getCrossIsland } from '../lib/crossisland-store'
 import { useContactAliases } from '../lib/local-store'
 import { lookupContactName } from '../lib/contacts-cache'
 import { uploadEncryptedImage } from '../lib/media'
+import { useToast } from '../lib/toast'
 
 const GENDER_OPTIONS: { value: string; key: string }[] = [
   { value: '', key: 'profile.gender.dont_share' },
@@ -24,21 +32,29 @@ const GENDER_OPTIONS: { value: string; key: string }[] = [
 export function Profile() {
   const { identity } = useIdentity()
   const { t } = useI18n()
+  const { toast } = useToast()
   const navigate = useNavigate()
   const params = useParams<{ uin?: string }>()
   const [searchParams] = useSearchParams()
   const targetUIN = params.uin ? Number(params.uin) : identity?.uin
-  const isSelf = !!identity && targetUIN === identity.uin
   // §5c: `?i=<host>` marks a cross-island peer — render from the local card
   // (own-island /users/{uin}/info would 404). Read-only, never editable.
-  const crossIslandHost = !isSelf ? searchParams.get('i') : null
+  //
+  // ⚠ Read BEFORE isSelf, and isSelf then excludes it. Numbers are per-island,
+  // so `#134@is2.rcq.app` and my own `#134` are two different people wearing
+  // the same digits. With isSelf decided on the number alone, opening that
+  // peer's card handed me my OWN editable profile under their name — and Save
+  // renamed my account.
+  const crossIslandHost = searchParams.get('i')
+  const isSelf = !!identity && targetUIN === identity.uin && !crossIslandHost
 
   const [info, setInfo] = useState<UserInfo | null>(null)
-  const [editing, setEditing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
-  // Editable copies — only used when `editing`.
+  // Editable copy — own profile only. Seeded from the card as soon as it
+  // lands (there is no "start editing" step any more), and left alone
+  // afterwards so a refresh can never overwrite what is being typed.
   const [draft, setDraft] = useState<UserInfo | null>(null)
 
   useEffect(() => {
@@ -72,6 +88,17 @@ export function Profile() {
         // both directions. So fall back to the little we do know (their name
         // from the roster we already have cached, otherwise their number) and
         // let the page work read-only.
+        // ⚠ NEVER for my own profile. This stub is a shape, not data: every
+        // field but the nickname is absent. On a peer's page it is harmless —
+        // the read view simply omits what it does not have. On MY page it
+        // would seed the edit form, and one tap on Save would PATCH those
+        // absences over a perfectly good profile on the island. A failure to
+        // READ my card must not become a write.
+        if (isSelf) {
+          setError(t('profile.error'))
+          if (import.meta.env.DEV) console.warn('profile: own card unavailable', e)
+          return
+        }
         const cached = lookupContactName(identity.uin, targetUIN)
         setInfo({
           uin: targetUIN,
@@ -82,17 +109,17 @@ export function Profile() {
       }
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [identity, targetUIN, crossIslandHost])
+  }, [identity, targetUIN, crossIslandHost, isSelf])
+
+  // Seed the form once the card is here. `d ?? …` on purpose: the card is also
+  // re-set by save(), and a second seed would throw away anything typed since.
+  useEffect(() => {
+    if (isSelf && info) setDraft((d) => d ?? { ...info })
+  }, [isSelf, info])
 
   if (!identity) {
     navigate('/', { replace: true })
     return null
-  }
-
-  function startEdit() {
-    if (!info) return
-    setDraft({ ...info })
-    setEditing(true)
   }
 
   async function save() {
@@ -113,7 +140,10 @@ export function Profile() {
         status_message: draft.status_message ?? null,
       })
       setInfo(updated)
-      setEditing(false)
+      setDraft({ ...updated })
+      // The form stays on screen (it IS the page now), so say the save landed
+      // instead of leaving the person looking at an unchanged screen.
+      toast(t('profile.saved'))
     } catch (e) {
       setError(e instanceof Error ? e.message : t('profile.error'))
     } finally {
@@ -134,14 +164,6 @@ export function Profile() {
           <div className="font-semibold">
             {isSelf ? t('profile.title.self') : t('profile.title.peer')}
           </div>
-          {isSelf && !editing && info && (
-            <button
-              onClick={startEdit}
-              className="ml-auto px-3 h-9 text-sm font-semibold text-accent hover:text-accent-dim"
-            >
-              {t('profile.edit')}
-            </button>
-          )}
         </div>
       </header>
 
@@ -158,14 +180,19 @@ export function Profile() {
           </div>
         )}
 
-        {info && !editing && <ReadView info={info} t={t} isSelf={isSelf} navigate={navigate} crossIslandHost={crossIslandHost} />}
-        {info && editing && draft && (
+        {info && !isSelf && <ReadView info={info} t={t} isSelf={isSelf} navigate={navigate} crossIslandHost={crossIslandHost} />}
+        {info && isSelf && draft && (
           <EditView
             draft={draft}
             setDraft={setDraft}
             saving={saving}
             onSave={save}
-            onCancel={() => setEditing(false)}
+            // Nothing to cancel back INTO now, so cancel means "leave", the
+            // same as the ← in the header. Opened directly (a bookmark, the
+            // desktop app's first screen after a reload) there is no history
+            // to go back to and `navigate(-1)` is a button that does nothing,
+            // so fall back to where the ← points.
+            onCancel={() => (window.history.length > 1 ? navigate(-1) : navigate('/contacts'))}
             t={t}
           />
         )}
@@ -395,6 +422,10 @@ function EditView({
             mediaKey={draft.avatar_media_key}
           />
           <div className="flex flex-col gap-1">
+            {/* Your own number. It used to be on the read-only page this
+                form replaced, and it is the one thing here you cannot edit
+                but do need to read out to people. */}
+            <div className="font-mono text-xs text-fg-dim">#{draft.uin}</div>
             <label className="text-sm text-accent cursor-pointer hover:underline">
               {draft.avatar_media_id ? t('profile.picture.change') : t('profile.picture.set')}
               <input

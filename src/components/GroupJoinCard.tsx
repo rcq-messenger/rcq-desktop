@@ -48,9 +48,16 @@ interface Props {
   /// The group's host island from the invite link; null/undefined or own
   /// island = a local group (legacy links).
   host?: string | null
+  /// Slim one-line row instead of the card. For places that list links rather
+  /// than deliver one — the group's pinned message, where three invites drawn
+  /// as three 110px cards with their own Join buttons filled the screen
+  /// ("отображается горизонтально и слишком крупно"). The phones use exactly
+  /// this shape there. The whole row is the action: open it if you are in it,
+  /// join it if you are not.
+  compact?: boolean
 }
 
-export function GroupJoinCard({ groupId, host }: Props) {
+export function GroupJoinCard({ groupId, host, compact = false }: Props) {
   const { identity } = useIdentity()
   const { t } = useI18n()
   const navigate = useNavigate()
@@ -188,6 +195,32 @@ export function GroupJoinCard({ groupId, host }: Props) {
   }
 
   const closedToMe = preview.is_closed && !isMember
+
+  if (compact) {
+    return (
+      <>
+        <button
+          type="button"
+          disabled={joining || closedToMe}
+          onClick={() => (isMember ? navigate(chatPath()) : void join())}
+          className="w-full flex items-center gap-2.5 rounded-xl bg-field px-2.5 py-2 text-left transition-colors hover:bg-line/40 disabled:opacity-60"
+        >
+          <GroupAvatar size={36} mediaId={preview.avatar_media_id} mediaKey={preview.avatar_media_key} />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[0.8125rem] font-medium">{preview.name}</span>
+            <span className="block truncate text-[0.6875rem] text-fg-dim">
+              {closedToMe
+                ? t('group_join.closed_button')
+                : t('section.groups.members', { n: preview.member_count })}
+              {foreignHost ? ` · ${foreignHost}` : ''}
+            </span>
+          </span>
+          <span className="flex-none text-fg-dim">›</span>
+        </button>
+        {actionError && <div className="mt-1 text-[0.625rem] text-red-500">{actionError}</div>}
+      </>
+    )
+  }
 
   return (
     <div className="w-64 max-w-full rounded-xl bg-surface p-3">

@@ -21,7 +21,13 @@ export interface OutgoingRow {
   /// Photo / video / file attachment, or a still-unsupported media kind echoed
   /// from another device via a carbon ('other' — voice/location the web can't
   /// render but should still show as "you sent this elsewhere").
-  kind?: 'text' | 'photo' | 'video' | 'file' | 'other'
+  /// 'call' is not a message at all: it is the record a finished call leaves
+  /// in the conversation, the way both phones write one. It never goes on the
+  /// wire — each device logs its own — and it renders as a centred line rather
+  /// than a bubble.
+  kind?: 'text' | 'photo' | 'video' | 'file' | 'other' | 'call'
+  /// For 'call': nobody picked up (or it was declined). Drives the icon.
+  callMissed?: boolean
   mediaId?: string
   mediaKey?: string
   mediaKind?: string // for 'other': the original envelope kind
@@ -94,6 +100,31 @@ export function appendToThreadLog(key: string, row: OutgoingRow): void {
   const existing = loadPersisted(key)
   if (existing.some((r) => r.id === row.id)) return
   savePersisted(key, [...existing, row])
+}
+
+/// Write the record of a finished call into a 1:1 thread.
+///
+/// The phones have always done this (Android `Session.logCallHistory`, iOS
+/// `CallService.logCallEnded`); the desktop showed nothing at all, so a call
+/// you took there left no trace in the conversation — founder: "на десктопе нет
+/// системных сообщений о звонках, которые есть в приложениях".
+///
+/// Local by definition: no envelope, no delivery state, and the row is written
+/// on BOTH sides independently. If the open thread is this one, the live sink
+/// puts it on screen immediately; otherwise it lands in that thread's log and
+/// appears when the user opens it.
+export function logCall(peerUin: number, text: string, missed: boolean, at: number): void {
+  const row: OutgoingRow = {
+    id: `call-${at}-${peerUin}`,
+    text,
+    sentAt: at,
+    state: 'sent',
+    kind: 'call',
+    callMissed: missed,
+  }
+  const key = storageKey(false, peerUin)
+  appendToThreadLog(key, row)
+  if (_openThreadKey === key) _openThreadSink?.(row)
 }
 
 // ── Open-thread sink ────────────────────────────────────────────────

@@ -4,6 +4,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { PersonAvatar } from '../components/PersonAvatar'
+import { GroupSettingsModal } from '../components/GroupSettingsModal'
 import { GroupAvatar } from '../components/GroupAvatar'
 import { Api, type RCQGroup } from '../lib/api'
 import { useI18n } from '../lib/i18n-context'
@@ -20,6 +21,7 @@ export function GroupInfo() {
   const [group, setGroup] = useState<RCQGroup | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const [confirmDestroy, setConfirmDestroy] = useState(false)
   const [membersExpanded, setMembersExpanded] = useState(false)
 
@@ -49,6 +51,37 @@ export function GroupInfo() {
   // Foreign group: WE are our guest uin on that island.
   const myUinThere = gctx?.host ? gctx.ident.uin : identity.uin
   const isOwner = group?.owner_uin === myUinThere
+  // The backend's own two gates: `info` edits name/description/picture/pin,
+  // `members` removes people. The owner has both implicitly.
+  const myRow = group?.members.find((m) => m.uin === myUinThere)
+  const canEditInfo = isOwner || !!myRow?.permissions?.includes('info')
+  const canManageMembers = isOwner || !!myRow?.permissions?.includes('members')
+  // The owner first, then everyone else. The island's roster query has no
+  // ORDER BY and the initial rows are inserted from a Python set, so "who owns
+  // this group" arrived in whatever order Postgres felt like — the founder was
+  // not shown at the top of his own group because nothing had ever put him
+  // there. The phones sort; now so does this.
+  const roster = group
+    ? [...group.members].sort((a, b) => {
+        const ao = a.uin === group.owner_uin ? 0 : 1
+        const bo = b.uin === group.owner_uin ? 0 : 1
+        if (ao !== bo) return ao - bo
+        return (a.nickname || `#${a.uin}`).localeCompare(b.nickname || `#${b.uin}`)
+      })
+    : []
+
+  async function removeMember(uin: number) {
+    if (!group || !gctx) return
+    setBusy(true)
+    try {
+      await Api.removeGroupMember(gctx.ident, gctx.gid, uin)
+      setGroup({ ...group, members: group.members.filter((m) => m.uin !== uin) })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'failed')
+    } finally {
+      setBusy(false)
+    }
+  }
 
   async function leaveOrDelete() {
     if (!group) return
@@ -69,6 +102,16 @@ export function GroupInfo() {
 
   return (
     <div className="min-h-screen bg-surface-dim">
+      {showSettings && group && gctx && (
+        <GroupSettingsModal
+          group={group}
+          ident={gctx.ident}
+          gid={gctx.gid}
+          isOwner={isOwner}
+          onSaved={(g) => setGroup({ ...g, id: group.id, host: group.host })}
+          onClose={() => setShowSettings(false)}
+        />
+      )}
       <header className="rcq-header sticky top-0 z-10">
         <div className="max-w-2xl mx-auto px-4 h-14 flex items-center gap-3">
           <Link to="/contacts" className="text-fg-secondary hover:text-fg-primary px-2">
@@ -76,12 +119,22 @@ export function GroupInfo() {
           </Link>
           <div className="font-semibold">{t('group.info.title')}</div>
           {group && (
-            <Link
-              to={`/chat/g/${group.id}`}
-              className="ml-auto text-sm text-accent font-semibold px-2"
-            >
-              {t('contacts.open_chat')}
-            </Link>
+            <div className="ml-auto flex items-center gap-1">
+              {canEditInfo && (
+                <button
+                  type="button"
+                  onClick={() => setShowSettings(true)}
+                  aria-label={t('group.settings.title')}
+                  title={t('group.settings.title')}
+                  className="text-fg-secondary hover:text-fg-primary p-2 rounded-md hover:bg-field"
+                >
+                  <GearIcon />
+                </button>
+              )}
+              <Link to={`/chat/g/${group.id}`} className="text-sm text-accent font-semibold px-2">
+                {t('contacts.open_chat')}
+              </Link>
+            </div>
           )}
         </div>
       </header>
@@ -127,8 +180,8 @@ export function GroupInfo() {
               </button>
               {membersExpanded && (
               <ul>
-                {group.members.map((m) => (
-                  <li key={m.uin}>
+                {roster.map((m) => (
+                  <li key={m.uin} className="relative">
                     <Link
                       to={m.uin === identity.uin ? '/profile' : `/profile/${m.uin}`}
                       className="flex items-center gap-3 px-4 py-2.5 hover:bg-field"
@@ -156,12 +209,22 @@ export function GroupInfo() {
                         </div>
                         <div className="font-mono text-[0.625rem] text-fg-dim">#{m.uin}</div>
                       </div>
-                      {m.role === 'owner' && (
+                      {m.uin === group.owner_uin && (
                         <span className="text-[0.625rem] font-bold text-accent uppercase tracking-wider">
                           {t('group.info.owner')}
                         </span>
                       )}
                     </Link>
+                    {canManageMembers && m.uin !== group.owner_uin && m.uin !== myUinThere && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void removeMember(m.uin)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 h-6 px-2 rounded-md bg-field text-[0.6875rem] font-medium text-fg-secondary hover:bg-line/60 disabled:opacity-40"
+                      >
+                        {t('group.settings.remove_member')}
+                      </button>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -216,6 +279,15 @@ function LeaveIcon() {
       <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
       <polyline points="16 17 21 12 16 7" />
       <line x1="21" y1="12" x2="9" y2="12" />
+    </svg>
+  )
+}
+
+function GearIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
     </svg>
   )
 }

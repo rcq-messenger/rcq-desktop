@@ -88,21 +88,43 @@ function Portrait({ subtitle }: { subtitle: string }) {
   const { identity } = useIdentity()
   if (!info) return null
   // The person's actual face, like everywhere else in the app. A call is the
-  // one screen where you look at nothing but this, and it was the one screen
-  // showing a letter. PersonAvatar falls back on its own when there is no
-  // picture, so there is nothing to branch on here.
+  // one screen where you look at nothing but this.
+  //
+  // Without their presence on it, though: the flower answers "are they around"
+  // to somebody who is currently listening to them breathe. The phones show a
+  // plain lettered disc when there is no picture, and this is the parity — a
+  // suppressed flower used to leave web with a 112px offline flower AS the
+  // avatar, which is how the founder came to be looking at one.
   const avatar = identity ? lookupContactAvatar(identity.uin, info.peerUin) : null
+  const initial = [...(info.peerName || '#')][0]?.toUpperCase() ?? '#'
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center gap-4 px-6 text-center">
       {/* Remote audio has to be attached to an element or nothing is heard. */}
       <RemoteAudio stream={remoteStream} />
-      <PersonAvatar
-        status={'offline'}
-        size={112}
-        mediaId={avatar?.mediaId}
-        mediaKey={avatar?.mediaKey}
-      />
+      {/* The letter is the BASE layer, always drawn; the picture covers it once
+          it has been fetched and decrypted. Branching on `mediaId` instead left
+          a 112px hole for every peer whose blob was still loading — and a
+          permanent one for a cross-island peer, whose picture lives on their
+          island and never arrives here at all. */}
+      <div className="relative" style={{ width: 112, height: 112 }}>
+        <div
+          className="absolute inset-0 rounded-full bg-field flex items-center justify-center text-4xl font-semibold text-fg-secondary select-none"
+          aria-hidden
+        >
+          {initial}
+        </div>
+        {avatar?.mediaId && (
+          <PersonAvatar
+            status={'offline'}
+            showStatus={false}
+            size={112}
+            className="absolute inset-0"
+            mediaId={avatar.mediaId}
+            mediaKey={avatar.mediaKey}
+          />
+        )}
+      </div>
       <div>
         <div className="text-2xl font-medium">{info.peerName}</div>
         <div className="font-mono text-sm text-fg-dim">#{info.peerUin}</div>

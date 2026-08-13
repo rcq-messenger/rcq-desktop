@@ -14,7 +14,10 @@ import { resolvePeerHomes } from '../lib/federation-resolve'
 import { fetchPeerKeyCard } from '../lib/federation-send'
 import { saveCrossIsland } from '../lib/crossisland-store'
 
-export function AddContact() {
+/// [embedded] drops the page chrome so the same body can live inside a modal.
+/// The founder's rule for the desktop: fewer full-page detours, more windows
+/// over the list you were already looking at.
+export function AddContact({ embedded = false }: { embedded?: boolean } = {}) {
   const { identity } = useIdentity()
   const { t } = useI18n()
   const navigate = useNavigate()
@@ -108,17 +111,19 @@ export function AddContact() {
   }
 
   return (
-    <div className="min-h-screen bg-surface-dim">
-      <header className="rcq-header sticky top-0 z-10">
-        <div className="max-w-2xl mx-auto px-4 h-14 flex items-center gap-3">
-          <Link to="/contacts" className="text-fg-secondary hover:text-fg-primary px-2">
-            ←
-          </Link>
-          <div className="font-semibold">{t('add.title')}</div>
-        </div>
-      </header>
+    <div className={embedded ? '' : 'min-h-screen bg-surface-dim'}>
+      {!embedded && (
+        <header className="rcq-header sticky top-0 z-10">
+          <div className="max-w-2xl mx-auto px-4 h-14 flex items-center gap-3">
+            <Link to="/contacts" className="text-fg-secondary hover:text-fg-primary px-2">
+              ←
+            </Link>
+            <div className="font-semibold">{t('add.title')}</div>
+          </div>
+        </header>
+      )}
 
-      <main className="max-w-2xl mx-auto px-4 py-4 space-y-4">
+      <main className={embedded ? 'px-4 pb-4 space-y-4' : 'max-w-2xl mx-auto px-4 py-4 space-y-4'}>
         <input
           type="text"
           value={query}

@@ -12,7 +12,8 @@ import { useNavigate } from 'react-router-dom'
 import { onToast, useTotalUnread, type Toast } from '../lib/incoming-store'
 import { useIdentity } from '../lib/identity-context'
 import { useI18n } from '../lib/i18n-context'
-import { isTauri, notifyDesktop, setDesktopBadge, checkForUpdatesOnLaunch } from '../lib/desktop'
+import { useCall } from '../lib/call'
+import { isTauri, notifyDesktop, setDesktopBadge, checkForUpdatesOnLaunch, pollForUpdates } from '../lib/desktop'
 import { lookupContactAvatar, lookupContactName, lookupGroupName, lookupContactStatus, lookupGroupAvatar } from '../lib/contacts-cache'
 import { EmoticonText } from './EmoticonText'
 import { GroupAvatar } from './GroupAvatar'
@@ -26,10 +27,15 @@ interface LiveToast extends Toast {
 const AUTO_DISMISS_MS = 5000
 const MAX_VISIBLE = 3
 
+/// Six hours. Often enough that a release finds a window somebody left open
+/// over a weekend, rare enough to be free.
+const UPDATE_POLL_MS = 6 * 60 * 60 * 1000
+
 export function MessageToasts() {
   const navigate = useNavigate()
   const { identity } = useIdentity()
   const { t } = useI18n()
+  const { phase } = useCall()
   const [toasts, setToasts] = useState<LiveToast[]>([])
   const totalUnread = useTotalUnread()
 
@@ -42,11 +48,31 @@ export function MessageToasts() {
     void setDesktopBadge(totalUnread)
   }, [totalUnread])
 
-  // Desktop only: check for an app update once on launch. `t` is passed in so
-  // the native dialog speaks the same language as the rest of the app; the
-  // once-per-launch guard lives in the helper, so a language switch is a no-op.
+  // Desktop only: check for an app update once on launch, then keep checking.
+  // `t` is passed in so the native dialog speaks the same language as the rest
+  // of the app; the once-per-launch guard lives in the helper, so a language
+  // switch is a no-op.
+  //
+  // The interval is the point of the whole thing (#24): this window hides to
+  // the tray instead of quitting, so on a machine left running for a week the
+  // launch check is the only one that ever happens and a release published on
+  // Tuesday is found the next time somebody reboots. The poll never opens a
+  // dialog — it lights the badge in the header, and the user decides when.
   useEffect(() => {
-    void checkForUpdatesOnLaunch(t)
+    if (!isTauri()) return
+    // Never over a ringing phone: `ask()` is an OS-modal window that the call
+    // screen cannot be drawn above.
+    void checkForUpdatesOnLaunch(t, phase !== 'idle')
+    const tick = () => void pollForUpdates()
+    const timer = window.setInterval(tick, UPDATE_POLL_MS)
+    // Coming back to the window after a while is the other natural moment to
+    // ask; the 30-minute floor inside pollForUpdates keeps this cheap.
+    window.addEventListener('focus', tick)
+    return () => {
+      window.clearInterval(timer)
+      window.removeEventListener('focus', tick)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [t])
 
   // Desktop only: fire an OS notification for a new message that arrives while

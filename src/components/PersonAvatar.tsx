@@ -29,6 +29,12 @@ interface Props {
   /// Set when the status badge itself is actionable (the header, where tapping
   /// the flower opens the status menu). Without it the badge is decoration.
   onStatusClick?: () => void
+  /// Draw the person WITHOUT their presence. One screen wants this: a call,
+  /// where you are looking at nobody else and their being "online" is the one
+  /// thing you already know. Off, this component renders the picture alone —
+  /// and nothing at all when there is no picture, so the caller can put its own
+  /// fallback there (the phones draw a lettered disc).
+  showStatus?: boolean
 }
 
 export function PersonAvatar({
@@ -39,6 +45,7 @@ export function PersonAvatar({
   mediaKey,
   crossIsland = false,
   onStatusClick,
+  showStatus = true,
 }: Props) {
   const { identity } = useIdentity()
   const [url, setUrl] = useState<string | null>(null)
@@ -56,6 +63,8 @@ export function PersonAvatar({
   }, [identity?.apiBase, mediaId, mediaKey, crossIsland])
 
   if (!url) {
+    // Nothing to draw: no picture, and presence deliberately suppressed.
+    if (!showStatus) return null
     const icon = <StatusIcon status={status} size={size} className={className} crossIsland={crossIsland} />
     if (!onStatusClick) return icon
     return (
@@ -83,7 +92,7 @@ export function PersonAvatar({
         className="rounded-full object-cover w-full h-full"
         draggable={false}
       />
-      {onStatusClick ? (
+      {!showStatus ? null : onStatusClick ? (
         <button
           type="button"
           onClick={onStatusClick}

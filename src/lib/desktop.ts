@@ -243,17 +243,113 @@ async function promptAndInstall(
   await relaunch()
 }
 
+// ── pending update, as a fact the UI can watch ──────────────────────────
+//
+// The app used to learn about a release exactly twice: once at launch, and
+// whenever somebody thought to press the button in Settings. A window left
+// open for a week never heard about anything (it hides to the tray rather than
+// quitting), which is the whole of the founder's request: "показывать
+// обновление в момент её появления, а не только при входе".
+//
+// So: a poll that only ever lights a badge, and one dialog per launch at most.
+// A modal that appears by itself while you are typing is the thing nobody
+// wants, and on desktop it is an OS window that the app cannot draw over —
+// including over a ringing call.
+export interface PendingUpdate {
+  version: string
+}
+
+let pendingUpdate: PendingUpdate | null = null
+let lastCheckAt = 0
+const updateListeners = new Set<() => void>()
+
+/// Poll no more often than this, whoever asks. The manual button bypasses it.
+const MIN_CHECK_GAP_MS = 30 * 60 * 1000
+
+export function subscribeUpdate(cb: () => void): () => void {
+  updateListeners.add(cb)
+  return () => updateListeners.delete(cb)
+}
+
+export function getPendingUpdate(): PendingUpdate | null {
+  return pendingUpdate
+}
+
+function announceUpdate(next: PendingUpdate | null) {
+  const changed = (pendingUpdate?.version ?? null) !== (next?.version ?? null)
+  pendingUpdate = next
+  if (changed) updateListeners.forEach((cb) => cb())
+}
+
+/// Ask the endpoint, remember what it said, and tell nobody loudly.
+///
+/// ⚠ The `Update` handle is a Rust-side resource with an rid; it is closed
+/// immediately rather than parked across a six-hour interval. The install path
+/// re-checks and gets a fresh one.
+export async function pollForUpdates(force = false): Promise<void> {
+  if (!isTauri()) return
+  const now = Date.now()
+  if (!force && now - lastCheckAt < MIN_CHECK_GAP_MS) return
+  lastCheckAt = now
+  try {
+    const { check } = await import('@tauri-apps/plugin-updater')
+    const update = await check()
+    if (!update) {
+      announceUpdate(null)
+      return
+    }
+    const version = update.version
+    await update.close().catch(() => {})
+    announceUpdate({ version })
+  } catch {
+    /* endpoint unreachable — say nothing, try again on the next tick */
+  }
+}
+
+/// Download the pending update and restart into it. Used by the badge.
+export async function installPendingUpdate(): Promise<UpdateCheck> {
+  if (!isTauri()) return { kind: 'unsupported' }
+  try {
+    const { check } = await import('@tauri-apps/plugin-updater')
+    const update = await check()
+    if (!update) {
+      announceUpdate(null)
+      return { kind: 'current' }
+    }
+    await update.downloadAndInstall()
+    const { relaunch } = await import('@tauri-apps/plugin-process')
+    await relaunch()
+    return { kind: 'found' }
+  } catch (e) {
+    console.error('[updater] install failed', e)
+    return { kind: 'install_failed', reason: reasonOf(e) }
+  }
+}
+
 // Check the update endpoint once per launch; if a newer signed build is
 // published, ask the user and (on yes) download, install, and relaunch.
 // No-op off desktop / when the endpoint is unreachable.
 let updateChecked = false
-export async function checkForUpdatesOnLaunch(t: Translate): Promise<void> {
+export async function checkForUpdatesOnLaunch(t: Translate, quiet = false): Promise<void> {
   if (!isTauri() || updateChecked) return
   updateChecked = true
+  lastCheckAt = Date.now()
   try {
     const { check } = await import('@tauri-apps/plugin-updater')
     const update = await check()
-    if (!update) return
+    if (!update) {
+      announceUpdate(null)
+      return
+    }
+    announceUpdate({ version: update.version })
+    // `quiet` is the ringing phone: `ask()` is an OS-modal window, so it lands
+    // OVER the call screen and takes the Answer button with it. The badge has
+    // already been lit, so nothing is lost by staying silent — Android learned
+    // this the same way, in #478.
+    if (quiet) {
+      await update.close().catch(() => {})
+      return
+    }
     await promptAndInstall(update, t)
   } catch {
     /* no update / endpoint unreachable / not yet hosted — ignore */

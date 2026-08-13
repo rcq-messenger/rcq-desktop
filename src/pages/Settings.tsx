@@ -542,7 +542,7 @@ export function Settings() {
           <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
             {t('settings.section.qr')}
           </div>
-          <MyQRCode />
+          <MyQRCode me={me} />
         </section>
 
         {/* Multihoming (federation v1): this account also registered on a

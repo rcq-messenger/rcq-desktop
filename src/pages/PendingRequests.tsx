@@ -14,7 +14,8 @@ import { saveCrossIsland } from '../lib/crossisland-store'
 import { fetchPeerKeyCard } from '../lib/federation-send'
 import { addIncoming, beginCatchUp, endCatchUp } from '../lib/incoming-store'
 
-export function PendingRequests() {
+/// [embedded] drops the page chrome so the same body can live inside a modal.
+export function PendingRequests({ embedded = false }: { embedded?: boolean } = {}) {
   const { identity } = useIdentity()
   const { t } = useI18n()
   const ws = useWS()
@@ -113,17 +114,19 @@ export function PendingRequests() {
   }
 
   return (
-    <div className="min-h-screen bg-surface-dim">
-      <header className="rcq-header sticky top-0 z-10">
-        <div className="max-w-2xl mx-auto px-4 h-14 flex items-center gap-3">
-          <Link to="/contacts" className="text-fg-secondary hover:text-fg-primary px-2">
-            ←
-          </Link>
-          <div className="font-semibold">{t('pending.title')}</div>
-        </div>
-      </header>
+    <div className={embedded ? '' : 'min-h-screen bg-surface-dim'}>
+      {!embedded && (
+        <header className="rcq-header sticky top-0 z-10">
+          <div className="max-w-2xl mx-auto px-4 h-14 flex items-center gap-3">
+            <Link to="/contacts" className="text-fg-secondary hover:text-fg-primary px-2">
+              ←
+            </Link>
+            <div className="font-semibold">{t('pending.title')}</div>
+          </div>
+        </header>
+      )}
 
-      <main className="max-w-2xl mx-auto px-4 py-4">
+      <main className={embedded ? 'px-4 pb-4' : 'max-w-2xl mx-auto px-4 py-4'}>
         {ci.length > 0 && (
           <section className="mb-4">
             <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide mb-2">

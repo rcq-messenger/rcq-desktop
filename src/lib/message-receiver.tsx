@@ -53,7 +53,11 @@ function route(
   // chain bound to its authenticated sender; SKNACK asks the kid owner to
   // re-distribute. Both ride the per-member sealed path.
   if ((envelope as { kind?: string }).kind === 'skdm') {
-    handleSkdm(senderUIN, senderSigningKey, envelope as unknown as { gid: number; kid: string; e: number; i: number; ck: string })
+    // No identity means no account to file the chain under, and a chain filed
+    // under the wrong one is exactly the bug this key shape exists to stop.
+    if (identity) {
+      handleSkdm(identity.uin, senderUIN, senderSigningKey, envelope as unknown as { gid: number; kid: string; e: number; i: number; ck: string })
+    }
     return
   }
   if ((envelope as { kind?: string }).kind === 'sknack') {

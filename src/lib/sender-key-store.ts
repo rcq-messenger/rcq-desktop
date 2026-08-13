@@ -9,7 +9,10 @@
 import { b64ToBytes, bytesToB64 } from './crypto'
 import { deriveMessageKey, nextChainKey, newKid, MAX_SKIP } from './sender-keys'
 
-const STORE_KEY = 'rcq.web.senderkeys.v1'
+// v2: the inbound map is keyed by account now, and v1's entries cannot be
+// attributed to one after the fact. Dropping them costs a NACK and a fresh
+// distribution, which is what the recovery path is for.
+const STORE_KEY = 'rcq.web.senderkeys.v2'
 
 interface OutChainJSON {
   kid: string
@@ -31,11 +34,27 @@ interface InChainJSON {
 
 interface StoreJSON {
   out: Record<number, OutChainJSON> // gid -> own chain
-  in: Record<string, InChainJSON> // kid -> inbound chain
+  /// ⚠⚠ Keyed "<ownUin>:<kid>", not bare kid.
+  ///
+  /// A device with two accounts receives the SAME kid twice, once addressed to
+  /// each, and each copy has its own ratchet position. Sharing one chain meant
+  /// whichever account read the group first advanced it and consumed the
+  /// skipped keys, and the other account then hit `i < c.i` and could open
+  /// NOTHING from that point on — while `acceptSkdm` still answered "accepted"
+  /// for its distribution, because the chain was already past that index. The
+  /// founder's second account lost nine days of a group this way on iOS
+  /// (2026-08-13); this is the same store on the web and desktop.
+  in: Record<string, InChainJSON> // "<ownUin>:<kid>" -> inbound chain
   owned: string[] // rolling list of kids I created (drop my own echoed gmsg)
 }
 
 const OWNED_CAP = 64
+
+/// Inbound chains are per ACCOUNT as well as per kid — see the note on
+/// `StoreJSON.in`.
+function inKey(ownUin: number, kid: string): string {
+  return `${ownUin}:${kid}`
+}
 
 function load(): StoreJSON {
   try {
@@ -120,6 +139,7 @@ export function advanceOwn(gid: number): void {
 /// to the authenticated sender; a second SKDM for a known kid from a
 /// DIFFERENT sender is rejected (returns false).
 export function acceptSkdm(
+  ownUin: number,
   kid: string,
   gid: number,
   senderUin: number,
@@ -129,7 +149,8 @@ export function acceptSkdm(
   ck: string,
 ): boolean {
   const s = load()
-  const existing = s.in[kid]
+  const k = inKey(ownUin, kid)
+  const existing = s.in[k]
   if (existing && existing.senderUin !== senderUin) return false
   // A resent SKDM for the same kid/epoch at an OLDER index would rewind the
   // ratchet — keep the most-advanced position we already hold.
@@ -138,7 +159,7 @@ export function acceptSkdm(
     save(s)
     return true
   }
-  s.in[kid] = { gid, senderUin, spub, e, i, ck, skipped: {} }
+  s.in[k] = { gid, senderUin, spub, e, i, ck, skipped: {} }
   save(s)
   return true
 }
@@ -153,9 +174,9 @@ export interface InboundKey {
 /// skipped keys for out-of-order delivery. Returns null when the kid is
 /// unknown (caller should NACK), the epoch doesn't match, the index is in
 /// the past with no cached key (replay/dupe), or it's beyond MAX_SKIP.
-export function deriveInbound(kid: string, e: number, i: number): InboundKey | null {
+export function deriveInbound(ownUin: number, kid: string, e: number, i: number): InboundKey | null {
   const s = load()
-  const c = s.in[kid]
+  const c = s.in[inKey(ownUin, kid)]
   if (!c || c.e !== e) return null
 
   const cached = c.skipped[i]
@@ -179,8 +200,8 @@ export function deriveInbound(kid: string, e: number, i: number): InboundKey | n
   return { mk, spub: c.spub, senderUin: c.senderUin }
 }
 
-export function knowsKid(kid: string): boolean {
-  return !!load().in[kid]
+export function knowsKid(ownUin: number, kid: string): boolean {
+  return !!load().in[inKey(ownUin, kid)]
 }
 
 /// True if this device created `kid` (so a gmsg under it is my own message

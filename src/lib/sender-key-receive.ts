@@ -49,9 +49,9 @@ export async function handleGmsg(
   // anonymous sender). Own multi-device sync rides the carbon, so drop it.
   if (ownsKid(wire.kid)) return null
 
-  const key = deriveInbound(wire.kid, wire.e, wire.i)
+  const key = deriveInbound(identity.uin, wire.kid, wire.e, wire.i)
   if (!key) {
-    if (!knowsKid(wire.kid)) void sendNack(identity, gid, wire.kid)
+    if (!knowsKid(identity.uin, wire.kid)) void sendNack(identity, gid, wire.kid)
     return null // replay / epoch mismatch / too-far-ahead — silently dropped
   }
   let opened
@@ -70,12 +70,13 @@ export async function handleGmsg(
 /// Store an inbound chain handed to us via an SKDM (bound to the
 /// authenticated sender from the seal). Called from the receive router.
 export function handleSkdm(
+  ownUin: number,
   senderUIN: number,
   senderSigningKey: string | undefined,
   env: { gid: number; kid: string; e: number; i: number; ck: string },
 ): void {
   if (!senderSigningKey) return // unauthenticated — never trust an unbound chain
-  acceptSkdm(env.kid, env.gid, senderUIN, senderSigningKey, env.e, env.i, env.ck)
+  acceptSkdm(ownUin, env.kid, env.gid, senderUIN, senderSigningKey, env.e, env.i, env.ck)
 }
 
 /// Answer a recovery request: if I own this group's chain, re-seal a current

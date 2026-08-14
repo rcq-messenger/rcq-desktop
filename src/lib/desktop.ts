@@ -264,7 +264,14 @@ let lastCheckAt = 0
 const updateListeners = new Set<() => void>()
 
 /// Poll no more often than this, whoever asks. The manual button bypasses it.
-const MIN_CHECK_GAP_MS = 30 * 60 * 1000
+///
+/// Was 30 minutes against a six-hour interval, which meant a release published
+/// while the app was open could go unnoticed for most of a working day: the
+/// launch check had already spent the window, the focus tick kept being turned
+/// away by the floor, and the next interval was hours out. Ten minutes costs
+/// one small request and makes "I shipped it and the badge did not appear"
+/// a matter of minutes.
+const MIN_CHECK_GAP_MS = 10 * 60 * 1000
 
 export function subscribeUpdate(cb: () => void): () => void {
   updateListeners.add(cb)

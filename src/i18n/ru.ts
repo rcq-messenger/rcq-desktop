@@ -549,6 +549,16 @@ export const ru: Record<string, string> = {
   'rooms.notMember': 'Вас нет в списке участников этой комнаты.',
   'rooms.noSuchRoom': 'Такой комнаты больше нет.',
   'rooms.rejected': 'Не удалось войти в комнату.',
+  'rooms.ownerOnlyOn': 'Говорю только я',
+  'rooms.ownerOnlyOff': 'Разрешить говорить всем',
+  'rooms.ownerOnlyNote': 'Сейчас в комнате говорит только владелец.',
+  'rooms.rotateKey': 'Новый ключ комнаты',
+  'rooms.muteMember': 'Выключить микрофон',
+  'rooms.unmuteMember': 'Разрешить говорить',
+  'rooms.kick': 'Убрать из комнаты',
+  'rooms.kickConfirm': 'Нажмите ещё раз, чтобы убрать',
+  'rooms.mutedByOwner': 'Владелец выключил ему микрофон.',
+  'rooms.inThisRoom': 'В этой комнате.',
 
   // Меню действий над контактом
   'contacts.more': 'Ещё',

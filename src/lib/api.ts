@@ -703,6 +703,28 @@ export const Api = {
   renameAudioRoom(id: WebIdentity, roomId: number, name: string): Promise<AudioRoomOut> {
     return request<AudioRoomOut>(id, 'PATCH', `/audio_rooms/${roomId}`, { name })
   },
+
+  /// Owner only: throw someone out and revoke their membership.
+  kickFromAudioRoom(id: WebIdentity, roomId: number, uin: number): Promise<AudioRoomOut> {
+    return request<AudioRoomOut>(id, 'POST', `/audio_rooms/${roomId}/kick`, { uin })
+  },
+
+  /// Owner only: silence one participant. The client honours it locally and
+  /// everyone else paints the badge.
+  muteAudioRoomMember(id: WebIdentity, roomId: number, uin: number, muted: boolean): Promise<AudioRoomOut> {
+    return request<AudioRoomOut>(id, 'POST', `/audio_rooms/${roomId}/members/${uin}/mute`, { uin, muted })
+  },
+
+  /// Owner only: nobody but the owner may speak.
+  setAudioRoomOwnerOnly(id: WebIdentity, roomId: number, enabled: boolean): Promise<AudioRoomOut> {
+    return request<AudioRoomOut>(id, 'POST', `/audio_rooms/${roomId}/owner_only`, { enabled })
+  },
+
+  /// Owner only: mint a new join key. Everyone holding the old one keeps their
+  /// membership; the old key simply stops letting new people in.
+  rotateAudioRoomKey(id: WebIdentity, roomId: number): Promise<{ join_key: string }> {
+    return request<{ join_key: string }>(id, 'POST', `/audio_rooms/${roomId}/rotate_key`, {})
+  },
 }
 
 export interface AudioRoomOut {

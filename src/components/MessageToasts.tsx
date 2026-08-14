@@ -27,9 +27,10 @@ interface LiveToast extends Toast {
 const AUTO_DISMISS_MS = 5000
 const MAX_VISIBLE = 3
 
-/// Six hours. Often enough that a release finds a window somebody left open
-/// over a weekend, rare enough to be free.
-const UPDATE_POLL_MS = 6 * 60 * 60 * 1000
+/// One hour. Six was rare enough that a release shipped into an open window
+/// sat unnoticed for most of a day; the ten-minute floor inside pollForUpdates
+/// is what actually keeps this cheap.
+const UPDATE_POLL_MS = 60 * 60 * 1000
 
 export function MessageToasts() {
   const navigate = useNavigate()

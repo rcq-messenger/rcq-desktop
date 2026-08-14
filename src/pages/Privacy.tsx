@@ -10,6 +10,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { Api, type UserInfo } from '../lib/api'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
+import { alwaysRelay, setAlwaysRelay } from '../lib/call-privacy'
 
 type Scope = 'everyone' | 'contacts' | 'nobody'
 
@@ -19,6 +20,7 @@ export function Privacy() {
   const navigate = useNavigate()
   const [info, setInfo] = useState<UserInfo | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [relayCalls, setRelayCalls] = useState(alwaysRelay())
 
   useEffect(() => {
     if (!identity) return
@@ -120,6 +122,24 @@ export function Privacy() {
                 onChange={(v) => patch('group_invite_policy', v)}
                 t={t}
               />
+            </div>
+            {/* Device-local, not a server policy: it decides what THIS machine
+                puts in its own ICE candidates, which is why it sits under a
+                divider rather than among the scopes the island enforces. */}
+            <div className="pt-3 mt-3 border-t border-line space-y-1.5">
+              <div className="flex items-center justify-between gap-3">
+                <label className="text-sm flex-1 min-w-0">{t('settings.privacy.relay_calls')}</label>
+                <input
+                  type="checkbox"
+                  className="accent-accent w-5 h-5 flex-none"
+                  checked={relayCalls}
+                  onChange={(e) => {
+                    setRelayCalls(e.target.checked)
+                    setAlwaysRelay(e.target.checked)
+                  }}
+                />
+              </div>
+              <p className="text-xs text-fg-dim">{t('settings.privacy.relay_calls_desc')}</p>
             </div>
           </section>
         )}

@@ -482,6 +482,8 @@ export const ru: Record<string, string> = {
   'settings.privacy.group_invites': 'Приглашения в группы',
   'settings.privacy.group_invites_desc':
     '«Только контакты» разрешает добавлять в группы только друзьям. «Никто» блокирует приглашения целиком.',
+  'settings.privacy.relay_calls': 'Всегда ретранслировать звонки',
+  'settings.privacy.relay_calls_desc': 'Пропускать звук и видео через наш ретранслятор, чтобы собеседник не узнал ваш IP-адрес. Если выключить, качество может вырасти, но собеседник увидит ваш адрес.',
   'settings.privacy.trade_offers': 'Запросы на обмен',
   'settings.privacy.footer.short': 'Был в сети, пол, приглашения, обмены, звонки.',
   'settings.privacy.footer':

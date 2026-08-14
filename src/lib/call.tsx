@@ -34,6 +34,7 @@ import {
   type ReactNode,
 } from 'react'
 import { Api } from './api'
+import { alwaysRelay } from './call-privacy'
 import { logCall } from './outgoing-store'
 import { notifyDesktop, raiseDesktopWindow } from './desktop'
 import { useI18n } from './i18n-context'
@@ -417,9 +418,15 @@ export function CallProvider({ children }: { children: ReactNode }) {
       // reachable server there are no candidates at all. So measure it, once,
       // and cache the answer for this session.
       const haveTurn = await relayReachable(servers)
+      // ⚠⚠ And only when the user still wants it. Relay-only used to be
+      // unconditional here, which is the right default and was the wrong rule:
+      // somebody on a good line who would rather have the quality had no way to
+      // say so, while the phones have had that switch since 0.108. Off means an
+      // ordinary ICE policy — host and srflx candidates, and the peer sees the
+      // address they imply.
       const pc = new RTCPeerConnection({
         iceServers: servers,
-        ...(haveTurn ? { iceTransportPolicy: 'relay' as const } : {}),
+        ...(haveTurn && alwaysRelay() ? { iceTransportPolicy: 'relay' as const } : {}),
       })
 
       pc.onicecandidate = (ev) => {

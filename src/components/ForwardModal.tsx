@@ -80,7 +80,7 @@ export function ForwardModal({
           onClick={onClose}
         >
           <motion.div
-            className="w-full max-w-md max-h-[80vh] flex flex-col rounded-t-xl sm:rounded-xl bg-surface shadow-lg overflow-hidden"
+            className="w-full max-w-md h-[70vh] max-h-[560px] flex flex-col rounded-t-xl sm:rounded-xl bg-surface shadow-lg overflow-hidden"
             initial={{ y: 40, opacity: 0, scale: 0.98 }}
             animate={{ y: 0, opacity: 1, scale: 1 }}
             exit={{ y: 30, opacity: 0, scale: 0.98 }}

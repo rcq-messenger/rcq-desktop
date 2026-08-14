@@ -340,6 +340,19 @@ pub fn run() {
                 }
                 let main_window = window.build()?;
 
+                // ⚠ The plugin SAVES on its own but only RESTORES windows it is
+                // asked about. This window is built here in `setup` rather than
+                // declared in tauri.conf.json, so without this call the size and
+                // position were written to disk every session and then ignored
+                // on every launch: the builder's 1100x760 `.center()` won.
+                #[cfg(desktop)]
+                {
+                    use tauri_plugin_window_state::WindowExt;
+                    if let Err(e) = main_window.restore_state(window_state_flags()) {
+                        log::warn!("window state restore failed: {e}");
+                    }
+                }
+
                 // Calls need a microphone, and only ONE of the three webviews
                 // hands one over by itself.
                 //

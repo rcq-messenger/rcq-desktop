@@ -7,6 +7,7 @@
 
 import { en } from './en'
 import { ru } from './ru'
+import { zh } from './zh'
 
 export type Dict = Record<string, string>
 
@@ -37,6 +38,7 @@ export type LangCode = (typeof LANGUAGES)[number]['code']
 const DICTS: Partial<Record<LangCode, Dict>> = {
   en,
   ru,
+  'zh-Hans': zh,
 }
 
 /// Find the dict for a language code; fall back to English. Used by
@@ -46,6 +48,11 @@ const DICTS: Partial<Record<LangCode, Dict>> = {
 export function dictFor(lang: LangCode): Dict {
   return DICTS[lang] ?? en
 }
+
+/// ⚠ Only what we actually ship. The picker listed every declared language
+/// while two dictionaries existed, so choosing one of the others changed the
+/// label and left the app in English — indistinguishable from a bug.
+export const AVAILABLE_LANGUAGES = LANGUAGES.filter((l) => DICTS[l.code] != null)
 
 /// Translate a key with optional `{name}` interpolation. If the
 /// active dict doesn't have it, fall back to English; if neither
@@ -78,5 +85,10 @@ export function detectInitialLang(): LangCode {
   for (const l of LANGUAGES) {
     if (l.code.toLowerCase() === primary) return l.code
   }
+  // ⚠ Neither pass above can match a Chinese browser: it sends `zh-CN`, plain
+  // `zh` or `zh-Hans-CN`, and our code is `zh-Hans`. Map the family by hand.
+  // Traditional locales stay on English until a zh-Hant dict exists — serving
+  // Simplified to Taiwan or Hong Kong is worse than serving the source.
+  if (primary === 'zh' && !/(hant|tw|hk|mo)/.test(navLang)) return 'zh-Hans'
   return 'en'
 }

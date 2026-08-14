@@ -3,7 +3,7 @@
 // rest of the surface in light + dark mode and across browsers
 // (native <select> ignored our palette and looked off in dark).
 
-import { LANGUAGES, type LangCode } from '../i18n'
+import { AVAILABLE_LANGUAGES, type LangCode } from '../i18n'
 import { useI18n } from '../lib/i18n-context'
 import { Dropdown, type DropdownOption } from './Dropdown'
 
@@ -13,11 +13,11 @@ interface Props {
 
 export function LanguagePicker({ variant = 'pill' }: Props) {
   const { lang, setLanguage } = useI18n()
-  const options: DropdownOption<LangCode>[] = LANGUAGES.map((l) => ({
+  const options: DropdownOption<LangCode>[] = AVAILABLE_LANGUAGES.map((l) => ({
     value: l.code,
     label: l.native,
   }))
-  const active = LANGUAGES.find((l) => l.code === lang)
+  const active = AVAILABLE_LANGUAGES.find((l) => l.code === lang)
   return (
     <Dropdown<LangCode>
       value={lang}

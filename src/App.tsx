@@ -6,6 +6,8 @@ import { WSProvider } from './lib/ws'
 import { MessageReceiver } from './lib/message-receiver'
 import { MessageToasts } from './components/MessageToasts'
 import { CallProvider } from './lib/call'
+import { RoomsProvider } from './lib/rooms'
+import AudioRooms from './pages/AudioRooms'
 import { ToastProvider } from './lib/toast'
 import { CallOverlay } from './components/CallOverlay'
 import { Login } from './pages/Login'
@@ -46,6 +48,7 @@ export default function App() {
         <IdentityProvider>
           <WSProvider>
             <CallProvider>
+            <RoomsProvider>
             <ToastProvider>
             <MessageReceiver />
             <Router>
@@ -60,6 +63,14 @@ export default function App() {
                 element={
                   <Authed>
                     <Contacts />
+                  </Authed>
+                }
+              />
+              <Route
+                path="/rooms"
+                element={
+                  <Authed>
+                    <AudioRooms />
                   </Authed>
                 }
               />
@@ -177,6 +188,7 @@ export default function App() {
             </Routes>
           </Router>
             </ToastProvider>
+            </RoomsProvider>
             </CallProvider>
           </WSProvider>
         </IdentityProvider>

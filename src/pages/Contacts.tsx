@@ -355,6 +355,16 @@ export function Contacts() {
             {/* Desktop only, and only while there IS one: an update the app
                 has already found, waiting for a moment that suits you. */}
             <UpdateBadge className="mr-1" />
+            {/* Audio rooms: the phones have had them since 0.9x and the web
+                had no door at all, which made a room half a product. */}
+            <Link
+              to="/rooms"
+              className="text-fg-secondary hover:text-fg-primary p-2 rounded-md hover:bg-surface-dim"
+              title={t('rooms.title')}
+              aria-label={t('rooms.title')}
+            >
+              <MicIcon />
+            </Link>
             <NewsButton className="relative text-fg-secondary hover:text-fg-primary p-2 rounded-md" />
             <ThemeToggle className="text-fg-secondary hover:text-fg-primary p-2 rounded-md hover:bg-surface-dim transition-colors" />
             <Link
@@ -871,6 +881,19 @@ function MoreIcon() {
       <circle cx="4" cy="10" r="1.5" />
       <circle cx="10" cy="10" r="1.5" />
       <circle cx="16" cy="10" r="1.5" />
+    </svg>
+  )
+}
+
+/// Microphone, the door to the audio rooms. Inline like the other header
+/// glyphs in this file rather than an icon dependency for one shape.
+function MicIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+         strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="9" y="3" width="6" height="11" rx="3" />
+      <path d="M5 11a7 7 0 0 0 14 0" />
+      <path d="M12 18v3" />
     </svg>
   )
 }

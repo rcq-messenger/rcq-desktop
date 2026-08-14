@@ -43,7 +43,7 @@ export function RequestsModal({ incomingCount, onClose }: { incomingCount: numbe
           exit={{ y: 16, opacity: 0 }}
           transition={{ duration: 0.18 }}
           onClick={(e) => e.stopPropagation()}
-          className="w-full max-w-md max-h-[80vh] flex flex-col rounded-t-xl sm:rounded-xl bg-surface shadow-lg overflow-hidden"
+          className="w-full max-w-md h-[70vh] max-h-[560px] flex flex-col rounded-t-xl sm:rounded-xl bg-surface shadow-lg overflow-hidden"
         >
           <header className="flex items-center justify-between gap-2 px-4 pt-3">
             <span className="text-sm font-semibold">{t('pending.title')}</span>

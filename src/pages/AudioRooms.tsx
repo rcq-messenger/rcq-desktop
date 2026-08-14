@@ -102,7 +102,10 @@ export default function AudioRooms() {
                       {r.active_count > 0
                         ? t('rooms.inRoom', { n: r.active_count, cap: r.capacity }) + ' · '
                         : ''}
-                      <span>{t('rooms.key', { key: r.join_key })}</span>
+                      <span className="inline-flex items-center gap-1 align-middle">
+                        <KeyIcon size={12} />
+                        {r.join_key}
+                      </span>
                     </div>
                   </button>
                   <IconButton
@@ -114,6 +117,11 @@ export default function AudioRooms() {
                   {mine && (
                     <IconButton label={t('rooms.rename')} onClick={() => setSheet({ mode: 'rename', room: r })}>
                       <PencilIcon />
+                    </IconButton>
+                  )}
+                  {mine && (
+                    <IconButton label={t('rooms.rotateKey')} onClick={() => void rooms.rotateKey(r.id)}>
+                      <RotateIcon />
                     </IconButton>
                   )}
                   {mine ? (
@@ -555,11 +563,20 @@ function MinusIcon() {
   )
 }
 
-function KeyIcon() {
+function KeyIcon({ size = 18 }: { size?: number }) {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="8" cy="15" r="4" />
       <path d="M10.8 12.2L20 3M17 6l3 3M15 8l3 3" />
+    </svg>
+  )
+}
+
+function RotateIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 12a9 9 0 1 1-2.6-6.4" />
+      <path d="M21 3v6h-6" />
     </svg>
   )
 }

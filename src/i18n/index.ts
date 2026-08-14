@@ -8,6 +8,10 @@
 import { en } from './en'
 import { ru } from './ru'
 import { zh } from './zh'
+import { es } from './es'
+import { pt } from './pt'
+import { tr } from './tr'
+import { uk } from './uk'
 
 export type Dict = Record<string, string>
 
@@ -38,6 +42,10 @@ export type LangCode = (typeof LANGUAGES)[number]['code']
 const DICTS: Partial<Record<LangCode, Dict>> = {
   en,
   ru,
+  es,
+  pt,
+  tr,
+  uk,
   'zh-Hans': zh,
 }
 

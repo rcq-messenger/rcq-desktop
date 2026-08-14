@@ -56,8 +56,11 @@ export function PhoneIcon() {
 
 export function HangUpIcon() {
   return (
+    // ⚠ A handset rotated inside its own 24-box does not fit: the corners of
+    // the rotated glyph fall outside the viewBox and get clipped flat, which
+    // is what the red button looked like. Rotate AND scale about the centre.
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <g transform="rotate(135 12 12)">
+      <g transform="rotate(135 12 12) translate(12 12) scale(0.82) translate(-12 -12)">
         <path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z" />
       </g>
     </svg>
@@ -92,9 +95,15 @@ export function CameraIcon() {
 }
 
 export function CameraOffIcon() {
+  // The same camcorder as CameraIcon with a stroke through it, drawn as the
+  // body-with-a-corner-missing plus the lens wedge, so it still reads as a
+  // camera. The first attempt was a handful of loose segments and looked it.
   return (
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M16 16H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2M9 5h5a2 2 0 0 1 2 2v3M23 7l-7 5M3 3l18 18" />
+      <path d="M14 19H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h1" />
+      <path d="M8 5h6a2 2 0 0 1 2 2v6" />
+      <path d="M23 7l-7 5" />
+      <path d="M2 2l20 20" />
     </svg>
   )
 }

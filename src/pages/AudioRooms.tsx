@@ -74,7 +74,7 @@ export default function AudioRooms() {
               // what the person types gets shouted.
               onChange={(e) => setKey(e.target.value.slice(0, 16).toUpperCase())}
               placeholder={t('rooms.joinKey')}
-              className="flex-1 h-10 px-3 rounded-md bg-field outline-none focus:ring-1 focus:ring-accent text-sm font-mono"
+              className="flex-1 h-10 px-3 rounded-md bg-field outline-none focus:ring-1 focus:ring-accent text-sm tracking-wide"
               autoCapitalize="characters"
             />
             <button
@@ -102,7 +102,7 @@ export default function AudioRooms() {
                       {r.active_count > 0
                         ? t('rooms.inRoom', { n: r.active_count, cap: r.capacity }) + ' · '
                         : ''}
-                      <span className="font-mono">{t('rooms.key', { key: r.join_key })}</span>
+                      <span>{t('rooms.key', { key: r.join_key })}</span>
                     </div>
                   </button>
                   <IconButton
@@ -264,6 +264,8 @@ function InRoom({ room }: { room: RoomSummary }) {
   const { t } = useI18n()
   const { identity } = useIdentity()
   const rooms = useRooms()
+  const isOwner = identity != null && room.owner_uin === identity.uin
+  const [target, setTarget] = useState<RoomMember | null>(null)
 
   return (
     <div className="min-h-screen bg-surface-dim flex flex-col">
@@ -284,6 +286,22 @@ function InRoom({ room }: { room: RoomSummary }) {
                 : t('rooms.inRoom', { n: rooms.roster.length, cap: room.capacity })}
             </p>
           </div>
+          {/* The owner's two room-wide switches, the same pair the phones put
+              in the room header: silence everyone but me, and mint a new key. */}
+          {isOwner && (
+            <div className="ml-auto flex items-center gap-1">
+              <IconButton
+                label={rooms.ownerOnlySpeaking ? t('rooms.ownerOnlyOff') : t('rooms.ownerOnlyOn')}
+                danger={rooms.ownerOnlySpeaking}
+                onClick={() => void rooms.setOwnerOnly(room.id, !rooms.ownerOnlySpeaking)}
+              >
+                <MutedBadge />
+              </IconButton>
+              <IconButton label={t('rooms.rotateKey')} onClick={() => void rooms.rotateKey(room.id)}>
+                <KeyIcon />
+              </IconButton>
+            </div>
+          )}
         </div>
       </header>
 
@@ -296,9 +314,13 @@ function InRoom({ room }: { room: RoomSummary }) {
               isSelf={identity != null && m.uin === identity.uin}
               stream={rooms.videos.get(m.uin) ?? null}
               selfLabel={t('rooms.you')}
+              onOpen={() => setTarget(m)}
             />
           ))}
         </div>
+        {rooms.ownerOnlySpeaking && (
+          <p className="text-xs text-fg-secondary text-center mt-6">{t('rooms.ownerOnlyNote')}</p>
+        )}
         {rooms.error === 'cam' && (
           <p className="text-sm text-red-600 text-center mt-6">{t('rooms.camDenied')}</p>
         )}
@@ -325,9 +347,109 @@ function InRoom({ room }: { room: RoomSummary }) {
           </RoundButton>
         </div>
       </div>
+
+      {target && (
+        <MemberSheet
+          member={target}
+          isOwner={isOwner}
+          isSelf={identity != null && target.uin === identity.uin}
+          onClose={() => setTarget(null)}
+          onMute={async (muted) => {
+            await rooms.muteMember(room.id, target.uin, muted)
+            setTarget(null)
+          }}
+          onKick={async () => {
+            await rooms.kick(room.id, target.uin)
+            setTarget(null)
+          }}
+        />
+      )}
     </div>
   )
 }
+
+/// Tap a face, see who it is and what you can do about them. The owner gets
+/// the same two powers the phones give: silence, and remove.
+function MemberSheet({
+  member,
+  isOwner,
+  isSelf,
+  onClose,
+  onMute,
+  onKick,
+}: {
+  member: RoomMember
+  isOwner: boolean
+  isSelf: boolean
+  onClose: () => void
+  onMute: (muted: boolean) => Promise<void>
+  onKick: () => Promise<void>
+}) {
+  const { t } = useI18n()
+  const [confirmKick, setConfirmKick] = useState(false)
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/40 backdrop-blur-md z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-surface w-full sm:max-w-md sm:rounded-lg rounded-t-2xl shadow-xl flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header className="flex items-center gap-3 p-4">
+          <div className="relative" style={{ width: 44, height: 44 }}>
+            <div className="absolute inset-0 rounded-full overflow-hidden bg-field grid place-items-center">
+              <span className="font-semibold text-fg-primary">
+                {(member.nickname || '#').charAt(0).toUpperCase()}
+              </span>
+              <PersonAvatar
+                status="offline"
+                showStatus={false}
+                size={44}
+                className="absolute inset-0"
+                mediaId={member.avatarMediaId}
+                mediaKey={member.avatarMediaKey}
+              />
+            </div>
+          </div>
+          <div className="min-w-0">
+            <div className="font-semibold text-fg-primary truncate">{member.nickname}</div>
+            <div className="text-xs text-fg-dim">#{member.uin}</div>
+          </div>
+          <button onClick={onClose} className="ml-auto text-fg-secondary hover:text-fg-primary px-2" aria-label={t('common.close')}>
+            ✕
+          </button>
+        </header>
+
+        {isOwner && !isSelf && (
+          <div className="px-2 pb-2">
+            <button
+              className="w-full text-left px-4 h-11 rounded-md hover:bg-field text-fg-primary text-sm"
+              onClick={() => void onMute(!member.mutedByOwner)}
+            >
+              {member.mutedByOwner ? t('rooms.unmuteMember') : t('rooms.muteMember')}
+            </button>
+            <button
+              className="w-full text-left px-4 h-11 rounded-md hover:bg-field text-red-600 text-sm"
+              onClick={() => (confirmKick ? void onKick() : setConfirmKick(true))}
+            >
+              {confirmKick ? t('rooms.kickConfirm') : t('rooms.kick')}
+            </button>
+          </div>
+        )}
+        {(!isOwner || isSelf) && (
+          <p className="px-4 pb-5 text-sm text-fg-secondary">
+            {member.mutedByOwner ? t('rooms.mutedByOwner') : t('rooms.inThisRoom')}
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/// The round tile, in pixels. iOS draws 84pt and this matches it.
+const TILE_PX = 84
 
 /// One participant: video if their camera is on, their picture if not, and
 /// their initial underneath both. The letter is always drawn and never
@@ -337,11 +459,13 @@ function Tile({
   isSelf,
   stream,
   selfLabel,
+  onOpen,
 }: {
   member: RoomMember
   isSelf: boolean
   stream: MediaStream | null
   selfLabel: string
+  onOpen: () => void
 }) {
   const video = useRef<HTMLVideoElement | null>(null)
 
@@ -350,12 +474,16 @@ function Tile({
   }, [stream])
 
   return (
-    <div className="flex flex-col items-center gap-2 min-w-0">
+    <button type="button" onClick={onOpen} className="flex flex-col items-center gap-2 min-w-0">
+      {/* ⚠ Pixels, not rem. PersonAvatar sizes itself from the number it is
+          given, so a tile measured in rem (91.9px at the desktop root of
+          17.5px) left the picture 84px wide inside a wider circle: it sat off
+          centre with the letter sticking out above it. Both are TILE_PX now. */}
       <div
         className={`relative rounded-full ring-2 transition-colors ${
           member.speaking ? 'ring-accent' : 'ring-transparent'
         }`}
-        style={{ width: '5.25rem', height: '5.25rem' }}
+        style={{ width: TILE_PX, height: TILE_PX }}
       >
         <div className="absolute inset-0 rounded-full overflow-hidden bg-field grid place-items-center">
           <span className="text-2xl font-semibold text-fg-primary select-none">
@@ -364,7 +492,7 @@ function Tile({
           <PersonAvatar
             status="offline"
             showStatus={false}
-            size={84}
+            size={TILE_PX}
             className="absolute inset-0"
             mediaId={member.avatarMediaId}
             mediaKey={member.avatarMediaKey}
@@ -388,7 +516,7 @@ function Tile({
       <span className="text-xs text-fg-secondary truncate max-w-full">
         {isSelf ? selfLabel : member.nickname}
       </span>
-    </div>
+    </button>
   )
 }
 
@@ -423,6 +551,15 @@ function MinusIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <path d="M5 12h14" />
+    </svg>
+  )
+}
+
+function KeyIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="8" cy="15" r="4" />
+      <path d="M10.8 12.2L20 3M17 6l3 3M15 8l3 3" />
     </svg>
   )
 }

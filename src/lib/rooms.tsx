@@ -47,6 +47,14 @@ interface RoomsCtx {
   remove: (id: number) => Promise<void>
   /// Owner only.
   rename: (id: number, name: string) => Promise<void>
+  /// Owner only, all four: throw someone out, silence one participant, let
+  /// nobody but the owner talk, mint a new join key.
+  kick: (id: number, uin: number) => Promise<void>
+  muteMember: (id: number, uin: number, muted: boolean) => Promise<void>
+  setOwnerOnly: (id: number, enabled: boolean) => Promise<void>
+  rotateKey: (id: number) => Promise<void>
+  /// Set while the owner has the room on "owner speaks only".
+  ownerOnlySpeaking: boolean
   /// Currently inside this room, or null.
   activeRoomId: number | null
   joining: boolean
@@ -94,6 +102,7 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
   const [roster, setRoster] = useState<RoomMember[]>([])
   const [micMuted, setMicMutedState] = useState(false)
   const [cameraOn, setCameraOnState] = useState(false)
+  const [ownerOnlySpeaking, setOwnerOnlySpeaking] = useState(false)
   const [videos, setVideos] = useState<Map<number, MediaStream>>(new Map())
   const [error, setError] = useState<string | null>(null)
 
@@ -429,6 +438,7 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
         setJoining(false)
         const members = ((ev.members as Array<Record<string, unknown>>) ?? []).map(toMember)
         setRoster(members)
+        setOwnerOnlySpeaking(Boolean(ev.owner_only_speaking))
         // We are the newcomer here: the people already inside dial US.
       }),
     )
@@ -559,6 +569,20 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
       }),
     )
     offs.push(
+      ws.on('audio_room_owner_only_changed', (ev) => {
+        if (!mine(ev)) return
+        setOwnerOnlySpeaking(Boolean(ev.enabled))
+      }),
+    )
+    offs.push(
+      ws.on('audio_room_key_rotated', (ev) => {
+        const id = Number(ev.room_id)
+        const fresh = String(ev.new_key ?? '')
+        if (!id || !fresh) return
+        setRooms((rs) => rs.map((r) => (r.id === id ? { ...r, join_key: fresh } : r)))
+      }),
+    )
+    offs.push(
       ws.on('audio_room_member_muted', (ev) => {
         if (!mine(ev)) return
         const target = Number(ev.uin ?? 0)
@@ -624,6 +648,44 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
     [identity, refresh],
   )
 
+  const kick = useCallback(
+    async (id: number, uin: number) => {
+      if (!identity) return
+      await Api.kickFromAudioRoom(identity, id, uin)
+      // The island drops them from the live roster and tells us; nothing to do
+      // locally except stop drawing them if the event is slow.
+      setRoster((r) => r.filter((m) => m.uin !== uin))
+      dropPeer(uin)
+    },
+    [dropPeer, identity],
+  )
+
+  const muteMember = useCallback(
+    async (id: number, uin: number, muted: boolean) => {
+      if (!identity) return
+      await Api.muteAudioRoomMember(identity, id, uin, muted)
+    },
+    [identity],
+  )
+
+  const setOwnerOnly = useCallback(
+    async (id: number, enabled: boolean) => {
+      if (!identity) return
+      await Api.setAudioRoomOwnerOnly(identity, id, enabled)
+      setOwnerOnlySpeaking(enabled)
+    },
+    [identity],
+  )
+
+  const rotateKey = useCallback(
+    async (id: number) => {
+      if (!identity) return
+      const out = await Api.rotateAudioRoomKey(identity, id)
+      setRooms((rs) => rs.map((r) => (r.id === id ? { ...r, join_key: out.join_key } : r)))
+    },
+    [identity],
+  )
+
   const rename = useCallback(
     async (id: number, name: string) => {
       if (!identity || !name.trim()) return
@@ -636,10 +698,11 @@ export function RoomsProvider({ children }: { children: ReactNode }) {
   const value = useMemo<RoomsCtx>(
     () => ({
       rooms, refresh, create, joinByKey, forget, remove, rename,
+      kick, muteMember, setOwnerOnly, rotateKey, ownerOnlySpeaking,
       activeRoomId, joining, roster, micMuted, setMicMuted,
       cameraOn, setCameraEnabled, videos, enter, leave, error,
     }),
-    [rooms, refresh, create, joinByKey, forget, remove, rename, activeRoomId, joining, roster, micMuted, setMicMuted, cameraOn, setCameraEnabled, videos, enter, leave, error],
+    [rooms, refresh, create, joinByKey, forget, remove, rename, kick, muteMember, setOwnerOnly, rotateKey, ownerOnlySpeaking, activeRoomId, joining, roster, micMuted, setMicMuted, cameraOn, setCameraEnabled, videos, enter, leave, error],
   )
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>

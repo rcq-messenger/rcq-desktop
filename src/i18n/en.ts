@@ -536,6 +536,16 @@ export const en: Record<string, string> = {
   'rooms.notMember': 'You are not a member of this room.',
   'rooms.noSuchRoom': 'That room no longer exists.',
   'rooms.rejected': 'Could not enter the room.',
+  'rooms.ownerOnlyOn': 'Only I may speak',
+  'rooms.ownerOnlyOff': 'Let everyone speak',
+  'rooms.ownerOnlyNote': 'Only the owner can speak in this room right now.',
+  'rooms.rotateKey': 'New join key',
+  'rooms.muteMember': 'Mute in this room',
+  'rooms.unmuteMember': 'Let them speak',
+  'rooms.kick': 'Remove from the room',
+  'rooms.kickConfirm': 'Tap again to remove',
+  'rooms.mutedByOwner': 'The owner has muted them.',
+  'rooms.inThisRoom': 'In this room.',
 
   // Per-row actions
   'contacts.more': 'More',

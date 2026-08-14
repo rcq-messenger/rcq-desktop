@@ -468,6 +468,8 @@ export const en: Record<string, string> = {
   'settings.privacy.group_invites': 'Group invites from',
   'settings.privacy.group_invites_desc':
     '"Contacts only" lets only your contacts add you to groups; "Nobody" blocks all invites.',
+  'settings.privacy.relay_calls': 'Always relay calls',
+  'settings.privacy.relay_calls_desc': 'Send call audio and video through our relay so the other side never learns your IP address. Turning this off can improve call quality and shows them your address.',
   'settings.privacy.trade_offers': 'Trade offers from',
   'settings.privacy.footer.short': 'Last seen, gender, group invites, trade offers, calls.',
   'settings.privacy.footer':

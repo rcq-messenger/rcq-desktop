@@ -525,6 +525,17 @@ export const en: Record<string, string> = {
   'rooms.leave': 'Leave',
   'rooms.badKey': 'No room with that key.',
   'rooms.micDenied': 'No microphone. Allow access and try again.',
+  'rooms.joinTitle': 'Join by key',
+  'rooms.rename': 'Rename room',
+  'rooms.you': 'You',
+  'rooms.cameraOn': 'Turn camera on',
+  'rooms.cameraOff': 'Turn camera off',
+  'rooms.camDenied': 'No camera. Allow access and try again.',
+  'rooms.busy': 'You are already in another room.',
+  'rooms.full': 'The room is full.',
+  'rooms.notMember': 'You are not a member of this room.',
+  'rooms.noSuchRoom': 'That room no longer exists.',
+  'rooms.rejected': 'Could not enter the room.',
 
   // Per-row actions
   'contacts.more': 'More',

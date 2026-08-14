@@ -538,6 +538,17 @@ export const ru: Record<string, string> = {
   'rooms.leave': 'Выйти',
   'rooms.badKey': 'Комнаты с таким ключом нет.',
   'rooms.micDenied': 'Нет микрофона. Разрешите доступ и попробуйте снова.',
+  'rooms.joinTitle': 'Войти по ключу',
+  'rooms.rename': 'Переименовать комнату',
+  'rooms.you': 'Вы',
+  'rooms.cameraOn': 'Включить камеру',
+  'rooms.cameraOff': 'Выключить камеру',
+  'rooms.camDenied': 'Нет камеры. Разрешите доступ и попробуйте снова.',
+  'rooms.busy': 'Вы уже в другой комнате.',
+  'rooms.full': 'В комнате нет свободных мест.',
+  'rooms.notMember': 'Вас нет в списке участников этой комнаты.',
+  'rooms.noSuchRoom': 'Такой комнаты больше нет.',
+  'rooms.rejected': 'Не удалось войти в комнату.',
 
   // Меню действий над контактом
   'contacts.more': 'Ещё',

@@ -38,7 +38,11 @@ export function AddContactModal({ onClose }: { onClose: () => void }) {
               ✕
             </button>
           </header>
-          <div className="flex-1 overflow-y-auto">
+          {/* The embedded page body drops its own top padding by contract
+            (same as PendingRequests), so the modal owes it. Without this the
+            search field sits 12px under the header and its focus ring is
+            clipped along the top edge. */}
+        <div className="flex-1 overflow-y-auto pt-3">
             <AddContact embedded />
           </div>
         </motion.div>

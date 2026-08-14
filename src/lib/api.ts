@@ -697,6 +697,12 @@ export const Api = {
   deleteAudioRoom(id: WebIdentity, roomId: number): Promise<void> {
     return request<void>(id, 'DELETE', `/audio_rooms/${roomId}`)
   },
+
+  /// Owner only. Metadata only: the join key, the membership and anyone
+  /// currently inside are untouched.
+  renameAudioRoom(id: WebIdentity, roomId: number, name: string): Promise<AudioRoomOut> {
+    return request<AudioRoomOut>(id, 'PATCH', `/audio_rooms/${roomId}`, { name })
+  },
 }
 
 export interface AudioRoomOut {

@@ -321,6 +321,11 @@ export function Contacts() {
             </>
           )}
           <div className="ml-auto flex items-center gap-0.5">
+            {/* Desktop only, and only while there IS one: an update the app
+                has already found, waiting for a moment that suits you. It sits
+                first so that the icons keep their places when it appears —
+                inserted mid-row it used to shove half of them sideways. */}
+            <UpdateBadge className="mr-1" />
             {/* Windows, not detours. Both of these used to be full-page routes
                 that took the whole desktop window away from the list you were
                 reading and had to be navigated back out of. The routes stay
@@ -352,9 +357,6 @@ export function Contacts() {
                 Settings, so this was the same door twice, and the header had no
                 door at all to the one thing that is genuinely new — the
                 operator's announcements. */}
-            {/* Desktop only, and only while there IS one: an update the app
-                has already found, waiting for a moment that suits you. */}
-            <UpdateBadge className="mr-1" />
             {/* Audio rooms: the phones have had them since 0.9x and the web
                 had no door at all, which made a room half a product. */}
             <Link

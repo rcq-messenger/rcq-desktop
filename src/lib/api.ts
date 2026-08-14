@@ -669,6 +669,43 @@ export const Api = {
   turnCredentials(id: WebIdentity): Promise<TurnCredentials> {
     return request<TurnCredentials>(id, 'GET', '/users/me/turn-credentials')
   },
+
+  // Audio rooms ---------------------------------------------
+  //
+  // The list is a subscription list, not a directory: a room appears here
+  // because you made it or accepted its key, and `active_count` is who is
+  // inside at this instant. Being inside is the websocket mesh in `rooms.tsx`.
+
+  audioRooms(id: WebIdentity): Promise<AudioRoomOut[]> {
+    return request<AudioRoomOut[]>(id, 'GET', '/audio_rooms')
+  },
+
+  createAudioRoom(id: WebIdentity, name: string): Promise<AudioRoomOut> {
+    return request<AudioRoomOut>(id, 'POST', '/audio_rooms', { name })
+  },
+
+  joinAudioRoom(id: WebIdentity, joinKey: string): Promise<AudioRoomOut> {
+    return request<AudioRoomOut>(id, 'POST', '/audio_rooms/join', { join_key: joinKey })
+  },
+
+  /// Drop it from MY list. The room lives on for everyone else.
+  forgetAudioRoom(id: WebIdentity, roomId: number): Promise<void> {
+    return request<void>(id, 'DELETE', `/audio_rooms/${roomId}/membership`)
+  },
+
+  /// Owner only: the room stops existing.
+  deleteAudioRoom(id: WebIdentity, roomId: number): Promise<void> {
+    return request<void>(id, 'DELETE', `/audio_rooms/${roomId}`)
+  },
+}
+
+export interface AudioRoomOut {
+  id: number
+  name: string
+  join_key: string
+  owner_uin: number
+  capacity: number
+  active_count: number
 }
 
 // -----------------------------------------------------------

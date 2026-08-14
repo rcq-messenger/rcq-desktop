@@ -198,14 +198,37 @@ export async function createNewAccount(nickname: string, apiBase: string = DEFAU
   const k = deriveKeysFromSeed(seed)
 
   const apiBaseTrimmed = apiBase.replace(/\/+$/, '')
+  // Prove we hold the private half of the signing key we are about to claim.
+  // A public signing key is public, so without this anyone could register an
+  // account carrying somebody else's and capture where their recovery lands.
+  // Best-effort: an island that predates the endpoint 404s and we register the
+  // way we always did.
+  const signingKeyB64 = bytesToB64(k.signingPub)
+  let challenge: string | undefined
+  try {
+    const chRes = await fetch(`${apiBaseTrimmed}/auth/register/challenge`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ signing_key: signingKeyB64 }),
+    })
+    if (chRes.ok) challenge = ((await chRes.json()) as { challenge: string }).challenge
+  } catch {
+    // no proof, same as an old island
+  }
   const res = await fetch(`${apiBaseTrimmed}/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       nickname: trimmedNick,
       identity_key: bytesToB64(k.identityPub),
-      signing_key: bytesToB64(k.signingPub),
+      signing_key: signingKeyB64,
       device_id: installId(),
+      ...(challenge
+        ? {
+            challenge,
+            signature: bytesToB64(ed25519.sign(new TextEncoder().encode(challenge), k.signingPriv)),
+          }
+        : {}),
     }),
   })
   const text = await res.text()

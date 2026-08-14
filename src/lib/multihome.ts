@@ -128,16 +128,40 @@ export async function recoverOnIsland(host: string, identity: WebIdentity): Prom
 /// the primary account, fresh per-island uin. The nickname is cosmetic (peers
 /// see the name from the primary contact list, never the backup roster).
 export async function registerOnIsland(host: string, identity: WebIdentity): Promise<IslandCredentials> {
+  const skB64 = bytesToB64(identity.signingPub)
+  // ⚠ The island only honours `desired_uin` under proof of the signing key
+  // now. Without the signature we still register, but on a fresh number, and
+  // "one number everywhere" quietly stops being true. An island too old to
+  // know the endpoint 404s and we register the way we always did.
+  let challenge: string | undefined
+  try {
+    const chRes = await fetch(`https://${host}/auth/register/challenge`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ signing_key: skB64 }),
+    })
+    if (chRes.ok) challenge = ((await chRes.json()) as { challenge: string }).challenge
+  } catch {
+    // no proof, same as an old island
+  }
   const res = await fetch(`https://${host}/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       nickname: suggestNickname(),
       identity_key: bytesToB64(identity.identityPub),
-      signing_key: bytesToB64(identity.signingPub),
+      signing_key: skB64,
       // Ask to keep our primary number on this backup island (best-effort;
       // the server mints a fresh uin if it's already taken there).
       desired_uin: identity.uin,
+      ...(challenge
+        ? {
+            challenge,
+            signature: bytesToB64(
+              ed25519.sign(new TextEncoder().encode(challenge), identity.signingPriv),
+            ),
+          }
+        : {}),
     }),
   })
   const text = await res.text()

@@ -330,6 +330,53 @@ export function currentRecoveryPhrase(): string[] | null {
   }
 }
 
+/// Drop the stored recovery seed for the active account, keeping everything
+/// else. The session, the keys and the message history are untouched: only the
+/// 24 words stop being retrievable from this browser.
+///
+/// ★★ The seed is not "one more secret" next to the private keys — it is
+/// strictly stronger than all of them together. The keys open this account's
+/// traffic; the seed re-creates the account on ANY island, forever, and
+/// survives key rotation. So it is the one thing worth being able to remove
+/// from a browser, where nothing can be hidden from a script running in the
+/// same origin (see docs/web-storage-inventory.md).
+///
+/// ⚠ Deliberately NOT the default, and deliberately not silent. For a lot of
+/// people this browser holds the only copy of those words; deleting it for
+/// them would destroy the account rather than protect it. The caller asks
+/// first and says what is being lost.
+export function forgetRecoverySeed(): void {
+  const raw = localStorage.getItem(STORAGE_KEY)
+  if (!raw) return
+  let uin: number
+  try {
+    const { seed: _seed, ...rest } = JSON.parse(raw) as StoredIdentity
+    uin = rest.uin
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(rest))
+  } catch {
+    return
+  }
+  // ⚠ The account switcher keeps its OWN copy of every identity, seed
+  // included. Clearing one store and leaving the other is the kind of half-fix
+  // that reads as done and is not. Only this account's row, though — the other
+  // accounts' phrases are not ours to delete.
+  try {
+    const list = readAccounts().map((a) => {
+      if (a.uin !== uin) return a
+      const { seed: _seed, ...rest } = a
+      return rest
+    })
+    writeAccounts(list)
+  } catch {
+    /* no switcher list on this device */
+  }
+}
+
+/// Does this browser still hold the words? Drives the settings control.
+export function hasStoredRecoverySeed(): boolean {
+  return currentRecoveryPhrase() != null
+}
+
 // -----------------------------------------------------------
 // Persistence
 // -----------------------------------------------------------

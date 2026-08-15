@@ -44,6 +44,10 @@ export const en: Record<string, string> = {
   'settings.recovery.body':
     'Your 24-word phrase restores this account on a phone or another browser. Keep it private.',
   'settings.recovery.reveal': 'Show recovery phrase',
+  'settings.recovery.forget': 'Forget the phrase on this device',
+  'settings.recovery.forget.warn': 'Only do this if the words are written down somewhere else. A browser cannot hide them from a script running on this page or from anyone holding an unlocked computer, and the phrase re-creates your account on any island, forever. Your account and messages here keep working — you just will not be able to read the words out of this browser again.',
+  'settings.recovery.forget.confirm': 'Forget it',
+  'settings.recovery.forgotten': 'The phrase is no longer stored here.',
   'login.link.scan_body':
     "Open the RCQ app on your phone and scan this code with your camera to sign in here as your phone's account.",
   'login.link.security_more': 'Why is it weaker?',

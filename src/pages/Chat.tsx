@@ -184,6 +184,11 @@ export function Chat() {
   // own content, so the manual height juggling that used to live here went with
   // the element it was written for (max-height + overflow does the rest).
   const taRef = useRef<HTMLDivElement>(null)
+  /// The composer bar, measured so the thread can scroll under it. See the
+  /// comment on the bar itself.
+  const composerRef = useRef<HTMLDivElement>(null)
+  /// The title/search/pin stack, measured for the same reason.
+  const topBarsRef = useRef<HTMLDivElement>(null)
   // The scrolling message pane (<main>). We scroll this element directly to
   // its bottom rather than scrollIntoView-ing a zero-height anchor — the
   // anchor approach was landing short, leaving the newest messages tucked
@@ -475,6 +480,26 @@ export function Chat() {
       document.removeEventListener('mousedown', onDown)
     }
   }, [searchOpen, attachMenuOpen, showPicker, reactionForRowId, actionsForRowId, editingRow, replyTo])
+
+  // Publish the composer's height so the thread can reserve exactly that much
+  // room. A ResizeObserver rather than a constant: the bar is a different
+  // height with a reply strip open, with the emoji panel up, and on every line
+  // the input wraps to.
+  useEffect(() => {
+    const bar = composerRef.current
+    const top = topBarsRef.current
+    if (!bar || !top) return
+    const apply = () => {
+      const root = bar.parentElement
+      root?.style.setProperty('--rcq-composer-h', `${bar.offsetHeight}px`)
+      root?.style.setProperty('--rcq-topbars-h', `${top.offsetHeight}px`)
+    }
+    apply()
+    const ro = new ResizeObserver(apply)
+    ro.observe(bar)
+    ro.observe(top)
+    return () => ro.disconnect()
+  })
 
   /** Pin the list to the bottom and mark it as followed. Called when the user
    *  does something that means "I want to be at the newest": sending, or
@@ -1806,6 +1831,14 @@ export function Chat() {
           </div>
         </div>
       )}
+      {/* The top stack — title bar, in-chat search, pinned banner — is one
+          OVERLAY for the same reason the composer below is: while these sat in
+          the flex column, `main` began exactly where they ended and nothing
+          ever passed behind them, so their `backdrop-filter` had no backdrop
+          and the blur simply did not exist. Measured, because the stack is one
+          bar, two or three depending on whether search is open and the group
+          has a pin. */}
+      <div ref={topBarsRef} className="absolute top-0 inset-x-0 z-10">
       <header className="rcq-header flex-none z-10">
         <div className="max-w-2xl mx-auto px-4 h-14 flex items-center gap-3">
           <Link to="/contacts" className="text-fg-secondary hover:text-fg-primary px-2">
@@ -1945,6 +1978,7 @@ export function Chat() {
       )}
 
 
+      </div>
       <main
         ref={scrollRef}
         onWheel={releaseUnreadPin}
@@ -1963,6 +1997,15 @@ export function Chat() {
           })
         }}
         className="flex-1 max-w-2xl w-full mx-auto px-4 py-4 overflow-y-auto no-scrollbar"
+        style={{
+          // Pull the pane down under the composer, then hand the same distance
+          // back as padding. Content scrolls under the bar (so there is a
+          // backdrop to blur) without a single message ever being hidden by it.
+          marginTop: 'calc(-1 * var(--rcq-topbars-h, 0px))',
+          paddingTop: 'calc(1rem + var(--rcq-topbars-h, 0px))',
+          marginBottom: 'calc(-1 * var(--rcq-composer-h, 0px))',
+          paddingBottom: 'calc(1rem + var(--rcq-composer-h, 0px))',
+        }}
       >
         {error && (
           <div className="bg-red-50 border border-red-200 rounded-md p-3 text-sm text-red-600 mb-4">
@@ -2558,7 +2601,20 @@ export function Chat() {
           thread scrolls UNDER it, and with no background at all the last bubble
           slid beneath the pill and stayed legible through it, which read as a
           rendering fault rather than as depth. */}
-      <div className="rcq-floating-bar flex-none pb-[env(safe-area-inset-bottom)]">
+      {/* ⚠ An OVERLAY, not a flex row, and that is the whole point of the blur
+          above. While this was `flex-none` the three bands were stacked edge to
+          edge: <main> began exactly where the header ended and ended exactly
+          where this began, so nothing ever passed BEHIND either bar and
+          `backdrop-filter` had nothing to filter. The CSS was there, the blur
+          was not, and the founder reported it as missing — correctly. Measured
+          rather than guessed because this bar grows: a wrapped line, the reply
+          strip, the emoji panel. `main` pays the height back as padding, so the
+          last message still clears the pill and `scrollHeight` stays honest for
+          the bottom-pin maths. */}
+      <div
+        ref={composerRef}
+        className="rcq-floating-bar absolute bottom-0 inset-x-0 z-10 pb-[env(safe-area-inset-bottom)]"
+      >
         <div className="relative max-w-lg mx-auto px-3 py-3">
           {/* Everything that floats above the composer lives in ONE stack: the
               emoji panel on top, the reply/edit strip under it, both over the
@@ -3003,7 +3059,7 @@ function PinnedBanner({ text, group, expanded, onToggle }: { text: string; group
             exit={{ opacity: 0 }}
             transition={{ duration: 0.16 }}
             onClick={onToggle}
-            className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm sm:items-center"
+            className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-md sm:items-center"
           >
             <motion.div
               initial={{ y: 16, opacity: 0 }}

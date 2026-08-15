@@ -31,6 +31,7 @@ import {
 import { contactsCache, persistSnapshot, restoreSnapshot } from '../lib/contacts-cache'
 import { memberCount } from '../lib/group-roster'
 import { usePeerUnread, useGroupUnread, useTotalUnread, peerUnreadCount, groupUnreadCount } from '../lib/incoming-store'
+import { useHasMention } from '../lib/mentions'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
 import {
@@ -756,6 +757,10 @@ function ContactRow({
 function GroupRow({ group, onChanged }: { group: RCQGroup; onChanged: () => void }) {
   const { t } = useI18n()
   const unread = useGroupUnread(group.id)
+  // Someone called your name here while you were elsewhere. Separate from the
+  // unread count on purpose: forty unread messages in a busy group is noise,
+  // one of them addressed to you is not, and only the @ tells them apart.
+  const mentioned = useHasMention(group.id)
   const muted = useMutedGroups()
   const favorites = useFavoriteGroups()
   const archive = useArchiveGroups()
@@ -783,6 +788,15 @@ function GroupRow({ group, onChanged }: { group: RCQGroup; onChanged: () => void
             </div>
           </div>
         </Link>
+        {mentioned && (
+          <span
+            title={t('contacts.mentioned_you')}
+            aria-label={t('contacts.mentioned_you')}
+            className="flex-none text-accent font-semibold text-sm leading-none"
+          >
+            @
+          </span>
+        )}
         {unread > 0 && <UnreadBadge n={unread} />}
         <button
           onClick={() => setMenuOpen((v) => !v)}

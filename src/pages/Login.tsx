@@ -313,7 +313,7 @@ function LinkPane({ onDone }: { onDone: (id: WebIdentity) => void }) {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.16 }}
             onClick={() => setZoomed(false)}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-md p-6"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-6"
           >
             <motion.div
               initial={{ scale: 0.92, opacity: 0 }}

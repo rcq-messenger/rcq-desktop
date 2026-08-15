@@ -97,7 +97,7 @@ export function GroupSettingsModal({
         exit={{ opacity: 0 }}
         transition={{ duration: 0.16 }}
         onClick={onClose}
-        className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-md sm:items-center"
+        className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm sm:items-center"
       >
         <motion.div
           initial={{ y: 16, opacity: 0 }}

@@ -4,6 +4,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { PersonAvatar } from '../components/PersonAvatar'
+import { AddMemberSheet } from '../components/AddMemberSheet'
 import { GroupSettingsModal } from '../components/GroupSettingsModal'
 import { GroupAvatar } from '../components/GroupAvatar'
 import { Api, type RCQGroup } from '../lib/api'
@@ -22,6 +23,7 @@ export function GroupInfo() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [showAdd, setShowAdd] = useState(false)
   const [confirmDestroy, setConfirmDestroy] = useState(false)
   const [membersExpanded, setMembersExpanded] = useState(false)
 
@@ -56,6 +58,11 @@ export function GroupInfo() {
   const myRow = group?.members.find((m) => m.uin === myUinThere)
   const canEditInfo = isOwner || !!myRow?.permissions?.includes('info')
   const canManageMembers = isOwner || !!myRow?.permissions?.includes('members')
+  // Inviting is NOT the `members` capability. That one is about taking people
+  // out; the island lets any current member pull someone in ("admin gate would
+  // make tiny groups feel locked in", groups.py), which is exactly what both
+  // phones do and what the web was missing entirely.
+  const isMember = isOwner || myRow != null
   // The owner first, then everyone else. The island's roster query has no
   // ORDER BY and the initial rows are inserted from a Python set, so "who owns
   // this group" arrived in whatever order Postgres felt like — the founder was
@@ -102,6 +109,16 @@ export function GroupInfo() {
 
   return (
     <div className="min-h-screen bg-surface-dim">
+      {showAdd && group && gctx && (
+        <AddMemberSheet
+          group={group}
+          ident={gctx.ident}
+          gid={gctx.gid}
+          host={gctx.host}
+          onAdded={(g) => setGroup({ ...g, id: group.id, host: group.host })}
+          onClose={() => setShowAdd(false)}
+        />
+      )}
       {showSettings && group && gctx && (
         <GroupSettingsModal
           group={group}
@@ -233,6 +250,18 @@ export function GroupInfo() {
               )}
             </section>
 
+            {isMember && (
+              <section className="bg-surface rounded-lg p-2">
+                <button
+                  onClick={() => setShowAdd(true)}
+                  className="w-full h-11 rounded-md flex items-center justify-center gap-2 text-sm font-medium text-accent hover:bg-field transition-colors"
+                >
+                  <AddPersonIcon />
+                  {t('group.add.title')}
+                </button>
+              </section>
+            )}
+
             <section className="bg-surface rounded-lg p-2">
               {!confirmDestroy ? (
                 <button
@@ -270,6 +299,17 @@ export function GroupInfo() {
         )}
       </main>
     </div>
+  )
+}
+
+function AddPersonIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <line x1="19" y1="8" x2="19" y2="14" />
+      <line x1="22" y1="11" x2="16" y2="11" />
+    </svg>
   )
 }
 

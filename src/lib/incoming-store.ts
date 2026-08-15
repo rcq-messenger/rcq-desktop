@@ -7,6 +7,8 @@ import { useSyncExternalStore } from 'react'
 import type { Envelope, ReplyContext } from './crypto'
 import { idbGet, idbSet } from './signal-persist'
 import { playSound } from './sounds'
+import { markMention, mentionsMe } from './mentions'
+import { contactsCache, snapshotFor } from './contacts-cache'
 
 export interface IncomingRow {
   id: string // envelope UUID
@@ -614,6 +616,25 @@ export function addGroupIncoming(groupId: number, from: number, env: Envelope): 
   persist()
   emit()
   bumpUnread(groupKey(groupId), row, groupId)
+  noteMentionInGroup(groupId, row)
+}
+
+/// Raise the @ marker on a group thread the reader is not looking at.
+///
+/// Group-only by nature: a 1:1 body cannot name you as a third party, so the
+/// marker would mean "someone wrote to you", which the unread badge already
+/// says. Own messages never count. My nickname comes off the persisted roster
+/// snapshot rather than a live fetch — this runs on the receive path, with no
+/// component mounted and possibly no network, and the snapshot is written on
+/// every contacts load.
+function noteMentionInGroup(groupId: number, row: IncomingRow) {
+  if (_activeUin == null) return
+  if (row.from === _activeUin) return
+  if (groupKey(groupId) === _activeThread) return
+  const nick =
+    contactsCache.get(_activeUin)?.me?.nickname ?? snapshotFor(_activeUin)?.me?.nickname ?? null
+  if (!mentionsMe(row.text, _activeUin, nick)) return
+  markMention(groupId)
 }
 
 function subscribe(cb: () => void): () => void {

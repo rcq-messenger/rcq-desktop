@@ -79,7 +79,7 @@ import { emoticonAssetURL } from '../lib/emoticons'
 import { useI18n } from '../lib/i18n-context'
 import { useToast } from '../lib/toast'
 import { useIdentity } from '../lib/identity-context'
-import { playSound } from '../lib/sounds'
+import { isSentSoundEnabled, playSound } from '../lib/sounds'
 import { useCall } from '../lib/call'
 import { contactAlias, useContactAliases } from '../lib/local-store'
 import { useWS } from '../lib/ws'
@@ -877,7 +877,7 @@ export function Chat() {
       setOutgoing((rows) =>
         rows.map((r) => (r.id === row.id ? { ...r, state: 'sent', error: undefined } : r)),
       )
-      playSound('message_sent')
+      if (isSentSoundEnabled()) playSound('message_sent')
     } else {
       setOutgoing((rows) =>
         rows.map((r) => (r.id === row.id ? { ...r, state: 'failed', error: res.error } : r)),
@@ -1344,7 +1344,7 @@ export function Chat() {
           ? storageKey(true, target.id)
           : storageKey(false, target.uin)
       appendToThreadLog(targetKey, newRow)
-      playSound('message_sent')
+      if (isSentSoundEnabled()) playSound('message_sent')
       setForwardingRow(null)
       setActionsForRowId(null)
       toast(`${t('chat.forward.sent')}: ${target.name}`)

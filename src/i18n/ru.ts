@@ -507,6 +507,8 @@ export const ru: Record<string, string> = {
   'settings.sound.presence': 'Контакт онлайн/офлайн',
   'settings.sound.presence_footer': 'Звук, когда контакт появляется в сети или уходит.',
   'settings.section.theme': 'Оформление',
+  'settings.sound.sent': 'Звук отправки',
+  'settings.sound.sent_footer': 'Сигнал, когда вы отправляете сообщение. Входящий сигнал отдельно.',
   'settings.theme.light': 'Светлое',
   'settings.theme.dark': 'Тёмное',
   'settings.theme.system': 'Системное',

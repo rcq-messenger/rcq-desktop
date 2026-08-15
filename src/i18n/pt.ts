@@ -444,6 +444,8 @@ export const pt: Record<string, string> = {
   'settings.sound.presence': 'Contato online/offline',
   'settings.sound.presence_footer': 'Um sinal quando um contato fica online ou sai.',
   'settings.section.theme': 'Tema',
+  'settings.sound.sent': 'Som ao enviar',
+  'settings.sound.sent_footer': 'Um toque quando você envia uma mensagem. O toque de entrada é separado.',
   'settings.theme.light': 'Claro',
   'settings.theme.dark': 'Escuro',
   'settings.theme.system': 'Sistema',

@@ -39,7 +39,7 @@ import { DEFAULT_API_BASE } from '../lib/auth'
 import { snapshotFor } from '../lib/contacts-cache'
 import { PersonAvatar } from '../components/PersonAvatar'
 import { useIdentity } from '../lib/identity-context'
-import { isPresenceSoundEnabled, isSoundEnabled, setPresenceSoundEnabled, setSoundEnabled } from '../lib/sounds'
+import { isPresenceSoundEnabled, isSentSoundEnabled, isSoundEnabled, setPresenceSoundEnabled, setSentSoundEnabled, setSoundEnabled } from '../lib/sounds'
 import {
   FONT_SCALES,
   getFontScale,
@@ -71,6 +71,7 @@ export function Settings() {
   const { toast } = useToast()
   const [soundOn, setSoundOnState] = useState<boolean>(() => isSoundEnabled())
   const [presenceSoundOn, setPresenceSoundOnState] = useState<boolean>(() => isPresenceSoundEnabled())
+  const [sentSoundOn, setSentSoundOnState] = useState<boolean>(() => isSentSoundEnabled())
   const { pref: themePref, setPref: setThemePref } = useTheme()
   const fontScalePref = useSyncExternalStore(subscribeFontScale, getFontScale)
   const [backups, setBackups] = useState<BackupHome[]>(() => listBackupHomes())
@@ -759,6 +760,23 @@ export function Settings() {
             />
           </label>
           <p className="text-xs text-fg-dim">{t('settings.sound.presence_footer')}</p>
+          {/* Your own send chime. It had no switch of its own, so the only
+              way to silence it was the master one, which also took the
+              incoming chime with it. */}
+          <label className={'flex items-center justify-between pt-1 ' + (soundOn ? 'cursor-pointer' : 'opacity-40 cursor-not-allowed')}>
+            <span className="text-sm">{t('settings.sound.sent')}</span>
+            <input
+              type="checkbox"
+              checked={sentSoundOn}
+              disabled={!soundOn}
+              onChange={(e) => {
+                setSentSoundEnabled(e.target.checked)
+                setSentSoundOnState(e.target.checked)
+              }}
+              className="w-5 h-5 accent-accent cursor-pointer"
+            />
+          </label>
+          <p className="text-xs text-fg-dim">{t('settings.sound.sent_footer')}</p>
         </section>
 
         {/* Hall of Fame opt-in + optional avatar (federation-independent;

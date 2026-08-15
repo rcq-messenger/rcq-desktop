@@ -444,6 +444,8 @@ export const es: Record<string, string> = {
   'settings.sound.presence': 'Contacto conectado o desconectado',
   'settings.sound.presence_footer': 'Un tono cuando un contacto se conecta o se desconecta.',
   'settings.section.theme': 'Tema',
+  'settings.sound.sent': 'Sonido al enviar',
+  'settings.sound.sent_footer': 'Un tono cuando envías un mensaje. El tono de entrada es aparte.',
   'settings.theme.light': 'Claro',
   'settings.theme.dark': 'Oscuro',
   'settings.theme.system': 'Sistema',

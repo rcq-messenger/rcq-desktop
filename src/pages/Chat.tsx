@@ -20,6 +20,7 @@ import { EmoticonInput, insertEmoticonAt, serialize as serializeComposer } from 
 import { EmoticonPicker } from '../components/EmoticonPicker'
 import { EmoticonText } from '../components/EmoticonText'
 import { ForwardModal, type ForwardTarget } from '../components/ForwardModal'
+import { ReactionAuthors, type ReactionAuthor } from '../components/ReactionAuthors'
 import { ReactionPicker } from '../components/ReactionPicker'
 import { PersonAvatar } from '../components/PersonAvatar'
 import { SenderAvatar } from '../components/SenderAvatar'
@@ -80,7 +81,7 @@ import { useToast } from '../lib/toast'
 import { useIdentity } from '../lib/identity-context'
 import { playSound } from '../lib/sounds'
 import { useCall } from '../lib/call'
-import { useContactAliases } from '../lib/local-store'
+import { contactAlias, useContactAliases } from '../lib/local-store'
 import { useWS } from '../lib/ws'
 
 /// Envelope kinds `shipEnvelopeToCurrentThread` is allowed to encrypt + send.
@@ -196,6 +197,8 @@ export function Chat() {
   /// What is being forwarded: just the text and who wrote it. It used to be an
   /// OutgoingRow, which quietly limited forwarding to your own messages.
   const [forwardingRow, setForwardingRow] = useState<{ text: string; author: string } | null>(null)
+  /// Message id whose reaction authors are on screen, or null.
+  const [reactionAuthorsFor, setReactionAuthorsFor] = useState<string | null>(null)
   const [replyTo, setReplyTo] = useState<ReplyContext | null>(null)
   const [highlightId, setHighlightId] = useState<string | null>(null)
   // Search inside this conversation. Android has had it; the web had no way to
@@ -260,7 +263,8 @@ export function Chat() {
 
   // Re-render this view whenever ANY reaction changes (received or our own
   // optimistic toggle); the per-row chips read the store directly.
-  useReactionsVersion()
+  // Captured, not just called: the "who reacted" sheet memoises off it.
+  const reactionsVersion = useReactionsVersion()
   // Re-render when a message is deleted-for-everyone (ours or a received
   // delete) so the tombstone filter drops it live. The version also feeds the
   // timeline memo below, which does that filtering.
@@ -1188,6 +1192,11 @@ export function Chat() {
   /// at press time, not a reason to animate the header.
   function startCall(media: 'audio' | 'video') {
     if (!peer) return
+    // Belt and braces for the hidden buttons above: signalling carries a bare
+    // uin, which our island reads as a LOCAL account. A cross-island call would
+    // ring the wrong person, so refuse it here too rather than trusting one
+    // render condition to be the only gate forever.
+    if (peer.host) return
     if (!call.callable) {
       toast(t('call.offline'), 'error')
       return
@@ -1350,12 +1359,33 @@ export function Chat() {
   function renderReactions(targetId: string, align: 'start' | 'end') {
     const chips = aggregateReactions(targetId, identity!.uin)
     if (chips.length === 0) return null
+    // Long-press is the touch equivalent of the right-click below. Cancelled by
+    // moving or lifting early so a scroll never opens the sheet.
+    let pressTimer: ReturnType<typeof setTimeout> | undefined
+    const holdStart = () => {
+      pressTimer = setTimeout(() => {
+        pressTimer = undefined
+        setReactionAuthorsFor(targetId)
+      }, 450)
+    }
+    const holdCancel = () => {
+      if (pressTimer) clearTimeout(pressTimer)
+      pressTimer = undefined
+    }
     return (
       <div className={`flex flex-wrap gap-1 ${align === 'end' ? 'justify-end' : 'justify-start'}`}>
         {chips.map((c) => (
           <button
             key={c.asset}
             onClick={() => void toggleReaction(targetId, c.asset)}
+            onContextMenu={(e) => {
+              e.preventDefault()
+              setReactionAuthorsFor(targetId)
+            }}
+            onPointerDown={holdStart}
+            onPointerUp={holdCancel}
+            onPointerLeave={holdCancel}
+            onPointerCancel={holdCancel}
             className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 transition-colors ${
               c.mine ? 'bg-accent/25' : 'bg-field hover:bg-line/60'
             }`}
@@ -1371,6 +1401,36 @@ export function Chat() {
 
   const { aliasFor: peerAliasFor } = useContactAliases()
   const peerAlias = peerUIN ? peerAliasFor(peerUIN) : undefined
+
+  /// Turn the reaction store's (uin -> asset) map into rows the sheet can draw.
+  /// Names come from wherever this thread knows them: the group roster in a
+  /// group, the peer in a 1:1, and my own profile for my own reaction. My alias
+  /// for someone wins over their nick, same rule as everywhere else.
+  const reactionAuthors: ReactionAuthor[] = useMemo(() => {
+    if (!reactionAuthorsFor || !identity) return []
+    const map = reactionsForTarget(reactionAuthorsFor)
+    if (!map) return []
+    return [...map.entries()].map(([uin, asset]) => {
+      const member = isGroup ? group?.members.find((m) => m.uin === uin) : undefined
+      const mine = uin === identity.uin
+      const name =
+        peerAliasFor(uin) ??
+        (mine ? myNickname : undefined) ??
+        member?.nickname ??
+        (uin === peerUIN ? peer?.nickname : undefined) ??
+        `#${uin}`
+      return {
+        uin,
+        asset,
+        name,
+        status: (member?.status ?? (uin === peerUIN ? peer?.status : undefined) ?? 'offline') as ReactionAuthor['status'],
+        avatarMediaId: member?.avatar_media_id ?? (uin === peerUIN ? peer?.avatar_media_id : undefined),
+        avatarMediaKey: member?.avatar_media_key ?? (uin === peerUIN ? peer?.avatar_media_key : undefined),
+        crossIsland: uin === peerUIN ? !!peer?.host : false,
+      }
+    })
+    // `reactionsVersion` is what makes this recompute when a reaction lands.
+  }, [reactionAuthorsFor, identity, isGroup, group, peer, peerUIN, myNickname, peerAliasFor, reactionsVersion])
   const headerName = isGroup
     ? group?.name ?? `#${groupId}`
     : isSelf
@@ -1636,7 +1696,15 @@ export function Chat() {
           >
             <SearchIcon />
           </button>
-          {!isGroup && !isSelf && peer && (peer.callable ?? true) && (
+          {/* ⚠⚠ No call buttons for a contact on another island. Web does not
+              implement cross-island call signalling (spec §5d) at all: `signal()`
+              posts a bare `to_uin` down our OWN island's socket, and that island
+              resolves it as a LOCAL number. Calling `1234@is2.rcq.app` therefore
+              rang OUR OWN #1234 — a stranger — and if they answered, a real
+              media session came up between two people who have never met.
+              Hidden until the sealed-envelope path lands; the phones already
+              have it. */}
+          {!isGroup && !isSelf && peer && !peer.host && (peer.callable ?? true) && (
             <>
               <button
                 type="button"
@@ -1799,7 +1867,13 @@ export function Chat() {
               if (item.kind === 'in') {
                 const m = item.msg
                 const senderMember = isGroup ? group?.members.find((mem) => mem.uin === m.from) : undefined
-                const senderName = isGroup ? senderMember?.nickname || `#${m.from}` : null
+                // My own name for them wins over the nick they chose, exactly as
+                // it does in the 1:1 header. Setting an alias and then still
+                // reading their nick over every message in a group read as the
+                // alias not having been saved at all.
+                const senderName = isGroup
+                  ? peerAliasFor(m.from) || senderMember?.nickname || `#${m.from}`
+                  : null
                 const invite = parseGroupInvite(m.text)
                 const replyAuthor = senderName ?? peer?.nickname ?? `#${m.from}`
                 const isPlainText =
@@ -1891,8 +1965,15 @@ export function Chat() {
                       <div className="text-[0.625rem] font-mono text-fg-dim">
                         {new Date(m.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </div>
+                      {/* ⚠ Floats, like the reaction picker right below. As an
+                          in-flow block it grew the row and shoved every message
+                          under it down the thread, so opening a menu moved the
+                          text you were about to act on. Same anchor
+                          (`top-full` on the bubble's `relative` column), one
+                          layer above the picker; the two are never open at once,
+                          both toggles close the other. */}
                       {isPlainText && showActions && (
-                        <div data-chat-menu className="flex items-center gap-1.5 rounded-lg bg-surface px-2 py-1 shadow-lg">
+                        <div data-chat-menu className="absolute top-full left-0 mt-1 z-30 flex items-center gap-1.5 rounded-lg bg-surface px-2 py-1 shadow-lg">
                           <ActionButton onClick={() => startReplyTo(m.id, m.text, replyAuthor)} label={t('chat.actions.reply')} icon="↩" />
                           {m.kind === 'text' && (
                             <ActionButton onClick={() => copyText(m.text)} label={t('chat.actions.copy')} icon="⧉" />
@@ -1940,7 +2021,13 @@ export function Chat() {
                     <button
                       type="button"
                       data-chat-menu
-                      onClick={() => setReactionForRowId((id) => (id === m.id ? null : m.id))}
+                      onClick={() => {
+                        // Both float from the same anchor now, so they must not
+                        // be open together. The actions toggle already clears
+                        // this one; this is the other half of the pair.
+                        setActionsForRowId(null)
+                        setReactionForRowId((id) => (id === m.id ? null : m.id))
+                      }}
                       aria-label={t('chat.actions.react')}
                       title={t('chat.actions.react')}
                       className="self-center ml-1 h-7 w-7 rounded-full bg-surface text-fg-dim opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity flex-none rcq-hover-only items-center justify-center"
@@ -2171,8 +2258,10 @@ export function Chat() {
                       {row.error}
                     </div>
                   )}
+                  {/* Floats for the same reason as the incoming side above,
+                      anchored right because this column is right-aligned. */}
                   {showActions && row.state === 'sent' && (
-                    <div data-chat-menu className="flex items-center gap-1.5 rounded-lg bg-surface px-2 py-1 shadow-lg">
+                    <div data-chat-menu className="absolute top-full right-0 mt-1 z-30 flex items-center gap-1.5 rounded-lg bg-surface px-2 py-1 shadow-lg">
                       <ActionButton onClick={() => startReply(row)} label={t('chat.actions.reply')} icon="↩" />
                       {(!row.kind || row.kind === 'text') && (
                         <ActionButton onClick={() => startEdit(row)} label={t('chat.actions.edit')} icon="✎" />
@@ -2209,7 +2298,10 @@ export function Chat() {
                 <button
                   type="button"
                   data-chat-menu
-                  onClick={() => setReactionForRowId((id) => (id === row.id ? null : row.id))}
+                  onClick={() => {
+                    setActionsForRowId(null)
+                    setReactionForRowId((id) => (id === row.id ? null : row.id))
+                  }}
                   aria-label={t('chat.actions.react')}
                   title={t('chat.actions.react')}
                   className="self-center mr-1 order-first h-7 w-7 rounded-full bg-surface text-fg-dim opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity flex-none rcq-hover-only items-center justify-center"
@@ -2481,6 +2573,12 @@ export function Chat() {
           if (forwardingRow) await forwardTo(forwardingRow, target)
         }}
       />
+
+      <ReactionAuthors
+        visible={reactionAuthorsFor != null && reactionAuthors.length > 0}
+        authors={reactionAuthors}
+        onClose={() => setReactionAuthorsFor(null)}
+      />
     </div>
   )
 }
@@ -2749,7 +2847,7 @@ function PinnedRichText({ text, group }: { text: string; group: RCQGroup }) {
       )
     } else if (m[3]) {
       const uin = Number(m[3])
-      const nick = group.members.find((x) => x.uin === uin)?.nickname
+      const nick = contactAlias(uin) ?? group.members.find((x) => x.uin === uin)?.nickname
       nodes.push(
         <Link key={key++} to={`/profile/${uin}`} className="text-accent hover:text-accent-dim transition-colors">{nick ?? `#${uin}`}</Link>,
       )

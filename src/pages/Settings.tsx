@@ -5,9 +5,9 @@
 // took up too much vertical space inline. Settings now just shows
 // a nav-row that opens the dedicated surface.
 
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { currentRecoveryPhrase, revokedAccounts } from '../lib/auth'
+import { currentRecoveryPhrase, forgetRecoverySeed, revokedAccounts } from '../lib/auth'
 import { exportBackup, importBackup } from '../lib/backup-data'
 import { Dropdown, type DropdownOption } from '../components/Dropdown'
 import { LanguagePicker } from '../components/LanguagePicker'
@@ -1305,7 +1305,11 @@ function RecoveryPhraseSection() {
   const { t } = useI18n()
   const { toast } = useToast()
   const [revealed, setRevealed] = useState(false)
-  const words = currentRecoveryPhrase()
+  const [confirmForget, setConfirmForget] = useState(false)
+  // Re-read after forgetting rather than hold the words in state: the point of
+  // the control is that they stop being here.
+  const [version, setVersion] = useState(0)
+  const words = useMemo(() => currentRecoveryPhrase(), [version])
   if (!words) return null
   return (
     <section className="bg-surface rounded-lg p-4 space-y-3">
@@ -1339,6 +1343,48 @@ function RecoveryPhraseSection() {
           >
             {t('login.phrase.copy')}
           </button>
+
+          {/* Once the words are on screen, the honest next question is whether
+              they should keep living in this browser. They are the strongest
+              thing here — the keys open this account, the phrase re-creates it
+              on any island, forever — and nothing in a browser can hide them
+              from a script in the same origin or from someone holding an
+              unlocked laptop. Offered only after a reveal, never by default:
+              for a lot of people this is the only copy. */}
+          {!confirmForget ? (
+            <button
+              onClick={() => setConfirmForget(true)}
+              className="w-full h-9 rounded-md text-sm font-medium text-red-600 hover:bg-red-50 transition-colors"
+            >
+              {t('settings.recovery.forget')}
+            </button>
+          ) : (
+            <div className="space-y-2 rounded-md bg-surface-dim p-3">
+              <p className="text-xs text-fg-secondary leading-relaxed">
+                {t('settings.recovery.forget.warn')}
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setConfirmForget(false)}
+                  className="flex-1 h-9 rounded-md bg-field text-sm font-medium hover:bg-line/40 transition-colors"
+                >
+                  {t('common.cancel')}
+                </button>
+                <button
+                  onClick={() => {
+                    forgetRecoverySeed()
+                    setConfirmForget(false)
+                    setRevealed(false)
+                    setVersion((v) => v + 1)
+                    toast(t('settings.recovery.forgotten'))
+                  }}
+                  className="flex-1 h-9 rounded-md bg-red-600 hover:bg-red-700 text-white text-sm font-semibold transition-colors"
+                >
+                  {t('settings.recovery.forget.confirm')}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </section>

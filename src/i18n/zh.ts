@@ -357,6 +357,8 @@ export const zh: Record<string, string> = {
   'profile.save': '保存',
   'profile.saving': '保存中…',
   'profile.saved': '个人资料已保存。',
+  'profile.picture.failed': '图片上传失败。',
+  'profile.picture.unsupported': '这座岛的服务器版本太旧，还不支持头像。请让它的运营者更新。',
   'profile.cta.send_message': '发消息',
   'profile.section.personal': '个人信息',
   'profile.section.location': '所在地',

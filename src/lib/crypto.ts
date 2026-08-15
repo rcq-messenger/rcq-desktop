@@ -236,6 +236,31 @@ export interface SknackEnvelope {
   kid: string
 }
 
+/// Cross-island call signalling (kind "call", spec §5d). A same-island call is
+/// a PLAINTEXT websocket relay — `{type:"call_offer", to_uin, call_id, sdp…}`
+/// forwarded by the island between two live sockets. Across an island boundary
+/// there is no shared socket, so the very same signal is wrapped here, v=1
+/// sealed to the peer's identity key, and deposited to their island.
+///
+/// `sig` is the websocket event type verbatim (call_offer / call_answer /
+/// call_ice / call_end / call_renegotiate* / call_ice_restart*), `cid` is the
+/// call id, `ts` is sender epoch SECONDS (a `call_offer` older than 60s is
+/// stale — an offline drain delivers hours-old rows), and `data` carries the
+/// signal's remaining fields.
+///
+/// ⚠ Every value in `data` is a STRING on the wire. Android types it
+/// `Map<String, String>` and iOS `[String: String]`, so a numeric or boolean
+/// value here decodes as a hard error on both phones and the signal is lost in
+/// silence — which for a call means it rings and never connects.
+export interface CallEnvelope {
+  kind: 'call'
+  id: string // uppercase UUID
+  sig: string // the WS event type, verbatim
+  cid: string // the call id
+  ts: number // sender epoch SECONDS (matches `contactreq` / `profile`)
+  data: Record<string, string>
+}
+
 /// Cross-island contact request (kind "contactreq", spec §5f). Adding someone
 /// on another island used to be a purely local act: fetch their open key card,
 /// write a local row, done — nothing was deposited and the peer was never told.
@@ -303,6 +328,7 @@ export type Envelope =
   | HomeRecordEnvelope
   | SkdmEnvelope
   | SknackEnvelope
+  | CallEnvelope
   | ContactReqEnvelope
   | ProfileEnvelope
 
@@ -427,6 +453,18 @@ export function envelopeToObject(env: Envelope): Record<string, unknown> {
   } else if (env.kind === 'sknack') {
     obj.gid = env.gid
     obj.kid = env.kid
+  } else if (env.kind === 'call') {
+    // §5d. Field order matches Android (`Envelope.kt`, the CallSignal branch)
+    // and iOS (`CryptoService.swift`, `case .callSignal`) exactly: kind, id,
+    // sig, cid, ts, data. `data` is always present — iOS decodes it with
+    // decodeIfPresent and Android with a null-safe getter, but an omitted key
+    // is a difference in the SIGNED bytes for no gain, and the map is never
+    // empty in practice (even `call_end` carries a reason).
+    obj.id = env.id
+    obj.sig = env.sig
+    obj.cid = env.cid
+    obj.ts = env.ts
+    obj.data = env.data
   } else if (env.kind === 'contactreq') {
     // §5f. Field order mirrors the spec block and the `call` envelope's shape
     // (kind, id, …, ts). `note` follows the encodeIfPresent rule every other

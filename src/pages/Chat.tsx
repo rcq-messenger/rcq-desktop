@@ -1198,16 +1198,16 @@ export function Chat() {
   /// at press time, not a reason to animate the header.
   function startCall(media: 'audio' | 'video') {
     if (!peer) return
-    // Belt and braces for the hidden buttons above: signalling carries a bare
-    // uin, which our island reads as a LOCAL account. A cross-island call would
-    // ring the wrong person, so refuse it here too rather than trusting one
-    // render condition to be the only gate forever.
-    if (peer.host) return
     if (!call.callable) {
       toast(t('call.offline'), 'error')
       return
     }
-    call.start(peer.uin, peer.nickname ?? `#${peer.uin}`, media)
+    // §5d: hand the peer's island over with the number. Without it the call
+    // machine signals down OUR island's socket, which resolves a bare `to_uin`
+    // as one of ITS OWN accounts — which is how calling `1234@is2.rcq.app` used
+    // to ring a local #1234 who had never heard of us. `peer.host` is set from
+    // the cross-island store for a `?i=<host>` thread and absent otherwise.
+    call.start(peer.uin, peer.nickname ?? `#${peer.uin}`, media, peer.host ?? islandHost)
   }
 
   /// Scroll to the message a quote refers to and flash it.
@@ -1505,7 +1505,15 @@ export function Chat() {
   // hour ago and there was no way to tell what happened when.
   const timeline = useMemo(() => {
     const items = [
-      ...outgoing.map((row) => ({ at: row.sentAt, kind: 'out' as const, row })),
+      ...outgoing
+        // A 1:1 log is keyed by the BARE uin, so this thread and the thread for
+        // the same number on another island are one log — two people, one key.
+        // A call is the row that must be told apart (§5d): a real cross-island
+        // call now happens, and "you called them for four minutes" in a local
+        // namesake's conversation is a lie about a stranger. The island travels
+        // on the row; here is where it decides whose conversation it is in.
+        .filter((row) => row.kind !== 'call' || (row.peerHost ?? null) === (islandHost ?? null))
+        .map((row) => ({ at: row.sentAt, kind: 'out' as const, row })),
       ...incoming.map((m) => ({ at: m.at, kind: 'in' as const, msg: m })),
     ]
       .filter((it) => !isDeleted(it.kind === 'out' ? it.row.id : it.msg.id))
@@ -1548,7 +1556,7 @@ export function Chat() {
       lastAt = it.at
     }
     return out
-  }, [outgoing, incoming, deletedVersion, unreadAnchorId])
+  }, [outgoing, incoming, deletedVersion, unreadAnchorId, islandHost])
 
   /// Ids of the messages containing the query, newest last — the same order
   /// they sit in the thread, so stepping through them walks the conversation
@@ -1702,15 +1710,12 @@ export function Chat() {
           >
             <SearchIcon />
           </button>
-          {/* ⚠⚠ No call buttons for a contact on another island. Web does not
-              implement cross-island call signalling (spec §5d) at all: `signal()`
-              posts a bare `to_uin` down our OWN island's socket, and that island
-              resolves it as a LOCAL number. Calling `1234@is2.rcq.app` therefore
-              rang OUR OWN #1234 — a stranger — and if they answered, a real
-              media session came up between two people who have never met.
-              Hidden until the sealed-envelope path lands; the phones already
-              have it. */}
-          {!isGroup && !isSelf && peer && !peer.host && (peer.callable ?? true) && (
+          {/* A contact on another island is callable now (§5d): the signal is
+              sealed and deposited to their island instead of being shouted down
+              ours, where a bare `to_uin` used to resolve as a LOCAL number and
+              ring a stranger who shared the digits. The buttons were hidden for
+              exactly as long as that was true. */}
+          {!isGroup && !isSelf && peer && (peer.callable ?? true) && (
             <>
               <button
                 type="button"

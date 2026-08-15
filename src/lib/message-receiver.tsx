@@ -13,12 +13,14 @@ import { publishHomeIslandRecord } from './federation-publish'
 import { applyPushedRecord, drainBackupQueues, listBackupHomes } from './multihome'
 import { aliasFor, drainVisitedQueues, listVisitedIslands } from './visited-islands'
 import { getCrossIsland } from './crossisland-store'
-import { holdRequestMessage } from './crossisland-requests'
+import { holdRequestMessage, isBlocked } from './crossisland-requests'
 import { handleContactReq } from './crossisland-contactreq'
+import { CALL_OFFER_TTL_SEC, fileMissedCrossIslandOffer } from './crossisland-call'
+import { deliverCrossIslandCallSignal } from './call'
 import { handleProfile, pushProfileTo } from './crossisland-profile'
 import { handleGmsg, handleSkdm, handleSknack } from './sender-key-receive'
 import { Api } from './api'
-import type { ContactReqEnvelope, ProfileEnvelope, WebIdentity } from './crypto'
+import type { CallEnvelope, ContactReqEnvelope, ProfileEnvelope, WebIdentity } from './crypto'
 
 // Hydrate the incoming store once per account per app load. Both receive paths
 // (the primary connect-drain and the backup-island poll, which runs even when
@@ -32,6 +34,61 @@ function ensureHydrated(uin: number): Promise<void> {
     hydration = hydrateIncoming(uin)
   }
   return hydration
+}
+
+/// §5d: apply one decrypted cross-island call signal.
+///
+/// The gates, in the spec's order — none of them is a WebRTC concern, which is
+/// why they live here and not in the call state machine:
+///
+///  1. Blocked sender → nothing. Sealed sender means the island cannot filter
+///     by who sent it, so the block is enforced on receipt or not at all.
+///  2. Not an ACCEPTED cross-island contact → DROPPED, never quarantined.
+///     A message from a stranger waits in the requests list; a call signal
+///     cannot wait for anything, and holding an offer nobody will read until
+///     tomorrow would file a phantom call rather than ask a question.
+///  3. A `call_offer` older than 60s → stale. Offline drains deliver rows that
+///     have been queued for hours, and each one would ring for a call the other
+///     side abandoned long ago. It is filed as the missed call it really was,
+///     stamped with the offer's own time.
+///
+/// ⚠ Nothing has type-checked this envelope: the receive path is
+/// `JSON.parse(...) as Envelope`, so every field here can be any JSON a hostile
+/// peer felt like depositing. A throw would abort the whole queue drain (which
+/// catches per BATCH, not per row) — every drain, forever — so each field is
+/// coerced rather than trusted, exactly as §5f does.
+function handleCallSignal(senderUin: number, senderHost: string, env: CallEnvelope): void {
+  if (isBlocked(senderUin, senderHost)) return
+  if (!getCrossIsland(senderUin, senderHost)) return
+  const sig = typeof env.sig === 'string' ? env.sig : ''
+  // Only the signals this wire defines. Anything else is a NEWER client than
+  // this one: ignore it, the way iOS (`default: break`) and Android already do.
+  if (!sig.startsWith('call_')) return
+  const cid = typeof env.cid === 'string' ? env.cid : ''
+  if (!cid) return
+  const ts = typeof env.ts === 'number' && Number.isFinite(env.ts) ? env.ts : 0
+  // `data` values are strings on the wire; anything else is from a client that
+  // broke the contract, and is left out rather than coerced into the state
+  // machine as an `[object Object]` SDP.
+  const data: Record<string, string> = {}
+  if (env.data && typeof env.data === 'object') {
+    for (const [k, v] of Object.entries(env.data as Record<string, unknown>)) {
+      if (typeof v === 'string') data[k] = v
+    }
+  }
+  if (sig === 'call_offer' && Math.floor(Date.now() / 1000) - ts > CALL_OFFER_TTL_SEC) {
+    fileMissedCrossIslandOffer(senderUin, senderHost, data.media ?? 'audio', ts)
+    return
+  }
+  // Non-offer signals need no freshness rule of their own: they already no-op
+  // unless they match the call this client currently has open.
+  deliverCrossIslandCallSignal({
+    type: sig,
+    from_uin: senderUin,
+    from_host: senderHost,
+    call_id: cid,
+    ...data,
+  })
 }
 
 // Route a decrypted envelope to the 1:1 store or the group store by group_id.
@@ -73,6 +130,19 @@ function route(
   if ((envelope as { kind?: string }).kind === 'homerec') {
     const rec = (envelope as { rec?: unknown }).rec
     if (senderSigningKey && rec != null) applyPushedRecord(senderUIN, senderSigningKey, rec)
+    return
+  }
+  // §5d cross-island call signalling. Sits ABOVE the quarantine for the same
+  // reason §5f does, and one more of its own: a signal is EPHEMERAL. Held as a
+  // message request it would be a call nobody can answer, sitting in a list,
+  // and it must never reach the message store — the conversation gets the
+  // one-line call summary the state machine writes when the call is over, not
+  // the SDP that set it up. A same-island call still rides the plaintext WS
+  // relay, so an envelope that did not cross an island boundary is ignored.
+  if ((envelope as { kind?: string }).kind === 'call') {
+    if (senderHost && senderHost !== ownHost && senderUIN !== myUin) {
+      handleCallSignal(senderUIN, senderHost, envelope as unknown as CallEnvelope)
+    }
     return
   }
   // §5f cross-island contact request / accept / decline. MUST sit above the
@@ -288,7 +358,14 @@ export function MessageReceiver() {
     // minutes. iOS and Android have carried both for a while. `nudge` and
     // `relay_share` are deliberately NOT here: web has no envelope kind for
     // either, so they would decrypt and fall through to a null row.
-    const SEALED_WS_TYPES = ['message', 'reaction', 'delete', 'edit', 'read', 'system', 'secscreen', 'visit', 'bounce', 'carbon', 'homerec', 'skdm', 'sknack']
+    // ⚠ `call` (§5d) is in this list and NOT in the `call_*` list `call.tsx`
+    // subscribes to: those are the island's own plaintext relay frames for a
+    // SAME-island call, this is a sealed envelope whose outer type happens to
+    // be `call` because that is what makes the island ring a closed app. It
+    // arrives here, gets decrypted, and only then does the signal inside it
+    // reach the call machine. Omitting it would leave cross-island calls
+    // working only on the next queue drain, i.e. minutes after they rang off.
+    const SEALED_WS_TYPES = ['message', 'reaction', 'delete', 'edit', 'read', 'system', 'secscreen', 'visit', 'bounce', 'carbon', 'homerec', 'skdm', 'sknack', 'call']
     const offs = SEALED_WS_TYPES.map((tp) => on(tp, handle))
     return () => offs.forEach((off) => off())
   }, [identity, on])

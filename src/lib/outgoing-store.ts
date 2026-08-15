@@ -28,6 +28,14 @@ export interface OutgoingRow {
   kind?: 'text' | 'photo' | 'video' | 'file' | 'other' | 'call'
   /// For 'call': nobody picked up (or it was declined). Drives the icon.
   callMissed?: boolean
+  /// For 'call': the island the other party lives on, when it is not ours
+  /// (§5d). A 1:1 thread's log is keyed by the BARE uin here, so the thread for
+  /// `1234@is2.rcq.app` and the thread for a local #1234 are the same log —
+  /// two different people, one key. A call is the one row that has to be told
+  /// apart, because a cross-island call now really happens and filing it under
+  /// the bare number puts "you called them for 4 minutes" in a stranger's
+  /// conversation. Absent means the peer is on our own island.
+  peerHost?: string
   mediaId?: string
   mediaKey?: string
   mediaKind?: string // for 'other': the original envelope kind
@@ -113,14 +121,31 @@ export function appendToThreadLog(key: string, row: OutgoingRow): void {
 /// on BOTH sides independently. If the open thread is this one, the live sink
 /// puts it on screen immediately; otherwise it lands in that thread's log and
 /// appears when the user opens it.
-export function logCall(peerUin: number, text: string, missed: boolean, at: number): void {
+/// `host` is the peer's island when the call crossed one (§5d). It is carried
+/// on the ROW rather than in the storage key on purpose: the key is the whole
+/// thread's, and moving it would take every message in that thread with it —
+/// out of the backup enumerator (which parses the uin straight out of the key)
+/// and out of every log this device has already written. The thread stays where
+/// it is; the row says whose call it was, and `Chat` shows it in that person's
+/// conversation only.
+export function logCall(
+  peerUin: number,
+  text: string,
+  missed: boolean,
+  at: number,
+  host?: string | null,
+): void {
   const row: OutgoingRow = {
-    id: `call-${at}-${peerUin}`,
+    // The host is part of the id too: two calls with the same peer number on
+    // two islands in the same millisecond is not a real scenario, but a
+    // dedup-by-id that treats them as one row is a wrong row, not a missing one.
+    id: `call-${at}-${peerUin}${host ? `@${host}` : ''}`,
     text,
     sentAt: at,
     state: 'sent',
     kind: 'call',
     callMissed: missed,
+    ...(host ? { peerHost: host } : {}),
   }
   const key = storageKey(false, peerUin)
   appendToThreadLog(key, row)

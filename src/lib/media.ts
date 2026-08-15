@@ -198,6 +198,30 @@ async function putBlob(base: string, mediaId: string, combined: Uint8Array, name
   }
 }
 
+/// Read an ALREADY-ENCRYPTED blob back off an island, ciphertext untouched.
+///
+/// §5e deposits the profile picture to each cross-island contact's island, and
+/// the bytes it needs are the ones already sitting on ours from the ordinary
+/// avatar upload. Deliberately no decrypt anywhere on this path: the key stays
+/// in the sealed envelope, which is the whole access decision for a blob whose
+/// `GET /media/{id}` has no auth.
+export async function fetchEncryptedBlob(apiBase: string, mediaId: string): Promise<Uint8Array | null> {
+  try {
+    const res = await fetch(`${apiBase}/media/${mediaId}`)
+    if (!res.ok) return null
+    return new Uint8Array(await res.arrayBuffer())
+  } catch {
+    return null
+  }
+}
+
+/// Deposit an already-encrypted blob to `host` under the SAME client-chosen id
+/// (§5b `PUT /media/{id}`, idempotent, first-write-wins). Depositing the same
+/// avatar to the same island twice is therefore free.
+export function depositEncryptedBlob(host: string, mediaId: string, combined: Uint8Array): Promise<boolean> {
+  return putBlob(`https://${host}`, mediaId, combined, 'photo.bin')
+}
+
 /// Cross-island media (deposit-the-blob): the recipient fetches media from
 /// their OWN island, so the sender deposits the encrypted blob there itself —
 /// islands never talk to each other, and the message survives our island

@@ -12,6 +12,7 @@ import { useWS } from '../lib/ws'
 import { listRequests, clearRequest, blockRequest, type CrossIslandRequest } from '../lib/crossisland-requests'
 import { saveCrossIsland } from '../lib/crossisland-store'
 import { sendContactAccept, sendContactDecline } from '../lib/crossisland-contactreq'
+import { pushProfileTo } from '../lib/crossisland-profile'
 import { fetchPeerKeyCard } from '../lib/federation-send'
 import { addIncoming, beginCatchUp, endCatchUp } from '../lib/incoming-store'
 
@@ -63,6 +64,12 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
       // an accepted cross-island contact — that mutual state is the precondition
       // §5d call signalling checks and §5e profile refresh assumes.
       const acked = await sendContactAccept(identity!, r.host, r.uin)
+      // §5e: they hold us from this moment, with whatever name their key-card
+      // fetch caught. Give them the current one now — the alternative is that
+      // they carry a stale name until the next time we happen to edit the
+      // profile, which for most people is never. Fire-and-forget, and after the
+      // accept so the ordering on their side is "accepted, then named".
+      void pushProfileTo(identity!, r.host, r.uin)
       if (!acked) {
         // Accepted here regardless (the row + pinned keys are written), but say
         // so plainly rather than implying the other side knows.

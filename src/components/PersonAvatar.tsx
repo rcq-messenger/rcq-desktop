@@ -23,8 +23,16 @@ interface Props {
   className?: string
   mediaId?: string | null
   mediaKey?: string | null
-  /// Cross-island peer: presence isn't tracked across islands and the blob
-  /// lives on theirs, so these keep the gray flower.
+  /// Cross-island peer: presence isn't tracked across islands, so the flower
+  /// stays gray.
+  ///
+  /// It used to suppress the PICTURE too, because the blob lived on their
+  /// island and we had neither its id nor its key. §5e changed that from both
+  /// ends: the peer deposits the encrypted blob to OUR island under the same
+  /// id and hands us the key in a sealed envelope, so when a caller has an
+  /// id+key pair for a cross-island contact it resolves from `apiBase` like
+  /// any other picture — and keeps resolving while their island is down, which
+  /// is the whole reason the picture is deposited rather than pulled.
   crossIsland?: boolean
   /// Set when the status badge itself is actionable (the header, where tapping
   /// the flower opens the status menu). Without it the badge is decoration.
@@ -52,7 +60,7 @@ export function PersonAvatar({
 
   useEffect(() => {
     setUrl(null)
-    if (!identity || crossIsland || !mediaId || !mediaKey) return
+    if (!identity || !mediaId || !mediaKey) return
     let alive = true
     void loadEncryptedImage(identity.apiBase, mediaId, mediaKey).then((u) => {
       if (alive) setUrl(u)
@@ -60,7 +68,7 @@ export function PersonAvatar({
     return () => {
       alive = false
     }
-  }, [identity?.apiBase, mediaId, mediaKey, crossIsland])
+  }, [identity?.apiBase, mediaId, mediaKey])
 
   if (!url) {
     // Nothing to draw: no picture, and presence deliberately suppressed.
@@ -100,14 +108,18 @@ export function PersonAvatar({
           style={pos}
           aria-label={status}
         >
-          <StatusIcon status={status} size={Math.round(badge * 0.86)} />
+          {/* Still gray for a cross-island peer: they now have a face, but
+              presence does not cross islands and never claimed to. */}
+          <StatusIcon status={status} size={Math.round(badge * 0.86)} crossIsland={crossIsland} />
         </button>
       ) : (
         <span
           className="absolute rounded-full bg-bg flex items-center justify-center"
           style={pos}
         >
-          <StatusIcon status={status} size={Math.round(badge * 0.86)} />
+          {/* Still gray for a cross-island peer: they now have a face, but
+              presence does not cross islands and never claimed to. */}
+          <StatusIcon status={status} size={Math.round(badge * 0.86)} crossIsland={crossIsland} />
         </span>
       )}
     </span>

@@ -12,6 +12,9 @@
 
 import type { Contact, PendingRequest, RCQGroup, UserInfo, UserStatus } from './api'
 import { scopedKey } from './account-scope'
+// A plain store over localStorage, no component / page / context in its import
+// graph — so the cycle rule at the top of this file still holds.
+import { findCrossIslandByUin } from './crossisland-store'
 
 export interface ContactsSnapshot {
   contacts: Contact[]
@@ -71,7 +74,15 @@ export function restoreSnapshot(uin: number) {
 /// toasts so a "push" shows the sender/group name. Null when the cache is cold
 /// or the id isn't known.
 export function lookupContactName(viewerUin: number, uin: number): string | null {
-  return contactsCache.get(viewerUin)?.contacts.find((c) => c.uin === uin)?.nickname || null
+  const local = contactsCache.get(viewerUin)?.contacts.find((c) => c.uin === uin)?.nickname
+  if (local) return local
+  // A cross-island sender is not in the roster snapshot and never can be — the
+  // island's contacts table is a pair of local uins — so their toast read
+  // "#134" while every list in the app showed a name. §5e is what makes a
+  // fresh name available here at all, and it deliberately writes it to
+  // localStorage rather than memory precisely so this lookup, which runs with
+  // no live session behind it, sees the current one.
+  return findCrossIslandByUin(uin)?.nickname || null
 }
 
 /// Last-known presence of a contact, so a toast shows the sender's status dot
@@ -88,7 +99,12 @@ export function lookupContactAvatar(
   uin: number,
 ): { mediaId?: string | null; mediaKey?: string | null } | null {
   const c = contactsCache.get(viewerUin)?.contacts.find((x) => x.uin === uin)
-  return c ? { mediaId: c.avatar_media_id, mediaKey: c.avatar_media_key } : null
+  if (c) return { mediaId: c.avatar_media_id, mediaKey: c.avatar_media_key }
+  // §5e: a cross-island peer's picture was DEPOSITED to our island under the
+  // same id, so it renders from our own apiBase like any other — same fallback
+  // reason as the name above.
+  const ci = findCrossIslandByUin(uin)
+  return ci ? { mediaId: ci.avatarMediaId, mediaKey: ci.avatarMediaKey } : null
 }
 
 export function lookupGroupName(viewerUin: number, id: number): string | null {

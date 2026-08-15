@@ -18,7 +18,6 @@ import { RequestsModal } from '../components/RequestsModal'
 import { AddContactModal } from '../components/AddContactModal'
 import { NewsButton } from '../components/NewsPopover'
 import { PersonAvatar } from '../components/PersonAvatar'
-import { StatusIcon } from '../components/StatusIcon'
 import { StatusPickerButton } from '../components/StatusPicker'
 import { ThemeToggle } from '../components/ThemeToggle'
 import {
@@ -124,6 +123,12 @@ export function Contacts() {
   const favoriteGroups = useFavoriteGroups()
   const archiveGroups = useArchiveGroups()
   const collapsed = useCollapsedSections()
+  // My own names for people. Read up here with the other hooks — the cross-
+  // island section that uses it sits below an early return, and a hook called
+  // there would be a hook called conditionally. Renamed on import because
+  // `aliasFor` at module scope is the visited-islands GROUP alias, a different
+  // thing entirely.
+  const { aliasFor: ciAliasFor } = useContactAliases()
   // Subscribe to unread changes so the list re-sorts (unread-first) + the
   // section counts update when a message arrives. (Value itself unused here.)
   useTotalUnread()
@@ -460,12 +465,23 @@ export function Contacts() {
                   {/* The same greyed flower every other cross-island row uses
                       (StatusIcon's `crossIsland`), not a globe emoji: presence
                       does not cross islands, so the icon says "person, status
-                      unknown" exactly like it does further down the list. */}
-                  <span className="flex-none">
-                    <StatusIcon status="offline" size={20} crossIsland />
-                  </span>
+                      unknown" exactly like it does further down the list.
+                      §5e gives these rows a picture when the peer has deposited
+                      one — the flower stays gray behind it. */}
+                  <PersonAvatar
+                    status="offline"
+                    size={20}
+                    crossIsland
+                    mediaId={ci.avatarMediaId}
+                    mediaKey={ci.avatarMediaKey}
+                  />
                   <div className="flex-1 min-w-0">
-                    <div className="truncate font-medium">{ci.nickname || `${ci.uin}@${ci.host}`}</div>
+                    {/* My own name for them beats the one they push. §5e is a
+                        self-asserted name; an alias is a decision the user made
+                        on this device, and it has to survive their next rename. */}
+                    <div className="truncate font-medium">
+                      {ciAliasFor(ci.uin) || ci.nickname || `${ci.uin}@${ci.host}`}
+                    </div>
                     <div className="text-xs text-fg-dim font-mono truncate">
                       #{ci.uin} · {ci.host}
                     </div>

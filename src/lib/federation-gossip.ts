@@ -21,6 +21,8 @@ import { buildHomeIslandRecord, type HomeIslandRecord } from './federation'
 import { Api, peerBundleFrom, type Contact } from './api'
 import { assembleHomes } from './multihome'
 import { deliverCrossIsland } from './federation-send'
+import { isBlocked } from './crossisland-requests'
+import { listCrossIsland, type CrossIslandContact } from './crossisland-store'
 
 // Non-pushable envelope_type: a silent record sync must NOT buzz the contact's
 // device (the server only pushes message/system/secscreen).
@@ -63,21 +65,66 @@ async function pushToContact(identity: WebIdentity, contact: Contact, rec: HomeI
   }
 }
 
-/// Fan the current signed record out to every (non-blocked) contact. Call this
-/// AFTER a record change (add/remove backup, promote) — NOT on every boot
-/// (that would re-send to everyone for nothing). Fully best-effort: a failed
-/// contact just misses this push and re-learns the homes via the server gossip
-/// mirror or the next push. Returns how many contacts accepted the deposit.
+/// Seal `rec` to one CROSS-ISLAND contact and deposit it to their island(s).
+///
+/// ⚠⚠ These people were missing from the fan-out entirely, and they are the
+/// ones the record exists for. The audience below was `Api.contacts` — OUR OWN
+/// island's contact list — which by construction contains nobody on another
+/// island: a cross-island peer cannot be in it, because the island's contacts
+/// table is a pair of local uins with no host column. So the record that
+/// answers "where do I reach you when your island dies" was self-pushed to
+/// exactly the people who can already reach us the ordinary way, and to none
+/// of the people who cannot. Same family of hole as §5e itself.
+async function pushToCrossIsland(
+  identity: WebIdentity,
+  c: CrossIslandContact,
+  rec: HomeIslandRecord,
+): Promise<boolean> {
+  const env: HomeRecordEnvelope = { kind: 'homerec', rec }
+  try {
+    // Seals from the keys pinned at add-time and routes via the gossip mirror
+    // when their island cannot serve a card, so this survives the outage it is
+    // meant to prepare for. `homerec` (not `message`): a silent record sync
+    // must not buzz their device — the same reason the local branch above
+    // picks that type, and the deposit endpoint is type-agnostic on every
+    // island, so it carries across unchanged.
+    const res = await deliverCrossIsland(
+      identity,
+      c.host,
+      c.uin,
+      env,
+      { identityKey: c.identityKey, signingKey: c.signingKey },
+      HOMEREC_TYPE,
+    )
+    return res.delivered > 0
+  } catch {
+    return false
+  }
+}
+
+/// Fan the current signed record out to every (non-blocked) contact, on our
+/// island AND on others. Call this AFTER a record change (add/remove backup,
+/// promote) — NOT on every boot (that would re-send to everyone for nothing).
+/// Fully best-effort: a failed contact just misses this push and re-learns the
+/// homes via the server gossip mirror or the next push. Returns how many
+/// contacts accepted the deposit.
 export async function pushHomeRecordToContacts(identity: WebIdentity): Promise<number> {
   const rec = await buildOwnRecord(identity)
   if (!rec) return 0
-  let contacts: Contact[]
+  let contacts: Contact[] = []
   try {
     contacts = await Api.contacts(identity)
   } catch {
-    return 0
+    // Our own island being unreachable is not a reason to skip the cross-island
+    // half — it is a reason to do it. This used to `return 0` here, so the one
+    // failure that makes the record worth pushing also suppressed the push to
+    // the only audience that could still receive it.
   }
-  const targets = contacts.filter((c) => !c.blocked && c.uin !== identity.uin)
-  const results = await Promise.all(targets.map((c) => pushToContact(identity, c, rec)))
+  const local = contacts.filter((c) => !c.blocked && c.uin !== identity.uin)
+  const foreign = listCrossIsland().filter((c) => !isBlocked(c.uin, c.host))
+  const results = await Promise.all([
+    ...local.map((c) => pushToContact(identity, c, rec)),
+    ...foreign.map((c) => pushToCrossIsland(identity, c, rec)),
+  ])
   return results.filter(Boolean).length
 }

@@ -377,6 +377,12 @@ export function Chat() {
             signing_key: ci.signingKey,
             signal_identity_key: ci.signalIdentityKey ?? null,
             host: ci.host,
+            // §5e: the name and the picture here are whatever the peer last
+            // DEPOSITED, not the one-shot snapshot from their key card. The
+            // blob sits on our island (they PUT it there), so the header draws
+            // it exactly like a same-island one.
+            avatar_media_id: ci.avatarMediaId ?? null,
+            avatar_media_key: ci.avatarMediaKey ?? null,
           })
         } else if (peerUIN != null) {
           const list = await Api.contacts(identity)

@@ -104,6 +104,13 @@ export async function deliverCrossIsland(
   // we seal from these instead of depending on a live card fetch, and reach the
   // peer via the gossip mirror of their record. Omitted = legacy live-card-only.
   localKeys?: { identityKey: string; signingKey: string },
+  // Deposit type. Defaults to "message", which is what an actual message wants
+  // — the island pushes those. A silent sync (the `homerec` self-push) passes
+  // its own non-pushable type so it does not buzz the peer's device for a
+  // routing record they will never look at. The endpoint is type-agnostic on
+  // every island (`SealedSendIn.envelope_type` is a free string that is only
+  // matched against the pushable set), so this needs no server change.
+  envelopeType = 'message',
 ): Promise<CrossIslandResult> {
   // Prefer a fresh card (catches key rotation), but fall back to the locally-
   // pinned keys so a dead/blocked peer island doesn't break the send outright.
@@ -128,7 +135,7 @@ export async function deliverCrossIsland(
       const res = await fetch(`https://${home.host}/messages/sealed`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to_uin: home.uin, envelope_type: 'message', payload: sealed }),
+        body: JSON.stringify({ to_uin: home.uin, envelope_type: envelopeType, payload: sealed }),
       })
       if (res.ok) delivered++
     } catch {

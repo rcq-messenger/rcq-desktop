@@ -17,6 +17,7 @@ import { Api, type UserInfo } from '../lib/api'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
 import { getCrossIsland } from '../lib/crossisland-store'
+import { pushProfileToCrossIslandContacts } from '../lib/crossisland-profile'
 import { useContactAliases } from '../lib/local-store'
 import { lookupContactName } from '../lib/contacts-cache'
 import { uploadEncryptedImage } from '../lib/media'
@@ -68,6 +69,9 @@ export function Profile() {
         status: 'offline',
         status_message: ci?.statusMessage ?? null,
         gender: ci?.gender ?? null,
+        // §5e: their current name + picture, as THEY last deposited it.
+        avatar_media_id: ci?.avatarMediaId ?? null,
+        avatar_media_key: ci?.avatarMediaKey ?? null,
       } as UserInfo)
       return
     }
@@ -141,6 +145,14 @@ export function Profile() {
       })
       setInfo(updated)
       setDraft({ ...updated })
+      // §5e: the island just told every same-island contact (contact_renamed
+      // over WS). It cannot tell a contact on ANOTHER island — its contacts
+      // table is a pair of local uins with no host column, so that person is
+      // not in the audience and cannot be. We are the only thing that can, so
+      // push our new card to each of them ourselves. Fire-and-forget: a
+      // profile save must not wait on, or fail because of, someone else's
+      // island.
+      void pushProfileToCrossIslandContacts(identity!)
       // The form stays on screen (it IS the page now), so say the save landed
       // instead of leaving the person looking at an unchanged screen.
       toast(t('profile.saved'))
@@ -412,6 +424,11 @@ function EditView({
         return
       }
       setDraft({ ...draft, avatar_media_id: up.mediaId, avatar_media_key: up.keyB64 })
+      // §5e: a picture is DEPOSITED to a cross-island contact's island, not
+      // pulled from ours — so the new blob has to be copied there and the key
+      // handed over in a sealed envelope. Only after the read-back above, so we
+      // never hand out a picture this island did not actually keep.
+      void pushProfileToCrossIslandContacts(identity)
     } catch {
       toast(t('profile.picture.failed'), 'error')
     } finally {
@@ -424,6 +441,10 @@ function EditView({
     try {
       await Api.updateProfile(identity, { avatar_media_id: '', avatar_media_key: '' })
       setDraft({ ...draft, avatar_media_id: null, avatar_media_key: null })
+      // §5e: removing the picture is a profile change like any other, and the
+      // envelope is a SNAPSHOT — the one that now carries no avatar is what
+      // tells a cross-island contact to drop the copy sitting on their island.
+      void pushProfileToCrossIslandContacts(identity)
     } finally {
       setPicBusy(false)
     }

@@ -15,9 +15,10 @@ import { aliasFor, drainVisitedQueues, listVisitedIslands } from './visited-isla
 import { getCrossIsland } from './crossisland-store'
 import { holdRequestMessage } from './crossisland-requests'
 import { handleContactReq } from './crossisland-contactreq'
+import { handleProfile, pushProfileTo } from './crossisland-profile'
 import { handleGmsg, handleSkdm, handleSknack } from './sender-key-receive'
 import { Api } from './api'
-import type { ContactReqEnvelope, WebIdentity } from './crypto'
+import type { ContactReqEnvelope, ProfileEnvelope, WebIdentity } from './crypto'
 
 // Hydrate the incoming store once per account per app load. Both receive paths
 // (the primary connect-drain and the backup-island poll, which runs even when
@@ -83,6 +84,28 @@ function route(
   if ((envelope as { kind?: string }).kind === 'contactreq') {
     if (senderHost && senderHost !== ownHost && senderUIN !== myUin) {
       handleContactReq(senderUIN, senderHost, envelope as ContactReqEnvelope)
+      // §5e: they just accepted us, so from this moment they HOLD us — and all
+      // they hold is whatever their key-card fetch caught at add time. Hand
+      // them our current name and picture now rather than making them wait for
+      // the next time we happen to edit the profile.
+      if (
+        identity &&
+        (envelope as ContactReqEnvelope).act === 'accept' &&
+        getCrossIsland(senderUIN, senderHost)
+      ) {
+        void pushProfileTo(identity, senderHost, senderUIN)
+      }
+    }
+    return
+  }
+  // §5e cross-island profile refresh: the peer's own name/picture, pushed by
+  // them because nothing else can refresh it. Same placement rule as §5f above
+  // — ABOVE the quarantine, and never into the message store. Display fields
+  // only: `handleProfile` cannot reach a pinned key, and a `profile` from
+  // someone we do not hold as an accepted contact is dropped on the floor.
+  if ((envelope as { kind?: string }).kind === 'profile') {
+    if (senderHost && senderHost !== ownHost && senderUIN !== myUin) {
+      handleProfile(senderUIN, senderHost, envelope as ProfileEnvelope)
     }
     return
   }

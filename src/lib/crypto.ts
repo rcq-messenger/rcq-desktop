@@ -258,6 +258,37 @@ export interface ContactReqEnvelope {
   note?: string | null
 }
 
+/// Cross-island profile refresh (kind "profile", spec §5e). A cross-island
+/// contact's name and picture were read exactly ONCE — from their open key card
+/// at add-time — and nothing ever refreshed them, because the island's
+/// `contacts` table has a pair of local uins and no host column, so a holder on
+/// another island is not in the `contact_renamed` audience and cannot be. This
+/// envelope is the refresh, pushed by the person who changed their profile.
+///
+/// ⚠ Wire keys are SNAKE_CASE (`avatar_media_id` / `avatar_media_key`), unlike
+/// the `photo` envelope's `mediaID`/`mediaKey`. The field names here are the
+/// wire names on purpose: the receive path is `JSON.parse(...) as Envelope`, so
+/// a camelCase field name in TypeScript would type-check against an object that
+/// never carries that key — the exact shape of the bug that made web rooms send
+/// `to` while the island read `to_uin` and every offer was dropped in silence.
+///
+/// ⚠ A SNAPSHOT, not a patch: it always states the sender's whole current
+/// display state, so an absent picture means "I have no picture" (i.e. clear
+/// the one you hold), not "unchanged". Optionals are OMITTED rather than sent
+/// as null, matching `contactreq`'s `note`; decoders tolerate both.
+///
+/// ⚠ Purely cosmetic: a `profile` never writes a contact's pinned
+/// identity/signing keys. Those are the anti-impersonation anchor (§2.4), and a
+/// self-asserted envelope that could move them would BE the impersonation path.
+export interface ProfileEnvelope {
+  kind: 'profile'
+  id: string // uppercase UUID
+  ts: number // sender epoch SECONDS (matches the `call` / `contactreq` `ts`)
+  nickname: string
+  avatar_media_id?: string | null
+  avatar_media_key?: string | null // base64 AES-256 key for the deposited blob
+}
+
 export type Envelope =
   | TextEnvelope
   | ReactionEnvelope
@@ -273,6 +304,7 @@ export type Envelope =
   | SkdmEnvelope
   | SknackEnvelope
   | ContactReqEnvelope
+  | ProfileEnvelope
 
 /// Identity material a web session needs to send v=1 envelopes.
 /// Bundled by the iOS app and shipped via the linking QR. Web reads
@@ -405,6 +437,20 @@ export function envelopeToObject(env: Envelope): Record<string, unknown> {
     obj.act = env.act
     obj.nickname = env.nickname
     if (env.note != null && env.note !== '') obj.note = env.note
+  } else if (env.kind === 'profile') {
+    // §5e. Same field order as the spec block and the same optional rule as
+    // `note` above — OMITTED when absent, never `null` — so the bytes match
+    // iOS/Android for the same profile. The avatar pair is all-or-nothing: an
+    // id without its key names a blob nobody can open, and the key IS the
+    // access decision (`GET /media/{id}` has no auth at all), so half a pair
+    // is never worth putting on the wire.
+    obj.id = env.id
+    obj.ts = env.ts
+    obj.nickname = env.nickname
+    if (env.avatar_media_id && env.avatar_media_key) {
+      obj.avatar_media_id = env.avatar_media_id
+      obj.avatar_media_key = env.avatar_media_key
+    }
   } else if (env.kind === 'carbon') {
     // Multi-device carbon: include only the destination that's set
     // (encodeIfPresent style, matches iOS/Android), nest the original

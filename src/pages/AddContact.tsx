@@ -13,6 +13,7 @@ import { parseAddress } from '../lib/federation'
 import { resolvePeerHomes } from '../lib/federation-resolve'
 import { fetchPeerKeyCard } from '../lib/federation-send'
 import { saveCrossIsland } from '../lib/crossisland-store'
+import { sendContactRequest } from '../lib/crossisland-contactreq'
 
 /// [embedded] drops the page chrome so the same body can live inside a modal.
 /// The founder's rule for the desktop: fewer full-page detours, more windows
@@ -72,6 +73,19 @@ export function AddContact({ embedded = false }: { embedded?: boolean } = {}) {
         statusMessage: card.status_message ?? null,
       })
       void resolved // verified flag available for future UX
+      // §5f: the local row above is only OUR half. Tell the peer, by depositing
+      // a sealed `contactreq` to their primary island — without this the add is
+      // silent, they never see a request, and a cross-island call to them is
+      // gated on a mutual state that can never be reached.
+      // ⚠ The local row is written first and left alone on failure: it holds the
+      // keys pinned from their card, and a network hiccup must not discard them.
+      const sent = await sendContactRequest(identity!, crossIsland.host, crossIsland.uin)
+      if (!sent) {
+        // Do not claim a request was sent when only a local row exists — that
+        // false claim is what turned this design gap into a bug report.
+        setError(t('add.ci.undelivered'))
+        return
+      }
       navigate(`/chat/${crossIsland.uin}?i=${encodeURIComponent(crossIsland.host)}`)
     } catch (e) {
       setError(e instanceof Error ? e.message : t('add.error'))

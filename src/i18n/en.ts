@@ -375,9 +375,14 @@ export const en: Record<string, string> = {
   'pending.error': 'Could not load pending requests.',
   'pending.accept': 'Accept',
   'pending.decline': 'Decline',
-  'ci.section': 'Message requests (other islands)',
+  'ci.section': 'Requests from other islands',
   'ci.block': 'Block',
   'ci.wants': 'wants to message you ({n})',
+  'ci.wants_contact': 'wants to add you as a contact',
+  'ci.accept_undelivered':
+    'Accepted here. Their island did not take the reply, so they will not see you as a contact until it can be reached.',
+  'add.ci.undelivered':
+    'Added on this device. Their island did not take the request, so they will not see it until it can be reached.',
 
   // Add contact
   'add.title': 'Add contact',

@@ -14,9 +14,10 @@ import { applyPushedRecord, drainBackupQueues, listBackupHomes } from './multiho
 import { aliasFor, drainVisitedQueues, listVisitedIslands } from './visited-islands'
 import { getCrossIsland } from './crossisland-store'
 import { holdRequestMessage } from './crossisland-requests'
+import { handleContactReq } from './crossisland-contactreq'
 import { handleGmsg, handleSkdm, handleSknack } from './sender-key-receive'
 import { Api } from './api'
-import type { WebIdentity } from './crypto'
+import type { ContactReqEnvelope, WebIdentity } from './crypto'
 
 // Hydrate the incoming store once per account per app load. Both receive paths
 // (the primary connect-drain and the backup-island poll, which runs even when
@@ -71,6 +72,18 @@ function route(
   if ((envelope as { kind?: string }).kind === 'homerec') {
     const rec = (envelope as { rec?: unknown }).rec
     if (senderSigningKey && rec != null) applyPushedRecord(senderUIN, senderSigningKey, rec)
+    return
+  }
+  // §5f cross-island contact request / accept / decline. MUST sit above the
+  // quarantine below: that quarantine swallows everything from an unaccepted
+  // sender into "message requests", and a contactreq from an unaccepted sender
+  // is the whole point of the envelope — held as a message it would be invisible
+  // as the request it is. Consent metadata only: never the message store.
+  // Same-island senders are ignored here; they have the server's /contacts flow.
+  if ((envelope as { kind?: string }).kind === 'contactreq') {
+    if (senderHost && senderHost !== ownHost && senderUIN !== myUin) {
+      handleContactReq(senderUIN, senderHost, envelope as ContactReqEnvelope)
+    }
     return
   }
   if (typeof groupId === 'number') {

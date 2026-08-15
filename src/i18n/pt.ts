@@ -339,9 +339,14 @@ export const pt: Record<string, string> = {
   'pending.error': 'Não foi possível carregar as solicitações.',
   'pending.accept': 'Aceitar',
   'pending.decline': 'Recusar',
-  'ci.section': 'Pedidos de mensagem (outras ilhas)',
+  'ci.section': 'Pedidos de outras ilhas',
   'ci.block': 'Bloquear',
   'ci.wants': 'quer te mandar mensagem ({n})',
+  'ci.wants_contact': 'quer te adicionar aos contatos',
+  'ci.accept_undelivered':
+    'Aceito aqui. A ilha dessa pessoa não recebeu a resposta, então ela não vai te ver como contato até dar para alcançar a ilha.',
+  'add.ci.undelivered':
+    'Adicionado neste dispositivo. A ilha dessa pessoa não recebeu o pedido, então ela não vai ver o pedido até dar para alcançar a ilha.',
   // Add contact
   'add.title': 'Adicionar contato',
   'add.placeholder': 'Buscar #UIN, apelido…',

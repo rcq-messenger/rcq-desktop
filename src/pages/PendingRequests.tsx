@@ -11,6 +11,7 @@ import { useIdentity } from '../lib/identity-context'
 import { useWS } from '../lib/ws'
 import { listRequests, clearRequest, blockRequest, type CrossIslandRequest } from '../lib/crossisland-requests'
 import { saveCrossIsland } from '../lib/crossisland-store'
+import { sendContactAccept, sendContactDecline } from '../lib/crossisland-contactreq'
 import { fetchPeerKeyCard } from '../lib/federation-send'
 import { addIncoming, beginCatchUp, endCatchUp } from '../lib/incoming-store'
 
@@ -57,9 +58,36 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
         endCatchUp()
       }
       setCi(listRequests())
+      // §5f symmetry: acceptance is only half-done on this device. Deposit an
+      // `accept` back to the requester's island so BOTH sides hold the other as
+      // an accepted cross-island contact — that mutual state is the precondition
+      // §5d call signalling checks and §5e profile refresh assumes.
+      const acked = await sendContactAccept(identity!, r.host, r.uin)
+      if (!acked) {
+        // Accepted here regardless (the row + pinned keys are written), but say
+        // so plainly rather than implying the other side knows.
+        setError(t('ci.accept_undelivered'))
+        return
+      }
       navigate(`/chat/${r.uin}?i=${encodeURIComponent(r.host)}`)
     } catch {
       setError(t('pending.error'))
+    } finally {
+      setCiActing(null)
+    }
+  }
+
+  /// §5f decline: drop the row here and tell them, so their pending row goes
+  /// too instead of waiting forever. Offered only for an actual contact request
+  /// — a quarantined MESSAGE has no request to answer, and replying to one would
+  /// confirm to a stranger that their deposit landed in front of a human.
+  async function declineCI(r: CrossIslandRequest) {
+    const tag = `${r.uin}@${r.host}`
+    setCiActing(tag)
+    clearRequest(r.uin, r.host)
+    setCi(listRequests())
+    try {
+      await sendContactDecline(identity!, r.host, r.uin)
     } finally {
       setCiActing(null)
     }
@@ -92,7 +120,17 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
     const off = ws.on('contact_request', () => {
       void refresh()
     })
-    return off
+    // A §5f cross-island request arrives as an ordinary sealed `message` push,
+    // not as `contact_request` — the island cannot know what is inside it — and
+    // the receive loop files it into a local store asynchronously (decrypt
+    // first). So this list watches the STORE rather than the socket: hooking
+    // the push directly would re-read before the decrypt that writes the row
+    // has finished. Cheap enough: one localStorage read while the list is open.
+    const poll = setInterval(() => setCi(listRequests()), 3000)
+    return () => {
+      off()
+      clearInterval(poll)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [identity?.uin])
 
@@ -136,14 +174,27 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
               {ci.map((r) => {
                 const tag = `${r.uin}@${r.host}`
                 const firstText = r.msgs.find((m) => m.kind === 'text') as { text?: string } | undefined
+                // A §5f contact request says what it wants and who is asking;
+                // a quarantined message row keeps showing its first message.
+                const subtitle = r.contactReq
+                  ? r.note || t('ci.wants_contact')
+                  : firstText?.text || t('ci.wants', { n: r.msgs.length })
                 return (
                   <li key={tag} className="p-4">
                     <div className="flex items-center justify-between gap-3">
                       <div className="min-w-0">
-                        <div className="font-mono text-sm truncate">{tag}</div>
-                        <div className="text-xs text-fg-dim truncate">
-                          {firstText?.text || t('ci.wants', { n: r.msgs.length })}
-                        </div>
+                        {/* The island tag always stays visible: a self-asserted
+                            name from another island must never be able to pass
+                            as a local contact (§5e). */}
+                        {r.nickname ? (
+                          <>
+                            <div className="font-medium truncate">{r.nickname}</div>
+                            <div className="font-mono text-xs text-fg-dim truncate">{tag}</div>
+                          </>
+                        ) : (
+                          <div className="font-mono text-sm truncate">{tag}</div>
+                        )}
+                        <div className="text-xs text-fg-dim truncate">{subtitle}</div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         <button
@@ -152,6 +203,15 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
                         >
                           {t('ci.block')}
                         </button>
+                        {r.contactReq && (
+                          <button
+                            onClick={() => void declineCI(r)}
+                            disabled={ciActing === tag}
+                            className="px-3 h-9 rounded-md bg-field text-sm font-medium hover:bg-line/50 disabled:opacity-40 transition-colors"
+                          >
+                            {t('pending.decline')}
+                          </button>
+                        )}
                         <button
                           onClick={() => void acceptCI(r)}
                           disabled={ciActing === tag}

@@ -339,9 +339,12 @@ export const zh: Record<string, string> = {
   'pending.error': '无法加载好友请求。',
   'pending.accept': '接受',
   'pending.decline': '拒绝',
-  'ci.section': '私信请求（其他岛）',
+  'ci.section': '来自其他岛的请求',
   'ci.block': '拉黑',
   'ci.wants': '想给你发消息（{n}）',
+  'ci.wants_contact': '想把你加为联系人',
+  'ci.accept_undelivered': '这边已接受。对方的岛没有收下回复，在能联系上那个岛之前，对方不会把你看作联系人。',
+  'add.ci.undelivered': '已添加到本设备。对方的岛没有收下请求，在能联系上那个岛之前，对方看不到这个请求。',
   // Add contact
   'add.title': '添加联系人',
   'add.placeholder': '搜索 #UIN、昵称…',

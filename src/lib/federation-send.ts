@@ -42,6 +42,44 @@ export async function fetchPeerKeyCard(host: string, uin: number): Promise<PeerK
   }
 }
 
+/// Deposit ONE sealed envelope to a peer's PRIMARY island and nowhere else.
+///
+/// The counterpart to `deliverCrossIsland` for signalling-shaped envelopes
+/// (§5d call signals, §5f contact requests). ⚠ Deliberately NO fan-out over
+/// multihome backup homes: a backup mailbox is polled on a ~30s timer, so a
+/// copy landing there buys nothing for something the peer acts on live, and it
+/// duplicates a consent record into a mailbox the peer may never read. If the
+/// primary is down the request simply has not been delivered yet — which is
+/// the honest state, and the caller says so rather than claiming it was sent.
+///
+/// Returns true when the primary island accepted the deposit. Never throws.
+export async function depositSealedToPrimary(
+  sender: WebIdentity,
+  peerHost: string,
+  peerUin: number,
+  envelope: Envelope,
+  // Locally-pinned keys from an existing cross-island contact, used when the
+  // peer's island cannot serve a fresh card. Read-only here: sealing to a key
+  // never writes one.
+  localKeys?: { identityKey: string; signingKey: string },
+): Promise<boolean> {
+  try {
+    const card = await fetchPeerKeyCard(peerHost, peerUin)
+    const identityKey = card?.identity_key || localKeys?.identityKey
+    const signingKey = card?.signing_key || localKeys?.signingKey || ''
+    if (!identityKey) return false
+    const sealed = encryptV1(envelope, sender, { uin: peerUin, identityKey, signingKey })
+    const res = await fetch(`https://${peerHost}/messages/sealed`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to_uin: peerUin, envelope_type: 'message', payload: sealed }),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
 export interface CrossIslandResult {
   /// Number of island homes the sealed envelope was accepted by (HTTP 2xx).
   delivered: number

@@ -22,6 +22,14 @@
 // ICE candidate is a JSON STRING whose key for the candidate line is `sdp`.
 // Both are easy to get subtly wrong and neither fails loudly — you just get a
 // call that rings and never connects.
+//
+// ⚠⚠ ALL of the above is the SAME-ISLAND path. Every one of those frames names
+// the peer by a bare `to_uin`, and the island that receives it resolves that
+// number LOCALLY — so sending one for `1234@is2.rcq.app` rang our own #1234, a
+// stranger. A peer on another island takes the §5d road instead: the identical
+// signal, sealed into a `kind:"call"` envelope and deposited to their island
+// (`crossisland-call.ts`). `signal()` below is the fork in the road, and it
+// forks on ONE thing — whether the live call's peer has a host.
 
 import {
   createContext,
@@ -35,6 +43,8 @@ import {
 } from 'react'
 import { Api } from './api'
 import { alwaysRelay } from './call-privacy'
+import { dropCrossIslandIce, sendCrossIslandSignal } from './crossisland-call'
+import { getCrossIsland } from './crossisland-store'
 import { logCall } from './outgoing-store'
 import { notifyDesktop, raiseDesktopWindow } from './desktop'
 import { useI18n } from './i18n-context'
@@ -51,6 +61,10 @@ export interface CallInfo {
   peerName: string
   media: CallMedia
   outgoing: boolean
+  /// The peer's island, when it is not ours (§5d). Set for the whole life of
+  /// the call, on both sides, and it is what routes every signal: absent means
+  /// the websocket, present means a sealed deposit to that host.
+  peerHost?: string | null
 }
 
 /// How long an unanswered call rings before it gives up on its own. The caller
@@ -91,7 +105,9 @@ function logFinishedCall(info: CallInfo | null, reason: string, connectedAt: num
             : 'call.log.ended'
   // The keys are resolved at RENDER time, not here: the row outlives the
   // language the app happened to be in when the call ended.
-  logCall(info.peerUin, `${parts[0]}|${parts[1]}|${tail}`, missed, Date.now())
+  // The island goes on the row so a call with `1234@is2.rcq.app` is not filed
+  // in the conversation of a local #1234 — one thread key, two different people.
+  logCall(info.peerUin, `${parts[0]}|${parts[1]}|${tail}`, missed, Date.now(), info.peerHost)
 }
 
 const RING_TIMEOUT_MS = 60_000
@@ -132,7 +148,10 @@ interface CallCtx {
   /// call refused to start instead of just vanishing.
   deviceError: string | null
   callable: boolean
-  start: (peerUin: number, peerName: string, media: CallMedia) => void
+  /// `peerHost` is the peer's island when they are not on ours (§5d) — the
+  /// `?i=<host>` a cross-island thread carries. Omitted / null = our island,
+  /// which is the same-island call this has always placed.
+  start: (peerUin: number, peerName: string, media: CallMedia, peerHost?: string | null) => void
   accept: () => void
   decline: () => void
   hangUp: () => void
@@ -150,6 +169,27 @@ export function useCall(): CallCtx {
   const ctx = useContext(Ctx)
   if (!ctx) throw new Error('useCall must be used inside <CallProvider>')
   return ctx
+}
+
+/// The live call's signal handler, published while <CallProvider> is mounted so
+/// the receive loop can push a decrypted §5d envelope into it. A plain module
+/// variable rather than a context because the receiver is not a component tree
+/// away — it is `MessageReceiver`, a sibling that renders nothing.
+let crossIslandSink: ((ev: { type: string; [k: string]: unknown }) => void) | null = null
+
+/// Hand one decrypted cross-island call signal to the call state machine
+/// (§5d). `ev` is in the SAME shape a websocket `call_*` frame arrives in —
+/// `from_uin`, `call_id`, and the signal's own fields — plus `from_host`, which
+/// is what tells the machine to answer back over a sealed deposit rather than
+/// down our own island's socket.
+///
+/// The §5d gates (accepted contact, not blocked, offer not stale) are applied
+/// by the CALLER, before this: they are consent and freshness rules about the
+/// envelope, not about WebRTC, and the state machine below has no business
+/// knowing them. A signal for a call this client does not have open simply
+/// no-ops here, exactly as the websocket one does.
+export function deliverCrossIslandCallSignal(ev: { type: string; [k: string]: unknown }): void {
+  crossIslandSink?.(ev)
 }
 
 /// Everything the live call owns that must NOT be React state: the WS handler
@@ -260,9 +300,52 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const tRef = useRef(t)
   tRef.current = t
 
-  const signal = useCallback((type: string, toUin: number, callId: string, extra: Record<string, unknown> = {}) => {
-    sendRef.current({ type, to_uin: toUin, call_id: callId, ...extra })
-  }, [])
+  /// Put one signal on whichever road reaches the peer, and say whether it got
+  /// there. §5d: our own island's socket for a local peer, a sealed deposit to
+  /// the peer's island for a foreign one.
+  ///
+  /// The host is normally read off the live call, which is the only peer this
+  /// client ever signals — every caller below addresses `l.info`. `hostOverride`
+  /// exists for the one signal that is NOT about the live call: the "busy"
+  /// refusal we owe a second caller while already on a call.
+  ///
+  /// ⚠ The WS branch is fire-and-forget and reports true: a socket send has no
+  /// acknowledgement, and claiming otherwise would make the two roads report
+  /// success on different terms. Only the deposit can actually tell us.
+  const dispatch = useCallback(
+    async (
+      type: string,
+      toUin: number,
+      callId: string,
+      extra: Record<string, unknown> = {},
+      hostOverride?: string | null,
+    ): Promise<boolean> => {
+      const l = live.current
+      const host =
+        hostOverride !== undefined
+          ? hostOverride
+          : l.info && l.info.peerUin === toUin
+            ? l.info.peerHost ?? null
+            : null
+      if (!host) {
+        sendRef.current({ type, to_uin: toUin, call_id: callId, ...extra })
+        return true
+      }
+      const id = identityRef.current
+      if (!id) return false
+      return sendCrossIslandSignal(id, host, toUin, type, callId, extra)
+    },
+    [],
+  )
+
+  /// Fire-and-forget `dispatch`, for the signals whose delivery nothing waits
+  /// on (ICE, hangups, renegotiation). The offer is the exception and awaits.
+  const signal = useCallback(
+    (type: string, toUin: number, callId: string, extra: Record<string, unknown> = {}, hostOverride?: string | null) => {
+      void dispatch(type, toUin, callId, extra, hostOverride)
+    },
+    [dispatch],
+  )
 
   const clearTimers = useCallback(() => {
     const l = live.current
@@ -289,6 +372,11 @@ export function CallProvider({ children }: { children: ReactNode }) {
         /* already closed */
       }
       const had = l.info
+      // §5d: any cross-island candidates still waiting on the batch timer
+      // belong to a call that is over. Dropped rather than flushed — sending
+      // them now would deposit (and, on a closed app, RING) for a call that
+      // has already been torn down on both sides.
+      if (had?.peerHost) dropCrossIslandIce(had.id)
       // The record this call leaves in the conversation. Written here, at the
       // single junction every ending passes through, and while `connectedAt`
       // and `l.info` are still readable — a moment later they are null.
@@ -508,7 +596,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
   // ── outgoing ──────────────────────────────────────────────────────────
 
   const start = useCallback(
-    (peerUin: number, peerName: string, media: CallMedia) => {
+    (peerUin: number, peerName: string, media: CallMedia, peerHost?: string | null) => {
       if (live.current.info || phase === 'outgoing' || phase === 'incoming' || phase === 'connected') return
       const call: CallInfo = {
         id: crypto.randomUUID(),
@@ -516,6 +604,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
         peerName,
         media,
         outgoing: true,
+        // §5d. Pinned onto the call at its birth, so every later signal — ICE,
+        // the hangup, a video upgrade — takes the same road as the offer, even
+        // though none of them is handed a host.
+        peerHost: peerHost || null,
       }
       live.current.info = call
       setDeviceError(null)
@@ -544,7 +636,21 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
           const offer = await pc.createOffer()
           await pc.setLocalDescription(offer)
-          signal('call_offer', peerUin, call.id, { media, sdp: offer.sdp })
+          const sent = await dispatch('call_offer', peerUin, call.id, { media, sdp: offer.sdp })
+          // The user may have hung up while the deposit was in flight.
+          if (live.current.info?.id !== call.id) return
+          // §5d: unlike a socket send, a deposit tells us whether it landed. A
+          // peer island that is down or unreachable means the offer does not
+          // exist anywhere, so there is nothing to ring — say so now instead of
+          // playing ringback into the void for a full minute.
+          // `teardown`, not `endLocally`: there is nobody to hang up ON. The
+          // offer never reached their island, so no call exists at the other
+          // end, and a `call_end` would only be a second deposit to the same
+          // host that just refused the first.
+          if (!sent) {
+            teardown('unavailable')
+            return
+          }
           startRingback()
           live.current.ringTimer = setTimeout(() => endLocally('no_answer'), RING_TIMEOUT_MS)
         } catch (e) {
@@ -554,7 +660,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
         }
       })()
     },
-    [capture, endLocally, newPeerConnection, phase, signal],
+    [capture, dispatch, endLocally, newPeerConnection, phase, teardown],
   )
 
   // ── incoming ──────────────────────────────────────────────────────────
@@ -732,6 +838,11 @@ export function CallProvider({ children }: { children: ReactNode }) {
       const from = Number(ev.from_uin ?? 0)
       const callId = String(ev.call_id ?? '')
       const sdp = typeof ev.sdp === 'string' ? ev.sdp : ''
+      // §5d: present only on a signal that arrived as a sealed envelope, and
+      // then it is the island the caller lives on. Everything we send back
+      // about this call has to go there, because our own island would resolve
+      // their number as one of its own.
+      const fromHost = typeof ev.from_host === 'string' && ev.from_host ? ev.from_host : null
       const l = live.current
 
       switch (ev.type) {
@@ -739,17 +850,36 @@ export function CallProvider({ children }: { children: ReactNode }) {
           if (!from || !sdp) return
           // Busy: the server guards this too, but it only knows about calls it
           // registered — a second offer that races ours still has to be told.
+          // ⚠ Routed, not `sendRef`: a cross-island caller is not reachable
+          // down our socket, and telling the wrong #1234 that we are busy is
+          // the same defect §5d exists to close, in miniature.
           if (l.info) {
-            sendRef.current({ type: 'call_end', to_uin: from, call_id: callId, reason: 'busy' })
+            signal('call_end', from, callId, { reason: 'busy' }, fromHost)
             return
           }
           const media: CallMedia = ev.media === 'video' ? 'video' : 'audio'
+          // ⚠ A cross-island caller's name comes from the card we pinned when
+          // they were added, and it is known SYNCHRONOUSLY — so the ringing
+          // sheet and the desktop notification both carry it from the first
+          // frame. It must never come from `/users/{uin}/info` (the same-island
+          // lookup below): that endpoint answers about OUR island's #1234, so
+          // asking it would print a local stranger's name over a caller from
+          // somewhere else — the wrong-person mix-up §5d exists to end, in the
+          // label this time instead of the wire.
+          const known = fromHost ? getCrossIsland(from, fromHost) : null
+          // The nameless fallback carries the ISLAND for a cross-island caller.
+          // A bare `#1234` is how a LOCAL number is written everywhere in this
+          // app, so using it for someone on another island reads as a person
+          // the user may actually know — the wrong-person mix-up again, this
+          // time in the label. (The gate upstream means `known` is non-null
+          // here; only a card that carried no nickname reaches this.)
           const call: CallInfo = {
             id: callId,
             peerUin: from,
-            peerName: `#${from}`,
+            peerName: known?.nickname || (fromHost ? `#${from}@${fromHost}` : `#${from}`),
             media,
             outgoing: false,
+            peerHost: fromHost,
           }
           l.info = call
           l.pendingOffer = sdp
@@ -765,9 +895,11 @@ export function CallProvider({ children }: { children: ReactNode }) {
             call.peerName,
             tRef.current(media === 'video' ? 'call.status.incoming_video' : 'call.status.incoming'),
           )
-          // The offer carries only a number. Put a name on the ringing sheet
-          // if the island will tell us one, but never hold up the ring for it.
-          if (identityRef.current) {
+          // A same-island offer carries only a number. Put a name on the
+          // ringing sheet if OUR island will tell us one, but never hold up the
+          // ring for it. (A cross-island caller was already named above, from
+          // the pinned card, and must not be asked about here.)
+          if (!fromHost && identityRef.current) {
             void Api.userInfo(identityRef.current, from)
               .then((u) => {
                 if (live.current.info?.id !== call.id || !u.nickname) return
@@ -807,10 +939,26 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
         case 'call_ice': {
           if (!l.info || l.info.id !== callId) return
-          const raw = typeof ev.candidate === 'string' ? ev.candidate : ''
-          if (!raw) return
-          if (l.pc?.remoteDescription) void addRemoteIce(l.pc, raw)
-          else l.pendingIce.push(raw)
+          // A cross-island sender batches a burst of trickle candidates into
+          // ONE signal (`candidates` = a JSON array), because each deposit is a
+          // round trip and, on a closed app, a ring. Android and iOS both send
+          // and read this shape; `candidate` stays the single-candidate form
+          // every same-island signal uses.
+          const batch: string[] = []
+          if (typeof ev.candidates === 'string') {
+            try {
+              const arr = JSON.parse(ev.candidates) as unknown
+              if (Array.isArray(arr)) for (const c of arr) if (typeof c === 'string' && c) batch.push(c)
+            } catch {
+              /* a batch we cannot parse is not a call-ending event — ICE has others */
+            }
+          } else if (typeof ev.candidate === 'string' && ev.candidate) {
+            batch.push(ev.candidate)
+          }
+          for (const raw of batch) {
+            if (l.pc?.remoteDescription) void addRemoteIce(l.pc, raw)
+            else l.pendingIce.push(raw)
+          }
           return
         }
 
@@ -915,7 +1063,16 @@ export function CallProvider({ children }: { children: ReactNode }) {
       'call_ice_restart_answer',
     ]
     const offs = types.map((t) => on(t, handle))
-    return () => offs.forEach((off) => off())
+    // §5d: a decrypted `kind:"call"` envelope re-enters the SAME state machine
+    // as a live WS signal — one set of rules for both roads, so a cross-island
+    // call cannot drift away from the same-island one it is a copy of. The
+    // receiver (`message-receiver.tsx`) applies the §5d gates first and hands
+    // over a frame in exactly the WS shape, plus `from_host`.
+    crossIslandSink = handle
+    return () => {
+      offs.forEach((off) => off())
+      if (crossIslandSink === handle) crossIslandSink = null
+    }
   }, [armConnectTimeout, endLocally, flushIce, on, rollbackUpgrade, signal, teardown])
 
   // Signing out mid-call must not leave the microphone live.
@@ -945,8 +1102,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
       cameraOff,
       incomingUpgrade,
       deviceError,
-      // Calls ride the websocket and nothing else — there is no REST fallback
-      // for signalling, so an offline client must not offer a call button.
+      // Outbound signalling can leave over HTTP now (§5d), but the peer's
+      // REPLIES still come back down our own island's socket — their island
+      // deposits into ours, ours pushes it to us. No socket, no answer, so an
+      // offline client still must not offer a call button, cross-island or not.
       callable: connected && !!identity,
       start,
       accept,

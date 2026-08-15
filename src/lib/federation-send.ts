@@ -62,17 +62,53 @@ export async function depositSealedToPrimary(
   // peer's island cannot serve a fresh card. Read-only here: sealing to a key
   // never writes one.
   localKeys?: { identityKey: string; signingKey: string },
+  // Outer deposit type. "message" (the default) makes the island push an
+  // ordinary message alert; "call" (§5d) makes it RING instead — same routing,
+  // same queue row, only the wake differs. Nothing else about the deposit
+  // changes, and the INNER envelope is untouched either way: the island sees an
+  // opaque sealed blob and learns only that a call is arriving for this user.
+  envelopeType: 'message' | 'call' = 'message',
+): Promise<boolean> {
+  const card = await fetchPeerKeyCard(peerHost, peerUin)
+  const identityKey = card?.identity_key || localKeys?.identityKey
+  if (!identityKey) return false
+  const signingKey = card?.signing_key || localKeys?.signingKey || ''
+  return depositSealedWithKeys(
+    sender,
+    peerHost,
+    peerUin,
+    envelope,
+    { identityKey, signingKey },
+    envelopeType,
+  )
+}
+
+/// The half of `depositSealedToPrimary` that does not go looking for a key.
+///
+/// Split out for §5d: a call fires a burst of signals within a couple of
+/// seconds, and fetching the peer's card before every one of them would put an
+/// extra round trip in front of each — on the offer, where it is felt as the
+/// gap between pressing the button and hearing ringback. The caller resolves
+/// the key once and passes it here for the rest of the call.
+export async function depositSealedWithKeys(
+  sender: WebIdentity,
+  peerHost: string,
+  peerUin: number,
+  envelope: Envelope,
+  keys: { identityKey: string; signingKey: string },
+  envelopeType: 'message' | 'call' = 'message',
 ): Promise<boolean> {
   try {
-    const card = await fetchPeerKeyCard(peerHost, peerUin)
-    const identityKey = card?.identity_key || localKeys?.identityKey
-    const signingKey = card?.signing_key || localKeys?.signingKey || ''
-    if (!identityKey) return false
-    const sealed = encryptV1(envelope, sender, { uin: peerUin, identityKey, signingKey })
+    if (!keys.identityKey) return false
+    const sealed = encryptV1(envelope, sender, {
+      uin: peerUin,
+      identityKey: keys.identityKey,
+      signingKey: keys.signingKey,
+    })
     const res = await fetch(`https://${peerHost}/messages/sealed`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ to_uin: peerUin, envelope_type: 'message', payload: sealed }),
+      body: JSON.stringify({ to_uin: peerUin, envelope_type: envelopeType, payload: sealed }),
     })
     return res.ok
   } catch {

@@ -225,7 +225,7 @@ function NameSheet({
 
   return (
     <div
-      className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+      className="fixed inset-0 bg-black/40 backdrop-blur-md z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
       onClick={onClose}
     >
       <div
@@ -334,7 +334,7 @@ function InRoom({ room }: { room: RoomSummary }) {
         )}
       </main>
 
-      <div className="sticky bottom-0 bg-surface-dim/80 backdrop-blur-sm px-4 py-5">
+      <div className="sticky bottom-0 bg-surface-dim/80 backdrop-blur-md px-4 py-5">
         <div className="max-w-2xl mx-auto flex items-center justify-center gap-6">
           <RoundButton
             tone={rooms.micMuted ? 'on' : 'neutral'}
@@ -398,7 +398,7 @@ function MemberSheet({
 
   return (
     <div
-      className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+      className="fixed inset-0 bg-black/40 backdrop-blur-md z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
       onClick={onClose}
     >
       <div

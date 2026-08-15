@@ -187,26 +187,33 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
                   ? r.note || t('ci.wants_contact')
                   : firstText?.text || t('ci.wants', { n: r.msgs.length })
                 return (
-                  <li key={tag} className="p-4">
-                    <div className="flex items-center justify-between gap-3">
+                  // ⚠ Stacked, not a single row. Three actions plus a name plus
+                  // an island tag do not fit side by side: the buttons are
+                  // `shrink-0` and take what they need, so the identity column
+                  // collapsed to "my…", "83796…", "хочет …" — every field
+                  // truncated to uselessness, which is exactly what a request
+                  // screen must not do (founder screenshot). Who is asking gets
+                  // the full width; the actions get their own line.
+                  <li key={tag} className="p-4 space-y-3">
+                    <div className="flex flex-col gap-3">
                       <div className="min-w-0">
                         {/* The island tag always stays visible: a self-asserted
                             name from another island must never be able to pass
                             as a local contact (§5e). */}
                         {r.nickname ? (
                           <>
-                            <div className="font-medium truncate">{r.nickname}</div>
-                            <div className="font-mono text-xs text-fg-dim truncate">{tag}</div>
+                            <div className="font-medium break-words">{r.nickname}</div>
+                            <div className="font-mono text-xs text-fg-dim break-all">{tag}</div>
                           </>
                         ) : (
-                          <div className="font-mono text-sm truncate">{tag}</div>
+                          <div className="font-mono text-sm break-all">{tag}</div>
                         )}
-                        <div className="text-xs text-fg-dim truncate">{subtitle}</div>
+                        <div className="text-xs text-fg-dim break-words line-clamp-2">{subtitle}</div>
                       </div>
-                      <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex items-center gap-2">
                         <button
                           onClick={() => blockCI(r)}
-                          className="px-3 h-9 rounded-md bg-field text-sm font-medium hover:bg-line/50 transition-colors"
+                          className="flex-1 h-9 rounded-md bg-field text-sm font-medium hover:bg-line/50 transition-colors"
                         >
                           {t('ci.block')}
                         </button>
@@ -214,7 +221,7 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
                           <button
                             onClick={() => void declineCI(r)}
                             disabled={ciActing === tag}
-                            className="px-3 h-9 rounded-md bg-field text-sm font-medium hover:bg-line/50 disabled:opacity-40 transition-colors"
+                            className="flex-1 h-9 rounded-md bg-field text-sm font-medium hover:bg-line/50 disabled:opacity-40 transition-colors"
                           >
                             {t('pending.decline')}
                           </button>
@@ -222,7 +229,7 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
                         <button
                           onClick={() => void acceptCI(r)}
                           disabled={ciActing === tag}
-                          className="px-3 h-9 rounded-md bg-accent hover:bg-accent-dim text-white text-sm font-semibold disabled:opacity-40 transition-colors"
+                          className="flex-1 h-9 rounded-md bg-accent hover:bg-accent-dim text-white text-sm font-semibold disabled:opacity-40 transition-colors"
                         >
                           {t('pending.accept')}
                         </button>

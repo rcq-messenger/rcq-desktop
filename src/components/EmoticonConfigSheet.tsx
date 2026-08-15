@@ -41,7 +41,7 @@ export function EmoticonConfigSheet({ uin, open, onClose }: Props) {
           role="dialog"
           aria-modal="true"
         >
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-md" onClick={onClose} />
           <motion.div
             className="relative z-10 w-full max-w-md bg-surface shadow-xl rounded-t-2xl sm:rounded-2xl"
             initial={{ y: 24, opacity: 0, scale: 0.98 }}

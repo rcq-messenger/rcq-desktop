@@ -181,13 +181,10 @@ html.dark .rcq-wave {
      hard edge. Blurred, the page stays visible as it passes behind, which is
      what tells the eye the header is floating above the list rather than
      cropping it. The alpha is high enough that text over a busy avatar row
-     stays readable. The radius is deliberately small: at 16px the page behind
-     turned into a coloured smear and the header read as frosted glass laid over
-     the app. Half that still separates the two planes and lets you recognise
-     what is passing underneath. */
+     stays readable. */
   background-color: rgb(var(--c-surface-dim) / 0.72);
-  backdrop-filter: blur(8px) saturate(150%);
-  -webkit-backdrop-filter: blur(8px) saturate(150%);
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
 }
 /* The little ☺ that opens the reaction picker beside a bubble. It only makes
    sense where something can hover it, so it used to be gated on `sm:` — width
@@ -212,8 +209,8 @@ html.dark .rcq-wave {
    words. Same blur, nearly opaque. */
 .rcq-floating-panel {
   background-color: rgb(var(--c-surface-dim) / 0.94);
-  backdrop-filter: blur(10px) saturate(150%);
-  -webkit-backdrop-filter: blur(10px) saturate(150%);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
 }
 @supports not (backdrop-filter: blur(1px)) {
   .rcq-floating-panel {
@@ -225,8 +222,8 @@ html.dark .rcq-wave {
    surface wedged between the header and the messages. */
 .rcq-floating-bar {
   background-color: rgb(var(--c-surface-dim) / 0.72);
-  backdrop-filter: blur(8px) saturate(150%);
-  -webkit-backdrop-filter: blur(8px) saturate(150%);
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
 }
 /* Safari on iOS and older WebKit ignore backdrop-filter inside some stacking
    contexts; without this these bars would be a translucent smear over the

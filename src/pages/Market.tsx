@@ -253,7 +253,7 @@ export function Market() {
   return (
     <div className="min-h-screen bg-surface-dim text-fg-primary">
       {/* Header — the brand sits up top, quiet and centered. */}
-      <header className="sticky top-0 z-20 backdrop-blur-sm bg-surface-dim/80">
+      <header className="sticky top-0 z-20 backdrop-blur-xl bg-surface-dim/80">
         <div className="max-w-lg mx-auto px-5 h-14 flex items-center">
           <button
             // The market is a screen of the app now, so back is just back.
@@ -583,7 +583,7 @@ export function Market() {
       <AnimatePresence>
         {confirming && liveQuote?.available && localCents != null && (
           <motion.div
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-fg-primary/30 backdrop-blur-sm"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-fg-primary/30 backdrop-blur-xl"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -702,7 +702,7 @@ export function Market() {
 function Modal({ onDismiss, children }: { onDismiss: () => void; children: ReactNode }) {
   return (
     <motion.div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-fg-primary/30 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-fg-primary/30 backdrop-blur-xl"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}

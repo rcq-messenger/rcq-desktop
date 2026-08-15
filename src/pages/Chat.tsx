@@ -67,6 +67,14 @@ import {
 } from '../lib/outgoing-store'
 import { buildGroupDualSend, encryptGroupEnvelope } from '../lib/group-crypto'
 import { parseGroupInvite } from '../lib/group-invite'
+import {
+  clearMention,
+  markMentionSeen,
+  mentionSeenAt,
+  mentionsMe,
+  type MentionRoster,
+} from '../lib/mentions'
+import type { MentionContext } from '../components/EmoticonText'
 import { groupApiCtx } from '../lib/visited-islands'
 import { ensureRoster, memberCount } from '../lib/group-roster'
 import { GroupJoinCard } from '../components/GroupJoinCard'
@@ -274,6 +282,7 @@ export function Chat() {
     () => myInfo?.nickname ?? t('chat.you'),
     [myInfo, t],
   )
+
 
   // When the user navigates between chats the component is reused
   // with new route params. Reload the outgoing log from the new
@@ -1408,6 +1417,151 @@ export function Chat() {
   const { aliasFor: peerAliasFor } = useContactAliases()
   const peerAlias = peerUIN ? peerAliasFor(peerUIN) : undefined
 
+  // ── @-mentions ──────────────────────────────────────────────────────
+  // Everyone who can be named in this thread. Only a group has a roster: in a
+  // 1:1 there is nobody to name as a third party, and `@`-typing there would
+  // pop a picker of one person you are already talking to. `#<uin>` still
+  // resolves in both, which is the form a pin or a link carries.
+  const mentionRoster = useMemo<MentionRoster[]>(
+    () =>
+      isGroup && group
+        ? group.members.map((m) => ({ uin: m.uin, nickname: m.nickname || '' }))
+        : [],
+    [isGroup, group],
+  )
+  const mentionCtx = useMemo<MentionContext | undefined>(() => {
+    if (!identity) return undefined
+    return {
+      roster: mentionRoster,
+      // A `#<uin>` becomes a name only for someone actually here: my alias for
+      // them first, then their group nick, then a contact. Anyone else stays
+      // literal digits, so a pin cannot point the group at a stranger.
+      nickOf: (uin: number) =>
+        peerAliasFor(uin) ||
+        (isGroup ? group?.members.find((m) => m.uin === uin)?.nickname : null) ||
+        contactAlias(uin) ||
+        null,
+      onOpen: (uin: number) => navigate(`/profile/${uin}`),
+      meUin: identity.uin,
+    }
+  }, [identity, mentionRoster, isGroup, group, peerAliasFor, navigate])
+  /// The same thing for my own bubbles, which are tinted with the accent and
+  /// therefore cannot show an accent-coloured name.
+  const mentionCtxSelf = useMemo<MentionContext | undefined>(
+    () => (mentionCtx ? { ...mentionCtx, tone: 'self' } : undefined),
+    [mentionCtx],
+  )
+
+  /// Does this body call me? Used for the bubble tint and for the jump list.
+  const bodyMentionsMe = useCallback(
+    (text: string) => (identity ? mentionsMe(text, identity.uin, myInfo?.nickname) : false),
+    [identity, myInfo],
+  )
+
+  /// Inbound group messages that name me and are NEWER than the cut-off this
+  /// group already showed me. Group-only, same gate the phones use. Own
+  /// messages never count — writing your own name is not being called.
+  const mentionIds = useMemo<string[]>(() => {
+    if (!isGroup || groupId == null || !identity) return []
+    const since = mentionSeenAt(groupId)
+    return incoming
+      .filter((m) => m.from !== identity.uin && m.at > since && bodyMentionsMe(m.text))
+      .map((m) => m.id)
+  }, [isGroup, groupId, identity, incoming, bodyMentionsMe])
+  const [mentionCursor, setMentionCursor] = useState(0)
+  useEffect(() => {
+    setMentionCursor(0)
+  }, [persistKey])
+  // No wrap: stepping past the last one dismisses the button rather than
+  // restarting the count, which is what makes it a queue and not a toy.
+  const mentionsLeft = Math.max(0, mentionIds.length - mentionCursor)
+
+  /// The `@partial` being typed at the tail of the draft, or null. Tail-anchored
+  /// like Android's: an '@' further back is already a finished mention (or an
+  /// email address), and re-opening a picker over it would fight the caret.
+  const mentionQuery = useMemo<{ start: number; partial: string } | null>(() => {
+    if (!isGroup) return null
+    let i = input.length
+    while (i > 0) {
+      const ch = input[i - 1]
+      if (ch === '@') {
+        const partial = input.slice(i)
+        return partial.length > 0 ? { start: i - 1, partial } : null
+      }
+      if (/\s/.test(ch)) return null
+      i--
+    }
+    return null
+  }, [isGroup, input])
+  const mentionCandidates = useMemo<MentionRoster[]>(() => {
+    if (!mentionQuery || !identity) return []
+    const p = mentionQuery.partial.toLowerCase()
+    return mentionRoster
+      .filter((m) => m.uin !== identity.uin && m.nickname && m.nickname.toLowerCase().includes(p))
+      .slice(0, 8)
+  }, [mentionQuery, mentionRoster, identity])
+
+  /// Complete the half-typed name.
+  ///
+  /// ⚠ The caret has to be put back by hand. The composer is a contenteditable
+  /// that repaints itself from the new value, which destroys the selection, so
+  /// without this the caret sits at the START of the field and the rest of the
+  /// sentence is typed in front of the name that was just completed — which is
+  /// exactly what happened the first time this was tried with rAF: the repaint
+  /// is a child effect and it does not reliably run before the frame callback.
+  /// A parent effect does, because child effects flush first.
+  const caretToEndRef = useRef(false)
+  function pickMention(nick: string) {
+    if (!mentionQuery) return
+    caretToEndRef.current = true
+    setInput(input.slice(0, mentionQuery.start) + '@' + nick + ' ')
+  }
+  useEffect(() => {
+    if (!caretToEndRef.current) return
+    caretToEndRef.current = false
+    const el = taRef.current
+    if (!el) return
+    el.focus()
+    const sel = window.getSelection()
+    const r = document.createRange()
+    r.selectNodeContents(el)
+    r.collapse(false)
+    sel?.removeAllRanges()
+    sel?.addRange(r)
+  }, [input])
+
+  // Leaving the thread marks what it showed as seen, so coming back does not
+  // offer to walk you through the same mentions again. The newest timestamp
+  // rather than "now": a message that lands while the thread is closing has
+  // not been looked at.
+  //
+  // ⚠ The order of the two effects below is load-bearing. React runs the
+  // cleanup of a keyed effect BEFORE the setups of that render, so the writer
+  // must be declared FIRST — then at cleanup time the ref still holds the
+  // thread being left, not the one being opened. Written in an effect rather
+  // than during render for the same reason: a render-time write would already
+  // be the new thread's value by the time the cleanup reads it.
+  const mentionSweepRef = useRef<{ groupId: number; newest: number } | null>(null)
+  useEffect(() => {
+    mentionSweepRef.current =
+      isGroup && groupId != null && identity
+        ? {
+            groupId,
+            newest: incoming
+              .filter((m) => m.from !== identity.uin && bodyMentionsMe(m.text))
+              .reduce((acc, m) => Math.max(acc, m.at), 0),
+          }
+        : null
+  })
+  useEffect(() => {
+    return () => {
+      const s = mentionSweepRef.current
+      if (!s) return
+      if (s.newest > 0) markMentionSeen(s.groupId, s.newest)
+      clearMention(s.groupId)
+    }
+  }, [persistKey])
+
   /// Turn the reaction store's (uin -> asset) map into rows the sheet can draw.
   /// Names come from wherever this thread knows them: the group roster in a
   /// group, the peer in a 1:1, and my own profile for my own reaction. My alias
@@ -1922,7 +2076,7 @@ export function Chat() {
                           <DecryptedImage mediaId={m.mediaId} mediaKey={m.mediaKey} apiBase={groupMediaBase} />
                           {m.text && (
                             <div className="rounded-lg px-3 py-2 text-sm bg-bubble-other">
-                              <EmoticonText text={m.text} emoticonSize={18} />
+                              <EmoticonText text={m.text} emoticonSize={18} mention={mentionCtx} />
                             </div>
                           )}
                         </div>
@@ -1937,7 +2091,7 @@ export function Chat() {
                           />
                           {m.text && (
                             <div className="rounded-lg px-3 py-2 text-sm bg-bubble-other">
-                              <EmoticonText text={m.text} emoticonSize={18} />
+                              <EmoticonText text={m.text} emoticonSize={18} mention={mentionCtx} />
                             </div>
                           )}
                         </div>
@@ -1953,7 +2107,7 @@ export function Chat() {
                           />
                           {m.text && (
                             <div className="rounded-lg px-3 py-2 text-sm bg-bubble-other">
-                              <EmoticonText text={m.text} emoticonSize={18} />
+                              <EmoticonText text={m.text} emoticonSize={18} mention={mentionCtx} />
                             </div>
                           )}
                         </div>
@@ -1968,7 +2122,7 @@ export function Chat() {
                           onContextMenu={(e) => { e.preventDefault(); toggleActions(m.id) }}
                           className="rounded-lg px-3 py-2 text-sm text-left bg-bubble-other hover:brightness-110 transition-colors"
                         >
-                          <EmoticonText text={m.text} emoticonSize={18} />
+                          <EmoticonText text={m.text} emoticonSize={18} mention={mentionCtx} />
                           {m.edited && <span className="ml-1 text-[0.625rem] text-fg-dim italic">{t('chat.edit.edited')}</span>}
                         </button>
                       )}
@@ -1985,6 +2139,16 @@ export function Chat() {
                           both toggles close the other. */}
                       {isPlainText && showActions && (
                         <div data-chat-menu className="absolute top-full left-0 mt-1 z-30 flex items-center gap-1.5 rounded-lg bg-surface px-2 py-1 shadow-lg">
+                          {/* The only way in on a touch screen. The ☺ beside
+                              the bubble is `rcq-hover-only` — deliberately, it
+                              needs a pointer to hover it — so without this row
+                              a phone browser could not react at all, and on an
+                              OWN message not even a desktop menu offered it. */}
+                          <ActionButton
+                            onClick={() => { setActionsForRowId(null); setReactionForRowId(m.id) }}
+                            label={t('chat.actions.react')}
+                            icon="☺"
+                          />
                           <ActionButton onClick={() => startReplyTo(m.id, m.text, replyAuthor)} label={t('chat.actions.reply')} icon="↩" />
                           {m.kind === 'text' && (
                             <ActionButton onClick={() => copyText(m.text)} label={t('chat.actions.copy')} icon="⧉" />
@@ -2085,7 +2249,7 @@ export function Chat() {
                       <DecryptedImage mediaId={row.mediaId} mediaKey={row.mediaKey} apiBase={groupMediaBase} />
                       {row.text && (
                         <div className="rounded-lg px-3 py-2 text-sm bg-bubble-self">
-                          <EmoticonText text={row.text} emoticonSize={18} />
+                          <EmoticonText text={row.text} emoticonSize={18} mention={mentionCtxSelf} />
                         </div>
                       )}
                       {renderReactions(row.id, 'end')}
@@ -2130,7 +2294,7 @@ export function Chat() {
                       />
                       {row.text && (
                         <div className="rounded-lg px-3 py-2 text-sm bg-bubble-self">
-                          <EmoticonText text={row.text} emoticonSize={18} />
+                          <EmoticonText text={row.text} emoticonSize={18} mention={mentionCtxSelf} />
                         </div>
                       )}
                       <div className="flex items-center justify-end gap-1 text-[0.625rem] font-mono text-fg-dim">
@@ -2156,7 +2320,7 @@ export function Chat() {
                       />
                       {row.text && (
                         <div className="rounded-lg px-3 py-2 text-sm bg-bubble-self">
-                          <EmoticonText text={row.text} emoticonSize={18} />
+                          <EmoticonText text={row.text} emoticonSize={18} mention={mentionCtxSelf} />
                         </div>
                       )}
                       <div className="flex items-center justify-end gap-1 text-[0.625rem] font-mono text-fg-dim">
@@ -2238,7 +2402,7 @@ export function Chat() {
                         : 'bg-bubble-self hover:bg-bubble-self/90'
                     }`}
                   >
-                    <EmoticonText text={row.text} emoticonSize={18} />
+                    <EmoticonText text={row.text} emoticonSize={18} mention={mentionCtxSelf} />
                     {row.edited && <span className="ml-1 text-[0.625rem] text-fg-dim italic">{t('chat.edit.edited')}</span>}
                   </button>
                   {renderReactions(row.id, 'end')}
@@ -2273,6 +2437,15 @@ export function Chat() {
                       anchored right because this column is right-aligned. */}
                   {showActions && row.state === 'sent' && (
                     <div data-chat-menu className="absolute top-full right-0 mt-1 z-30 flex items-center gap-1.5 rounded-lg bg-surface px-2 py-1 shadow-lg">
+                      {/* Reacting to your own message: the founder's report.
+                          The menu listed reply / edit / copy / forward / delete
+                          and nothing else, so the only route was the hover ☺ —
+                          which does not exist on a touch screen. */}
+                      <ActionButton
+                        onClick={() => { setActionsForRowId(null); setReactionForRowId(row.id) }}
+                        label={t('chat.actions.react')}
+                        icon="☺"
+                      />
                       <ActionButton onClick={() => startReply(row)} label={t('chat.actions.reply')} icon="↩" />
                       {(!row.kind || row.kind === 'text') && (
                         <ActionButton onClick={() => startEdit(row)} label={t('chat.actions.edit')} icon="✎" />
@@ -2330,21 +2503,51 @@ export function Chat() {
       {/* Jump to the newest. Only while the user has scrolled up: the list
           deliberately does not follow new messages then, so without this the
           only way back was dragging the scrollbar, and a message that arrived
-          meanwhile gave no sign of itself at all. */}
-      {!atBottom && (
+          meanwhile gave no sign of itself at all.
+
+          Above it, the @-jump: the messages in this group that called your name
+          and that you have not stepped through yet. INDEPENDENT of scroll
+          position, unlike the one below — being at the bottom of a group of
+          forty tells you nothing about the message eighty rows up that asked
+          you a question, which is the whole reason Telegram has this button and
+          the whole reason it was reported missing here. */}
+      {(!atBottom || mentionsLeft > 0) && (
         <div className="relative max-w-2xl w-full mx-auto">
-          <button
-            type="button"
-            onClick={stickToBottom}
-            aria-label={t('chat.jump_to_newest')}
-            title={t('chat.jump_to_newest')}
-            className="absolute bottom-2 right-4 z-20 h-10 min-w-10 px-2 rounded-full bg-surface shadow-lg text-fg-primary flex items-center justify-center gap-1 hover:bg-field transition-colors"
-          >
-            <span aria-hidden="true" className="text-base leading-none">↓</span>
-            {unseenBelow > 0 && (
-              <span className="text-xs font-semibold tabular-nums">{unseenBelow}</span>
-            )}
-          </button>
+          {mentionsLeft > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                const id = mentionIds[mentionCursor]
+                if (id) jumpToMessage(id)
+                // Stepping past the last one takes the cursor to the end, which
+                // hides the button — tapping the final mention dismisses it
+                // rather than starting the count over.
+                setMentionCursor((c) => c + 1)
+              }}
+              aria-label={t('chat.jump_to_mention')}
+              title={t('chat.jump_to_mention')}
+              className={`absolute right-4 z-20 h-10 min-w-10 px-2 rounded-full bg-surface shadow-lg text-accent flex items-center justify-center gap-1 hover:bg-field transition-colors ${
+                atBottom ? 'bottom-2' : 'bottom-14'
+              }`}
+            >
+              <span aria-hidden="true" className="text-base leading-none font-semibold">@</span>
+              <span className="text-xs font-semibold tabular-nums">{mentionsLeft}</span>
+            </button>
+          )}
+          {!atBottom && (
+            <button
+              type="button"
+              onClick={stickToBottom}
+              aria-label={t('chat.jump_to_newest')}
+              title={t('chat.jump_to_newest')}
+              className="absolute bottom-2 right-4 z-20 h-10 min-w-10 px-2 rounded-full bg-surface shadow-lg text-fg-primary flex items-center justify-center gap-1 hover:bg-field transition-colors"
+            >
+              <span aria-hidden="true" className="text-base leading-none">↓</span>
+              {unseenBelow > 0 && (
+                <span className="text-xs font-semibold tabular-nums">{unseenBelow}</span>
+              )}
+            </button>
+          )}
         </div>
       )}
 
@@ -2421,6 +2624,25 @@ export function Chat() {
                 </motion.div>
               )}
             </AnimatePresence>
+            {/* Naming someone in a group meant typing their nick exactly, from
+                memory, including whatever punctuation they chose. Last in the
+                stack so it sits closest to the field the partial is in. */}
+            {mentionCandidates.length > 0 && (
+              <div className="rounded-2xl bg-surface shadow-lg overflow-hidden max-h-56 overflow-y-auto">
+                {mentionCandidates.map((m) => (
+                  <button
+                    key={m.uin}
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => pickMention(m.nickname)}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-field transition-colors"
+                  >
+                    <span className="flex-1 truncate text-sm">{m.nickname}</span>
+                    <span className="font-mono text-[0.6875rem] text-fg-dim">#{m.uin}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           {!isGroup && peer?.blocked ? (
             <div className="flex items-center justify-center gap-3 rounded-2xl bg-surface px-4 py-3 text-sm text-fg-secondary">
@@ -2781,7 +3003,7 @@ function PinnedBanner({ text, group, expanded, onToggle }: { text: string; group
             exit={{ opacity: 0 }}
             transition={{ duration: 0.16 }}
             onClick={onToggle}
-            className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-md sm:items-center"
+            className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm sm:items-center"
           >
             <motion.div
               initial={{ y: 16, opacity: 0 }}

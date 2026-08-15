@@ -339,9 +339,14 @@ export const es: Record<string, string> = {
   'pending.error': 'No se pudieron cargar las solicitudes pendientes.',
   'pending.accept': 'Aceptar',
   'pending.decline': 'Rechazar',
-  'ci.section': 'Solicitudes de mensaje (otras islas)',
+  'ci.section': 'Solicitudes de otras islas',
   'ci.block': 'Bloquear',
   'ci.wants': 'quiere escribirte ({n})',
+  'ci.wants_contact': 'quiere agregarte a sus contactos',
+  'ci.accept_undelivered':
+    'Aceptado aquí. Su isla no recibió la respuesta, así que no te verá como contacto hasta que se pueda llegar a ella.',
+  'add.ci.undelivered':
+    'Agregado en este dispositivo. Su isla no recibió la solicitud, así que no la verá hasta que se pueda llegar a ella.',
   // Add contact
   'add.title': 'Añadir contacto',
   'add.placeholder': 'Buscar #UIN, apodo…',

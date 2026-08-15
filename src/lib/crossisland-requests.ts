@@ -17,12 +17,25 @@ import { scopedKey } from './account-scope'
 const KEY = () => scopedKey('ci-requests.v1')
 const BLOCKED_KEY = () => scopedKey('ci-blocked.v1')
 const MAX_HELD = 20 // cap held messages per pending sender
+// §5f anti-abuse: a cross-island deposit is open (F3 is off), so a request
+// costs a stranger one HTTP call. Bound the list so a flood fills a capped
+// list rather than the disk; the oldest row falls off.
+const MAX_PENDING = 50
 
 export interface CrossIslandRequest {
   uin: number
   host: string
   firstAt: number
   msgs: Envelope[]
+  /// §5f: true when this row was created by an explicit `contactreq` envelope
+  /// rather than by quarantining a message. Such a row can have no messages at
+  /// all — the sender asked to be added, they did not write anything yet.
+  contactReq?: boolean
+  /// Self-asserted display name + greeting from the `contactreq`, so the row
+  /// renders before any key-card fetch. Cosmetic only: identity stays anchored
+  /// by the keys pinned at accept-time, never by these.
+  nickname?: string
+  note?: string
 }
 
 function reqKey(uin: number, host: string): string {
@@ -67,6 +80,50 @@ export function holdRequestMessage(uin: number, host: string, env: Envelope): bo
     if (existing.msgs.length > MAX_HELD) existing.msgs = existing.msgs.slice(-MAX_HELD)
   }
   map[k] = existing
+  saveAll(map)
+  return true
+}
+
+/// §5f: file a PENDING cross-island contact request from `uin@host`, in the
+/// same list a quarantined message request appears in — that list is this
+/// client's "pending requests" surface, and a cross-island ask belongs beside
+/// the same-island ones rather than in a second place.
+///
+/// No-op for a blocked sender (dropped silently, same as the same-island rule)
+/// and for a sender who already has a row: a repeat `request` never creates a
+/// second entry, which is also the client-side per-sender rate limit. Returns
+/// true when a pending row now exists for them.
+export function addContactRequest(uin: number, host: string, nickname?: string, note?: string): boolean {
+  if (isBlocked(uin, host)) return false
+  const map = loadAll()
+  const k = reqKey(uin, host)
+  const existing = map[k]
+  if (existing) {
+    // Already pending — promote a message-quarantine row to also being a
+    // contact request (they asked properly), but never duplicate the row and
+    // never move `firstAt`, so a flood cannot bump itself to the top.
+    if (!existing.contactReq) {
+      existing.contactReq = true
+      if (nickname) existing.nickname = nickname
+      if (note) existing.note = note
+      map[k] = existing
+      saveAll(map)
+    }
+    return true
+  }
+  if (Object.keys(map).length >= MAX_PENDING) {
+    const oldest = Object.values(map).sort((a, b) => a.firstAt - b.firstAt)[0]
+    if (oldest) delete map[reqKey(oldest.uin, oldest.host)]
+  }
+  map[k] = {
+    uin,
+    host,
+    firstAt: Date.now(),
+    msgs: [],
+    contactReq: true,
+    nickname: nickname || undefined,
+    note: note || undefined,
+  }
   saveAll(map)
   return true
 }

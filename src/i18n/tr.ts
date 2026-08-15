@@ -339,9 +339,14 @@ export const tr: Record<string, string> = {
   'pending.error': 'Bekleyen istekler yüklenemedi.',
   'pending.accept': 'Kabul et',
   'pending.decline': 'Reddet',
-  'ci.section': 'Mesaj istekleri (diğer adalar)',
+  'ci.section': 'Diğer adalardan gelen istekler',
   'ci.block': 'Engelle',
   'ci.wants': 'sana mesaj atmak istiyor ({n})',
+  'ci.wants_contact': 'seni kişilerine eklemek istiyor',
+  'ci.accept_undelivered':
+    'Burada kabul edildi. Karşı tarafın adası yanıtı almadı, adaya ulaşılana kadar seni kişilerinde göremeyecek.',
+  'add.ci.undelivered':
+    'Bu cihaza eklendi. Karşı tarafın adası isteği almadı, adaya ulaşılana kadar isteği göremeyecek.',
   // Add contact
   'add.title': 'Kişi ekle',
   'add.placeholder': '#UIN, takma ad ara…',

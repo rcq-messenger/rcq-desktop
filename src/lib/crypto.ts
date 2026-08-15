@@ -236,6 +236,28 @@ export interface SknackEnvelope {
   kid: string
 }
 
+/// Cross-island contact request (kind "contactreq", spec §5f). Adding someone
+/// on another island used to be a purely local act: fetch their open key card,
+/// write a local row, done — nothing was deposited and the peer was never told.
+/// This envelope IS the missing half. `act` is the direction: "request" asks,
+/// "accept" grants (and is deposited back by the accepter, so both sides end up
+/// holding the other — the mutual state §5d calls gate on), "decline" refuses.
+/// `nickname` is the sender's own display name, so the request renders before
+/// any card fetch. `note` is an optional short greeting.
+///
+/// ⚠ Purely consent metadata: a `contactreq` never enters the message store and
+/// never writes the pinned identity/signing keys of a contact. Those keys come
+/// from the peer's open card at add-time and are the anti-impersonation anchor;
+/// a self-asserted envelope must not be able to move them.
+export interface ContactReqEnvelope {
+  kind: 'contactreq'
+  id: string // uppercase UUID
+  ts: number // sender epoch SECONDS (matches the `call` envelope's `ts`)
+  act: 'request' | 'accept' | 'decline'
+  nickname: string
+  note?: string | null
+}
+
 export type Envelope =
   | TextEnvelope
   | ReactionEnvelope
@@ -250,6 +272,7 @@ export type Envelope =
   | HomeRecordEnvelope
   | SkdmEnvelope
   | SknackEnvelope
+  | ContactReqEnvelope
 
 /// Identity material a web session needs to send v=1 envelopes.
 /// Bundled by the iOS app and shipped via the linking QR. Web reads
@@ -372,6 +395,16 @@ export function envelopeToObject(env: Envelope): Record<string, unknown> {
   } else if (env.kind === 'sknack') {
     obj.gid = env.gid
     obj.kid = env.kid
+  } else if (env.kind === 'contactreq') {
+    // §5f. Field order mirrors the spec block and the `call` envelope's shape
+    // (kind, id, …, ts). `note` follows the encodeIfPresent rule every other
+    // optional on this wire uses — OMITTED when absent, never `null` — so the
+    // bytes match iOS/Android for the same request.
+    obj.id = env.id
+    obj.ts = env.ts
+    obj.act = env.act
+    obj.nickname = env.nickname
+    if (env.note != null && env.note !== '') obj.note = env.note
   } else if (env.kind === 'carbon') {
     // Multi-device carbon: include only the destination that's set
     // (encodeIfPresent style, matches iOS/Android), nest the original

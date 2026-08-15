@@ -87,3 +87,17 @@ export function isPresenceSoundEnabled(): boolean {
 export function setPresenceSoundEnabled(on: boolean) {
   localStorage.setItem('rcq.web.sounds.presence', on ? '1' : '0')
 }
+
+// Sub-toggle: the chime on YOUR OWN outgoing message. Same shape as the
+// presence one, and it exists for the same reason: the master switch was the
+// only way to silence it, which also cost you the incoming chime — the one
+// sound people actually want. Defaults on, so nobody's app changes until they
+// come looking for this.
+export function isSentSoundEnabled(): boolean {
+  if (typeof window === 'undefined') return true
+  return localStorage.getItem('rcq.web.sounds.sent') !== '0'
+}
+
+export function setSentSoundEnabled(on: boolean) {
+  localStorage.setItem('rcq.web.sounds.sent', on ? '1' : '0')
+}

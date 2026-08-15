@@ -442,6 +442,8 @@ export const zh: Record<string, string> = {
   'settings.sound.presence': '联系人上线/离线',
   'settings.sound.presence_footer': '联系人上线或离线时播放提示音。',
   'settings.section.theme': '主题',
+  'settings.sound.sent': '发送提示音',
+  'settings.sound.sent_footer': '你发出消息时响一声。收到消息的提示音是另一个开关。',
   'settings.theme.light': '浅色',
   'settings.theme.dark': '深色',
   'settings.theme.system': '跟随系统',

@@ -444,6 +444,8 @@ export const uk: Record<string, string> = {
   'settings.sound.presence': 'Контакт у мережі та поза нею',
   'settings.sound.presence_footer': 'Сигнал, коли контакт заходить у мережу або виходить з неї.',
   'settings.section.theme': 'Тема',
+  'settings.sound.sent': 'Звук надсилання',
+  'settings.sound.sent_footer': 'Сигнал, коли ви надсилаєте повідомлення. Вхідний сигнал окремо.',
   'settings.theme.light': 'Світла',
   'settings.theme.dark': 'Темна',
   'settings.theme.system': 'Системна',

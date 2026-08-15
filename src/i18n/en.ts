@@ -493,6 +493,8 @@ export const en: Record<string, string> = {
   'settings.sound.presence': 'Contact online/offline',
   'settings.sound.presence_footer': 'A chime when a contact comes online or goes offline.',
   'settings.section.theme': 'Theme',
+  'settings.sound.sent': 'Sound on send',
+  'settings.sound.sent_footer': 'A chime when you send a message. The incoming chime is separate.',
   'settings.theme.light': 'Light',
   'settings.theme.dark': 'Dark',
   'settings.theme.system': 'System',

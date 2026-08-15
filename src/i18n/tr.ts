@@ -444,6 +444,8 @@ export const tr: Record<string, string> = {
   'settings.sound.presence': 'Kişi çevrimiçi/çevrimdışı',
   'settings.sound.presence_footer': 'Bir kişi çevrimiçi olduğunda ya da çıktığında ses çalar.',
   'settings.section.theme': 'Tema',
+  'settings.sound.sent': 'Gönderirken ses',
+  'settings.sound.sent_footer': 'Bir mesaj gönderdiğinde çalar. Gelen mesaj sesi ayrıdır.',
   'settings.theme.light': 'Açık',
   'settings.theme.dark': 'Koyu',
   'settings.theme.system': 'Sistem',

@@ -395,6 +395,8 @@ export const en: Record<string, string> = {
   'profile.save': 'Save',
   'profile.saving': 'Saving…',
   'profile.saved': 'Profile saved.',
+  'profile.picture.failed': 'Could not upload the picture.',
+  'profile.picture.unsupported': 'The server of this island is too old for profile pictures. Ask its operator to update.',
   'profile.cta.send_message': 'Send message',
   'profile.section.personal': 'Personal',
   'profile.section.location': 'Location',

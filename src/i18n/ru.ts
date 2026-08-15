@@ -394,6 +394,8 @@ export const ru: Record<string, string> = {
   'profile.save': 'Сохранить',
   'profile.saving': 'Сохраняем…',
   'profile.saved': 'Профиль сохранён.',
+  'profile.picture.failed': 'Не удалось загрузить картинку.',
+  'profile.picture.unsupported': 'Сервер этого острова слишком старый для аватарок. Попросите его владельца обновиться.',
   'profile.cta.send_message': 'Написать',
   'profile.section.personal': 'О себе',
   'profile.section.location': 'Где',

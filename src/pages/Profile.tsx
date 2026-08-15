@@ -382,6 +382,7 @@ function EditView({
   function patch<K extends keyof UserInfo>(key: K, value: UserInfo[K]) {
     setDraft({ ...draft, [key]: value })
   }
+  const { toast } = useToast()
   const [picBusy, setPicBusy] = useState(false)
   const { identity } = useIdentity()
   // The blob is encrypted here and uploaded like any other image; the island
@@ -393,10 +394,26 @@ function EditView({
     setPicBusy(true)
     try {
       const up = await uploadEncryptedImage(identity.apiBase, file)
-      if (up) {
-        await Api.updateProfile(identity, { avatar_media_id: up.mediaId, avatar_media_key: up.keyB64 })
-        setDraft({ ...draft, avatar_media_id: up.mediaId, avatar_media_key: up.keyB64 })
+      if (!up) {
+        toast(t('profile.picture.failed'), 'error')
+        return
       }
+      await Api.updateProfile(identity, { avatar_media_id: up.mediaId, avatar_media_key: up.keyB64 })
+      // ⚠⚠ Read it back instead of trusting the write. An island older than the
+      // personal-avatar feature parses the request with Pydantic's default
+      // extra='ignore': it drops both fields, commits nothing and answers 200.
+      // Setting the draft from the LOCAL upload made that indistinguishable
+      // from success until the next reload, which is exactly how it was
+      // reported ("the avatar does not save on is2"). If the island did not
+      // keep it, say so here rather than letting the picture quietly vanish.
+      const back = await Api.userInfo(identity, identity.uin).catch(() => null)
+      if (back && !back.avatar_media_id) {
+        toast(t('profile.picture.unsupported'), 'error')
+        return
+      }
+      setDraft({ ...draft, avatar_media_id: up.mediaId, avatar_media_key: up.keyB64 })
+    } catch {
+      toast(t('profile.picture.failed'), 'error')
     } finally {
       setPicBusy(false)
     }

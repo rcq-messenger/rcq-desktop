@@ -357,6 +357,8 @@ export const tr: Record<string, string> = {
   'profile.save': 'Kaydet',
   'profile.saving': 'Kaydediliyor…',
   'profile.saved': 'Profil kaydedildi.',
+  'profile.picture.failed': 'Resim yüklenemedi.',
+  'profile.picture.unsupported': 'Bu adanın sunucusu profil fotoğrafları için fazla eski. İşleteninden güncellemesini iste.',
   'profile.cta.send_message': 'Mesaj gönder',
   'profile.section.personal': 'Kişisel',
   'profile.section.location': 'Konum',

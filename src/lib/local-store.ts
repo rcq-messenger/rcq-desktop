@@ -127,6 +127,19 @@ export function useContactAliases() {
   }
 }
 
+/// The same lookup for code that is not a component. Message bodies are built
+/// by a plain function (mentions, invites, links), and a mention that showed the
+/// nick while the bubble above it showed my alias for the same person read as a
+/// bug in the alias rather than as two names for the same person.
+export function contactAlias(uin: number): string | undefined {
+  try {
+    const map = JSON.parse(localStorage.getItem(KEYS.aliases) ?? '{}') as Record<string, string>
+    return map[String(uin)]
+  } catch {
+    return undefined
+  }
+}
+
 export function useFavorites() {
   return useNumberSet(KEYS.favorites)
 }

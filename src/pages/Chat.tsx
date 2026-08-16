@@ -206,8 +206,10 @@ export function Chat() {
   )
   const [error, setError] = useState<string | null>(null)
   const [actionsForRowId, setActionsForRowId] = useState<string | null>(null)
-  /// Does that menu hang above its bubble rather than below? See toggleActions.
+  /// Does that menu hang above its bubble rather than below, and how tall may
+  /// it be before it scrolls inside itself? See toggleActions.
   const [actionsUp, setActionsUp] = useState(false)
+  const [actionsMax, setActionsMax] = useState(260)
   const [reactionForRowId, setReactionForRowId] = useState<string | null>(null)
   /// What is being forwarded: just the text and who wrote it. It used to be an
   /// OutgoingRow, which quietly limited forwarding to your own messages.
@@ -1403,7 +1405,11 @@ export function Chat() {
   /// overflow — the menu simply ended halfway. So it flips above the bubble
   /// when there is not room below.
   function toggleActions(rowId: string, anchor?: HTMLElement | null) {
-    if (anchor) setActionsUp(noRoomBelow(anchor, MENU_ROOM_PX))
+    if (anchor) {
+      const { up, max } = placeMenu(anchor, MENU_ROOM_PX)
+      setActionsUp(up)
+      setActionsMax(max)
+    }
     setActionsForRowId((prev) => (prev === rowId ? null : rowId))
     setReactionForRowId(null)
   }
@@ -2247,7 +2253,7 @@ export function Chat() {
                           both toggles close the other. */}
                       <AnimatePresence>
                       {isPlainText && showActions && (
-                        <ActionMenu align="start" up={actionsUp}>
+                        <ActionMenu align="start" up={actionsUp} max={actionsMax}>
                           {/* The only way in on a touch screen. The ☺ beside
                               the bubble is `rcq-hover-only` — deliberately, it
                               needs a pointer to hover it — so without this row
@@ -2310,7 +2316,7 @@ export function Chat() {
                         // Both float from the same anchor now, so they must not
                         // be open together. The actions toggle already clears
                         // this one; this is the other half of the pair.
-                        setActionsUp(noRoomBelow(e.currentTarget, PICKER_ROOM_PX))
+                        setActionsUp(placeMenu(e.currentTarget, PICKER_ROOM_PX).up)
                         setActionsForRowId(null)
                         setReactionForRowId((id) => (id === m.id ? null : m.id))
                       }}
@@ -2548,7 +2554,7 @@ export function Chat() {
                       anchored right because this column is right-aligned. */}
                   <AnimatePresence>
                   {showActions && row.state === 'sent' && (
-                    <ActionMenu align="end" up={actionsUp}>
+                    <ActionMenu align="end" up={actionsUp} max={actionsMax}>
                       {/* Reacting to your own message: the founder's report.
                           The menu listed reply / edit / copy / forward / delete
                           and nothing else, so the only route was the hover ☺ —
@@ -2596,7 +2602,7 @@ export function Chat() {
                   type="button"
                   data-chat-menu
                   onClick={(e) => {
-                    setActionsUp(noRoomBelow(e.currentTarget, PICKER_ROOM_PX))
+                    setActionsUp(placeMenu(e.currentTarget, PICKER_ROOM_PX).up)
                     setActionsForRowId(null)
                     setReactionForRowId((id) => (id === row.id ? null : row.id))
                   }}
@@ -2953,11 +2959,11 @@ function ActionButton({ onClick, label, icon, danger }: { onClick: () => void; l
   return (
     <button
       onClick={onClick}
-      className={`w-full flex items-center gap-2.5 px-3 h-8 text-left text-[0.8125rem] whitespace-nowrap transition-colors ${
+      className={`w-full flex items-center gap-2 px-2.5 h-7 text-left text-[0.75rem] whitespace-nowrap transition-colors ${
         danger ? 'text-red-500 hover:bg-red-500/15' : 'text-fg-primary hover:bg-field'
       }`}
     >
-      <span className={`w-4 shrink-0 text-center ${danger ? '' : 'text-fg-dim'}`}>{icon ?? '⊘'}</span>
+      <span className={`w-3.5 shrink-0 text-center text-[0.6875rem] ${danger ? '' : 'text-fg-dim'}`}>{icon ?? '⊘'}</span>
       {/* The labels are lowercase in every dictionary because they used to be
           rendered in a uppercase mono chip. `first-letter` rather than
           `capitalize`: "удалить у всех" must not become "Удалить У Всех". */}
@@ -2968,23 +2974,48 @@ function ActionButton({ onClick, label, icon, danger }: { onClick: () => void; l
 
 /// Roughly the tallest this menu gets (seven rows plus padding). Used to
 /// decide which side of the bubble it opens on.
-const MENU_ROOM_PX = 260
+const MENU_ROOM_PX = 215
 /// The reaction strip is one row of faces, so it needs far less.
 const PICKER_ROOM_PX = 130
 
-/// Is there less than `need` pixels between `el` and the bottom of the window?
-/// Anything that floats under a bubble asks this first: the thread clips its
-/// own overflow and the composer covers the last ~80px, so a panel opened
-/// downward from the newest message is simply cut in half.
-function noRoomBelow(el: HTMLElement | null | undefined, need: number): boolean {
-  if (!el) return false
-  return window.innerHeight - el.getBoundingClientRect().bottom < need
+/// How much room a panel hanging off `el` actually has, in each direction.
+///
+/// ⚠⚠ Neither edge is the window's. The thread runs the full height of the
+/// column and the two bars float OVER it — and they float over anything inside
+/// it too, because a raised `<li>` still sits below them in the parent stacking
+/// context. So a menu with 260px of window under it is drawn BEHIND the
+/// composer and looks sliced off. That is what the founder screenshotted.
+///
+/// The usable floor is therefore the composer's top edge, and the usable
+/// ceiling is the header's bottom edge. Both heights are already published as
+/// CSS variables by the ResizeObserver that measures them.
+function roomAround(el: HTMLElement | null | undefined): { below: number; above: number } {
+  if (!el) return { below: 0, above: 0 }
+  const pane = el.closest('main')
+  const root = pane?.parentElement ?? null
+  const cs = root ? getComputedStyle(root) : null
+  const px = (name: string) => (cs ? parseFloat(cs.getPropertyValue(name)) || 0 : 0)
+  const paneRect = pane ? pane.getBoundingClientRect() : null
+  const floor = (paneRect ? paneRect.bottom : window.innerHeight) - px('--rcq-composer-h')
+  const ceiling = (paneRect ? paneRect.top : 0) + px('--rcq-topbars-h')
+  const rect = el.getBoundingClientRect()
+  return { below: floor - rect.bottom, above: rect.top - ceiling }
+}
+
+/// Which way a panel of `need` pixels should open, and how tall it may be.
+/// When neither side fits it takes the roomier one and scrolls inside itself —
+/// a short scrollable menu beats a tall clipped one.
+function placeMenu(el: HTMLElement | null | undefined, need: number): { up: boolean; max: number } {
+  const { below, above } = roomAround(el)
+  const up = below < need && above > below
+  const room = Math.max(120, Math.floor((up ? above : below) - 8))
+  return { up, max: Math.min(need, room) }
 }
 
 /// The menu itself. `align` follows the bubble (own messages are right-aligned,
 /// so their menu hangs from the right edge); `up` flips it above the bubble
 /// when there is no room below.
-function ActionMenu({ align, up, children }: { align: 'start' | 'end'; up: boolean; children: ReactNode }) {
+function ActionMenu({ align, up, max, children }: { align: 'start' | 'end'; up: boolean; max: number; children: ReactNode }) {
   return (
     <motion.div
       key="msg-actions"
@@ -2993,8 +3024,11 @@ function ActionMenu({ align, up, children }: { align: 'start' | 'end'; up: boole
       animate={{ opacity: 1, scale: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.96, y: up ? 4 : -4 }}
       transition={{ duration: 0.13, ease: 'easeOut' }}
-      style={{ transformOrigin: `${up ? 'bottom' : 'top'} ${align === 'end' ? 'right' : 'left'}` }}
-      className={`absolute z-30 min-w-[9rem] overflow-hidden rounded-xl bg-surface py-1 shadow-xl ring-1 ring-line/50 ${
+      style={{
+        transformOrigin: `${up ? 'bottom' : 'top'} ${align === 'end' ? 'right' : 'left'}`,
+        maxHeight: max,
+      }}
+      className={`absolute z-30 min-w-[7.5rem] overflow-y-auto no-scrollbar rounded-lg bg-surface py-0.5 shadow-xl ring-1 ring-line/50 ${
         align === 'end' ? 'right-0' : 'left-0'
       } ${up ? 'bottom-full mb-1' : 'top-full mt-1'}`}
     >

@@ -17,7 +17,7 @@
 
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Api, ApiError, type MyReport } from '../lib/api'
+import { Api, ApiError, type MyReport, type ReportTurn } from '../lib/api'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
 import { useToast } from '../lib/toast'
@@ -35,6 +35,40 @@ export function MyReports() {
   /// would blank the list and then never clear.
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [refused, setRefused] = useState(false)
+  /// Which report has its reply box open, and what is typed in it. One at a
+  /// time: this is a queue of tickets, not a chat list.
+  const [replyTo, setReplyTo] = useState<number | null>(null)
+  const [draft, setDraft] = useState('')
+  const [sending, setSending] = useState(false)
+
+  /// Add a turn and put it straight into the list, so the answer appears where
+  /// it was typed instead of after a refresh nobody triggers.
+  async function send(reportId: number) {
+    const text = draft.trim()
+    if (!identity || !text || sending) return
+    setSending(true)
+    setDeleteError(null)
+    try {
+      const turn = await Api.addToReport(identity, reportId, text)
+      setItems((rows) =>
+        (rows ?? []).map((r) =>
+          r.id === reportId ? { ...r, thread: [...(r.thread ?? []), turn] } : r,
+        ),
+      )
+      setDraft('')
+      setReplyTo(null)
+    } catch (e) {
+      // A closed ticket is the one refusal worth naming: it is not a failure,
+      // it is an answer.
+      setDeleteError(
+        e instanceof ApiError && e.status === 409
+          ? t('myreports.closed')
+          : t('myreports.send_error'),
+      )
+    } finally {
+      setSending(false)
+    }
+  }
 
   useEffect(() => {
     if (!identity) return
@@ -144,7 +178,8 @@ export function MyReports() {
 
         {items?.map((r) => {
           const reply = (r.reply ?? '').trim()
-          const answered = reply.length > 0
+          const turns: ReportTurn[] = r.thread ?? []
+          const answered = reply.length > 0 || turns.some((x) => x.from_admin)
           const statusKey = KNOWN_STATUSES.has(r.status) ? r.status : 'open'
           const label =
             answered && statusKey === 'open'
@@ -194,14 +229,84 @@ export function MyReports() {
 
               <div className="text-sm whitespace-pre-wrap break-words rcq-selectable">{reason}</div>
 
-              {answered && (
-                <div className="bg-surface-dim rounded-md p-3 space-y-1">
-                  <div className="text-xs font-semibold text-accent">{t('myreports.answer')}</div>
-                  <div className="text-sm whitespace-pre-wrap break-words rcq-selectable">
-                    {reply}
+              {/* The exchange. `thread` is what a current island sends; an
+                  older one sends only the single `reply`, and that is what the
+                  fallback below renders — the screen must not go blank against
+                  an island that has not updated. */}
+              {turns.length > 0
+                ? turns.map((turn) => (
+                    <div
+                      key={turn.id}
+                      className={`rounded-md p-3 space-y-1 ${
+                        turn.from_admin ? 'bg-surface-dim' : 'bg-field'
+                      }`}
+                    >
+                      <div
+                        className={`text-xs font-semibold ${
+                          turn.from_admin ? 'text-accent' : 'text-fg-secondary'
+                        }`}
+                      >
+                        {turn.from_admin ? t('myreports.answer') : t('myreports.you')}
+                      </div>
+                      <div className="text-sm whitespace-pre-wrap break-words rcq-selectable">
+                        {turn.body}
+                      </div>
+                    </div>
+                  ))
+                : answered && (
+                    <div className="bg-surface-dim rounded-md p-3 space-y-1">
+                      <div className="text-xs font-semibold text-accent">
+                        {t('myreports.answer')}
+                      </div>
+                      <div className="text-sm whitespace-pre-wrap break-words rcq-selectable">
+                        {reply}
+                      </div>
+                    </div>
+                  )}
+
+              {/* Writing back only makes sense while the ticket is open. A
+                  closed one keeps its whole exchange readable. */}
+              {statusKey === 'open' &&
+                (replyTo === r.id ? (
+                  <div className="space-y-2">
+                    <textarea
+                      autoFocus
+                      rows={3}
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      placeholder={t('myreports.reply.placeholder')}
+                      className="w-full rounded-md bg-field px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent/60 rcq-selectable"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          setReplyTo(null)
+                          setDraft('')
+                        }}
+                        className="flex-1 h-9 rounded-md bg-field text-sm font-medium hover:bg-line/40 transition-colors"
+                      >
+                        {t('common.cancel')}
+                      </button>
+                      <button
+                        disabled={sending || !draft.trim()}
+                        onClick={() => void send(r.id)}
+                        className="flex-1 h-9 rounded-md bg-accent text-ink-black text-sm font-semibold disabled:opacity-40 transition-opacity"
+                      >
+                        {t('myreports.reply.send')}
+                      </button>
+                    </div>
                   </div>
-                </div>
-              )}
+                ) : (
+                  <button
+                    onClick={() => {
+                      setReplyTo(r.id)
+                      setDraft('')
+                    }}
+                    className="w-full h-9 rounded-md bg-field text-sm font-medium hover:bg-line/40 transition-colors"
+                  >
+                    {t('myreports.reply')}
+                  </button>
+                ))}
             </section>
           )
         })}

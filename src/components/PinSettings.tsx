@@ -10,7 +10,14 @@
 import { useEffect, useState } from 'react'
 import { useI18n } from '../lib/i18n-context'
 import { useToast } from '../lib/toast'
-import { disablePin, enablePin, lockNow } from '../lib/pin-gate'
+import {
+  AUTOLOCK_CHOICES,
+  autoLockMinutes,
+  disablePin,
+  enablePin,
+  lockNow,
+  setAutoLockMinutes,
+} from '../lib/pin-gate'
 import { vaultState, vaultSupported } from '../lib/desktop-vault'
 
 type Mode = 'idle' | 'setting' | 'removing'
@@ -24,6 +31,7 @@ export function PinSettings() {
   const [confirm, setConfirm] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [autolock, setAutolock] = useState(() => autoLockMinutes())
 
   useEffect(() => {
     if (!vaultSupported()) return
@@ -87,6 +95,33 @@ export function PinSettings() {
         >
           {t('pin.set')}
         </button>
+      )}
+
+      {/* Only meaningful once a PIN exists — an auto-lock with nothing to lock
+          would just be a setting that does nothing. */}
+      {mode === 'idle' && exists && (
+        <div className="space-y-2">
+          <div className="text-sm text-fg-secondary">{t('pin.autolock')}</div>
+          <div className="flex gap-1.5">
+            {AUTOLOCK_CHOICES.map((m) => (
+              <button
+                key={m}
+                onClick={() => {
+                  setAutoLockMinutes(m)
+                  setAutolock(m)
+                }}
+                className={`flex-1 h-8 rounded-md text-xs font-medium transition-colors ${
+                  autolock === m
+                    ? 'bg-accent text-ink-black'
+                    : 'bg-field text-fg-secondary hover:bg-line/40'
+                }`}
+              >
+                {m === 0 ? t('pin.autolock.never') : t('pin.autolock.minutes', { n: m })}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-fg-dim leading-relaxed">{t('pin.autolock.help')}</p>
+        </div>
       )}
 
       {mode === 'idle' && exists && (

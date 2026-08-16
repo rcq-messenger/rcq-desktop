@@ -148,6 +148,14 @@ export function clearRequest(uin: number, host: string): CrossIslandRequest | nu
 
 /// Block a sender: drop the pending request + remember so future deposits are
 /// dropped on arrival.
+/// Let them through again. Without this a block was a one-way door with no
+/// handle on the inside: the only way back was clearing site data.
+export function unblockRequest(uin: number, host: string): void {
+  const b = loadBlocked()
+  delete b[reqKey(uin, host)]
+  localStorage.setItem(BLOCKED_KEY(), JSON.stringify(b))
+}
+
 export function blockRequest(uin: number, host: string): void {
   clearRequest(uin, host)
   const b = loadBlocked()

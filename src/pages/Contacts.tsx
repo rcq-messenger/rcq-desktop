@@ -46,8 +46,9 @@ import {
 } from '../lib/local-store'
 import { isPresenceSoundEnabled, playSound } from '../lib/sounds'
 import { useWS } from '../lib/ws'
-import { listCrossIsland } from '../lib/crossisland-store'
-import { requestCount } from '../lib/crossisland-requests'
+import { listCrossIsland, type CrossIslandContact } from '../lib/crossisland-store'
+import { isBlocked, requestCount } from '../lib/crossisland-requests'
+import { CrossIslandActionsMenu } from '../components/CrossIslandActionsMenu'
 import { aliasFor, guestIdentityFor, listVisitedIslands, refreshGuestAuth } from '../lib/visited-islands'
 
 /// Cross-island groups (§5c): groups we joined on OTHER islands, fetched with
@@ -458,37 +459,7 @@ export function Contacts() {
         {crossIsland.length > 0 && (
           <Section id="crossisland" title="Cross-island" count={crossIsland.length} collapsed={collapsed}>
             {crossIsland.map((ci) => (
-              <li key={`${ci.uin}@${ci.host}`} className="relative">
-                <Link
-                  to={`/chat/${ci.uin}?i=${encodeURIComponent(ci.host)}`}
-                  className="flex items-center gap-3 px-4 py-3 lg:py-2"
-                >
-                  {/* The same greyed flower every other cross-island row uses
-                      (StatusIcon's `crossIsland`), not a globe emoji: presence
-                      does not cross islands, so the icon says "person, status
-                      unknown" exactly like it does further down the list.
-                      §5e gives these rows a picture when the peer has deposited
-                      one — the flower stays gray behind it. */}
-                  <PersonAvatar
-                    status="offline"
-                    size={20}
-                    crossIsland
-                    mediaId={ci.avatarMediaId}
-                    mediaKey={ci.avatarMediaKey}
-                  />
-                  <div className="flex-1 min-w-0">
-                    {/* My own name for them beats the one they push. §5e is a
-                        self-asserted name; an alias is a decision the user made
-                        on this device, and it has to survive their next rename. */}
-                    <div className="truncate font-medium">
-                      {ciAliasFor(ci.uin) || ci.nickname || `${ci.uin}@${ci.host}`}
-                    </div>
-                    <div className="text-xs text-fg-dim font-mono truncate">
-                      #{ci.uin} · {ci.host}
-                    </div>
-                  </div>
-                </Link>
-              </li>
+              <CrossIslandRow key={`${ci.uin}@${ci.host}`} ci={ci} aliasFor={ciAliasFor} onChanged={() => refresh(true)} />
             ))}
           </Section>
         )}
@@ -746,6 +717,70 @@ function ContactRow({
       {menuOpen && (
         <ContactActionsMenu
           contact={contact}
+          onClose={() => setMenuOpen(false)}
+          onChanged={onChanged}
+        />
+      )}
+    </li>
+  )
+}
+
+/// A contact who lives on another island. Its own component because it now has
+/// a menu, and because the actions it can offer are NOT the local set — see
+/// CrossIslandActionsMenu for why favourite/mute/archive are missing.
+function CrossIslandRow({
+  ci,
+  aliasFor,
+  onChanged,
+}: {
+  ci: CrossIslandContact
+  aliasFor: (uin: number, host?: string | null) => string | undefined
+  onChanged: () => void
+}) {
+  const { t } = useI18n()
+  const [menuOpen, setMenuOpen] = useState(false)
+  const blocked = isBlocked(ci.uin, ci.host)
+  return (
+    <li className="relative">
+      <div className={'flex items-center gap-3 px-4 py-3 lg:py-2 hover:bg-field transition-colors ' + (blocked ? 'opacity-60' : '')}>
+        <Link to={`/chat/${ci.uin}?i=${encodeURIComponent(ci.host)}`} className="flex items-center gap-3 flex-1 min-w-0">
+          {/* The same greyed flower every other cross-island row uses
+              (StatusIcon's `crossIsland`), not a globe emoji: presence
+              does not cross islands, so the icon says "person, status
+              unknown" exactly like it does further down the list.
+              §5e gives these rows a picture when the peer has deposited
+              one — the flower stays gray behind it. */}
+          <PersonAvatar
+            status="offline"
+            size={20}
+            crossIsland
+            mediaId={ci.avatarMediaId}
+            mediaKey={ci.avatarMediaKey}
+          />
+          <div className="flex-1 min-w-0">
+            {/* My own name for them beats the one they push. §5e is a
+                self-asserted name; an alias is a decision the user made
+                on this device, and it has to survive their next rename. */}
+            <div className="truncate font-medium">
+              {aliasFor(ci.uin, ci.host) || ci.nickname || `${ci.uin}@${ci.host}`}
+            </div>
+            <div className="text-xs text-fg-dim font-mono truncate">
+              #{ci.uin} · {ci.host}
+            </div>
+          </div>
+        </Link>
+        <button
+          onClick={() => setMenuOpen((v) => !v)}
+          className="text-fg-secondary hover:text-fg-primary p-2 rounded-md hover:bg-surface"
+          title={t('contacts.more')}
+          aria-label={t('contacts.more')}
+        >
+          <MoreIcon />
+        </button>
+      </div>
+      {menuOpen && (
+        <CrossIslandActionsMenu
+          contact={ci}
           onClose={() => setMenuOpen(false)}
           onChanged={onChanged}
         />

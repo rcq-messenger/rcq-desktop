@@ -380,9 +380,17 @@ export function Settings() {
       void pushHomeRecordToContacts(identity!)
     } catch (e) {
       const msg = e instanceof Error ? e.message : ''
+      // Three different failures, and telling them apart is the whole point:
+      // "the list did not arrive" is usually a blocked network and has nothing
+      // to do with any island, which is how #579 came in as an island being
+      // down when GitHub was simply unreachable from there.
+      const known: Record<string, string> = {
+        'no catalogue': 'settings.multihome.error.catalogue',
+        'no island': 'settings.multihome.error.none',
+      }
       setMhError(
-        msg === 'no island'
-          ? t('settings.multihome.error.none')
+        known[msg]
+          ? t(known[msg])
           : `${t('settings.multihome.error.generic')}${msg ? ` (${msg})` : ''}`,
       )
     } finally {

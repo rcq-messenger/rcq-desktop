@@ -394,6 +394,8 @@ export const pt: Record<string, string> = {
   'settings.multihome.promote_confirm': 'Tornar {host} sua ilha principal? O app vai reconectar lá e a principal de agora vira backup. Sua conta e seu histórico não mudam.',
   'settings.multihome.promote_unreachable': 'Essa ilha está inacessível agora, então não foi promovida. Tente quando ela voltar.',
   'settings.multihome.footer': 'A lista de ilhas é assinada com sua chave e publicada, então contatos nas versões mais novas do app entregam em todas as ilhas automaticamente. Só este navegador consulta a caixa de backup.',
+  'settings.multihome.error.catalogue':
+    'A lista de ilhas não carregou. Em geral isso quer dizer que a rede bloqueia o endereço onde ela fica: o app em si continua funcionando. Tente em outra rede ou adicione uma ilha manualmente abaixo.',
   'settings.multihome.error.invalid': 'Isso não parece um host de ilha.',
   'settings.multihome.error.primary': 'Essa já é sua ilha principal.',
   'settings.multihome.error.already': 'Esta ilha já foi adicionada.',

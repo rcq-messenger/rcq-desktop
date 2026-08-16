@@ -206,9 +206,21 @@ export async function addBackupIsland(
 // the toggle silently registers a backup mailbox on whatever it picks, so a
 // tampered catalogue must not be able to steer that. servers.json stays a
 // display-only directory; this file is what we enforce.
-const AUTO_ISLANDS_URL =
-  'https://raw.githubusercontent.com/rcq-messenger/rcq-servers/main/auto-islands.json'
-const AUTO_ISLANDS_SIG_URL = `${AUTO_ISLANDS_URL}.sig`
+//
+// ⚠ Two sources, ours first. The list used to be fetched from GitHub raw only,
+// which is blocked in a good share of the networks this whole project exists
+// for — so the one feature whose purpose is "your island may go away, keep a
+// spare" failed with `Failed to fetch` for exactly the people who need a
+// spare (report #579, Windows desktop). The mirror on rcq.app is reachable
+// wherever the app itself is: if the island answers, so does the apex.
+//
+// Serving it ourselves grants us nothing we did not already have — the bytes
+// are verified against a pinned key below, so a mirror that lies is a mirror
+// that fails verification and falls through to the next source.
+const AUTO_ISLANDS_SOURCES = [
+  'https://rcq.app/auto-islands.json',
+  'https://raw.githubusercontent.com/rcq-messenger/rcq-servers/main/auto-islands.json',
+]
 // Verified against the ISLAND_LIST role in `signing-keys.ts` — its own role,
 // because steering a backup mailbox and steering a tunnel are different powers
 // and should not stay welded to one key.
@@ -230,21 +242,38 @@ async function islandHealthy(host: string): Promise<boolean> {
   }
 }
 
-/// Fetch the signed auto-pick island list and verify the Ed25519 signature
-/// over the EXACT bytes GitHub served against the pinned maintainer key.
-/// Throws 'no island' on any fetch/verify failure (fail-safe: no silent
-/// backup on an unverified island).
+/// One source: the list plus its detached signature, verified over the EXACT
+/// bytes that were served. Null when this source cannot be used at all —
+/// unreachable, a 404 that a static host answered with its index page, or a
+/// signature that does not check out.
+async function tryAutoIslandSource(url: string): Promise<string[] | null> {
+  try {
+    const [jsonRes, sigRes] = await Promise.all([
+      fetch(url, { cache: 'no-store' }),
+      fetch(`${url}.sig`, { cache: 'no-store' }),
+    ])
+    if (!jsonRes.ok || !sigRes.ok) return null
+    const bytes = new Uint8Array(await jsonRes.arrayBuffer())
+    const sig = b64ToBytes((await sigRes.text()).trim())
+    if (!verifySigned('island-list', bytes, sig)) return null
+    const doc = JSON.parse(new TextDecoder().decode(bytes)) as { islands?: string[] }
+    return Array.isArray(doc.islands) ? doc.islands : []
+  } catch {
+    return null
+  }
+}
+
+/// The signed auto-pick island list, from whichever source answers first.
+/// Throws 'no catalogue' when none of them does — a different failure from "the
+/// list arrived and no island in it is up", and the screen says so, because
+/// blaming the island for a blocked GitHub is how #579 got reported as an
+/// island being down.
 async function fetchSignedAutoIslands(): Promise<string[]> {
-  const [jsonRes, sigRes] = await Promise.all([
-    fetch(AUTO_ISLANDS_URL, { cache: 'no-store' }),
-    fetch(AUTO_ISLANDS_SIG_URL, { cache: 'no-store' }),
-  ])
-  if (!jsonRes.ok || !sigRes.ok) throw new Error('no island')
-  const bytes = new Uint8Array(await jsonRes.arrayBuffer())
-  const sig = b64ToBytes((await sigRes.text()).trim())
-  if (!verifySigned('island-list', bytes, sig)) throw new Error('no island')
-  const doc = JSON.parse(new TextDecoder().decode(bytes)) as { islands?: string[] }
-  return Array.isArray(doc.islands) ? doc.islands : []
+  for (const url of AUTO_ISLANDS_SOURCES) {
+    const islands = await tryAutoIslandSource(url)
+    if (islands) return islands
+  }
+  throw new Error('no catalogue')
 }
 
 /// Pick a backup island from the SIGNED list, minus our primary island and

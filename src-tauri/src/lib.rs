@@ -12,6 +12,7 @@ mod bypass;
 mod relay;
 mod dns_txt;
 mod signing_keys;
+mod vault;
 
 #[cfg(desktop)]
 use tauri::{
@@ -188,6 +189,61 @@ async fn network_diagnostics(app: tauri::AppHandle, host: String) -> bypass::Dia
 /// Which desktop this is, so the app can name itself correctly instead of
 /// calling itself the web client.
 #[cfg(desktop)]
+// ── PIN vault ───────────────────────────────────────────────────────────────
+// The page holds the account material; this side holds the only copy that
+// survives a restart, and it is sealed. See vault.rs for what that does and
+// does not protect.
+
+#[tauri::command]
+fn vault_state(app: tauri::AppHandle, open: tauri::State<vault::Unlocked>) -> vault::VaultState {
+    vault::state(&app, &open)
+}
+
+#[tauri::command]
+fn vault_create(
+    app: tauri::AppHandle,
+    open: tauri::State<vault::Unlocked>,
+    pin: String,
+    plaintext: String,
+) -> Result<(), String> {
+    vault::create(&app, &open, &pin, &plaintext)
+}
+
+#[tauri::command]
+fn vault_unlock(
+    app: tauri::AppHandle,
+    open: tauri::State<vault::Unlocked>,
+    pin: String,
+) -> Result<String, String> {
+    vault::unlock(&app, &open, &pin)
+}
+
+/// The ordinary write while unlocked — no PIN, because the page does this
+/// every time a token is refreshed and asking again would train people to
+/// type their PIN at any prompt.
+#[tauri::command]
+fn vault_write(
+    app: tauri::AppHandle,
+    open: tauri::State<vault::Unlocked>,
+    plaintext: String,
+) -> Result<(), String> {
+    vault::write_unlocked(&app, &open, &plaintext)
+}
+
+#[tauri::command]
+fn vault_lock(open: tauri::State<vault::Unlocked>) {
+    vault::lock(&open)
+}
+
+#[tauri::command]
+fn vault_remove(
+    app: tauri::AppHandle,
+    open: tauri::State<vault::Unlocked>,
+    pin: String,
+) -> Result<String, String> {
+    vault::remove(&app, &open, &pin)
+}
+
 #[tauri::command]
 fn desktop_platform() -> &'static str {
     if cfg!(target_os = "macos") {
@@ -259,11 +315,20 @@ pub fn run() {
                 relay_key_status,
                 network_diagnostics,
                 desktop_platform,
-                open_external
+                open_external,
+                vault_state,
+                vault_create,
+                vault_unlock,
+                vault_write,
+                vault_lock,
+                vault_remove
             ]);
     }
 
     let app = builder
+        // The PIN-derived key lives here for as long as the app stays
+        // unlocked, and nowhere else. See vault.rs.
+        .manage(vault::Unlocked::default())
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             if cfg!(debug_assertions) {

@@ -23,7 +23,90 @@ const STORAGE_KEY = 'rcq.web.identity.v1'
 /// well, unchanged, so a session that predates this reads exactly as before and
 /// nothing has to be migrated to sign in.
 const ACCOUNTS_KEY = 'rcq.web.accounts.v1'
+/// UINs whose session is known dead. Declared with the other two because all
+/// three move together into the desktop vault below.
+const REVOKED_KEY = 'rcq.web.revoked.v1'
 const LINK_TTL_SECONDS = 5 * 60
+
+// -----------------------------------------------------------
+// Where the account rows live
+// -----------------------------------------------------------
+//
+// Normally: localStorage, same as everything else. With the desktop PIN on:
+// nowhere on disk that the page can reach. The rows are held in memory for
+// the life of the window and written back to the Rust vault, sealed under a
+// key derived from the PIN (src-tauri/src/vault.rs).
+//
+// The indirection is three functions rather than a rewrite of every caller
+// because every read and write of an account already goes through this file.
+
+/// The three keys that ARE the account: the active identity, the switcher
+/// list, and which of them the island has stopped accepting.
+const ACCOUNT_KEYS = [STORAGE_KEY, ACCOUNTS_KEY, REVOKED_KEY]
+
+let vaulted: Record<string, string> | null = null
+let vaultWriter: ((rows: Record<string, string>) => void) | null = null
+
+/// Hold the account in memory from now on (the PIN is set and open).
+export function adoptVaultedRows(rows: Record<string, string>): void {
+  vaulted = { ...rows }
+}
+
+/// Is the account being held in memory rather than on disk?
+export function accountRowsAreVaulted(): boolean {
+  return vaulted != null
+}
+
+/// Whatever the vault should now contain. Called after every write.
+export function setVaultWriter(fn: ((rows: Record<string, string>) => void) | null): void {
+  vaultWriter = fn
+}
+
+function acctGet(key: string): string | null {
+  return vaulted ? (vaulted[key] ?? null) : localStorage.getItem(key)
+}
+
+function acctSet(key: string, value: string): void {
+  if (!vaulted) {
+    localStorage.setItem(key, value)
+    return
+  }
+  vaulted[key] = value
+  vaultWriter?.({ ...vaulted })
+}
+
+function acctRemove(key: string): void {
+  if (!vaulted) {
+    localStorage.removeItem(key)
+    return
+  }
+  delete vaulted[key]
+  vaultWriter?.({ ...vaulted })
+}
+
+/// The account rows as they sit on disk right now — what goes into the vault
+/// when a PIN is switched on.
+export function accountRowsOnDisk(): Record<string, string> {
+  const rows: Record<string, string> = {}
+  for (const k of ACCOUNT_KEYS) {
+    const v = localStorage.getItem(k)
+    if (v != null) rows[k] = v
+  }
+  return rows
+}
+
+/// Take them off the disk. Called only after the vault has confirmed it holds
+/// them — losing this order loses the account.
+export function clearAccountRowsOnDisk(): void {
+  for (const k of ACCOUNT_KEYS) localStorage.removeItem(k)
+}
+
+/// Put them back and stop vaulting (the PIN was turned off).
+export function restoreAccountRowsToDisk(rows: Record<string, string>): void {
+  vaulted = null
+  vaultWriter = null
+  for (const [k, v] of Object.entries(rows)) localStorage.setItem(k, v)
+}
 
 /// Does this JWT already name an install? Payload peek only — the signature
 /// is the server's business.
@@ -319,7 +402,7 @@ export async function recoverFromPhrase(phrase: string, apiBase: string = DEFAUL
 /// not seed-backed (a legacy raw-key web account, or one linked from a phone —
 /// those have no seed stored here). Used by the Settings "back up" reveal.
 export function currentRecoveryPhrase(): string[] | null {
-  const raw = localStorage.getItem(STORAGE_KEY)
+  const raw = acctGet(STORAGE_KEY)
   if (!raw) return null
   try {
     const stored = JSON.parse(raw) as StoredIdentity
@@ -346,13 +429,13 @@ export function currentRecoveryPhrase(): string[] | null {
 /// them would destroy the account rather than protect it. The caller asks
 /// first and says what is being lost.
 export function forgetRecoverySeed(): void {
-  const raw = localStorage.getItem(STORAGE_KEY)
+  const raw = acctGet(STORAGE_KEY)
   if (!raw) return
   let uin: number
   try {
     const { seed: _seed, ...rest } = JSON.parse(raw) as StoredIdentity
     uin = rest.uin
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(rest))
+    acctSet(STORAGE_KEY, JSON.stringify(rest))
   } catch {
     return
   }
@@ -404,7 +487,7 @@ interface StoredIdentity {
 /// Read from whichever row we have: the active slot, else the switcher list.
 function isTokenless(uin: number): boolean {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw = acctGet(STORAGE_KEY)
     if (raw) {
       const active = JSON.parse(raw) as StoredIdentity
       if (active.uin === uin) return active.noToken === true
@@ -428,7 +511,7 @@ export function persistIdentity(id: WebIdentity, seed?: string) {
   let keepSeed = seed
   if (keepSeed === undefined) {
     try {
-      const prev = localStorage.getItem(STORAGE_KEY)
+      const prev = acctGet(STORAGE_KEY)
       if (prev) keepSeed = (JSON.parse(prev) as StoredIdentity).seed
     } catch {
       /* no prior seed */
@@ -445,7 +528,7 @@ export function persistIdentity(id: WebIdentity, seed?: string) {
     ...(tokenless ? { noToken: true } : { jwt: id.jwt }),
     ...(keepSeed ? { seed: keepSeed } : {}),
   }
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(stored))
+  acctSet(STORAGE_KEY, JSON.stringify(stored))
   // Keep the switcher row in step, or switching accounts would restore the
   // token this just removed.
   const list = readAccounts()
@@ -466,12 +549,12 @@ export function persistIdentity(id: WebIdentity, seed?: string) {
 /// rather than lose the only way back in.
 export function markTokenless(uin: number): void {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw = acctGet(STORAGE_KEY)
     if (raw) {
       const active = JSON.parse(raw) as StoredIdentity
       if (active.uin === uin) {
         const { jwt: _jwt, ...rest } = active
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...rest, noToken: true }))
+        acctSet(STORAGE_KEY, JSON.stringify({ ...rest, noToken: true }))
       }
     }
   } catch {
@@ -493,7 +576,7 @@ export function markTokenless(uin: number): void {
 /// tokenless path actually take on this island".
 export function hasStoredToken(uin: number): boolean {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw = acctGet(STORAGE_KEY)
     if (raw) {
       const active = JSON.parse(raw) as StoredIdentity
       if (active.uin === uin) return typeof active.jwt === 'string' && active.jwt.length > 0
@@ -589,7 +672,7 @@ export async function withSessionToken(id: WebIdentity): Promise<WebIdentity> {
 
 function readAccounts(): StoredIdentity[] {
   try {
-    const raw = localStorage.getItem(ACCOUNTS_KEY)
+    const raw = acctGet(ACCOUNTS_KEY)
     const list = raw ? (JSON.parse(raw) as StoredIdentity[]) : []
     return Array.isArray(list) ? list : []
   } catch {
@@ -598,7 +681,7 @@ function readAccounts(): StoredIdentity[] {
 }
 
 function writeAccounts(list: StoredIdentity[]) {
-  localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(list))
+  acctSet(ACCOUNTS_KEY, JSON.stringify(list))
 }
 
 function hydrate(stored: StoredIdentity): WebIdentity {
@@ -621,7 +704,7 @@ function hydrate(stored: StoredIdentity): WebIdentity {
 /// appears in it without anyone signing in again.
 export function listStoredIdentities(): WebIdentity[] {
   let list = readAccounts()
-  const activeRaw = localStorage.getItem(STORAGE_KEY)
+  const activeRaw = acctGet(STORAGE_KEY)
   if (activeRaw) {
     try {
       const active = JSON.parse(activeRaw) as StoredIdentity
@@ -641,7 +724,7 @@ export function listStoredIdentities(): WebIdentity[] {
 export function activateStoredIdentity(uin: number): boolean {
   const hit = readAccounts().find((a) => a.uin === uin)
   if (!hit) return false
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(hit))
+  acctSet(STORAGE_KEY, JSON.stringify(hit))
   return true
 }
 
@@ -661,17 +744,15 @@ export function activateStoredIdentity(uin: number): boolean {
 /// the only place they exist: dropping it because a token died would destroy
 /// the account for anyone who never wrote down their recovery phrase. So the
 /// row stays, marked, and the user decides.
-const REVOKED_KEY = 'rcq.web.revoked.v1'
-
 export function markSessionRevoked(uin: number): void {
   const list = revokedAccounts()
   if (list.includes(uin)) return
-  localStorage.setItem(REVOKED_KEY, JSON.stringify([...list, uin]))
+  acctSet(REVOKED_KEY, JSON.stringify([...list, uin]))
 }
 
 export function revokedAccounts(): number[] {
   try {
-    const raw = JSON.parse(localStorage.getItem(REVOKED_KEY) || '[]')
+    const raw = JSON.parse(acctGet(REVOKED_KEY) || '[]')
     return Array.isArray(raw) ? raw.filter((n) => typeof n === 'number') : []
   } catch {
     return []
@@ -680,13 +761,13 @@ export function revokedAccounts(): number[] {
 
 export function clearSessionRevoked(uin: number): void {
   const list = revokedAccounts().filter((n) => n !== uin)
-  localStorage.setItem(REVOKED_KEY, JSON.stringify(list))
+  acctSet(REVOKED_KEY, JSON.stringify(list))
 }
 
 export function removeStoredIdentity(uin: number): WebIdentity | null {
   const list = readAccounts().filter((a) => a.uin !== uin)
   writeAccounts(list)
-  const activeRaw = localStorage.getItem(STORAGE_KEY)
+  const activeRaw = acctGet(STORAGE_KEY)
   let activeUin: number | null = null
   try {
     activeUin = activeRaw ? (JSON.parse(activeRaw) as StoredIdentity).uin : null
@@ -694,15 +775,15 @@ export function removeStoredIdentity(uin: number): WebIdentity | null {
     /* ignore */
   }
   if (activeUin !== uin) return null
-  localStorage.removeItem(STORAGE_KEY)
+  acctRemove(STORAGE_KEY)
   const next = list[0]
   if (!next) return null
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+  acctSet(STORAGE_KEY, JSON.stringify(next))
   return hydrate(next)
 }
 
 export function loadStoredIdentity(): WebIdentity | null {
-  const raw = localStorage.getItem(STORAGE_KEY)
+  const raw = acctGet(STORAGE_KEY)
   if (!raw) return null
   try {
     return hydrate(JSON.parse(raw) as StoredIdentity)
@@ -712,7 +793,7 @@ export function loadStoredIdentity(): WebIdentity | null {
 }
 
 export function clearIdentity() {
-  localStorage.removeItem(STORAGE_KEY)
+  acctRemove(STORAGE_KEY)
 }
 
 /// Adopt a server-confirmed UIN migration (UIN-market purchase): the
@@ -758,4 +839,11 @@ export function wipeLocalAccountData() {
     if (k.startsWith('rcq.web.') || k.startsWith('rcq.privacy.')) toRemove.push(k)
   }
   for (const k of toRemove) localStorage.removeItem(k)
+  // Held in memory behind the desktop PIN? Then the rows the loop above was
+  // looking for were never on the disk, and a sign-out that left them in the
+  // vault would sign the user back in at the next unlock.
+  if (vaulted) {
+    vaulted = {}
+    vaultWriter?.({})
+  }
 }

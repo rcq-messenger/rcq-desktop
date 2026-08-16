@@ -33,6 +33,7 @@ import {
 } from '../lib/desktop'
 import { uploadReportAttachment } from '../lib/media'
 import { useI18n } from '../lib/i18n-context'
+import { PinSettings } from '../components/PinSettings'
 import { useToast } from '../lib/toast'
 import type { UserInfo } from '../lib/api'
 import { DEFAULT_API_BASE } from '../lib/auth'
@@ -704,6 +705,10 @@ export function Settings() {
             <span className="text-fg-dim">→</span>
           </div>
         </Link>
+
+        {/* Desktop only — renders nothing in a browser tab, where a PIN
+            could not be honest. */}
+        <PinSettings />
 
         {/* We ask people to trust a client they cannot open up. This is the
             nearest thing to opening it up: everything this browser is holding,

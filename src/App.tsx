@@ -9,6 +9,7 @@ import { CallProvider } from './lib/call'
 import { RoomsProvider } from './lib/rooms'
 import AudioRooms from './pages/AudioRooms'
 import { ToastProvider } from './lib/toast'
+import { PinGate } from './lib/pin-gate'
 import { CallOverlay } from './components/CallOverlay'
 import { Login } from './pages/Login'
 import { Contacts } from './pages/Contacts'
@@ -47,6 +48,11 @@ export default function App() {
   return (
     <ThemeProvider>
       <I18nProvider>
+        {/* Above the identity provider on purpose: while the desktop app is
+            locked there is no account in the page at all — not a hidden one,
+            not one behind a route guard. Nothing below this line runs until
+            the PIN is typed. In a browser it renders its children and stops. */}
+        <PinGate>
         <IdentityProvider>
           <WSProvider>
             <CallProvider>
@@ -210,6 +216,7 @@ export default function App() {
             </CallProvider>
           </WSProvider>
         </IdentityProvider>
+        </PinGate>
       </I18nProvider>
     </ThemeProvider>
   )

@@ -20,6 +20,7 @@ import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
 import { forgetRecoverySeed, hasStoredRecoverySeed, hasStoredToken } from '../lib/auth'
 import { sealingAvailable } from '../lib/local-seal'
+import { vaultState, vaultSupported } from '../lib/desktop-vault'
 import { ensureRequestsLoaded, requestCount } from '../lib/crossisland-requests'
 import { useToast } from '../lib/toast'
 
@@ -69,6 +70,10 @@ export function BrowserStorage() {
   const [version, setVersion] = useState(0)
   const [idbBytes, setIdbBytes] = useState<number | null>(null)
   const [sealed, setSealed] = useState<boolean | null>(null)
+  /// Desktop only: is the account behind a PIN on this machine? Null in a
+  /// browser, where the row is not drawn at all rather than drawn as "off" —
+  /// there is no PIN to switch on here, and offering one would be a lie.
+  const [pinOn, setPinOn] = useState<boolean | null>(null)
   const [requests, setRequests] = useState(0)
   const [confirmForget, setConfirmForget] = useState(false)
   const [confirmWipe, setConfirmWipe] = useState(false)
@@ -82,6 +87,7 @@ export function BrowserStorage() {
     // device keys + anything else in IndexedDB, and it is labelled as such.
     void navigator.storage?.estimate?.().then((e) => setIdbBytes(e.usage ?? null)).catch(() => {})
     void sealingAvailable().then(setSealed)
+    if (vaultSupported()) void vaultState().then((v) => setPinOn(v.exists))
     void ensureRequestsLoaded().then(() => setRequests(requestCount()))
   }, [version])
 
@@ -111,6 +117,13 @@ export function BrowserStorage() {
             value={hasSeed ? t('storage.phrase.kept') : t('storage.phrase.gone')}
             warn={hasSeed}
           />
+          {pinOn !== null && (
+            <Fact
+              label={t('storage.pin.label')}
+              value={pinOn ? t('storage.pin.on') : t('storage.pin.off')}
+              warn={!pinOn}
+            />
+          )}
           <Fact
             label={t('storage.token.label')}
             value={keepsToken ? t('storage.token.kept') : t('storage.token.none')}

@@ -1699,6 +1699,16 @@ export function Chat() {
   // only HH:MM, so a message from last week looked exactly like one from an
   // hour ago and there was no way to tell what happened when.
   const timeline = useMemo(() => {
+    // ⚠ A message can legitimately arrive on BOTH halves, and then it is one
+    // message drawn twice: once on the left as something received, once on the
+    // right as something sent.
+    //
+    // Notes-to-self is the case that makes it visible. The island delivers the
+    // envelope (you are the addressee) AND the carbon (you are the sender), so
+    // every note showed up twice on any device that was not the one that typed
+    // it — the whole thread doubled, the second copy on the wrong side. The
+    // sent half is the true one: it knows this device wrote it.
+    const sentIds = new Set(outgoing.map((row) => row.id))
     const items = [
       ...outgoing
         // A 1:1 log is keyed by the BARE uin, so this thread and the thread for
@@ -1709,7 +1719,9 @@ export function Chat() {
         // on the row; here is where it decides whose conversation it is in.
         .filter((row) => row.kind !== 'call' || (row.peerHost ?? null) === (islandHost ?? null))
         .map((row) => ({ at: row.sentAt, kind: 'out' as const, row })),
-      ...incoming.map((m) => ({ at: m.at, kind: 'in' as const, msg: m })),
+      ...incoming
+        .filter((m) => !sentIds.has(m.id))
+        .map((m) => ({ at: m.at, kind: 'in' as const, msg: m })),
     ]
       .filter((it) => !isDeleted(it.kind === 'out' ? it.row.id : it.msg.id))
       .sort((a, b) => a.at - b.at)

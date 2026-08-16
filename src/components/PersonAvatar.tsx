@@ -34,6 +34,13 @@ interface Props {
   /// any other picture — and keeps resolving while their island is down, which
   /// is the whole reason the picture is deposited rather than pulled.
   crossIsland?: boolean
+  /// Which island to fetch the blob from. Defaults to the ACTIVE account's,
+  /// which is right everywhere except one screen: the account switcher, where
+  /// the rows belong to OTHER accounts and one of them may live on another
+  /// island. Their picture is stored there, so asking the active island for it
+  /// answers 404 and the row falls back to the flower — the founder's report
+  /// that only the active account keeps its face.
+  apiBase?: string
   /// Set when the status badge itself is actionable (the header, where tapping
   /// the flower opens the status menu). Without it the badge is decoration.
   onStatusClick?: () => void
@@ -52,6 +59,7 @@ export function PersonAvatar({
   mediaId,
   mediaKey,
   crossIsland = false,
+  apiBase,
   onStatusClick,
   showStatus = true,
 }: Props) {
@@ -62,13 +70,13 @@ export function PersonAvatar({
     setUrl(null)
     if (!identity || !mediaId || !mediaKey) return
     let alive = true
-    void loadEncryptedImage(identity.apiBase, mediaId, mediaKey).then((u) => {
+    void loadEncryptedImage(apiBase ?? identity.apiBase, mediaId, mediaKey).then((u) => {
       if (alive) setUrl(u)
     })
     return () => {
       alive = false
     }
-  }, [identity?.apiBase, mediaId, mediaKey])
+  }, [apiBase, identity?.apiBase, mediaId, mediaKey])
 
   if (!url) {
     // Nothing to draw: no picture, and presence deliberately suppressed.

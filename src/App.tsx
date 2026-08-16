@@ -18,6 +18,7 @@ import { PendingRequests } from './pages/PendingRequests'
 import { AddContact } from './pages/AddContact'
 import { Profile } from './pages/Profile'
 import { GroupInfo } from './pages/GroupInfo'
+import { HowItWorks } from './pages/HowItWorks'
 import { JoinGroup } from './pages/JoinGroup'
 import { Diagnostics } from './pages/Diagnostics'
 import { MyReports } from './pages/MyReports'
@@ -135,6 +136,14 @@ export default function App() {
                 element={
                   <Authed>
                     <PendingRequests />
+                  </Authed>
+                }
+              />
+              <Route
+                path="/how"
+                element={
+                  <Authed>
+                    <HowItWorks />
                   </Authed>
                 }
               />

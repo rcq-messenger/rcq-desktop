@@ -5,12 +5,12 @@
 // vault (src-tauri/src/vault.rs) only after the PIN is typed, and go straight
 // into memory — never back to disk.
 //
-// ⚠ What this does NOT do yet: the message history in IndexedDB stays
-// unencrypted, so a locked app still has readable conversations on disk. The
-// "what is in this browser" screen says so in as many words rather than
-// letting a lock icon imply otherwise. The account itself — keys, recovery
-// seed, session tokens — is what this closes, and it is the piece that lets a
-// stolen laptop BECOME you somewhere else.
+// The conversations go with it (pin-seal.ts): the received history, every
+// outgoing log and the picture cache are sealed under a key that lives only
+// inside the vault. What is still in the clear — the libsignal device, the
+// contact snapshot, the sender keys — is named on the "what is in this
+// browser" screen, because a lock icon that implies more than it does is worse
+// than no lock icon.
 
 import { useEffect, useState, type ReactNode } from 'react'
 import { useI18n } from './i18n-context'
@@ -30,6 +30,14 @@ import {
   vaultUnlock,
   vaultWrite,
 } from './desktop-vault'
+import { adoptSealedOutgoing, releaseSealedOutgoing } from './outgoing-store'
+import {
+  HISTORY_KEY_ROW,
+  newHistoryKeyB64,
+  releaseExistingHistory,
+  sealExistingHistory,
+  setHistoryKey,
+} from './pin-seal'
 
 /// Wire the in-memory account rows to the vault, so every later change (a
 /// refreshed token, a second account, a sign-out) is re-sealed.
@@ -53,12 +61,21 @@ function attachWriter(): void {
 
 /// Take the account off the disk and put it behind `pin`. Order matters: the
 /// vault has to confirm it holds the rows BEFORE they are deleted.
+///
+/// The history key rides inside the same sealed JSON (pin-seal.ts). It is
+/// generated here and never exists anywhere else, so switching a PIN on is
+/// also the moment the conversations stop being readable on this disk.
 export async function enablePin(pin: string): Promise<void> {
-  const rows = accountRowsOnDisk()
+  const rows = { ...accountRowsOnDisk(), [HISTORY_KEY_ROW]: newHistoryKeyB64() }
   await vaultCreate(pin, JSON.stringify(rows))
   clearAccountRowsOnDisk()
   adoptVaultedRows(rows)
   attachWriter()
+  await setHistoryKey(rows[HISTORY_KEY_ROW])
+  // What is already on the disk, in both stores. Awaited: the settings screen
+  // says "PIN set" when this returns, and it should be true by then.
+  await sealExistingHistory()
+  await adoptSealedOutgoing()
 }
 
 /// Hand the account back to the disk. Needs the PIN — this is the one action
@@ -66,6 +83,13 @@ export async function enablePin(pin: string): Promise<void> {
 export async function disablePin(pin: string): Promise<void> {
   const payload = await vaultRemove(pin)
   const rows = JSON.parse(payload) as Record<string, string>
+  // Unseal BEFORE dropping the key, or the history becomes unreadable by the
+  // very action whose whole meaning is "make this readable again".
+  await setHistoryKey(rows[HISTORY_KEY_ROW] ?? null)
+  await releaseExistingHistory()
+  await releaseSealedOutgoing()
+  await setHistoryKey(null)
+  delete rows[HISTORY_KEY_ROW]
   restoreAccountRowsToDisk(rows)
 }
 
@@ -152,8 +176,21 @@ export function PinGate({ children }: { children: ReactNode }) {
     setError(null)
     try {
       const payload = await vaultUnlock(pin)
-      adoptVaultedRows(JSON.parse(payload) as Record<string, string>)
+      const rows = JSON.parse(payload) as Record<string, string>
+      // A vault created before the history was sealed has no key in it. Mint
+      // one on this unlock rather than leaving those installs unsealed forever
+      // — the vault is already open, so this costs nothing and needs no PIN
+      // prompt. Sweeping what is already on disk happens later, once the
+      // account scope names the right database (pin-seal.ts).
+      if (!rows[HISTORY_KEY_ROW]) rows[HISTORY_KEY_ROW] = newHistoryKeyB64()
+      adoptVaultedRows(rows)
       attachWriter()
+      await vaultWrite(JSON.stringify(rows)).catch(() => {})
+      // Before anything below the gate renders: Chat builds its state from the
+      // outgoing log during a render and cannot wait on a decrypt, so the logs
+      // are in memory by the time it mounts.
+      await setHistoryKey(rows[HISTORY_KEY_ROW])
+      await adoptSealedOutgoing()
       setPin('')
       setLocked(false)
     } catch (err) {

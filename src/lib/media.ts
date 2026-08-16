@@ -12,6 +12,7 @@
 // `combined` minus the leading nonce. No AAD (iOS seals without AAD).
 
 import { b64ToBytes, bytesToB64 } from './crypto'
+import { openBuffer, sealBuffer } from './pin-seal'
 import { idbDel, idbGet, idbSet } from './signal-persist'
 
 // Cache the decrypted object URL per (mediaId, key) so repeated
@@ -33,11 +34,14 @@ const IMG_INDEX = 'img:index'
 const IMG_KEEP = 300
 
 async function readCachedImage(k: string): Promise<ArrayBuffer | null> {
-  return (await idbGet<ArrayBuffer>(IMG_PREFIX + k)) ?? null
+  return openBuffer(await idbGet<unknown>(IMG_PREFIX + k))
 }
 
 async function writeCachedImage(k: string, buf: ArrayBuffer) {
-  await idbSet(IMG_PREFIX + k, buf)
+  // A cached picture is the contents of a conversation as much as its text is,
+  // so it goes behind the desktop PIN with the rest (pin-seal.ts). Without one
+  // this is the same `put` it always was.
+  await idbSet(IMG_PREFIX + k, await sealBuffer(buf))
   // Insertion-ordered index, newest last. Trimming from the front drops the
   // least recently ADDED rather than least recently used — the distinction
   // costs a write per read and buys nothing for a list of faces.

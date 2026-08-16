@@ -6,6 +6,7 @@
 import { useSyncExternalStore } from 'react'
 import type { Envelope, ReplyContext } from './crypto'
 import { idbGet, idbSet } from './signal-persist'
+import { openValue, pinSealActive, sealExistingHistory, sealValue } from './pin-seal'
 import { playSound } from './sounds'
 import { markMention, mentionsMe } from './mentions'
 import { contactsCache, snapshotFor } from './contacts-cache'
@@ -497,7 +498,13 @@ function persist() {
     reactions,
     deleted: [...deletedIds],
   }
-  void idbSet(histKey(_activeUin), blob).catch(() => {})
+  const uin = _activeUin
+  // Sealed under the desktop PIN when there is one; the plain object otherwise
+  // (a browser tab has nowhere to keep a key the page cannot reach). Writes
+  // stay fire-and-forget — the store is already the source of truth in memory.
+  void sealValue(blob)
+    .then((stored) => idbSet(histKey(uin), stored))
+    .catch(() => {})
 }
 
 /// Load this account's persisted history into the store (call once on mount).
@@ -524,7 +531,15 @@ export async function hydrateIncoming(uin: number): Promise<void> {
   } catch {
     /* ignore */
   }
-  const saved = await idbGet<Persisted>(histKey(uin)).catch(() => undefined)
+  // First point where the account scope is known and the database is the right
+  // one, so this is where a history written before the PIN gets sealed. Not
+  // awaited: it is a one-off sweep and the chat should not wait on it.
+  if (pinSealActive()) void sealExistingHistory().catch(() => {})
+  // Two shapes on disk: sealed (a desktop with a PIN) and the plain object
+  // everyone else has. A sealed blob we cannot open belongs to a key that is
+  // gone — the history stays as it is rather than being replaced with garbage.
+  const stored = await idbGet<unknown>(histKey(uin)).catch(() => undefined)
+  const saved = await openValue<Persisted>(stored).catch(() => undefined)
   if (!saved) return
   for (const [k, rows] of Object.entries(saved.peers ?? {})) {
     byPeer.set(Number(k), rows)

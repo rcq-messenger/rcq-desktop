@@ -26,11 +26,25 @@ export function setUnauthorizedHandler(fn: ((uin: number) => void) | null) {
   unauthorizedHandler = fn
 }
 
+/// Mint a replacement token for a session whose own has expired, from the
+/// signing key (see auth.ts `mintSessionToken`). Registered by the
+/// IdentityProvider, which also adopts the new token app-wide.
+///
+/// ★ This is what makes "keep no token on disk" possible AND fixes something
+/// that was broken anyway: a web session used to simply END after 30 days, at
+/// whatever moment the token expired, and the user was returned to the login
+/// screen with an account many of them could not sign back into.
+let tokenRefresher: ((identity: WebIdentity) => Promise<string | null>) | null = null
+export function setTokenRefresher(fn: ((identity: WebIdentity) => Promise<string | null>) | null) {
+  tokenRefresher = fn
+}
+
 async function request<T>(
   identity: WebIdentity,
   method: string,
   path: string,
   body?: unknown,
+  retried = false,
 ): Promise<T> {
   const headers: Record<string, string> = {
     Authorization: `Bearer ${identity.jwt}`,
@@ -47,7 +61,22 @@ async function request<T>(
   })
   const text = await res.text()
   if (!res.ok) {
-    if (res.status === 401 && !identity.guest) unauthorizedHandler?.(identity.uin)
+    if (res.status === 401 && !identity.guest) {
+      // Expired is the common case and it is recoverable: ask for a new token
+      // and run the call again. ONE retry — a revoked install gets a perfectly
+      // valid token and is still refused (its device id is denylisted), and
+      // that must end as a sign-out rather than a loop.
+      if (!retried && tokenRefresher) {
+        const fresh = await tokenRefresher(identity)
+        if (fresh) return request<T>({ ...identity, jwt: fresh }, method, path, body, true)
+      }
+      // ⚠ Only a token that was REFUSED ends the session. A call made with no
+      // token at all (a tokenless account that started offline and has not
+      // minted one yet) is answered 401 too, and treating that as a revocation
+      // would sign people out of live accounts every time the network is down
+      // at the wrong moment.
+      if (identity.jwt) unauthorizedHandler?.(identity.uin)
+    }
     throw new ApiError(res.status, text)
   }
   if (!text) return undefined as T

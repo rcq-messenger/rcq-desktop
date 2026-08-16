@@ -47,7 +47,12 @@ import {
 import { isPresenceSoundEnabled, playSound } from '../lib/sounds'
 import { useWS } from '../lib/ws'
 import { listCrossIsland, type CrossIslandContact } from '../lib/crossisland-store'
-import { isBlocked, requestCount } from '../lib/crossisland-requests'
+import {
+  ensureRequestsLoaded,
+  isBlocked,
+  onRequestsChanged,
+  requestCount,
+} from '../lib/crossisland-requests'
 import { CrossIslandActionsMenu } from '../components/CrossIslandActionsMenu'
 import { aliasFor, guestIdentityFor, listVisitedIslands, refreshGuestAuth } from '../lib/visited-islands'
 
@@ -115,6 +120,14 @@ export function Contacts() {
   const [me, setMe] = useState<UserInfo | null>(() => _cachedAtMount?.me ?? null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(() => !_cachedAtMount)
+  // Cross-island requests are sealed at rest, so the store opens asynchronously
+  // and the count has to be watched rather than read during a render.
+  const [ciCount, setCiCount] = useState(() => requestCount())
+  useEffect(() => {
+    const off = onRequestsChanged(() => setCiCount(requestCount()))
+    void ensureRequestsLoaded().then(() => setCiCount(requestCount()))
+    return off
+  }, [])
   const [showCreateGroup, setShowCreateGroup] = useState(false)
   const [showRequests, setShowRequests] = useState(false)
   const [showAdd, setShowAdd] = useState(false)
@@ -354,9 +367,9 @@ export function Contacts() {
               aria-label={t('pending.title')}
             >
               <BellIcon />
-              {pending.length + requestCount() > 0 && (
+              {pending.length + ciCount > 0 && (
                 <span className="absolute top-0.5 right-0.5 min-w-[1rem] h-[1rem] px-1 rounded-full bg-red-500 text-white text-[0.625rem] font-bold flex items-center justify-center">
-                  {pending.length + requestCount()}
+                  {pending.length + ciCount}
                 </span>
               )}
             </button>
@@ -550,7 +563,7 @@ export function Contacts() {
 
       {showRequests && (
         <RequestsModal
-          incomingCount={pending.length + requestCount()}
+          incomingCount={pending.length + ciCount}
           onClose={() => {
             setShowRequests(false)
             void refresh()

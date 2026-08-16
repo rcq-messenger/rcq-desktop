@@ -705,6 +705,24 @@ export function Settings() {
           </div>
         </Link>
 
+        {/* We ask people to trust a client they cannot open up. This is the
+            nearest thing to opening it up: everything this browser is holding,
+            measured live, with the switch that removes it. */}
+        <Link
+          to="/storage"
+          className="block bg-surface rounded-lg p-4 hover:bg-surface-dim transition-colors"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+                {t('storage.title')}
+              </div>
+              <div className="text-xs text-fg-dim mt-0.5 truncate">{t('storage.footer.short')}</div>
+            </div>
+            <span className="text-fg-dim">→</span>
+          </div>
+        </Link>
+
         <section className="bg-surface rounded-lg p-4 space-y-2">
           <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
             {t('settings.section.language')}

@@ -68,7 +68,12 @@ export function WSProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const connect = useCallback(() => {
-    if (!identity) return
+    // No token yet — a tokenless account that started offline and has not
+    // minted one. Opening the socket anyway would be refused, and each refusal
+    // costs one of the twelve connections a minute the island allows an
+    // account. The identity changes the moment a token arrives, and this
+    // effect re-runs then.
+    if (!identity?.jwt) return
     closedByUserRef.current = false
 
     // wss://api.rcq.app/ws/<uin>?token=<jwt>. apiBase usually carries the

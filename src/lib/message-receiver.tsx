@@ -13,7 +13,7 @@ import { publishHomeIslandRecord } from './federation-publish'
 import { applyPushedRecord, drainBackupQueues, listBackupHomes } from './multihome'
 import { aliasFor, drainVisitedQueues, listVisitedIslands } from './visited-islands'
 import { getCrossIsland } from './crossisland-store'
-import { holdRequestMessage, isBlocked } from './crossisland-requests'
+import { ensureRequestsLoaded, holdRequestMessage, isBlocked } from './crossisland-requests'
 import { handleContactReq } from './crossisland-contactreq'
 import { CALL_OFFER_TTL_SEC, fileMissedCrossIslandOffer } from './crossisland-call'
 import { deliverCrossIslandCallSignal } from './call'
@@ -215,6 +215,10 @@ export function MessageReceiver() {
     let cancelled = false
     void (async () => {
       await ensureHydrated(identity.uin) // restore persisted history first
+      // The quarantine store is sealed at rest and opens asynchronously. Wait
+      // for it here rather than relying on its deferred-write path, so a drain
+      // that lands a stranger's first message writes it straight away.
+      await ensureRequestsLoaded()
       try {
         await getDevice(identity) // provision-once (publishes bundle)
       } catch {

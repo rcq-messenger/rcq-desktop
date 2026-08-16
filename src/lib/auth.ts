@@ -383,7 +383,8 @@ export function hasStoredRecoverySeed(): boolean {
 
 interface StoredIdentity {
   uin: number
-  jwt: string
+  /// ⚠ Absent on purpose for an account marked `noToken` — see [persistIdentity].
+  jwt?: string
   apiBase: string
   identityPriv: string
   identityPub: string
@@ -392,11 +393,37 @@ interface StoredIdentity {
   // base64 32-byte recovery seed for seed-derived accounts (create / recover).
   // Absent for legacy raw-key accounts and phone-linked sessions.
   seed?: string
+  /// This island hands out a session token to whoever proves the signing key
+  /// (POST /auth/refresh), so this browser keeps NO token on disk for the
+  /// account and asks for one at start-up. Set by [markTokenless] after a
+  /// refresh has actually worked once — never optimistically.
+  noToken?: true
+}
+
+/// Is this account's token re-mintable, i.e. is there no point keeping one?
+/// Read from whichever row we have: the active slot, else the switcher list.
+function isTokenless(uin: number): boolean {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (raw) {
+      const active = JSON.parse(raw) as StoredIdentity
+      if (active.uin === uin) return active.noToken === true
+    }
+  } catch {
+    /* fall through to the list */
+  }
+  return readAccounts().find((a) => a.uin === uin)?.noToken === true
 }
 
 /// Persist the identity. `seed` (base64) is written for seed-derived accounts;
 /// when omitted, an existing stored seed is PRESERVED so unrelated re-persists
 /// (token refresh, UIN migration, multihome) don't drop the recovery phrase.
+///
+/// ★ The session token is written only while this account still needs it. Once
+/// [markTokenless] has confirmed the island will mint one from the signing key,
+/// the token stops being written at all: a 30-day bearer sitting next to the
+/// keys that can produce it costs a reader nothing to pick up and buys its
+/// owner nothing (docs/web-storage-inventory.md, fix 3).
 export function persistIdentity(id: WebIdentity, seed?: string) {
   let keepSeed = seed
   if (keepSeed === undefined) {
@@ -407,17 +434,157 @@ export function persistIdentity(id: WebIdentity, seed?: string) {
       /* no prior seed */
     }
   }
+  const tokenless = isTokenless(id.uin)
   const stored: StoredIdentity = {
     uin: id.uin,
-    jwt: id.jwt,
     apiBase: id.apiBase,
     identityPriv: bytesToB64(id.identityPriv),
     identityPub: bytesToB64(id.identityPub),
     signingPriv: bytesToB64(id.signingPriv),
     signingPub: bytesToB64(id.signingPub),
+    ...(tokenless ? { noToken: true } : { jwt: id.jwt }),
     ...(keepSeed ? { seed: keepSeed } : {}),
   }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(stored))
+  // Keep the switcher row in step, or switching accounts would restore the
+  // token this just removed.
+  const list = readAccounts()
+  const i = list.findIndex((a) => a.uin === id.uin)
+  if (i >= 0) {
+    list[i] = { ...list[i], ...stored }
+    if (tokenless) delete list[i].jwt
+    writeAccounts(list)
+  }
+}
+
+/// Remember that this account never needs a stored token again, and drop the
+/// one already on disk (both copies — the active slot and the switcher row).
+///
+/// Called after a refresh has succeeded, never before: an island too old to
+/// know POST /auth/refresh, or an account whose signing key is shared with an
+/// older one (the flagship has seven such keys), must go on keeping its token
+/// rather than lose the only way back in.
+export function markTokenless(uin: number): void {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (raw) {
+      const active = JSON.parse(raw) as StoredIdentity
+      if (active.uin === uin) {
+        const { jwt: _jwt, ...rest } = active
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...rest, noToken: true }))
+      }
+    }
+  } catch {
+    /* unreadable active row — the list below still gets cleaned */
+  }
+  const list = readAccounts()
+  let touched = false
+  for (let i = 0; i < list.length; i++) {
+    if (list[i].uin !== uin) continue
+    const { jwt: _jwt, ...rest } = list[i]
+    list[i] = { ...rest, noToken: true }
+    touched = true
+  }
+  if (touched) writeAccounts(list)
+}
+
+/// Does this browser still hold a session token for `uin` on disk? Drives the
+/// "what is in this browser" screen; also the honest answer to "did the
+/// tokenless path actually take on this island".
+export function hasStoredToken(uin: number): boolean {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (raw) {
+      const active = JSON.parse(raw) as StoredIdentity
+      if (active.uin === uin) return typeof active.jwt === 'string' && active.jwt.length > 0
+    }
+  } catch {
+    /* fall through */
+  }
+  const row = readAccounts().find((a) => a.uin === uin)
+  return typeof row?.jwt === 'string' && row.jwt.length > 0
+}
+
+// -----------------------------------------------------------
+// Minting a session token from the signing key
+// -----------------------------------------------------------
+
+/// What came back from an attempt to mint a session token.
+///
+/// The three failures are deliberately NOT the same thing, because acting on
+/// the wrong one signs somebody out of a live account:
+///  * `dead` — the island says this identity is gone. The session really is
+///    over; the caller may send the user back to the login screen.
+///  * `unsupported` — the island predates POST /auth/refresh. Nothing is
+///    wrong; this account simply goes on keeping its token on disk.
+///  * neither — offline, a 5xx, a captive portal. Try again later and change
+///    nothing in the meantime.
+export interface TokenMint {
+  token: string | null
+  dead: boolean
+  unsupported: boolean
+}
+
+/// Ask this account's island for a fresh session token, proving possession of
+/// the Ed25519 signing key (the same challenge-response as recovery).
+///
+/// ⚠ Not /auth/recover. That resolves a key to the OLDEST account carrying it,
+/// which for a shared key is somebody else's account — fine as a last-resort
+/// "take me home", wrong as a start-up step. /auth/refresh names the uin.
+export async function mintSessionToken(id: WebIdentity): Promise<TokenMint> {
+  const miss: TokenMint = { token: null, dead: false, unsupported: false }
+  const skB64 = bytesToB64(id.signingPub)
+  try {
+    const chRes = await fetch(`${id.apiBase}/auth/recover/challenge`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ signing_key: skB64 }),
+    })
+    if (!chRes.ok) return miss
+    const { challenge } = (await chRes.json()) as { challenge: string }
+    const signature = bytesToB64(ed25519.sign(new TextEncoder().encode(challenge), id.signingPriv))
+    const res = await fetch(`${id.apiBase}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        uin: id.uin,
+        signing_key: skB64,
+        challenge,
+        signature,
+        device_id: installId(),
+      }),
+    })
+    if (res.ok) {
+      const out = (await res.json()) as { uin?: number; token?: string }
+      // The island answering with a different number is not a token we can
+      // use — it is a bug or a shared key, and adopting it would put this
+      // browser into somebody else's account.
+      if (out.token && out.uin === id.uin) return { token: out.token, dead: false, unsupported: false }
+      return miss
+    }
+    if (res.status === 404) {
+      // Two very different 404s: "no such account" (ours, coded) and "no such
+      // route" (an island older than this endpoint).
+      const text = await res.text()
+      if (text.includes('identity_not_found')) return { token: null, dead: true, unsupported: false }
+      return { token: null, dead: false, unsupported: true }
+    }
+    if (res.status === 405) return { token: null, dead: false, unsupported: true }
+    return miss
+  } catch {
+    // Offline. Says nothing about the account.
+    return miss
+  }
+}
+
+/// The identity with a usable token: the one it already carries, else a freshly
+/// minted one. For calls made on behalf of an account that is not the active
+/// one (signing another account out, for instance), which under the tokenless
+/// scheme holds no token in memory either.
+export async function withSessionToken(id: WebIdentity): Promise<WebIdentity> {
+  if (id.jwt) return id
+  const mint = await mintSessionToken(id)
+  return mint.token ? { ...id, jwt: mint.token } : id
 }
 
 function readAccounts(): StoredIdentity[] {
@@ -437,7 +604,10 @@ function writeAccounts(list: StoredIdentity[]) {
 function hydrate(stored: StoredIdentity): WebIdentity {
   return {
     uin: stored.uin,
-    jwt: stored.jwt,
+    // Empty for a tokenless account until start-up mints one. Every caller
+    // that needs it either runs after that (the whole app) or asks for it
+    // itself via `withSessionToken`.
+    jwt: stored.jwt ?? '',
     apiBase: stored.apiBase,
     identityPriv: b64ToBytes(stored.identityPriv),
     identityPub: b64ToBytes(stored.identityPub),
@@ -535,16 +705,7 @@ export function loadStoredIdentity(): WebIdentity | null {
   const raw = localStorage.getItem(STORAGE_KEY)
   if (!raw) return null
   try {
-    const stored = JSON.parse(raw) as StoredIdentity
-    return {
-      uin: stored.uin,
-      jwt: stored.jwt,
-      apiBase: stored.apiBase,
-      identityPriv: b64ToBytes(stored.identityPriv),
-      identityPub: b64ToBytes(stored.identityPub),
-      signingPriv: b64ToBytes(stored.signingPriv),
-      signingPub: b64ToBytes(stored.signingPub),
-    }
+    return hydrate(JSON.parse(raw) as StoredIdentity)
   } catch {
     return null
   }

@@ -224,6 +224,29 @@ export async function appVersion(): Promise<string | null> {
   }
 }
 
+/// Take the bundled sing-box down before an installer runs.
+///
+/// ⚠ Windows refuses to overwrite a running executable, so the update failed
+/// for everyone with the bypass on: the installer could not replace
+/// `sing-box.exe` while our child process held it. Reported 2026-08-16, with
+/// "приходится вручную качать и перезагружать ПК" as the workaround people
+/// had found.
+///
+/// The SETTING is untouched — the tunnel is back on the next launch. Failure
+/// is ignored on purpose: an update that might work is better than one this
+/// helper refuses to start. The short wait gives the OS time to release the
+/// handle, which is not instant on Windows.
+async function haltBypassForInstall(): Promise<void> {
+  if (!isTauri()) return
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    await invoke('bypass_halt')
+    await new Promise((r) => setTimeout(r, 600))
+  } catch {
+    /* older shell without the command, or nothing running */
+  }
+}
+
 // Ask about a pending update and, on yes, download, install, and relaunch.
 // Returns when the user declines; on accept the process is replaced.
 async function promptAndInstall(
@@ -238,6 +261,7 @@ async function promptAndInstall(
     cancelLabel: t('desktop.update.later'),
   })
   if (!go) return
+  await haltBypassForInstall()
   await update.downloadAndInstall()
   const { relaunch } = await import('@tauri-apps/plugin-process')
   await relaunch()
@@ -323,6 +347,7 @@ export async function installPendingUpdate(): Promise<UpdateCheck> {
       announceUpdate(null)
       return { kind: 'current' }
     }
+    await haltBypassForInstall()
     await update.downloadAndInstall()
     const { relaunch } = await import('@tauri-apps/plugin-process')
     await relaunch()

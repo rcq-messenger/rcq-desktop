@@ -110,8 +110,8 @@ export function useContactAliases() {
     map = {}
   }
   return {
-    aliasFor: (uin: number): string | undefined => map[String(uin)],
-    setAlias: (uin: number, name: string | null) => {
+    aliasFor: (uin: number, host?: string | null): string | undefined => map[aliasKey(uin, host)],
+    setAlias: (uin: number, name: string | null, host?: string | null) => {
       let cur: Record<string, string> = {}
       try {
         cur = JSON.parse(localStorage.getItem(KEYS.aliases) ?? '{}') as Record<string, string>
@@ -119,22 +119,31 @@ export function useContactAliases() {
         cur = {}
       }
       const trimmed = name?.trim().slice(0, 48)
-      if (trimmed) cur[String(uin)] = trimmed
-      else delete cur[String(uin)]
+      const k = aliasKey(uin, host)
+      if (trimmed) cur[k] = trimmed
+      else delete cur[k]
       localStorage.setItem(KEYS.aliases, JSON.stringify(cur))
       window.dispatchEvent(new StorageEvent('storage', { key: KEYS.aliases }))
     },
   }
 }
 
+/// ⚠ A uin is per-island, so `1234` on our island and `1234@is2.rcq.app` are
+/// two different people. Keying an alias by the bare number gave them one
+/// name between them: rename the stranger and your friend was renamed too.
+/// Local contacts keep the bare key so every alias already saved survives.
+function aliasKey(uin: number, host?: string | null): string {
+  return host ? `${uin}@${host.toLowerCase()}` : String(uin)
+}
+
 /// The same lookup for code that is not a component. Message bodies are built
 /// by a plain function (mentions, invites, links), and a mention that showed the
 /// nick while the bubble above it showed my alias for the same person read as a
 /// bug in the alias rather than as two names for the same person.
-export function contactAlias(uin: number): string | undefined {
+export function contactAlias(uin: number, host?: string | null): string | undefined {
   try {
     const map = JSON.parse(localStorage.getItem(KEYS.aliases) ?? '{}') as Record<string, string>
-    return map[String(uin)]
+    return map[aliasKey(uin, host)]
   } catch {
     return undefined
   }

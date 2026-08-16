@@ -14,13 +14,16 @@ import {
   listStoredIdentities,
   loadStoredIdentity,
   markSessionRevoked,
+  markTokenless,
+  mintSessionToken,
   persistIdentity,
   removeStoredIdentity,
   wipeLocalAccountData,
+  withSessionToken,
 } from './auth'
 import { migrateFlatDataInto, setAccountScope } from './account-scope'
 import { defaultHome } from './routing'
-import { Api, setUnauthorizedHandler } from './api'
+import { Api, setTokenRefresher, setUnauthorizedHandler } from './api'
 import { idbClearAll } from './signal-persist'
 
 interface IdentityCtx {
@@ -68,10 +71,94 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
     // and belongs to nobody in particular.
     setAccountScope(stored?.uin ?? null)
     if (stored) migrateFlatDataInto(stored.uin)
-    setIdentity(stored)
     setAccounts(listStoredIdentities())
-    setHydrated(true)
+    // The ordinary case: a token is either not needed (no account) or still on
+    // disk (this account's island cannot mint one, or this is the first start
+    // after the update).
+    if (!stored || stored.jwt) {
+      setIdentity(stored)
+      setHydrated(true)
+      return
+    }
+    // A tokenless account holds NOTHING to authenticate with between sessions,
+    // so the session begins by minting a token from the signing key. One round
+    // trip before the first paint.
+    let cancelled = false
+    void mintSessionToken(stored).then((mint) => {
+      if (cancelled) return
+      if (mint.token) {
+        setIdentity({ ...stored, jwt: mint.token })
+      } else if (mint.dead) {
+        // The island says this identity is gone. Same ending as a 401.
+        markSessionRevoked(stored.uin)
+        clearIdentity()
+        setIdentity(null)
+      } else {
+        // Offline, or an island having a bad minute. Keep the account and open
+        // the app on its stored history — `tokenWaiting` below keeps trying.
+        setIdentity(stored)
+      }
+      setHydrated(true)
+    })
+    return () => {
+      cancelled = true
+    }
   }, [])
+
+  // Adopt a freshly minted token app-wide, and — the first time one works —
+  // record that this account never needs to keep one on disk again.
+  const adoptToken = (target: WebIdentity, token: string) => {
+    markTokenless(target.uin)
+    persistIdentity({ ...target, jwt: token })
+    setIdentity((cur) => (cur && cur.uin === target.uin ? { ...cur, jwt: token } : cur))
+    setAccounts(listStoredIdentities())
+  }
+
+  // One in-flight mint at a time. A page that wakes up with an expired token
+  // fires a dozen requests at once, and each 401 would otherwise start its own.
+  const mintingRef = useRef<Promise<string | null> | null>(null)
+  const mintOnce = (target: WebIdentity): Promise<string | null> => {
+    if (mintingRef.current) return mintingRef.current
+    const p = mintSessionToken(target)
+      .then((mint) => {
+        if (mint.token) adoptToken(target, mint.token)
+        return mint.token
+      })
+      .finally(() => {
+        mintingRef.current = null
+      })
+    mintingRef.current = p
+    return p
+  }
+
+  useEffect(() => {
+    setTokenRefresher((target) => (target.guest ? Promise.resolve(null) : mintOnce(target)))
+    return () => setTokenRefresher(null)
+  }, [])
+
+  // First start after the update: the token is still on disk. Prove the island
+  // will hand out another one, then stop storing it. Nothing user-visible —
+  // on failure the account simply goes on keeping its token.
+  const probedRef = useRef(false)
+  useEffect(() => {
+    if (!hydrated || !identity || !identity.jwt || probedRef.current) return
+    probedRef.current = true
+    void mintOnce(identity)
+  }, [hydrated, identity])
+
+  // Started offline with no token: keep asking, quietly, so the session comes
+  // back on its own when the network does rather than at the next reload.
+  const tokenWaiting = hydrated && identity != null && !identity.jwt
+  useEffect(() => {
+    if (!tokenWaiting || !identity) return
+    const retry = () => void mintOnce(identity)
+    const timer = window.setInterval(retry, 20_000)
+    window.addEventListener('online', retry)
+    return () => {
+      window.clearInterval(timer)
+      window.removeEventListener('online', retry)
+    }
+  }, [tokenWaiting, identity])
 
   // Name this browser to the server once. A session minted before the client
   // sent an install id keys as "primary" — the name every other install of the
@@ -89,7 +176,10 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
 
   const claimedRef = useRef(false)
   useEffect(() => {
-    if (!identity || claimedRef.current) return
+    // No token yet (a tokenless account still minting one, or offline): there
+    // is nothing to exchange, and claiming with an empty bearer just 401s.
+    // Deliberately does NOT arm the ref — the claim happens once a token is in.
+    if (!identity?.jwt || claimedRef.current) return
     claimedRef.current = true
     void claimInstallToken(identity).then((jwt) => {
       if (!jwt) return
@@ -165,7 +255,11 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
         // whichever one happens to be active — otherwise leaving account B
         // would revoke account A's session on the phone.
         const leaving = accounts.find((a) => a.uin === uin)
-        if (leaving) void Api.unlinkSelf(leaving).catch(() => {})
+        // A non-active account holds no token in memory (and, once tokenless,
+        // none on disk either), so mint one for this single call — otherwise
+        // signing out here would stop telling the island about it, and the
+        // phone would go on listing a session that is gone.
+        if (leaving) void withSessionToken(leaving).then((id) => Api.unlinkSelf(id)).catch(() => {})
         const wasActive = uin === identity?.uin
         removeStoredIdentity(uin)
         clearSessionRevoked(uin)

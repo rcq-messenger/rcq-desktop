@@ -13,6 +13,7 @@
 import type { Envelope } from './crypto'
 
 import { scopedKey } from './account-scope'
+import { isSealed, openLocal, sealLocal } from './local-seal'
 
 const KEY = () => scopedKey('ci-requests.v1')
 const BLOCKED_KEY = () => scopedKey('ci-blocked.v1')
@@ -42,16 +43,117 @@ function reqKey(uin: number, host: string): string {
   return `${uin}@${host.toLowerCase()}`
 }
 
-function loadAll(): Record<string, CrossIslandRequest> {
-  try {
-    return JSON.parse(localStorage.getItem(KEY()) || '{}') as Record<string, CrossIslandRequest>
-  } catch {
-    return {}
+// -----------------------------------------------------------
+// Storage: sealed at rest, held open in memory
+// -----------------------------------------------------------
+//
+// ★★ These rows are the only thing in this client that holds a STRANGER'S
+// words. A quarantined request is, by definition, a message from someone the
+// owner has not agreed to hear from — and it sat in localStorage as readable
+// JSON until it was accepted or dismissed, which for a request nobody ever
+// opens is forever. Whoever ends up in front of this browser reads it without
+// touching anything: no XSS, no console, just the storage tab.
+//
+// So the list is sealed with the non-extractable key from local-seal.ts. The
+// decrypted copy lives in memory while the tab is open, which is what keeps
+// every function below synchronous — the receive path calls them from inside
+// a decrypt loop, and a promise there would mean re-plumbing the loop.
+//
+// ⚠ The seal only covers the CONTENT (`ci-requests.v1`), not the block list:
+// `isBlocked` is asked synchronously by the call path, the profile push and
+// federation gossip, and none of them can wait on a key. That list is a set of
+// numbers with no words in it.
+
+let cache: Record<string, CrossIslandRequest> | null = null
+let loading: Promise<void> | null = null
+/// ⚠ The key is resolved ONCE, when the store opens, and every later write
+/// uses that one. `scopedKey` reads the active account, sealing is
+/// asynchronous, and a read that resolved the key before the account was known
+/// would write its result back under a DIFFERENT key — emptying the real list.
+/// Caught doing exactly that in testing.
+let storeKey: string | null = null
+/// Mutations that arrived before the store finished opening (a queue drain can
+/// beat it by milliseconds). Replayed in order, so nothing is dropped.
+const deferred: Array<() => void> = []
+const listeners = new Set<() => void>()
+
+function notify(): void {
+  for (const l of listeners) l()
+}
+
+/// Re-render when the list changes (or when it first opens). Returns the
+/// unsubscribe.
+export function onRequestsChanged(cb: () => void): () => void {
+  listeners.add(cb)
+  return () => listeners.delete(cb)
+}
+
+/// Open the store. Safe to call from anywhere, any number of times; the first
+/// call does the work. Callers that render the list should await it once so
+/// they do not paint an empty list over a full one.
+export function ensureRequestsLoaded(): Promise<void> {
+  if (!loading) {
+    loading = (async () => {
+      storeKey = KEY()
+      const raw = localStorage.getItem(storeKey)
+      let map: Record<string, CrossIslandRequest> = {}
+      if (raw) {
+        // Two shapes on disk: sealed (current) and the plain JSON everyone has
+        // today. Plain is read once and then written back sealed.
+        const text = isSealed(raw) ? await openLocal(raw) : raw
+        if (text) {
+          try {
+            const parsed = JSON.parse(text) as Record<string, CrossIslandRequest>
+            if (parsed && typeof parsed === 'object') map = parsed
+          } catch {
+            /* unreadable — start empty rather than throw inside a store */
+          }
+        }
+        // A sealed blob we cannot open belongs to a key that is gone (site data
+        // cleared, another account's database). Nothing to salvage; the row is
+        // dropped rather than shown as garbage.
+      }
+      cache = map
+      for (const op of deferred.splice(0)) op()
+      // Re-seal on open: migrates the plain list, and re-writes an already
+      // sealed one with a fresh nonce. Cheap and once per tab.
+      void flush()
+      notify()
+    })()
   }
+  return loading
+}
+
+// ⚠ Deliberately NOT started at import time. This module is imported by the
+// receive loop, which is pulled in before the identity provider has set the
+// account scope — so an eager load would read the unscoped key and write the
+// (empty) result back over the real one.
+
+async function flush(): Promise<void> {
+  if (!cache || !storeKey) return
+  const json = JSON.stringify(cache)
+  const sealed = await sealLocal(json)
+  // No seal available in this browser: store it the way it has always been
+  // stored. Losing a stranger's request would be the worse failure, and the
+  // storage screen reports which of the two happened.
+  localStorage.setItem(storeKey, sealed ?? json)
+}
+
+function loadAll(): Record<string, CrossIslandRequest> {
+  return cache ?? {}
 }
 
 function saveAll(map: Record<string, CrossIslandRequest>): void {
-  localStorage.setItem(KEY(), JSON.stringify(map))
+  cache = map
+  void flush()
+  notify()
+}
+
+/// Run `op` now if the store is open, else the moment it is. The return value
+/// of a deferred mutation is decided by [isBlocked], which needs no store.
+function whenLoaded(op: () => void): void {
+  if (cache) op()
+  else deferred.push(op)
 }
 
 function loadBlocked(): Record<string, true> {
@@ -71,16 +173,22 @@ export function isBlocked(uin: number, host: string): boolean {
 /// normal ingest), false if blocked (caller drops it).
 export function holdRequestMessage(uin: number, host: string, env: Envelope): boolean {
   if (isBlocked(uin, host)) return false
-  const map = loadAll()
-  const k = reqKey(uin, host)
-  const existing = map[k] ?? { uin, host, firstAt: Date.now(), msgs: [] }
-  // Dedup by envelope id so a re-drained queue row doesn't pile up.
-  if (!existing.msgs.some((m) => (m as { id?: string }).id === (env as { id?: string }).id)) {
-    existing.msgs.push(env)
-    if (existing.msgs.length > MAX_HELD) existing.msgs = existing.msgs.slice(-MAX_HELD)
-  }
-  map[k] = existing
-  saveAll(map)
+  // ⚠ Deferred if the store is still opening: the queue drain starts the
+  // moment the socket connects and can beat the key out of IndexedDB by a few
+  // milliseconds. Dropping the envelope there would lose a stranger's first
+  // message with no trace anywhere.
+  whenLoaded(() => {
+    const map = loadAll()
+    const k = reqKey(uin, host)
+    const existing = map[k] ?? { uin, host, firstAt: Date.now(), msgs: [] }
+    // Dedup by envelope id so a re-drained queue row doesn't pile up.
+    if (!existing.msgs.some((m) => (m as { id?: string }).id === (env as { id?: string }).id)) {
+      existing.msgs.push(env)
+      if (existing.msgs.length > MAX_HELD) existing.msgs = existing.msgs.slice(-MAX_HELD)
+    }
+    map[k] = existing
+    saveAll(map)
+  })
   return true
 }
 
@@ -95,36 +203,38 @@ export function holdRequestMessage(uin: number, host: string, env: Envelope): bo
 /// true when a pending row now exists for them.
 export function addContactRequest(uin: number, host: string, nickname?: string, note?: string): boolean {
   if (isBlocked(uin, host)) return false
-  const map = loadAll()
-  const k = reqKey(uin, host)
-  const existing = map[k]
-  if (existing) {
-    // Already pending — promote a message-quarantine row to also being a
-    // contact request (they asked properly), but never duplicate the row and
-    // never move `firstAt`, so a flood cannot bump itself to the top.
-    if (!existing.contactReq) {
-      existing.contactReq = true
-      if (nickname) existing.nickname = nickname
-      if (note) existing.note = note
-      map[k] = existing
-      saveAll(map)
+  whenLoaded(() => {
+    const map = loadAll()
+    const k = reqKey(uin, host)
+    const existing = map[k]
+    if (existing) {
+      // Already pending — promote a message-quarantine row to also being a
+      // contact request (they asked properly), but never duplicate the row and
+      // never move `firstAt`, so a flood cannot bump itself to the top.
+      if (!existing.contactReq) {
+        existing.contactReq = true
+        if (nickname) existing.nickname = nickname
+        if (note) existing.note = note
+        map[k] = existing
+        saveAll(map)
+      }
+      return
     }
-    return true
-  }
-  if (Object.keys(map).length >= MAX_PENDING) {
-    const oldest = Object.values(map).sort((a, b) => a.firstAt - b.firstAt)[0]
-    if (oldest) delete map[reqKey(oldest.uin, oldest.host)]
-  }
-  map[k] = {
-    uin,
-    host,
-    firstAt: Date.now(),
-    msgs: [],
-    contactReq: true,
-    nickname: nickname || undefined,
-    note: note || undefined,
-  }
-  saveAll(map)
+    if (Object.keys(map).length >= MAX_PENDING) {
+      const oldest = Object.values(map).sort((a, b) => a.firstAt - b.firstAt)[0]
+      if (oldest) delete map[reqKey(oldest.uin, oldest.host)]
+    }
+    map[k] = {
+      uin,
+      host,
+      firstAt: Date.now(),
+      msgs: [],
+      contactReq: true,
+      nickname: nickname || undefined,
+      note: note || undefined,
+    }
+    saveAll(map)
+  })
   return true
 }
 
@@ -137,7 +247,15 @@ export function requestCount(): number {
 }
 
 /// Remove a pending request (after Accept replays its messages, or on dismiss).
+///
+/// Returns the row so the caller can replay the held messages. Null when the
+/// store is not open yet — every UI caller runs long after that, and the one
+/// receive-path caller (a `decline` from the peer) only needs the removal.
 export function clearRequest(uin: number, host: string): CrossIslandRequest | null {
+  if (!cache) {
+    whenLoaded(() => clearRequest(uin, host))
+    return null
+  }
   const map = loadAll()
   const k = reqKey(uin, host)
   const r = map[k] ?? null

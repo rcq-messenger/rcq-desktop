@@ -9,7 +9,14 @@ import { Api, type PendingRequest } from '../lib/api'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
 import { useWS } from '../lib/ws'
-import { listRequests, clearRequest, blockRequest, type CrossIslandRequest } from '../lib/crossisland-requests'
+import {
+  listRequests,
+  clearRequest,
+  blockRequest,
+  ensureRequestsLoaded,
+  onRequestsChanged,
+  type CrossIslandRequest,
+} from '../lib/crossisland-requests'
 import { saveCrossIsland } from '../lib/crossisland-store'
 import { sendContactAccept, sendContactDecline } from '../lib/crossisland-contactreq'
 import { pushProfileTo } from '../lib/crossisland-profile'
@@ -134,8 +141,13 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
     // the push directly would re-read before the decrypt that writes the row
     // has finished. Cheap enough: one localStorage read while the list is open.
     const poll = setInterval(() => setCi(listRequests()), 3000)
+    // The store is sealed at rest, so it opens asynchronously: read it once it
+    // is up rather than showing an empty list for the first three seconds.
+    const offStore = onRequestsChanged(() => setCi(listRequests()))
+    void ensureRequestsLoaded().then(() => setCi(listRequests()))
     return () => {
       off()
+      offStore()
       clearInterval(poll)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

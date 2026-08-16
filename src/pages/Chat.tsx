@@ -206,6 +206,8 @@ export function Chat() {
   )
   const [error, setError] = useState<string | null>(null)
   const [actionsForRowId, setActionsForRowId] = useState<string | null>(null)
+  /// Does that menu hang above its bubble rather than below? See toggleActions.
+  const [actionsUp, setActionsUp] = useState(false)
   const [reactionForRowId, setReactionForRowId] = useState<string | null>(null)
   /// What is being forwarded: just the text and who wrote it. It used to be an
   /// OutgoingRow, which quietly limited forwarding to your own messages.
@@ -493,6 +495,14 @@ export function Chat() {
       const root = bar.parentElement
       root?.style.setProperty('--rcq-composer-h', `${bar.offsetHeight}px`)
       root?.style.setProperty('--rcq-topbars-h', `${top.offsetHeight}px`)
+      // A bar that GROWS (a wrapped line, the reply strip, the emoji panel)
+      // adds padding under the last message without moving the scroll — so
+      // the message the reader was looking at slides under the bar. If they
+      // were at the newest, keep them there.
+      if (atBottomRef.current) {
+        const el = scrollRef.current
+        if (el) el.scrollTop = el.scrollHeight
+      }
     }
     apply()
     const ro = new ResizeObserver(apply)
@@ -1387,7 +1397,13 @@ export function Chat() {
     }
   }
 
-  function toggleActions(rowId: string) {
+  /// Open (or close) the menu for a bubble. `anchor` is the bubble itself: a
+  /// column of seven actions is ~15rem tall, and one hanging off the LAST
+  /// message would run into the composer and get clipped by the thread's own
+  /// overflow — the menu simply ended halfway. So it flips above the bubble
+  /// when there is not room below.
+  function toggleActions(rowId: string, anchor?: HTMLElement | null) {
+    if (anchor) setActionsUp(noRoomBelow(anchor, MENU_ROOM_PX))
     setActionsForRowId((prev) => (prev === rowId ? null : rowId))
     setReactionForRowId(null)
   }
@@ -1838,7 +1854,35 @@ export function Chat() {
           and the blur simply did not exist. Measured, because the stack is one
           bar, two or three depending on whether search is open and the group
           has a pin. */}
-      <div ref={topBarsRef} className="absolute top-0 inset-x-0 z-10">
+      {/* Opening a message menu fades the rest of the thread out behind it.
+          Not decoration: seven small actions hanging off one bubble in a wall
+          of other bubbles is hard to read, and this puts the message you are
+          acting on — and only it — in front.
+
+          The layering, all in this column's own stacking context: the veil at
+          z-[15], the message that owns the menu lifted to z-[16], the header
+          and the composer at z-[18] so they stay sharp and usable through it.
+          `main` is neither positioned nor z-indexed, so a `<li>` inside it
+          competes with the veil directly and can be raised above it — no
+          portal, no cloned bubble.
+
+          Blur is deliberately light (2px). The thread behind is TEXT, and a
+          heavy blur turns a page of words into a grey smear that reads as a
+          rendering fault rather than as depth. */}
+      <AnimatePresence>
+        {(actionsForRowId || reactionForRowId) && (
+          <motion.div
+            key="menu-veil"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.16, ease: 'easeOut' }}
+            className="absolute inset-0 z-[15] bg-ink-black/25 backdrop-blur-[2px]"
+          />
+        )}
+      </AnimatePresence>
+      {/* z-[18] rather than z-10: see the veil above. */}
+      <div ref={topBarsRef} className="absolute top-0 inset-x-0 z-[18]">
       <header className="rcq-header flex-none z-10">
         <div className="max-w-2xl mx-auto px-4 h-14 flex items-center gap-3">
           <Link to="/contacts" className="text-fg-secondary hover:text-fg-primary px-2">
@@ -1998,12 +2042,21 @@ export function Chat() {
         }}
         className="flex-1 max-w-2xl w-full mx-auto px-4 py-4 overflow-y-auto no-scrollbar"
         style={{
-          // Pull the pane down under the composer, then hand the same distance
-          // back as padding. Content scrolls under the bar (so there is a
-          // backdrop to blur) without a single message ever being hidden by it.
-          marginTop: 'calc(-1 * var(--rcq-topbars-h, 0px))',
+          // Both bars are overlays, so this pane ALREADY spans the whole
+          // column: it just pays their height back as padding, and the content
+          // scrolls under them (which is what gives `backdrop-filter` a
+          // backdrop).
+          //
+          // ⚠⚠ It used to also pull itself out from under them with negative
+          // margins — left over from when the bars were in the flow. With them
+          // absolute that stretched the pane 70px PAST the bottom of a
+          // `h-screen overflow-hidden` column, and `overflow: hidden` does not
+          // stop a browser from scrolling a box: focusing the composer
+          // scrolled the column by 45px, which slid the header half off the
+          // top of the screen and left the newest message sitting UNDER the
+          // composer, with a dead strip below it. Reported 16.08 as "последнее
+          // сообщение под полем для ввода".
           paddingTop: 'calc(1rem + var(--rcq-topbars-h, 0px))',
-          marginBottom: 'calc(-1 * var(--rcq-composer-h, 0px))',
           paddingBottom: 'calc(1rem + var(--rcq-composer-h, 0px))',
         }}
       >
@@ -2089,7 +2142,7 @@ export function Chat() {
                 const showActions = actionsForRowId === m.id
                 const showReactionPicker = reactionForRowId === m.id
                 return (
-                  <li key={`in-${m.id}`} id={`msg-${m.id}`} className={`group flex justify-start rounded-lg transition-colors duration-500 ${item.cont ? '-mt-1' : ''} ${highlightId === m.id ? 'bg-accent/15' : ''}`} {...swipeReply(() => startReplyTo(m.id, m.text, replyAuthor))}>
+                  <li key={`in-${m.id}`} id={`msg-${m.id}`} className={`group flex justify-start rounded-lg transition-colors duration-500 ${item.cont ? '-mt-1' : ''} ${highlightId === m.id ? 'bg-accent/15' : ''} ${showActions || showReactionPicker ? 'relative z-[16]' : ''}`} {...swipeReply(() => startReplyTo(m.id, m.text, replyAuthor))}>
                     <div className="relative max-w-[80%] flex flex-col items-start gap-1">
                       {senderName && !item.cont && (
                         <Link
@@ -2161,8 +2214,8 @@ export function Chat() {
                       ) : (
                         <button
                           data-chat-menu
-                          onClick={() => toggleActions(m.id)}
-                          onContextMenu={(e) => { e.preventDefault(); toggleActions(m.id) }}
+                          onClick={(e) => toggleActions(m.id, e.currentTarget)}
+                          onContextMenu={(e) => { e.preventDefault(); toggleActions(m.id, e.currentTarget) }}
                           className="rounded-lg px-3 py-2 text-sm text-left bg-bubble-other hover:brightness-110 transition-colors"
                         >
                           <EmoticonText text={m.text} emoticonSize={18} mention={mentionCtx} />
@@ -2180,8 +2233,9 @@ export function Chat() {
                           (`top-full` on the bubble's `relative` column), one
                           layer above the picker; the two are never open at once,
                           both toggles close the other. */}
+                      <AnimatePresence>
                       {isPlainText && showActions && (
-                        <div data-chat-menu className="absolute top-full left-0 mt-1 z-30 flex items-center gap-1.5 rounded-lg bg-surface px-2 py-1 shadow-lg">
+                        <ActionMenu align="start" up={actionsUp}>
                           {/* The only way in on a touch screen. The ☺ beside
                               the bubble is `rcq-hover-only` — deliberately, it
                               needs a pointer to hover it — so without this row
@@ -2215,8 +2269,9 @@ export function Chat() {
                             label={t('chat.actions.hide')}
                             icon="⊘"
                           />
-                        </div>
+                        </ActionMenu>
                       )}
+                      </AnimatePresence>
                       <AnimatePresence>
                         {showReactionPicker && (
                           <motion.div
@@ -2225,7 +2280,7 @@ export function Chat() {
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, y: 4 }}
                             transition={{ duration: 0.12 }}
-                            className="absolute top-full left-0 mt-1 z-20"
+                            className={`absolute z-20 left-0 ${actionsUp ? 'bottom-full mb-1' : 'top-full mt-1'}`}
                           >
                             <ReactionPicker
                               uin={identity!.uin}
@@ -2239,10 +2294,11 @@ export function Chat() {
                     <button
                       type="button"
                       data-chat-menu
-                      onClick={() => {
+                      onClick={(e) => {
                         // Both float from the same anchor now, so they must not
                         // be open together. The actions toggle already clears
                         // this one; this is the other half of the pair.
+                        setActionsUp(noRoomBelow(e.currentTarget, PICKER_ROOM_PX))
                         setActionsForRowId(null)
                         setReactionForRowId((id) => (id === m.id ? null : m.id))
                       }}
@@ -2410,7 +2466,7 @@ export function Chat() {
               const showActions = actionsForRowId === row.id
               const showReactionPicker = reactionForRowId === row.id
               return (
-              <li key={row.id} id={`msg-${row.id}`} className={`group flex justify-end rounded-lg transition-colors duration-500 ${item.cont ? '-mt-1' : ''} ${highlightId === row.id ? 'bg-accent/15' : ''}`} {...swipeReply(() => startReply(row))}>
+              <li key={row.id} id={`msg-${row.id}`} className={`group flex justify-end rounded-lg transition-colors duration-500 ${item.cont ? '-mt-1' : ''} ${highlightId === row.id ? 'bg-accent/15' : ''} ${showActions || showReactionPicker ? 'relative z-[16]' : ''}`} {...swipeReply(() => startReply(row))}>
                 <div className="relative max-w-[80%] flex flex-col items-end gap-1">
                   {row.fwdName && (
                     <div className="font-mono text-[0.625rem] uppercase tracking-wider text-fg-dim">
@@ -2431,14 +2487,14 @@ export function Chat() {
                   )}
                   <button
                     data-chat-menu
-                    onClick={() => toggleActions(row.id)}
+                    onClick={(e) => toggleActions(row.id, e.currentTarget)}
                     // Right-click opens the same actions. On a phone, tapping a
                     // bubble to get reply/edit/delete is the obvious gesture; on
                     // a desktop it is not, and a right-click just produced the
                     // browser's own menu — so desktop Windows reported that
                     // deleting a note "is still not there" when it had been
                     // there all along, one left-click away.
-                    onContextMenu={(e) => { e.preventDefault(); toggleActions(row.id) }}
+                    onContextMenu={(e) => { e.preventDefault(); toggleActions(row.id, e.currentTarget) }}
                     className={`rounded-lg px-3 py-2 text-sm text-left transition-colors ${
                       row.state === 'failed'
                         ? 'bg-red-50 border border-red-200'
@@ -2478,8 +2534,9 @@ export function Chat() {
                   )}
                   {/* Floats for the same reason as the incoming side above,
                       anchored right because this column is right-aligned. */}
+                  <AnimatePresence>
                   {showActions && row.state === 'sent' && (
-                    <div data-chat-menu className="absolute top-full right-0 mt-1 z-30 flex items-center gap-1.5 rounded-lg bg-surface px-2 py-1 shadow-lg">
+                    <ActionMenu align="end" up={actionsUp}>
                       {/* Reacting to your own message: the founder's report.
                           The menu listed reply / edit / copy / forward / delete
                           and nothing else, so the only route was the hover ☺ —
@@ -2500,9 +2557,10 @@ export function Chat() {
                         <ActionButton onClick={() => pinMessage(row.text)} label={t('chat.actions.pin')} icon="📌" />
                       )}
                       <ActionButton onClick={() => setForwardingRow({ text: row.text, author: myNickname })} label={t('chat.actions.forward')} icon="↗" />
-                      <ActionButton onClick={() => void deleteForEveryone(row)} label={t('chat.actions.delete')} danger />
-                    </div>
+                      <ActionButton onClick={() => void deleteForEveryone(row)} label={t('chat.actions.delete')} icon="🗑" danger />
+                    </ActionMenu>
                   )}
+                  </AnimatePresence>
                   <AnimatePresence>
                     {showReactionPicker && (
                       <motion.div
@@ -2511,7 +2569,7 @@ export function Chat() {
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: 4 }}
                         transition={{ duration: 0.12 }}
-                        className="absolute top-full right-0 mt-1 z-20"
+                        className={`absolute z-20 right-0 ${actionsUp ? 'bottom-full mb-1' : 'top-full mt-1'}`}
                       >
                         <ReactionPicker
                           uin={identity!.uin}
@@ -2525,7 +2583,8 @@ export function Chat() {
                 <button
                   type="button"
                   data-chat-menu
-                  onClick={() => {
+                  onClick={(e) => {
+                    setActionsUp(noRoomBelow(e.currentTarget, PICKER_ROOM_PX))
                     setActionsForRowId(null)
                     setReactionForRowId((id) => (id === row.id ? null : row.id))
                   }}
@@ -2613,7 +2672,7 @@ export function Chat() {
           the bottom-pin maths. */}
       <div
         ref={composerRef}
-        className="rcq-floating-bar absolute bottom-0 inset-x-0 z-10 pb-[env(safe-area-inset-bottom)]"
+        className="rcq-floating-bar absolute bottom-0 inset-x-0 z-[18] pb-[env(safe-area-inset-bottom)]"
       >
         <div className="relative max-w-lg mx-auto px-3 py-3">
           {/* Everything that floats above the composer lives in ONE stack: the
@@ -2872,19 +2931,63 @@ export function Chat() {
   )
 }
 
+/// One row of the message menu: icon, then label, full width.
+///
+/// It used to be a chip in a horizontal strip, which is the shape that does
+/// not survive growth — seven actions made a bar wider than the message it
+/// belonged to, and on a phone it ran off the edge. A column reads top to
+/// bottom at any length, which is what every phone messenger settled on.
 function ActionButton({ onClick, label, icon, danger }: { onClick: () => void; label: string; icon?: string; danger?: boolean }) {
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-1 rounded px-2 py-1 font-mono text-[0.625rem] uppercase tracking-wider transition-colors ${
-        danger
-          ? 'text-red-500 hover:bg-red-500/15'
-          : 'text-fg-secondary hover:bg-field hover:text-fg-primary'
+      className={`w-full flex items-center gap-2.5 px-3 h-8 text-left text-[0.8125rem] whitespace-nowrap transition-colors ${
+        danger ? 'text-red-500 hover:bg-red-500/15' : 'text-fg-primary hover:bg-field'
       }`}
     >
-      {icon && <span>{icon}</span>}
-      <span>{label}</span>
+      <span className={`w-4 shrink-0 text-center ${danger ? '' : 'text-fg-dim'}`}>{icon ?? '⊘'}</span>
+      {/* The labels are lowercase in every dictionary because they used to be
+          rendered in a uppercase mono chip. `first-letter` rather than
+          `capitalize`: "удалить у всех" must not become "Удалить У Всех". */}
+      <span className="first-letter:uppercase">{label}</span>
     </button>
+  )
+}
+
+/// Roughly the tallest this menu gets (seven rows plus padding). Used to
+/// decide which side of the bubble it opens on.
+const MENU_ROOM_PX = 260
+/// The reaction strip is one row of faces, so it needs far less.
+const PICKER_ROOM_PX = 130
+
+/// Is there less than `need` pixels between `el` and the bottom of the window?
+/// Anything that floats under a bubble asks this first: the thread clips its
+/// own overflow and the composer covers the last ~80px, so a panel opened
+/// downward from the newest message is simply cut in half.
+function noRoomBelow(el: HTMLElement | null | undefined, need: number): boolean {
+  if (!el) return false
+  return window.innerHeight - el.getBoundingClientRect().bottom < need
+}
+
+/// The menu itself. `align` follows the bubble (own messages are right-aligned,
+/// so their menu hangs from the right edge); `up` flips it above the bubble
+/// when there is no room below.
+function ActionMenu({ align, up, children }: { align: 'start' | 'end'; up: boolean; children: ReactNode }) {
+  return (
+    <motion.div
+      key="msg-actions"
+      data-chat-menu
+      initial={{ opacity: 0, scale: 0.96, y: up ? 4 : -4 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.96, y: up ? 4 : -4 }}
+      transition={{ duration: 0.13, ease: 'easeOut' }}
+      style={{ transformOrigin: `${up ? 'bottom' : 'top'} ${align === 'end' ? 'right' : 'left'}` }}
+      className={`absolute z-30 min-w-[9rem] overflow-hidden rounded-xl bg-surface py-1 shadow-xl ring-1 ring-line/50 ${
+        align === 'end' ? 'right-0' : 'left-0'
+      } ${up ? 'bottom-full mb-1' : 'top-full mt-1'}`}
+    >
+      {children}
+    </motion.div>
   )
 }
 

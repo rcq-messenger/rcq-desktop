@@ -77,6 +77,53 @@ export async function lockNow(): Promise<void> {
   window.location.assign('/')
 }
 
+// ── auto-lock ────────────────────────────────────────────────────────────────
+//
+// A PIN that is only asked at launch protects a machine that gets rebooted.
+// The one that gets left open in a kitchen, or handed over "just to look at
+// something", is the case people actually meet — so the app locks itself after
+// a stretch of no input.
+//
+// Off by default: locking is disruptive, and a lock nobody asked for teaches
+// people to turn the whole thing off.
+export const AUTOLOCK_KEY = 'rcq.desktop.pin.autolock'
+/// Minutes. 0 = never.
+export const AUTOLOCK_CHOICES = [0, 5, 15, 60] as const
+
+export function autoLockMinutes(): number {
+  const raw = Number(localStorage.getItem(AUTOLOCK_KEY) ?? '0')
+  return AUTOLOCK_CHOICES.includes(raw as (typeof AUTOLOCK_CHOICES)[number]) ? raw : 0
+}
+
+export function setAutoLockMinutes(m: number): void {
+  localStorage.setItem(AUTOLOCK_KEY, String(m))
+}
+
+/// Watches for idleness while unlocked. Mounted only on the desktop, and only
+/// once a vault exists — there is nothing to lock otherwise.
+function AutoLock() {
+  useEffect(() => {
+    const minutes = autoLockMinutes()
+    if (minutes <= 0) return
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const arm = () => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => void lockNow(), minutes * 60_000)
+    }
+    // Anything that means a person is here. `visibilitychange` counts too: a
+    // window that comes back to the front should get its full stretch again
+    // rather than locking a second later.
+    const events = ['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart', 'visibilitychange']
+    for (const e of events) window.addEventListener(e, arm, { passive: true })
+    arm()
+    return () => {
+      if (timer) clearTimeout(timer)
+      for (const e of events) window.removeEventListener(e, arm)
+    }
+  }, [])
+  return null
+}
+
 export function PinGate({ children }: { children: ReactNode }) {
   const { t } = useI18n()
   // null = still asking Rust; true = show the lock screen.
@@ -127,7 +174,14 @@ export function PinGate({ children }: { children: ReactNode }) {
   }
 
   if (locked === null) return null
-  if (!locked) return <>{children}</>
+  if (!locked) {
+    return (
+      <>
+        {vaultSupported() && <AutoLock />}
+        {children}
+      </>
+    )
+  }
 
   return (
     <div className="h-screen [height:100dvh] flex flex-col items-center justify-center bg-surface-dim px-6">

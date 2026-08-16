@@ -344,6 +344,15 @@ export interface TurnCredentials {
 /// `reply` is the operator's answer and is an empty string until there is
 /// one; the operator's internal notes are deliberately not exposed. An older
 /// island may omit the field entirely, hence the optional.
+/// One turn in a report's conversation. `from_admin` is the only side the
+/// reader needs: there is exactly one person on each end.
+export interface ReportTurn {
+  id: number
+  from_admin: boolean
+  body: string
+  created_at: string
+}
+
 export interface MyReport {
   id: number
   reason: string
@@ -351,8 +360,12 @@ export interface MyReport {
   /// not an enum, so unknown values must fall back rather than render a key.
   status: string
   created_at: string
+  /// The last operator answer. Older islands send only this.
   reply?: string
   replied_at?: string | null
+  /// The whole exchange, oldest first. Absent on an island that predates the
+  /// ticket thread, which is why the screen falls back to `reply`.
+  thread?: ReportTurn[]
 }
 
 /// The platform tag glued to the front of a bug report so the admin queue can
@@ -633,6 +646,12 @@ export const Api = {
   /// be closed, but an answer already written must always be readable.
   myReports(id: WebIdentity): Promise<MyReport[]> {
     return request<MyReport[]>(id, 'GET', '/reports/mine')
+  },
+
+  /// Write back on your own report — the half that did not exist, so people
+  /// answered a question by filing a second report. 409 when it is closed.
+  addToReport(id: WebIdentity, reportId: number, body: string): Promise<ReportTurn> {
+    return request<ReportTurn>(id, 'POST', `/reports/mine/${reportId}/messages`, { body })
   },
 
   /// Withdraw one of your own reports. 404 when it is not yours, 409

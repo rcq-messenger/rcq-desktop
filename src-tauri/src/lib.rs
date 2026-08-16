@@ -244,6 +244,23 @@ fn vault_remove(
     vault::remove(&app, &open, &pin)
 }
 
+/// Stop the bundled sing-box so an installer can replace its file.
+///
+/// ⚠ Windows will not overwrite a running executable. The updater downloads
+/// the new build, the installer tries to write `sing-box.exe` while our own
+/// child process still holds it, and the update fails — every time, for
+/// anyone who has the bypass on. Reported 2026-08-16: "всё время такая ошибка
+/// что синг бокс не может обновить, приходится вручную качать и
+/// перезагружать ПК".
+///
+/// Deliberately NOT `bypass_set(false)`: the setting stays on, so the tunnel
+/// comes back by itself on the next launch. This only takes the process down
+/// for the seconds the installer needs.
+#[tauri::command]
+fn bypass_halt() {
+    bypass::stop();
+}
+
 #[tauri::command]
 fn desktop_platform() -> &'static str {
     if cfg!(target_os = "macos") {
@@ -311,6 +328,7 @@ pub fn run() {
                 user_relay_add,
                 user_relay_remove,
                 bypass_set,
+                bypass_halt,
                 relay_key_set,
                 relay_key_status,
                 network_diagnostics,

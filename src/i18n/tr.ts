@@ -394,6 +394,8 @@ export const tr: Record<string, string> = {
   'settings.multihome.promote_confirm': '{host} ana adan olsun mu? Uygulama oraya yeniden bağlanır, şimdiki ana adan yedeğe düşer. Hesabın ve geçmişin etkilenmez.',
   'settings.multihome.promote_unreachable': 'O adaya şu anda erişilemiyor, bu yüzden ana yapılmadı. Geri geldiğinde tekrar dene.',
   'settings.multihome.footer': 'Ada listesi anahtarınla imzalanıp yayımlanır, böylece son sürümleri kullanan kişiler her adaya kendiliğinden teslim eder. Yedek posta kutusunu yalnızca bu tarayıcı yoklar.',
+  'settings.multihome.error.catalogue':
+    'Ada listesi yüklenmedi. Bu genelde ağın listenin durduğu adresi engellediği anlamına gelir; uygulamanın kendisi çalışmaya devam eder. Başka bir ağda deneyin ya da aşağıdan elle bir ada ekleyin.',
   'settings.multihome.error.invalid': 'Bu, bir ada adresine benzemiyor.',
   'settings.multihome.error.primary': 'O zaten senin ana adan.',
   'settings.multihome.error.already': 'Bu ada zaten ekli.',

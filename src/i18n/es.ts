@@ -394,6 +394,8 @@ export const es: Record<string, string> = {
   'settings.multihome.promote_confirm': '¿Hacer de {host} tu isla principal? La app se reconectará allí y tu principal actual pasa a ser la copia. Tu cuenta y tu historial no cambian.',
   'settings.multihome.promote_unreachable': 'Esa isla no está accesible ahora mismo, así que no se cambió. Inténtalo cuando vuelva.',
   'settings.multihome.footer': 'La lista de islas se firma con tu clave y se publica, así que los contactos con las versiones más nuevas de la app entregan a todas las islas solos. El buzón de la copia solo lo consulta este navegador.',
+  'settings.multihome.error.catalogue':
+    'No se cargó la lista de islas. Normalmente eso significa que la red bloquea la dirección donde está publicada: la app en sí sigue funcionando. Prueba en otra red o añade una isla a mano abajo.',
   'settings.multihome.error.invalid': 'Eso no parece el host de una isla.',
   'settings.multihome.error.primary': 'Esa ya es tu isla principal.',
   'settings.multihome.error.already': 'Esta isla ya está añadida.',

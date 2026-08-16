@@ -428,6 +428,8 @@ export const en: Record<string, string> = {
   'settings.multihome.promote_unreachable': 'That island is unreachable right now, so it was not promoted. Try again when it is back.',
   'settings.multihome.footer':
     'The island list is signed with your key and published, so contacts on the latest app versions deliver to every island automatically. Only this browser polls the backup mailbox.',
+  'settings.multihome.error.catalogue':
+    'The island list did not load. This usually means the network is blocking where it is published — the app itself keeps working; try again on another network, or add an island manually below.',
   'settings.multihome.error.invalid': 'That does not look like an island host.',
   'settings.multihome.error.primary': 'That is already your primary island.',
   'settings.multihome.error.already': 'This island is already added.',

@@ -394,6 +394,8 @@ export const zh: Record<string, string> = {
   'settings.multihome.promote_confirm': '把 {host} 设为你的主岛？应用会重新连到它，当前的主岛会变成备份。账号和历史记录不受影响。',
   'settings.multihome.promote_unreachable': '这个岛现在不可达，因此没有设为主岛。等它恢复后再试。',
   'settings.multihome.footer': '岛列表用你的密钥签名并公开发布，因此用最新版本应用的联系人会自动把消息投递到每个岛。只有这个浏览器会轮询备份信箱。',
+  'settings.multihome.error.catalogue':
+    '岛屿列表没能加载。通常是网络屏蔽了它所在的地址——应用本身仍然可用。换个网络再试，或在下面手动添加一个岛屿。',
   'settings.multihome.error.invalid': '这看起来不是岛的地址。',
   'settings.multihome.error.primary': '这已经是你的主岛。',
   'settings.multihome.error.already': '这个岛已经添加过了。',

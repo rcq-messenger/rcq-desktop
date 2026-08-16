@@ -49,6 +49,18 @@ export async function idbSet(key: string, val: unknown): Promise<void> {
   })
 }
 
+/// Every key in this account's store. Used when a PIN is switched on or off
+/// and the data already on disk has to be re-written in the other shape.
+export async function idbKeys(): Promise<string[]> {
+  const d = await db()
+  return new Promise((resolve, reject) => {
+    const tx = d.transaction(STORE, 'readonly')
+    const req = tx.objectStore(STORE).getAllKeys()
+    req.onsuccess = () => resolve((req.result as IDBValidKey[]).map(String))
+    req.onerror = () => reject(req.error)
+  })
+}
+
 export async function idbDel(key: string): Promise<void> {
   const d = await db()
   return new Promise((resolve, reject) => {

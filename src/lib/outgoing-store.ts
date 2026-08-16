@@ -10,6 +10,7 @@
 // the row — no-ops its own carbon).
 
 import { scopedKey } from './account-scope'
+import { isSealedText, openText, sealText } from './pin-seal'
 import type { Envelope, CarbonEnvelope, ReplyContext } from './crypto'
 
 export interface OutgoingRow {
@@ -79,11 +80,81 @@ export function storageKey(isGroup: boolean, idNum: number): string {
 /// next to the 5 MB localStorage budget.
 export const MAX_PERSISTED_ROWS = 2000
 
+// ── the desktop PIN ──────────────────────────────────────────────────────────
+//
+// Sealing these logs is not optional once the received half is sealed: half a
+// conversation in the clear reads back as the whole conversation. But the
+// readers are synchronous — Chat.tsx builds its state from `loadPersisted`
+// during a render — and AES-GCM is not. So while a PIN is on, the decrypted
+// logs live in memory for the life of the window (filled once, behind the lock
+// screen, before anything renders) and the disk only ever sees ciphertext.
+// Same shape the cross-island request store already uses, for the same reason.
+let mem: Map<string, OutgoingRow[]> | null = null
+
+/// Every outgoing log in this browser, whichever account it belongs to — a PIN
+/// is set on a computer, not on an account.
+function outgoingKeys(): string[] {
+  const out: string[] = []
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i)
+    if (k && k.startsWith('rcq.web.') && k.includes('outgoing.')) out.push(k)
+  }
+  return out
+}
+
+function parseRows(text: string): OutgoingRow[] {
+  try {
+    const arr = JSON.parse(text) as OutgoingRow[]
+    return Array.isArray(arr) ? arr : []
+  } catch {
+    return []
+  }
+}
+
+/// Read every log into memory and make sure what stays on disk is sealed.
+/// Called once, right after the PIN opens the vault and before the app renders.
+export async function adoptSealedOutgoing(): Promise<void> {
+  const next = new Map<string, OutgoingRow[]>()
+  for (const k of outgoingKeys()) {
+    const raw = localStorage.getItem(k)
+    if (raw == null) continue
+    if (isSealedText(raw)) {
+      const text = await openText(raw)
+      // A blob that will not open belongs to a key that is gone. Leaving it
+      // alone is the only non-destructive answer: the thread shows empty, and
+      // nothing overwrites what might still be recoverable.
+      if (text != null) next.set(k, parseRows(text))
+      continue
+    }
+    // Plain, from before the PIN: take it into memory and seal it in place.
+    const rows = parseRows(raw)
+    next.set(k, rows)
+    const sealed = await sealText(JSON.stringify(rows))
+    if (sealed) localStorage.setItem(k, sealed)
+  }
+  mem = next
+}
+
+/// Put the logs back on the disk in the clear and stop holding them. Called
+/// when the PIN is switched off, where the whole point is that the data
+/// becomes readable again.
+export async function releaseSealedOutgoing(): Promise<void> {
+  for (const k of outgoingKeys()) {
+    const raw = localStorage.getItem(k)
+    if (raw == null || !isSealedText(raw)) continue
+    const text = (await openText(raw)) ?? (mem?.has(k) ? JSON.stringify(mem.get(k)) : null)
+    if (text != null) localStorage.setItem(k, text)
+  }
+  mem = null
+}
+
 export function loadPersisted(key: string): OutgoingRow[] {
   try {
-    const raw = localStorage.getItem(key)
-    if (!raw) return []
-    const arr = JSON.parse(raw) as OutgoingRow[]
+    const arr = mem ? mem.get(key) : (() => {
+      const raw = localStorage.getItem(key)
+      return raw ? (JSON.parse(raw) as OutgoingRow[]) : null
+    })()
+    if (!arr) return []
     // 'sending' rows from a previous session were never delivered — surface
     // them as failed on rehydrate so the user retries.
     return arr.map((r) => (r.state === 'sending' ? { ...r, state: 'failed' } : r))
@@ -94,6 +165,17 @@ export function loadPersisted(key: string): OutgoingRow[] {
 
 export function savePersisted(key: string, rows: OutgoingRow[]) {
   const trimmed = rows.length > MAX_PERSISTED_ROWS ? rows.slice(rows.length - MAX_PERSISTED_ROWS) : rows
+  if (mem) {
+    // Memory first, so a reader in the same tick sees the row whether or not
+    // the seal has finished. The disk write is fire-and-forget by necessity.
+    mem.set(key, trimmed)
+    void sealText(JSON.stringify(trimmed))
+      .then((sealed) => {
+        if (sealed) localStorage.setItem(key, sealed)
+      })
+      .catch(() => {})
+    return
+  }
   try {
     localStorage.setItem(key, JSON.stringify(trimmed))
   } catch {

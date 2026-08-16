@@ -460,6 +460,11 @@ export function Settings() {
                       size={32}
                       mediaId={who?.avatar_media_id}
                       mediaKey={who?.avatar_media_key}
+                      // THIS account's island, not the active one. Otherwise a
+                      // row for an account living on another island asks the
+                      // wrong server for its picture and falls back to the
+                      // flower.
+                      apiBase={a.apiBase}
                     />
                     <span className="min-w-0 flex-1">
                       <span className="block text-sm font-medium truncate">{name}</span>

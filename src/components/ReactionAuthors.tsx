@@ -7,6 +7,7 @@
 // and by long-press on touch; a plain tap keeps toggling your own reaction,
 // which is the common action and must not become two-step.
 
+import { useMemo } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { emoticonAssetURL } from '../lib/emoticons'
 import { useI18n } from '../lib/i18n-context'
@@ -34,6 +35,20 @@ export function ReactionAuthors({
   onClose: () => void
 }) {
   const { t } = useI18n()
+  // Grouped by reaction, biggest group first — the same shape both phones use.
+  // A flat list repeated the same smiley down the right-hand edge once per
+  // person, so "six people liked this" had to be counted by eye, and the one
+  // question the sheet exists to answer (who reacted with WHAT) was the hardest
+  // thing to read on it.
+  const groups = useMemo(() => {
+    const by = new Map<string, ReactionAuthor[]>()
+    for (const a of authors) {
+      const list = by.get(a.asset)
+      if (list) list.push(a)
+      else by.set(a.asset, [a])
+    }
+    return [...by.entries()].sort((x, y) => y[1].length - x[1].length)
+  }, [authors])
   return (
     <AnimatePresence>
       {visible && (
@@ -62,29 +77,41 @@ export function ReactionAuthors({
                 {t('chat.forward.cancel')}
               </button>
             </header>
-            <ul className="flex-1 overflow-y-auto pb-2">
-              {authors.map((a) => (
-                <li key={`${a.uin}-${a.asset}`} className="flex items-center gap-3 px-4 py-2">
-                  <PersonAvatar
-                    status={a.status}
-                    size={32}
-                    mediaId={a.avatarMediaId}
-                    mediaKey={a.avatarMediaKey}
-                    crossIsland={a.crossIsland}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm">{a.name}</div>
-                    <div className="font-mono text-[0.625rem] text-fg-dim">#{a.uin}</div>
+            <div className="flex-1 overflow-y-auto pb-2">
+              {groups.map(([asset, people]) => (
+                <section key={asset}>
+                  {/* The smiley is the subject of the group, so it is drawn at
+                      the size a subject deserves rather than as a trailing
+                      marker (same call the phones made). */}
+                  <div className="flex items-center gap-2 px-4 pt-3 pb-1">
+                    <img
+                      src={emoticonAssetURL(asset)}
+                      alt={asset}
+                      className="h-7 w-7 flex-none select-none"
+                      draggable={false}
+                    />
+                    <span className="text-sm text-fg-secondary tabular-nums">{people.length}</span>
                   </div>
-                  <img
-                    src={emoticonAssetURL(a.asset)}
-                    alt={a.asset}
-                    className="h-5 w-5 flex-none select-none"
-                    draggable={false}
-                  />
-                </li>
+                  <ul>
+                    {people.map((a) => (
+                      <li key={`${a.uin}-${asset}`} className="flex items-center gap-3 pl-8 pr-4 py-1.5">
+                        <PersonAvatar
+                          status={a.status}
+                          size={28}
+                          mediaId={a.avatarMediaId}
+                          mediaKey={a.avatarMediaKey}
+                          crossIsland={a.crossIsland}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm">{a.name}</div>
+                          <div className="font-mono text-[0.625rem] text-fg-dim">#{a.uin}</div>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
               ))}
-            </ul>
+            </div>
           </motion.div>
         </motion.div>
       )}

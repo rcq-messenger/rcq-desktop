@@ -205,6 +205,14 @@ export const tr: Record<string, string> = {
   'how.a2': 'Ada, postanızı tutan bir sunucudur. RCQ tek bir sunucu değil, birbirinden bağımsız birçok sunucudur: bizimki, başkalarınınki ve kurarsanız sizinki.\nNumaranızı bir ada verir, dolayısıyla iki adadaki aynı numara iki farklı kişidir: adres, numara VE adadır. Yine de farklı adalardaki insanlar yazışır, konuşur ve aynı gruplarda bulunur.',
   'how.q3': 'Çalışmayı bırakınca ne yapmalıyım?',
   'how.a3': 'Önce engellenip engellenmediğinizi öğrenin: Ayarlar → Ağ → Bağlantı tanılama, ve tam denetimi VPN KAPALIYKEN çalıştırın.\nSize tek bir satır verir. Onu Hata bildir üzerinden gönderin: o satır ağınızda tam olarak neyin kapalı olduğunu söyler, onsuz tahmin yürütürüz.',
+  'how.q4':
+    'Ağım RCQ’yu engellediğinde ne olur?',
+  'how.a4':
+    'Uygulama bunu fark eder ve kendisi dolanır. Açılacak bir şey yok, ayrı bir VPN de gerekmez: röylelerimizden birine tünel açar ve çalışmaya devam eder.\nEngelleyen taraf için bu trafik, sıradan bir siteye yapılan sıradan bir ziyaret gibi görünür — tarayıcınızın gün boyu kurduğu şifreli bağlantıların aynısı. Röle mühürlü zarflar taşır, yani mesajlarınızı o da okuyamaz.',
+  'how.q5':
+    'Kime yazdığımı biri öğrenebilir mi?',
+  'how.a5':
+    'Adanız bir zarfın birine gittiğini bilir, sizden çıktığını bilmez: adınız dışarıda yazmaz.\nTünel açıkken dışarı çıkan yol iki röle arasında bölünür. Birincisi sizi görür ama hangi adaya gittiğinizi bilmez; ikincisi adaya ulaşır ama kim olduğunuzu bilmez. İki yarıyı birleştirmek ikisini birden gerektirir, ve onlar farklı ülkelerde farklı kişilere aittir.\nGizlenemeyen şey: RCQ kullandığınız, ağınızı elinde tutan tarafa görünür — tünel kapalı olduğu sürece.',
   'how.more': 'Daha fazla soru: rcq.app/faq →',
   'storage.title': 'Bu tarayıcıda ne var',
   'storage.footer.short': 'Anahtarlar, yazışmalar, listeler ve bunları silme',

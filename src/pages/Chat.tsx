@@ -1878,11 +1878,18 @@ export function Chat() {
           acting on — and only it — in front.
 
           The layering, all in this column's own stacking context: the veil at
-          z-[15], the message that owns the menu lifted to z-[16], the header
-          and the composer at z-[18] so they stay sharp and usable through it.
-          `main` is neither positioned nor z-indexed, so a `<li>` inside it
-          competes with the veil directly and can be raised above it — no
-          portal, no cloned bubble.
+          z-[19] — OVER the header and the composer, not under them — and the
+          message that owns the menu lifted to z-[20]. It used to sit at z-[15]
+          with the bars at z-[18] left sharp above it, which read as the thread
+          alone having gone milky while the two black bars stayed put: founder,
+          on the desktop, "почему белый блюр то? блюр должен совпадать с шапкой
+          и панелью". Dimming everything except the message being acted on is
+          also the honest version of what this is for.
+
+          ⚠ `bg-black`, not `bg-ink-black`: that token means "the primary
+          foreground colour" and flips to near-WHITE in the dark theme (see
+          index.css), so the veil meant to darken the thread was painting a
+          white wash over it. That is the white the screenshot showed.
 
           Blur is deliberately light (2px). The thread behind is TEXT, and a
           heavy blur turns a page of words into a grey smear that reads as a
@@ -1895,7 +1902,7 @@ export function Chat() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.16, ease: 'easeOut' }}
-            className="absolute inset-0 z-[15] bg-ink-black/25 backdrop-blur-[2px]"
+            className="absolute inset-0 z-[19] bg-black/45 backdrop-blur-[2px]"
           />
         )}
       </AnimatePresence>
@@ -2160,7 +2167,7 @@ export function Chat() {
                 const showActions = actionsForRowId === m.id
                 const showReactionPicker = reactionForRowId === m.id
                 return (
-                  <li key={`in-${m.id}`} id={`msg-${m.id}`} className={`group flex justify-start rounded-lg transition-colors duration-500 ${item.cont ? '-mt-1' : ''} ${highlightId === m.id ? 'bg-accent/15' : ''} ${showActions || showReactionPicker ? 'relative z-[16]' : ''}`} {...swipeReply(() => startReplyTo(m.id, m.text, replyAuthor))}>
+                  <li key={`in-${m.id}`} id={`msg-${m.id}`} className={`group flex justify-start rounded-lg transition-colors duration-500 ${item.cont ? '-mt-1' : ''} ${highlightId === m.id ? 'bg-accent/15' : ''} ${showActions || showReactionPicker ? 'relative z-[20]' : ''}`} {...swipeReply(() => startReplyTo(m.id, m.text, replyAuthor))}>
                     <div className="relative max-w-[80%] flex flex-col items-start gap-1">
                       {senderName && !item.cont && (
                         <Link
@@ -2484,7 +2491,7 @@ export function Chat() {
               const showActions = actionsForRowId === row.id
               const showReactionPicker = reactionForRowId === row.id
               return (
-              <li key={row.id} id={`msg-${row.id}`} className={`group flex justify-end rounded-lg transition-colors duration-500 ${item.cont ? '-mt-1' : ''} ${highlightId === row.id ? 'bg-accent/15' : ''} ${showActions || showReactionPicker ? 'relative z-[16]' : ''}`} {...swipeReply(() => startReply(row))}>
+              <li key={row.id} id={`msg-${row.id}`} className={`group flex justify-end rounded-lg transition-colors duration-500 ${item.cont ? '-mt-1' : ''} ${highlightId === row.id ? 'bg-accent/15' : ''} ${showActions || showReactionPicker ? 'relative z-[20]' : ''}`} {...swipeReply(() => startReply(row))}>
                 <div className="relative max-w-[80%] flex flex-col items-end gap-1">
                   {row.fwdName && (
                     <div className="font-mono text-[0.625rem] uppercase tracking-wider text-fg-dim">

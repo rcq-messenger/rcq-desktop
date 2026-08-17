@@ -30,6 +30,12 @@ export function HowItWorks() {
         <Answer q={t('how.q1')} a={t('how.a1')} />
         <Answer q={t('how.q2')} a={t('how.a2')} />
         <Answer q={t('how.q3')} a={t('how.a3')} />
+        {/* Circumvention and onion routing, asked for in #572: "в «как это
+            работает» я бы добавил про луковое разделение знания сервера об
+            отправителе и получателе". In plain words — the person asking has
+            no reason to know what a relay or a circuit is. */}
+        <Answer q={t('how.q4')} a={t('how.a4')} />
+        <Answer q={t('how.q5')} a={t('how.a5')} />
 
         <a
           href="https://rcq.app/faq"

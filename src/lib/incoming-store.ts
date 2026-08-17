@@ -188,8 +188,11 @@ export function applyReaction(targetId: string, reactor: number, asset: string |
     }
     inner.set(reactor, asset)
   }
-  persist()
+  // Paint first, write second. The user's own reaction is the one case where
+  // the two are visibly ordered: the tap has already happened, the picture
+  // belongs on screen in that frame, and the archive can catch up after.
   emitReactions()
+  persist()
 }
 
 /// Current (reactorUIN -> asset) for a target, or undefined. Read inside
@@ -488,8 +491,21 @@ export function mergeRestoredIncoming(
   return fresh.length
 }
 
-function persist() {
-  if (_activeUin == null) return
+/// Write the whole history to disk. ⚠ Genuinely the WHOLE history: this
+/// snapshots every thread, every reaction and every tombstone, serializes it
+/// and — with a PIN set — encrypts it. That is fine once, and ruinous per
+/// event: one reaction, or one row of a queue drain, paid for the entire
+/// archive. It was visible as a stutter at the exact moment a reaction
+/// appeared, and as a drain that crawled through a large backlog.
+///
+/// So writes are coalesced: callers say "the store changed" and a single
+/// write follows shortly after the burst. In-memory state is the source of
+/// truth for everything on screen; this is the copy that survives a reload.
+let persistTimer: ReturnType<typeof setTimeout> | null = null
+let persistInFlight: Promise<void> = Promise.resolve()
+
+function writeNow(): Promise<void> {
+  if (_activeUin == null) return Promise.resolve()
   const reactions: Record<string, Record<string, string>> = {}
   for (const [t, inner] of reactionsByTarget) reactions[t] = Object.fromEntries(inner)
   const blob: Persisted = {
@@ -500,11 +516,48 @@ function persist() {
   }
   const uin = _activeUin
   // Sealed under the desktop PIN when there is one; the plain object otherwise
-  // (a browser tab has nowhere to keep a key the page cannot reach). Writes
-  // stay fire-and-forget — the store is already the source of truth in memory.
-  void sealValue(blob)
+  // (a browser tab has nowhere to keep a key the page cannot reach).
+  persistInFlight = sealValue(blob)
     .then((stored) => idbSet(histKey(uin), stored))
     .catch(() => {})
+  return persistInFlight
+}
+
+function persist() {
+  if (persistTimer) return
+  persistTimer = setTimeout(() => {
+    persistTimer = null
+    void writeNow()
+  }, 300)
+}
+
+/// Write anything still pending and wait for it to land. The queue drain calls
+/// this before acking: an ack tells the island it may let go of those rows, and
+/// promising that while their only copy is a scheduled write is how a crash
+/// between the two loses messages for good.
+export async function flushHistory(): Promise<void> {
+  if (persistTimer) {
+    clearTimeout(persistTimer)
+    persistTimer = null
+    await writeNow()
+    return
+  }
+  await persistInFlight
+}
+
+// A tab being closed or hidden gets no second chance at a scheduled write.
+if (typeof document !== 'undefined') {
+  const flushOnHide = () => {
+    if (persistTimer) {
+      clearTimeout(persistTimer)
+      persistTimer = null
+      void writeNow()
+    }
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushOnHide()
+  })
+  window.addEventListener('pagehide', flushOnHide)
 }
 
 /// Load this account's persisted history into the store (call once on mount).

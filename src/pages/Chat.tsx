@@ -1453,7 +1453,17 @@ export function Chat() {
             }`}
             title={c.asset}
           >
-            <img src={emoticonAssetURL(c.asset)} alt={c.asset} className="h-4 w-4 select-none" draggable={false} />
+            {/* ⚠ `w-auto`, not a square. The kolobki are not square images (21x25,
+                33x40, 37x25 …), and a fixed w-4 h-4 box squeezed every one of them
+                into it — the same flattening `object-contain` fixed in the picker,
+                still here under the bubble. The height is what a chip needs to
+                agree on; the width is the picture's own business. */}
+            <img
+              src={emoticonAssetURL(c.asset)}
+              alt={c.asset}
+              className="h-4 w-auto max-w-6 select-none object-contain"
+              draggable={false}
+            />
             {c.count > 1 && <span className="font-mono text-[0.625rem] text-fg-secondary">{c.count}</span>}
           </button>
         ))}

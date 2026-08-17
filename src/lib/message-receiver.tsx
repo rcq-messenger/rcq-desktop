@@ -7,7 +7,7 @@ import { useEffect } from 'react'
 import { useIdentity } from './identity-context'
 import { useWS } from './ws'
 import { decryptIncoming, getDevice } from './signal-device'
-import { addIncoming, addGroupIncoming, hydrateIncoming, beginCatchUp, endCatchUp } from './incoming-store'
+import { addIncoming, addGroupIncoming, hydrateIncoming, beginCatchUp, endCatchUp, flushHistory } from './incoming-store'
 import { fileOutgoingCarbon } from './outgoing-store'
 import { publishHomeIslandRecord } from './federation-publish'
 import { applyPushedRecord, drainBackupQueues, listBackupHomes } from './multihome'
@@ -282,6 +282,11 @@ function drainPrimaryQueue(identity: WebIdentity, catchUp: boolean): Promise<voi
         }
       }
       if (directIds.length || groupIds.length) {
+        // ⚠ Before the ack, not after. An ack tells the island it may let go of
+        // these rows, and history writes are coalesced — promising that while
+        // their only copy is a scheduled write is how a crash in between loses
+        // messages for good.
+        await flushHistory()
         // Best-effort, like Android: a lost ack redelivers, the dedup absorbs.
         await fetchWithTimeout(`${identity.apiBase}/messages/queue/ack`, {
           method: 'POST',

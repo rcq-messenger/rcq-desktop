@@ -220,6 +220,14 @@ export const en: Record<string, string> = {
   'how.a2': 'An island is a server that holds your mail. RCQ is not one server but many independent ones: ours, other people’s, and yours if you run one.\nYour number is issued by an island, so the same number on two islands is two different people — an address is the number AND the island. People on different islands still write to each other, call, and share groups.',
   'how.q3': 'What do I do when it stops working?',
   'how.a3': 'First find out whether you are being blocked: Settings → Network → Connection diagnostics, and run the full check with your VPN OFF.\nIt gives you one line. Send it through Report a bug — that line tells us exactly what is closed on your network, and without it we are guessing.',
+  'how.q4':
+    'What happens when my network blocks RCQ?',
+  'how.a4':
+    'The app notices and goes around it by itself. There is nothing to turn on and no separate VPN: it opens a tunnel to one of our relays and keeps working.\nTo whoever is doing the blocking, that traffic looks like an ordinary visit to an ordinary site — the same kind of encrypted connection your browser makes all day. The relay carries sealed envelopes, so it cannot read your messages either.',
+  'how.q5':
+    'Can anyone tell who I am writing to?',
+  'how.a5':
+    'Your island knows an envelope is addressed to someone, and does not know it came from you: your name is not on the outside of it.\nWhen the tunnel is on, the way in is split between two relays. The first one sees you and does not know which island you are reaching; the second one reaches the island and does not know who you are. Putting the two halves together takes both of them, and they belong to different people in different countries.\nWhat nobody can hide from anyone: the fact that you use RCQ at all is visible to whoever runs your network, unless the tunnel is on.',
   'how.more': 'More questions on rcq.app/faq →',
   'storage.title': 'What is in this browser',
   'storage.footer.short': 'Keys, conversations, lists, and how to wipe them',

@@ -220,9 +220,24 @@ export function PinGate({ children }: { children: ReactNode }) {
     )
   }
 
+  // A locked app is the app, out of focus — not a black rectangle. The frosted
+  // pane over a dimmed backdrop is the same gesture the message menu makes, and
+  // it says the right thing: what you are looking at is still yours, it is
+  // simply shut. There is deliberately nothing legible behind the glass: the
+  // account is not in the page at all while locked, so there is nothing to leak
+  // through it.
   return (
-    <div className="h-screen [height:100dvh] flex flex-col items-center justify-center bg-surface-dim px-6">
-      <form onSubmit={submit} className="w-full max-w-xs space-y-4 text-center">
+    <div className="relative h-screen [height:100dvh] overflow-hidden bg-surface-dim">
+      <div
+        aria-hidden
+        className="absolute inset-0 bg-gradient-to-br from-accent/10 via-surface to-surface-dim"
+      />
+      <div aria-hidden className="absolute inset-0 bg-black/40 backdrop-blur-xl" />
+      <div className="relative h-full flex flex-col items-center justify-center px-6">
+      <form
+        onSubmit={submit}
+        className="w-full max-w-xs space-y-4 text-center rounded-2xl bg-surface/80 backdrop-blur-md px-6 py-7 shadow-xl ring-1 ring-line/40"
+      >
         <div className="text-4xl select-none">🔒</div>
         <div className="text-sm text-fg-secondary">{t('pin.locked')}</div>
         <input
@@ -246,6 +261,7 @@ export function PinGate({ children }: { children: ReactNode }) {
         </button>
         <p className="text-xs text-fg-dim leading-relaxed">{t('pin.forgot')}</p>
       </form>
+      </div>
     </div>
   )
 }

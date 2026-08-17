@@ -23,7 +23,7 @@ import {
   type ReactNode,
 } from 'react'
 import { useIdentity } from './identity-context'
-import { refreshFrontRouting } from './front'
+import { escalateForDeadSockets, refreshFrontRouting } from './front'
 
 export type WsEvent = { type: string; [key: string]: unknown }
 type Listener = (ev: WsEvent) => void
@@ -59,6 +59,11 @@ export function WSProvider({ children }: { children: ReactNode }) {
   const openedAtRef = useRef<number | null>(null)
   const pingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const closedByUserRef = useRef(false)
+  /// Consecutive sockets that died moments after opening. This is the one
+  /// signature an HTTP health probe cannot see — a middlebox that passes every
+  /// HTTPS request and kills WebSocket streams right after the handshake — so
+  /// the socket layer has to notice it itself and escalate to the front.
+  const shortLivedRef = useRef(0)
 
   const dispatch = useCallback((ev: WsEvent) => {
     const typed = listenersRef.current.get(ev.type)
@@ -75,6 +80,13 @@ export function WSProvider({ children }: { children: ReactNode }) {
     // effect re-runs then.
     if (!identity?.jwt) return
     closedByUserRef.current = false
+    // One pending redial at a time. Without this, a straggler close event
+    // could schedule a second timer over an existing one, and the cleanup
+    // only remembers the last — the orphan then dials a parallel loop.
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current)
+      reconnectTimerRef.current = null
+    }
 
     // wss://api.rcq.app/ws/<uin>?token=<jwt>. apiBase usually carries the
     // https URL; swap scheme to wss (http→ws for local dev). When served
@@ -120,12 +132,24 @@ export function WSProvider({ children }: { children: ReactNode }) {
       }
     })
     ws.addEventListener('close', (ev) => {
+      // Only the CURRENT socket may touch shared state or schedule a redial.
+      // A close event from a socket this provider already replaced (the
+      // effect re-ran on an identity change while it was open) arrives late,
+      // from a stale closure — acting on it here spawned a second dial loop
+      // under the same device id, and the two loops then superseded each
+      // other's sockets on the island forever.
+      if (sockRef.current !== ws) return
       setConnected(false)
       sockRef.current = null
       if (pingTimerRef.current) {
         clearInterval(pingTimerRef.current)
         pingTimerRef.current = null
       }
+      const lived = openedAtRef.current ? Date.now() - openedAtRef.current : 0
+      // The one line that tells a socket problem apart from everything else.
+      // 1006 seconds after open, over and over, is a middlebox killing the
+      // stream; 4401 is auth; a clean 1000 is the app's own doing.
+      console.info(`[ws] closed code=${ev.code} reason=${ev.reason || '—'} lived=${(lived / 1000).toFixed(1)}s`)
       // 4401 / 4403 are auth-rejected — reconnecting won't help.
       if (closedByUserRef.current || ev.code === 4401 || ev.code === 4403) return
       // Exponential backoff capped at 30s. Mirrors common WS-client
@@ -134,9 +158,9 @@ export function WSProvider({ children }: { children: ReactNode }) {
       // A session that HELD earns a clean slate; one that died on arrival does
       // not, so a run of short-lived sockets climbs the curve instead of
       // redialling once a second forever.
-      const lived = openedAtRef.current ? Date.now() - openedAtRef.current : 0
       if (lived >= STABLE_MS) backoffRef.current = 0
       openedAtRef.current = null
+      shortLivedRef.current = lived > 0 && lived < 10_000 ? shortLivedRef.current + 1 : 0
       const delay = Math.min(30_000, 1000 * 2 ** backoffRef.current)
       backoffRef.current = Math.min(backoffRef.current + 1, 5)
       // A socket that keeps dying is the first sign of a network that started
@@ -144,8 +168,15 @@ export function WSProvider({ children }: { children: ReactNode }) {
       // there is no route ladder re-walking underneath it. Re-decide the front
       // before redialling, from the second failure on — once is a bounce, twice
       // is worth a look — and the dial below then picks up whatever it decided.
+      //
+      // Three sockets in a row dead within seconds of opening is a different
+      // disease: the island's HTTPS answers (so the health probe keeps voting
+      // "direct"), yet no socket survives. That signature bypasses the probe
+      // and asks the front layer to escalate on the socket evidence alone.
       const redial = () => { void connect() }
-      if (backoffRef.current >= 2) {
+      if (shortLivedRef.current >= 3 && shortLivedRef.current % 3 === 0) {
+        reconnectTimerRef.current = setTimeout(() => { void escalateForDeadSockets().finally(redial) }, delay)
+      } else if (backoffRef.current >= 2) {
         reconnectTimerRef.current = setTimeout(() => { void refreshFrontRouting().finally(redial) }, delay)
       } else {
         reconnectTimerRef.current = setTimeout(redial, delay)

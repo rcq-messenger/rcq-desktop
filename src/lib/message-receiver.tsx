@@ -204,6 +204,82 @@ function hostOf(apiBase: string): string {
   }
 }
 
+// Drain the PRIMARY island's queue on the ack protocol every other client
+// already speaks: rows are fetched with `?ack=1` (the island keeps them), each
+// row is acked only after this client actually processed it, and the cursor
+// advances over the contiguous acked prefix. A drain interrupted anywhere —
+// mid-fetch, mid-decrypt, mid-ack — loses nothing: unacked rows come back on
+// the next drain and the envelope-id dedup collapses the repeats.
+//
+// ⚠ This replaced the legacy ack-less GET, and the difference is not academic.
+// The legacy shape advances the cursor past everything returned AT FETCH TIME,
+// and this component used to abandon the fetched rows whenever the socket
+// flipped `connected` mid-drain — on a machine whose socket kept dying, the
+// island had already let go of what the client then threw away. Messages were
+// lost permanently, every reconnect, and restarting only restarted the loop.
+//
+// Single-flight: a flapping socket re-runs the connect effect faster than a
+// drain finishes, and two drains racing would double-fetch the same rows.
+let drainInFlight: Promise<void> | null = null
+function drainPrimaryQueue(identity: WebIdentity, catchUp: boolean): Promise<void> {
+  if (drainInFlight) return drainInFlight
+  const run = (async () => {
+    await ensureHydrated(identity.uin) // restore persisted history first
+    // The quarantine store is sealed at rest and opens asynchronously. Wait
+    // for it here rather than relying on its deferred-write path, so a drain
+    // that lands a stranger's first message writes it straight away.
+    await ensureRequestsLoaded()
+    // A queue drain is history, not news. Without this the backlog arrives as
+    // a wall of banners with a chime behind each one, every time the app is
+    // opened or the socket reconnects — and the unread badges have already
+    // said all of it.
+    if (catchUp) beginCatchUp()
+    try {
+      const res = await fetch(`${identity.apiBase}/messages/queue?ack=1`, {
+        headers: { Authorization: `Bearer ${identity.jwt}` },
+      })
+      if (!res.ok) return
+      const rows = (await res.json()) as Array<{ id: number; envelope_type: string; payload: string; group_id: number | null }>
+      const directIds: number[] = []
+      const groupIds: number[] = []
+      for (const r of rows) {
+        try {
+          if (r.envelope_type === 'gmsg' && typeof r.group_id === 'number') {
+            // Sender-keys broadcast: not a sealed envelope — decode via the chain.
+            const got = await handleGmsg(identity, r.payload, r.group_id)
+            if (got) route(got.senderUIN, undefined, got.envelope, r.group_id, identity.uin, hostOf(identity.apiBase), undefined, identity)
+          } else {
+            const got = await decryptIncoming(identity, r.payload)
+            if (got) route(got.senderUIN, got.senderHost, got.envelope, r.group_id, identity.uin, hostOf(identity.apiBase), got.senderSigningKey, identity)
+          }
+          // Processed to its end — including "decrypted to nothing", which is
+          // terminal. Only a THROW leaves a row unacked: the cursor then stops
+          // in front of it and the island redelivers from there next time.
+          ;(typeof r.group_id === 'number' ? groupIds : directIds).push(r.id)
+        } catch {
+          /* transient failure — leave unacked for redelivery */
+        }
+      }
+      if (directIds.length || groupIds.length) {
+        // Best-effort, like Android: a lost ack redelivers, the dedup absorbs.
+        await fetch(`${identity.apiBase}/messages/queue/ack`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${identity.jwt}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ direct_ids: directIds, group_ids: groupIds }),
+        }).catch(() => {})
+      }
+    } catch {
+      /* network hiccup — nothing was acked, the next drain redelivers */
+    } finally {
+      if (catchUp) endCatchUp()
+    }
+  })().finally(() => {
+    drainInFlight = null
+  })
+  drainInFlight = run
+  return run
+}
+
 export function MessageReceiver() {
   const { identity } = useIdentity()
   const { on, connected } = useWS()
@@ -212,13 +288,7 @@ export function MessageReceiver() {
   // offline queue whenever we (re)connect.
   useEffect(() => {
     if (!identity || !connected) return
-    let cancelled = false
     void (async () => {
-      await ensureHydrated(identity.uin) // restore persisted history first
-      // The quarantine store is sealed at rest and opens asynchronously. Wait
-      // for it here rather than relying on its deferred-write path, so a drain
-      // that lands a stranger's first message writes it straight away.
-      await ensureRequestsLoaded()
       try {
         await getDevice(identity) // provision-once (publishes bundle)
       } catch {
@@ -231,37 +301,31 @@ export function MessageReceiver() {
       // Advertise sender-keys support so others broadcast to us (encrypt-once)
       // instead of the legacy per-member fan-out. Fire-and-forget.
       void Api.advertiseCapabilities(identity, true).catch(() => {})
-      // A queue drain is history, not news. Without this the backlog arrives as
-      // a wall of banners with a chime behind each one, every time the app is
-      // opened or the socket reconnects — and the unread badges have already
-      // said all of it. Live WS traffic below is untouched: that IS the case
-      // where a banner is the point.
-      beginCatchUp()
-      try {
-        const res = await fetch(`${identity.apiBase}/messages/queue`, {
-          headers: { Authorization: `Bearer ${identity.jwt}` },
-        })
-        if (!res.ok) return
-        const rows = (await res.json()) as Array<{ envelope_type: string; payload: string; group_id: number | null }>
-        for (const r of rows) {
-          if (cancelled) return
-          if (r.envelope_type === 'gmsg' && typeof r.group_id === 'number') {
-            // Sender-keys broadcast: not a sealed envelope — decode via the chain.
-            const got = await handleGmsg(identity, r.payload, r.group_id)
-            if (got) route(got.senderUIN, undefined, got.envelope, r.group_id, identity.uin, hostOf(identity.apiBase), undefined, identity)
-            continue
-          }
-          const got = await decryptIncoming(identity, r.payload)
-          if (got) route(got.senderUIN, got.senderHost, got.envelope, r.group_id, identity.uin, hostOf(identity.apiBase), got.senderSigningKey, identity)
-        }
-      } catch {
-        /* network hiccup — next reconnect drains again (queue isn't acked here) */
-      } finally {
-        endCatchUp()
-      }
+      await drainPrimaryQueue(identity, true)
     })()
+  }, [identity, connected])
+
+  // The socket is the fast road, not the only road. While it is down, this
+  // poll IS delivery — a network that kills WebSockets moments after the
+  // handshake while answering every HTTPS request is a real, observed failure
+  // mode, and it used to mean no messages at all. Same drain, same dedup,
+  // thirty seconds behind at worst. Does nothing while the socket is healthy.
+  useEffect(() => {
+    if (!identity || connected) return
+    let first = true
+    const tick = () => {
+      const catchUp = first
+      first = false
+      void drainPrimaryQueue(identity, catchUp)
+    }
+    // Not immediately: a normal boot has the socket up within a second or two,
+    // and its connect drain covers the backlog. Only a socket still down after
+    // this grace is worth polling around.
+    const start = setTimeout(tick, 5_000)
+    const handle = setInterval(tick, 30_000)
     return () => {
-      cancelled = true
+      clearTimeout(start)
+      clearInterval(handle)
     }
   }, [identity, connected])
 

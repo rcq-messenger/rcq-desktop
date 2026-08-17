@@ -259,7 +259,15 @@ export function Market() {
             // The market is a screen of the app now, so back is just back.
             // It used to live on its own host, where "/contacts" was not a
             // route and this button had to leave the site to work.
-            onClick={() => navigate('/contacts')}
+            //
+            // ⚠ Back is HISTORY back, not the contact list (#604). Most people
+            // reach the shop from Settings, and sending them to the home screen
+            // threw away both the screen they were on and how far down it they
+            // had scrolled. Opened cold (a bookmark, the desktop app's first
+            // screen after a reload) there is nothing to go back to, so fall
+            // back to where this button used to point — the same shape the
+            // profile's Cancel already uses.
+            onClick={() => (window.history.length > 1 ? navigate(-1) : navigate('/contacts'))}
             className="grid place-items-center h-9 w-9 -ml-1.5 rounded-full text-fg-secondary hover:text-fg-primary hover:bg-fg-primary/[0.06] active:scale-95 transition"
             aria-label={t('common.back')}
           >

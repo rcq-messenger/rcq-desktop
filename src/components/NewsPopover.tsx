@@ -10,6 +10,7 @@
 // (`scopedKey`) because two accounts in one browser have separate read state.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { fetchNews, type NewsPost } from '../lib/api'
 import { scopedKey } from '../lib/account-scope'
 import { useIdentity } from '../lib/identity-context'
@@ -99,6 +100,19 @@ export function NewsButton({ className }: { className?: string }) {
   const [error, setError] = useState(false)
   const [unread, setUnread] = useState(0)
   const wrapRef = useRef<HTMLDivElement>(null)
+  // Tailwind's `sm` breakpoint, read rather than styled around: which form the
+  // panel takes decides WHERE it is mounted, and a class cannot move a node.
+  const [narrow, setNarrow] = useState(() => window.matchMedia('(max-width: 639px)').matches)
+  useEffect(() => {
+    const m = window.matchMedia('(max-width: 639px)')
+    const on = () => setNarrow(m.matches)
+    m.addEventListener('change', on)
+    return () => m.removeEventListener('change', on)
+  }, [])
+  /// The panel itself. Separate from `wrapRef` because in the narrow form the
+  /// panel is portalled out of the wrapper, so "is this click inside?" can no
+  /// longer be answered by the DOM tree the button lives in.
+  const panelRef = useRef<HTMLDivElement>(null)
 
   const load = useCallback(async () => {
     if (!identity) return
@@ -124,7 +138,13 @@ export function NewsButton({ className }: { className?: string }) {
   useEffect(() => {
     if (!open) return
     const onDown = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false)
+      const target = e.target as Node
+      if (wrapRef.current?.contains(target)) return
+      // The portalled sheet is outside the wrapper but is emphatically not
+      // "outside the popover" — without this, tapping "read more" in it closed
+      // the thing you were trying to read.
+      if (panelRef.current?.contains(target)) return
+      setOpen(false)
     }
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
     document.addEventListener('mousedown', onDown)
@@ -144,6 +164,29 @@ export function NewsButton({ className }: { className?: string }) {
     }
   }
 
+  // One feed, two shapes. Identical content either way.
+  const body = (
+    <>
+      <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+        {t('news.title')}
+      </div>
+
+      {posts == null && !error && (
+        <div className="text-sm text-fg-dim py-4 text-center">{t('common.loading')}</div>
+      )}
+      {error && (
+        <div className="text-sm text-fg-dim py-4 text-center">{t('news.failed')}</div>
+      )}
+      {posts != null && posts.length === 0 && (
+        <div className="text-sm text-fg-dim py-4 text-center">{t('news.empty')}</div>
+      )}
+
+      {/* Rendering is deliberately dumb: plain text, no markdown, no HTML from
+          the server. */}
+      {posts?.map((p) => <NewsItem key={p.id} post={p} lang={lang} t={t} />)}
+    </>
+  )
+
   return (
     <div className="relative" ref={wrapRef}>
       <button
@@ -160,31 +203,58 @@ export function NewsButton({ className }: { className?: string }) {
         )}
       </button>
 
-      {open && (
-        // ⚠ The height cap has to be relative to the WINDOW, not a constant.
-        // At 26rem the panel hangs past the bottom of a laptop window (and of
-        // the desktop app's default one): the inner scroll existed, but its
-        // last rows sat below the viewport edge where nothing could reach
-        // them, so an expanded post simply ended mid-sentence. 8rem covers the
-        // header plus the panel's own offset.
-        <div className="absolute right-0 top-full mt-1 w-[min(22rem,calc(100vw-2rem))] max-h-[min(26rem,calc(100vh-8rem))] overflow-y-auto overscroll-contain rounded-lg bg-surface shadow-xl z-30 p-3 space-y-3">
-          <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
-            {t('news.title')}
-          </div>
+      {/* ⚠ #598: on a narrow window this stops being a popover at all. Anchored
+          `right-0` under a button that sits three icons in from the edge, the
+          22rem panel started 54px LEFT of the screen at 375px (measured), so
+          the first characters of every line were simply gone. The reporter's
+          own answer was "better not pinned under the button, as long as it
+          fits by width", so below `sm` it becomes the bottom sheet every other
+          narrow surface in this app already is (Chat's pickers,
+          EmoticonConfigSheet, ShareGroupSheet): full window width, nothing left
+          to overflow.
 
-          {posts == null && !error && (
-            <div className="text-sm text-fg-dim py-4 text-center">{t('common.loading')}</div>
-          )}
-          {error && (
-            <div className="text-sm text-fg-dim py-4 text-center">{t('news.failed')}</div>
-          )}
-          {posts != null && posts.length === 0 && (
-            <div className="text-sm text-fg-dim py-4 text-center">{t('news.empty')}</div>
-          )}
+          ⚠⚠ Through a PORTAL, and that is not a nicety. `.rcq-header` carries a
+          backdrop-filter, which per Filter Effects makes it the containing
+          block for `position: fixed` descendants — rendered in place, the sheet
+          came out pinned to the bottom edge of the HEADER, 345px ABOVE the top
+          of the window (measured at 375x812). Chat.tsx carries the same warning
+          about `.rcq-floating-bar`; this is the second surface here to fall
+          into it. So the form decides where the node is MOUNTED, which is why
+          `narrow` is state and not a `sm:` prefix. */}
+      {open && narrow &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-50 flex items-end justify-center"
+            role="dialog"
+            aria-modal="true"
+          >
+            <div
+              className="absolute inset-0 bg-black/40 backdrop-blur-md"
+              onClick={() => setOpen(false)}
+            />
+            <div
+              ref={panelRef}
+              className="relative z-10 w-full max-h-[75vh] overflow-y-auto overscroll-contain rounded-t-2xl bg-surface shadow-xl p-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] space-y-3"
+            >
+              {body}
+            </div>
+          </div>,
+          document.body,
+        )}
 
-          {/* Rendering is deliberately dumb: plain text, no markdown, no HTML
-              from the server. */}
-          {posts?.map((p) => <NewsItem key={p.id} post={p} lang={lang} t={t} />)}
+      {/* Wide enough to have room: the popover under its button, unchanged.
+          ⚠ The height cap has to be relative to the WINDOW, not a constant. At
+          26rem the panel hangs past the bottom of a laptop window (and of the
+          desktop app's default one): the inner scroll existed, but its last
+          rows sat below the viewport edge where nothing could reach them, so an
+          expanded post simply ended mid-sentence. 8rem covers the header plus
+          the panel's own offset. */}
+      {open && !narrow && (
+        <div
+          ref={panelRef}
+          className="absolute right-0 top-full mt-1 w-[min(22rem,calc(100vw-2rem))] max-h-[min(26rem,calc(100vh-8rem))] overflow-y-auto overscroll-contain rounded-lg bg-surface shadow-xl z-30 p-3 space-y-3"
+        >
+          {body}
         </div>
       )}
     </div>

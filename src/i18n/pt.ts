@@ -390,6 +390,7 @@ export const pt: Record<string, string> = {
   'settings.multihome.auto_label': 'Manter um backup da minha conta em outra ilha',
   'settings.multihome.auto_sub': 'A ilha é escolhida automaticamente no catálogo público. Desligar isto desconecta a ilha escolhida.',
   'settings.multihome.auto_busy': 'Escolhendo uma ilha…',
+  'settings.multihome.auto_connecting': 'Conectando a {host}…',
   'settings.multihome.advanced': 'Avançado: adicionar uma ilha manualmente',
   'settings.multihome.error.none': 'Nenhuma ilha de backup acessível agora. Tente mais tarde ou adicione uma manualmente.',
   'settings.multihome.add': 'Adicionar ilha de backup',

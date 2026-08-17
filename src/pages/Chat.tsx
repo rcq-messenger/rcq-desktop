@@ -474,6 +474,16 @@ export function Chat() {
     }
     function onDown(e: MouseEvent) {
       const el = e.target as HTMLElement | null
+      // The attach menu and the button that opens it are not "outside" (#602:
+      // clicking an empty part of the window left the menu standing while the
+      // button's own highlight went away, so the two disagreed about whether
+      // anything was open). It used to carry its own `fixed inset-0` backdrop,
+      // which cannot work where it sits: `.rcq-floating-bar` has a
+      // `backdrop-filter`, and a filtered element is the containing block for
+      // its fixed descendants — so that "full screen" backdrop only ever
+      // covered the composer bar. This handler already watches the whole
+      // document for the sibling menus; the attach menu just rides along.
+      if (!el?.closest('[data-attach-menu]')) setAttachMenuOpen(false)
       // Let the bubble's own handler decide — it toggles its menu, and closing
       // here first would make the click a no-op.
       if (el?.closest('[data-chat-menu]')) return
@@ -2993,6 +3003,7 @@ export function Chat() {
             />
             <div className="relative flex-none">
               <button
+                data-attach-menu
                 onClick={() => setAttachMenuOpen((v) => !v)}
                 disabled={(!peer && !group) || uploadingPhoto || uploadingFile}
                 className="h-10 w-10 rounded-full flex items-center justify-center text-fg-secondary hover:bg-line/60 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
@@ -3004,14 +3015,13 @@ export function Chat() {
               <AnimatePresence>
                 {attachMenuOpen && (
                   <>
-                    {/* click-away backdrop */}
-                    <div className="fixed inset-0 z-10" onClick={() => setAttachMenuOpen(false)} />
                     <motion.div
                       initial={{ opacity: 0, y: 6 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: 6 }}
                       transition={{ duration: 0.14 }}
                       data-chat-menu
+                      data-attach-menu
                       // Wide enough for the longest label in the longest
                       // language: RU's «Приглашение в группу» wrapped to two
                       // lines at w-44 and left the row ragged next to the

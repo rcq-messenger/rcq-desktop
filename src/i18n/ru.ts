@@ -435,6 +435,7 @@ export const ru: Record<string, string> = {
   'settings.multihome.auto_sub':
     'Остров подбирается автоматически из публичного каталога. Выключение тумблера отключает подобранный остров.',
   'settings.multihome.auto_busy': 'Подбираем остров…',
+  'settings.multihome.auto_connecting': 'Подключаемся к {host}…',
   'settings.multihome.advanced': 'Дополнительно: добавить остров вручную',
   'settings.multihome.error.none':
     'Сейчас нет доступного резервного острова. Попробуйте позже или добавьте вручную.',
@@ -497,6 +498,8 @@ export const ru: Record<string, string> = {
   'add.no_match': 'Ничего не найдено.',
   'add.cta': 'Добавить',
   'add.requested': 'Заявка отправлена',
+  // Слово в слово как в поиске на Android (`add_already_contact`).
+  'add.already': 'уже в контактах',
   'add.error': 'Поиск не удался.',
 
   // Профиль

@@ -11,7 +11,7 @@
 // own row in a group) means "let me change this".
 
 import { useEffect, useState } from 'react'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { PersonAvatar } from '../components/PersonAvatar'
 import { Api, type UserInfo } from '../lib/api'
 import { useI18n } from '../lib/i18n-context'
@@ -167,12 +167,21 @@ export function Profile() {
     <div className="min-h-screen bg-surface-dim">
       <header className="rcq-header sticky top-0 z-10">
         <div className="max-w-2xl mx-auto px-4 h-14 flex items-center gap-3">
-          <Link
-            to={isSelf ? '/contacts' : '/contacts'}
+          {/* Back is HISTORY back (#604). This screen is opened from Settings,
+              from a chat header and from the contact list, and the arrow sent
+              every one of them to the contact list — losing the screen the
+              person was on and, on Settings, how far down it they had
+              scrolled. The Cancel button below has always done it this way;
+              the arrow next to it had not. The fallback is for a cold open
+              (a bookmark, the desktop app's first screen after a reload),
+              where `navigate(-1)` is a button that does nothing. */}
+          <button
+            onClick={() => (window.history.length > 1 ? navigate(-1) : navigate('/contacts'))}
             className="text-fg-secondary hover:text-fg-primary px-2"
+            aria-label={t('common.back')}
           >
             ←
-          </Link>
+          </button>
           <div className="font-semibold">
             {isSelf ? t('profile.title.self') : t('profile.title.peer')}
           </div>

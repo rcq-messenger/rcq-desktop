@@ -6,7 +6,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Api, type UserInfo } from '../lib/api'
+import { Api, ApiError, type UserInfo } from '../lib/api'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
 import { parseAddress } from '../lib/federation'
@@ -30,6 +30,13 @@ export function AddContact({ embedded = false }: { embedded?: boolean } = {}) {
   /// the "Requested" pill in place of the Add button so a double-tap
   /// doesn't re-send.
   const [requested, setRequested] = useState<Set<number>>(new Set())
+  /// UINs already in the contact list. Adding one of them answered 409 and the
+  /// raw `409: {"detail":"already in your contact list"}` landed in the red box
+  /// (#603) — a server sentence in English, in an error colour, for something
+  /// that is not a failure. The phones never show it: their search rows read
+  /// "already in contacts" instead of offering Add at all, so the state is
+  /// visible BEFORE the tap. Same here.
+  const [known, setKnown] = useState<Set<number>>(new Set())
   const [ciBusy, setCiBusy] = useState(false)
 
   // Federation (F2): if the query is an explicit `uin@host` whose host is NOT
@@ -94,6 +101,23 @@ export function AddContact({ embedded = false }: { embedded?: boolean } = {}) {
     }
   }
 
+  // Who is already a contact (#603). One fetch when the screen opens: the
+  // search endpoint answers with public cards and says nothing about our own
+  // list, so without this the screen cannot know that the Add button it is
+  // drawing has nothing left to do.
+  useEffect(() => {
+    if (!identity) return
+    let alive = true
+    void Api.contacts(identity)
+      .then((list) => {
+        if (alive) setKnown(new Set(list.map((c) => c.uin)))
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [identity])
+
   // Debounced search — fires 300ms after the user stops typing.
   useEffect(() => {
     if (!query.trim() || crossIsland) {
@@ -120,6 +144,14 @@ export function AddContact({ embedded = false }: { embedded?: boolean } = {}) {
       await Api.sendContactRequest(identity!, u.uin)
       setRequested((s) => new Set(s).add(u.uin))
     } catch (e) {
+      // 409 = they are already in the list. The list we fetched at open can be
+      // stale (added on the phone a minute ago, accepted in another tab), so
+      // this is the same true statement arriving late — say it in the row, the
+      // way the row would have said it, instead of colouring it as a failure.
+      if (e instanceof ApiError && e.status === 409) {
+        setKnown((s) => new Set(s).add(u.uin))
+        return
+      }
       setError(e instanceof Error ? e.message : t('add.error'))
     }
   }
@@ -199,7 +231,12 @@ export function AddContact({ embedded = false }: { embedded?: boolean } = {}) {
                   <div className="text-xs text-fg-dim truncate">{u.city}{u.country ? `, ${u.country}` : ''}</div>
                 )}
               </div>
-              {requested.has(u.uin) ? (
+              {/* Already a contact → the same quiet line the phones show, and
+                  no Add button: there is nothing to send, and the row that
+                  offers it can only end in the 409 from #603. */}
+              {known.has(u.uin) ? (
+                <span className="text-xs text-fg-dim px-3 py-1.5">{t('add.already')}</span>
+              ) : requested.has(u.uin) ? (
                 <span className="text-xs text-fg-dim px-3 py-1.5">{t('add.requested')}</span>
               ) : (
                 <button

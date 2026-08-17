@@ -390,6 +390,7 @@ export const uk: Record<string, string> = {
   'settings.multihome.auto_label': 'Тримати резерв мого акаунта на іншому острові',
   'settings.multihome.auto_sub': 'Острів обирається автоматично з публічного каталогу. Якщо вимкнути, обраний острів буде відключено.',
   'settings.multihome.auto_busy': 'Обираємо острів…',
+  'settings.multihome.auto_connecting': 'Підключаємось до {host}…',
   'settings.multihome.advanced': 'Додатково: додати острів вручну',
   'settings.multihome.error.none': 'Зараз немає доступного резервного острова. Спробуй пізніше або додай вручну.',
   'settings.multihome.add': 'Додати резервний острів',

@@ -390,6 +390,7 @@ export const es: Record<string, string> = {
   'settings.multihome.auto_label': 'Mantener una copia de mi cuenta en otra isla',
   'settings.multihome.auto_sub': 'La isla se elige sola del catálogo público. Al desactivarlo se desconecta la isla elegida.',
   'settings.multihome.auto_busy': 'Eligiendo una isla…',
+  'settings.multihome.auto_connecting': 'Conectando con {host}…',
   'settings.multihome.advanced': 'Avanzado: añadir una isla a mano',
   'settings.multihome.error.none': 'Ahora mismo no hay ninguna isla de copia accesible. Inténtalo más tarde o añade una a mano.',
   'settings.multihome.add': 'Añadir isla de copia',

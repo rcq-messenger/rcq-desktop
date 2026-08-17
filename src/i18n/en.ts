@@ -436,6 +436,7 @@ export const en: Record<string, string> = {
   'settings.multihome.auto_sub':
     'The island is picked automatically from the public catalogue. Turning this off disconnects the picked island.',
   'settings.multihome.auto_busy': 'Picking an island…',
+  'settings.multihome.auto_connecting': 'Connecting to {host}…',
   'settings.multihome.advanced': 'Advanced: add an island manually',
   'settings.multihome.error.none':
     'No reachable backup island right now. Try again later, or add one manually.',
@@ -498,6 +499,9 @@ export const en: Record<string, string> = {
   'add.no_match': 'No matches.',
   'add.cta': 'Add',
   'add.requested': 'Requested',
+  // Same words as the Android search row (`add_already_contact`), so the two
+  // clients answer the identical question identically (#603).
+  'add.already': 'already in contacts',
   'add.error': 'Could not search.',
 
   // Profile

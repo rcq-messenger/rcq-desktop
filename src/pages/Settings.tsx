@@ -51,6 +51,7 @@ import {
 import { useTheme, type ThemePref } from '../lib/theme-context'
 import {
   addBackupIsland,
+  adoptHomesFromOwnRecord,
   disableAutoBackup,
   enableAutoBackup,
   listBackupHomes,
@@ -81,9 +82,17 @@ export function Settings() {
   const [mhBusy, setMhBusy] = useState(false)
   const [mhError, setMhError] = useState<string | null>(null)
   const [mhAutoBusy, setMhAutoBusy] = useState(false)
+  // What the toggle is doing right now, so a ten-second errand does not look
+  // like a dead switch (#605). null while idle.
+  const [mhStage, setMhStage] = useState<string | null>(null)
+  // True while we are checking our own published record for homes this browser
+  // has not adopted yet (#605) — the section is not trustworthy until it lands.
+  const [mhSyncing, setMhSyncing] = useState(true)
   // The manual block starts open only when a manually-added island exists
   // (self-hosters); everyone else sees just the toggle.
-  const [mhAdvanced, setMhAdvanced] = useState(() => listBackupHomes().some((h) => !h.auto))
+  const [mhAdvanced, setMhAdvanced] = useState(() =>
+    listBackupHomes().some((h) => !h.auto && !h.adopted),
+  )
   const [reportText, setReportText] = useState('')
   const [reportBusy, setReportBusy] = useState(false)
   const [reportSent, setReportSent] = useState(false)
@@ -139,6 +148,25 @@ export function Settings() {
   useEffect(() => {
     void userRelays().then(setRelays)
   }, [])
+
+  // #605: the backup island lives in the signed home-island record the island
+  // serves, not only in this browser's storage — so a browser that never added
+  // one itself still has to show the one a phone added, instead of a switch
+  // that reads "off" for an account that plainly has a backup. Boot does this
+  // too; repeating it here covers a Settings opened before boot got to it, and
+  // costs one request when there is nothing to adopt.
+  useEffect(() => {
+    if (!identity) return
+    let alive = true
+    void adoptHomesFromOwnRecord(identity).then(() => {
+      if (!alive) return
+      setBackups(listBackupHomes())
+      setMhSyncing(false)
+    })
+    return () => {
+      alive = false
+    }
+  }, [identity])
 
   const [keyStatus, setKeyStatus] = useState<RelayKeyStatus | null>(null)
   const [keyInput, setKeyInput] = useState('')
@@ -367,9 +395,21 @@ export function Settings() {
   async function toggleAutoBackup(on: boolean) {
     setMhAutoBusy(true)
     setMhError(null)
+    // ⚠ #605: "switching the backup on in the web takes a long time, but then
+    // it does give the right number". It is a catalogue fetch, a health probe
+    // of every candidate island and a registration handshake — ten seconds and
+    // more — and it reported none of it, so the only signal was a checkbox that
+    // stayed off. Name the stage, and name the island once we have one.
+    setMhStage(on ? t('settings.multihome.auto_busy') : null)
     try {
       if (on) {
-        await enableAutoBackup(identity!)
+        await enableAutoBackup(identity!, (stage) => {
+          setMhStage(
+            stage.kind === 'picking'
+              ? t('settings.multihome.auto_busy')
+              : t('settings.multihome.auto_connecting', { host: stage.host }),
+          )
+        })
       } else {
         disableAutoBackup()
       }
@@ -395,6 +435,7 @@ export function Settings() {
       )
     } finally {
       setMhAutoBusy(false)
+      setMhStage(null)
     }
   }
 
@@ -568,22 +609,34 @@ export function Settings() {
           </div>
           <p className="text-xs text-fg-secondary">{t('settings.multihome.body')}</p>
 
-          {/* One toggle for normal users: the island comes from the catalogue. */}
+          {/* One toggle for normal users: the island comes from the catalogue.
+              ⚠ #605: an ADOPTED home (one this browser learned from our own
+              published record rather than added itself) counts as on. The
+              record cannot say whether it was auto-picked or typed by hand, but
+              it does say the account has a backup island, and that is what this
+              switch claims to answer. */}
           <label className="flex items-center justify-between cursor-pointer">
             <span className="text-sm pr-3">{t('settings.multihome.auto_label')}</span>
-            <input
-              type="checkbox"
-              checked={backups.some((h) => h.auto)}
-              disabled={mhAutoBusy}
-              onChange={(e) => void toggleAutoBackup(e.target.checked)}
-              className="w-5 h-5 accent-accent cursor-pointer shrink-0"
-            />
+            {mhAutoBusy ? (
+              // In the checkbox's own place, and its own size, so the row does
+              // not jump: an unchecked box next to a line of small grey text is
+              // exactly what read as "nothing is happening" (#605).
+              <span className="w-5 h-5 shrink-0 flex items-center justify-center text-fg-dim">
+                <Spinner />
+              </span>
+            ) : (
+              <input
+                type="checkbox"
+                checked={backups.some((h) => h.auto || h.adopted)}
+                disabled={mhSyncing}
+                onChange={(e) => void toggleAutoBackup(e.target.checked)}
+                className="w-5 h-5 accent-accent cursor-pointer shrink-0"
+              />
+            )}
           </label>
-          {mhAutoBusy && (
-            <div className="text-xs text-fg-dim">{t('settings.multihome.auto_busy')}</div>
-          )}
+          {mhStage && <div className="text-xs text-fg-dim">{mhStage}</div>}
           {backups
-            .filter((h) => h.auto)
+            .filter((h) => h.auto || h.adopted)
             .map((h) => (
               <div key={h.host} className="text-sm">
                 <div className="font-mono truncate">{h.host}</div>
@@ -604,7 +657,7 @@ export function Settings() {
           {mhAdvanced && (
             <>
               {backups
-                .filter((h) => !h.auto)
+                .filter((h) => !h.auto && !h.adopted)
                 .map((h) => (
                   <div key={h.host} className="flex items-center justify-between gap-3 text-sm">
                     <div className="min-w-0">
@@ -1260,6 +1313,17 @@ function WarnIcon() {
       <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
       <line x1="12" y1="9" x2="12" y2="13" />
       <line x1="12" y1="17" x2="12.01" y2="17" />
+    </svg>
+  )
+}
+
+/// The in-progress mark for the backup-island toggle (#605). Same drawing as
+/// the market's, kept local because that one is private to its page.
+function Spinner() {
+  return (
+    <svg className="animate-spin" width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="3" opacity="0.3" />
+      <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
     </svg>
   )
 }

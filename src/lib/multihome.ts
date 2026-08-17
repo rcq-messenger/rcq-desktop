@@ -52,6 +52,14 @@ export interface BackupHome {
   /// True when this home was picked by the catalogue auto-pick toggle (vs a
   /// manually-entered host). The toggle only ever adds/removes ITS OWN homes.
   auto?: boolean
+  /// True when this home was learned from our OWN published home-island record
+  /// instead of being added in this browser (see `adoptHomesFromOwnRecord`).
+  /// ⚠ The signed record carries only `{host, uin}` — it CANNOT say whether the
+  /// home was auto-picked or typed in by hand, so an adopted home is neither.
+  /// It still counts for the simple toggle, because "my account has a backup
+  /// island" is the one account-wide fact the record does support, and that is
+  /// the fact report #605 says the web was getting wrong.
+  adopted?: boolean
 }
 
 export function listBackupHomes(): BackupHome[] {
@@ -225,9 +233,12 @@ const AUTO_ISLANDS_SOURCES = [
 // because steering a backup mailbox and steering a tunnel are different powers
 // and should not stay welded to one key.
 
-/// True when the auto-pick toggle is on (an auto-picked home exists).
+/// True when the auto-pick toggle is on (an auto-picked or adopted home
+/// exists). Adopted homes count: to the person holding the phone that switched
+/// this on, the toggle answers "does my account have a backup island", and the
+/// answer does not change because a second install did the switching (#605).
 export function hasAutoBackup(): boolean {
-  return listBackupHomes().some((h) => h.auto)
+  return listBackupHomes().some((h) => h.auto || h.adopted)
 }
 
 async function islandHealthy(host: string): Promise<boolean> {
@@ -293,18 +304,92 @@ export async function autoPickBackupIsland(identity: WebIdentity): Promise<strin
   return picked
 }
 
+/// Where `enableAutoBackup` currently is. ⚠ #605: switching the toggle on is a
+/// long errand — a signed catalogue from up to two sources, a health probe of
+/// every candidate (6s ceiling each), then a recover-or-register handshake on
+/// the winner — and it used to report none of it, so the screen sat silent for
+/// ten-plus seconds and only then produced a number. The stage is reported so
+/// the caller can name what is taking the time.
+export type AutoBackupStage =
+  | { kind: 'picking' }
+  | { kind: 'connecting'; host: string }
+
 /// Add a catalogue-picked backup home (the toggle's ON action). Returns the
 /// chosen host; the caller republishes the home-island record.
-export async function enableAutoBackup(identity: WebIdentity): Promise<string> {
+export async function enableAutoBackup(
+  identity: WebIdentity,
+  onStage?: (stage: AutoBackupStage) => void,
+): Promise<string> {
+  onStage?.({ kind: 'picking' })
   const host = await autoPickBackupIsland(identity)
+  // The pick is the first half; registering on it is the second, and naming the
+  // island is the difference between "still working" and "stuck".
+  onStage?.({ kind: 'connecting', host })
   await addBackupIsland(identity, host, { auto: true })
   return host
 }
 
 /// Remove every auto-picked home (the toggle's OFF action). Manually-added
-/// islands are untouched. The caller republishes the record.
+/// islands are untouched. Adopted homes DO go: they are what the toggle was
+/// showing as on (#605), so leaving them behind would make the switch a no-op.
+/// The caller republishes the record.
 export function disableAutoBackup(): void {
-  saveBackupHomes(listBackupHomes().filter((h) => !h.auto))
+  saveBackupHomes(listBackupHomes().filter((h) => !h.auto && !h.adopted))
+}
+
+/// Adopt every backup home that our OWN signed record lists and this browser
+/// does not know about.
+///
+/// ⚠ #605: "backup island on in the app, off in the web". The backup island is
+/// an ACCOUNT-wide fact — it lives in the home-island record the island serves
+/// at `GET /federation/island-record/{uin}` — but until now every client read
+/// that record only for PEERS, and kept its own homes in local storage alone.
+/// So a second install started at zero and said the account had no backup while
+/// the island held a two-home record proving it did.
+///
+/// Worse than the wrong label: the boot republish then PUT a ONE-home record
+/// under a fresh `ts`, and the island rejects only an OLDER ts — so the web
+/// quietly unpublished the phone's backup home and senders stopped depositing
+/// there. Reading our own record before publishing is what closes that.
+///
+/// The record proves only WHERE we live; the per-island token is not in it, so
+/// each adopted home re-authenticates with the signing key (recover-first —
+/// possession of the key IS the credential, no phrase needed). Never throws;
+/// an unreachable island is simply retried on the next boot.
+export async function adoptHomesFromOwnRecord(identity: WebIdentity): Promise<BackupHome[]> {
+  try {
+    const ownHost = hostOfApiBase(identity.apiBase)
+    const res = await fetch(`${identity.apiBase}/federation/island-record/${identity.uin}`)
+    if (!res.ok) return [] // 404 = no record published yet, nothing to adopt
+    // Verified against OUR OWN signing key: an island that hands back somebody
+    // else's homes must not get this browser to register mailboxes for it.
+    const v = verifyHomeIslandRecord(await res.json(), { expectedSk: bytesToB64(identity.signingPub) })
+    if (!v.ok) return []
+    const known = new Set(listBackupHomes().map((h) => h.host))
+    const adopted: BackupHome[] = []
+    for (const home of v.record.homes) {
+      if (home.host === ownHost || known.has(home.host)) continue
+      try {
+        const cred = await recoverOnIsland(home.host, identity)
+        // null = the record names an island this identity is not on (a home
+        // that was burned there). Leave it alone rather than registering anew.
+        if (!cred) continue
+        adopted.push({
+          host: home.host,
+          uin: cred.uin,
+          jwt: cred.token,
+          addedAt: Date.now(),
+          adopted: true,
+        })
+      } catch {
+        /* island unreachable — next boot retries */
+      }
+    }
+    if (adopted.length > 0) saveBackupHomes([...listBackupHomes(), ...adopted])
+    return adopted
+  } catch {
+    return []
+  }
 }
 
 /// Forget a backup home locally. The mailbox account on that island is left

@@ -10,7 +10,7 @@ import { decryptIncoming, getDevice } from './signal-device'
 import { addIncoming, addGroupIncoming, hydrateIncoming, beginCatchUp, endCatchUp, flushHistory } from './incoming-store'
 import { fileOutgoingCarbon } from './outgoing-store'
 import { publishHomeIslandRecord } from './federation-publish'
-import { applyPushedRecord, drainBackupQueues, listBackupHomes } from './multihome'
+import { adoptHomesFromOwnRecord, applyPushedRecord, drainBackupQueues, listBackupHomes } from './multihome'
 import { aliasFor, drainVisitedQueues, listVisitedIslands } from './visited-islands'
 import { getCrossIsland } from './crossisland-store'
 import { ensureRequestsLoaded, holdRequestMessage, isBlocked } from './crossisland-requests'
@@ -329,7 +329,21 @@ export function MessageReceiver() {
       // Federation F1: publish our signed home-island record. Fire-and-forget —
       // publishHomeIslandRecord swallows all errors, so it can never block the
       // queue drain or login even if the island lacks the F1 endpoint.
-      void publishHomeIslandRecord(identity)
+      //
+      // ⚠ #605: READ the record before republishing it. The homes list is an
+      // account-wide fact the island holds; this browser only ever knew its own
+      // local half of it. Publishing first would PUT a one-home record under a
+      // fresh ts over the two-home one a phone published — the island rejects
+      // only an OLDER ts — so the backup island the person switched on there
+      // would silently stop receiving. Adopting first also makes the toggle in
+      // Settings tell the truth and gets the backup queue drained here too.
+      //
+      // In its own task, not awaited: adoption is two round trips per unknown
+      // home and the queue drain below must not wait behind it.
+      void (async () => {
+        await adoptHomesFromOwnRecord(identity)
+        void publishHomeIslandRecord(identity)
+      })()
       // Advertise sender-keys support so others broadcast to us (encrypt-once)
       // instead of the legacy per-member fan-out. Fire-and-forget.
       void Api.advertiseCapabilities(identity, true).catch(() => {})

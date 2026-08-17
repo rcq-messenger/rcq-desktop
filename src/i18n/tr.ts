@@ -390,6 +390,7 @@ export const tr: Record<string, string> = {
   'settings.multihome.auto_label': 'Hesabımın yedeğini başka bir adada tut',
   'settings.multihome.auto_sub': 'Ada, herkese açık katalogdan kendiliğinden seçilir. Bunu kapatmak seçilen adayla bağlantıyı keser.',
   'settings.multihome.auto_busy': 'Ada seçiliyor…',
+  'settings.multihome.auto_connecting': '{host} adresine bağlanılıyor…',
   'settings.multihome.advanced': 'Gelişmiş: adayı elle ekle',
   'settings.multihome.error.none': 'Şu anda erişilebilir bir yedek ada yok. Sonra tekrar dene ya da elle ekle.',
   'settings.multihome.add': 'Yedek ada ekle',

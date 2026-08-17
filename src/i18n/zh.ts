@@ -390,6 +390,7 @@ export const zh: Record<string, string> = {
   'settings.multihome.auto_label': '在另一个岛上保留我的账号备份',
   'settings.multihome.auto_sub': '岛会从公开目录里自动挑选。关掉它会断开已挑选的岛。',
   'settings.multihome.auto_busy': '正在挑选岛…',
+  'settings.multihome.auto_connecting': '正在连接 {host}…',
   'settings.multihome.advanced': '高级：手动添加岛',
   'settings.multihome.error.none': '现在没有可达的备份岛。请稍后再试，或手动添加一个。',
   'settings.multihome.add': '添加备份岛',

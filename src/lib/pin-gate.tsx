@@ -27,6 +27,7 @@ import {
   vaultRemove,
   vaultState,
   vaultSupported,
+  vaultRead,
   vaultUnlock,
   vaultWrite,
 } from './desktop-vault'
@@ -148,6 +149,26 @@ function AutoLock() {
   return null
 }
 
+/// Take the vault's contents into the page: the account rows, the history key,
+/// and the outgoing logs that have to be decrypted before anything renders.
+/// Shared by the PIN prompt and by the already-unlocked reload path, because
+/// the two must not drift.
+async function adoptRows(rows: Record<string, string>): Promise<void> {
+  adoptVaultedRows(rows)
+  attachWriter()
+  await setHistoryKey(rows[HISTORY_KEY_ROW] ?? null)
+  await adoptSealedOutgoing()
+}
+
+async function adoptUnlockedVault(): Promise<void> {
+  const rows = JSON.parse(await vaultRead()) as Record<string, string>
+  if (!rows[HISTORY_KEY_ROW]) {
+    rows[HISTORY_KEY_ROW] = newHistoryKeyB64()
+    await vaultWrite(JSON.stringify(rows)).catch(() => {})
+  }
+  await adoptRows(rows)
+}
+
 export function PinGate({ children }: { children: ReactNode }) {
   const { t } = useI18n()
   // null = still asking Rust; true = show the lock screen.
@@ -158,13 +179,25 @@ export function PinGate({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!vaultSupported()) return
-    void vaultState().then((s) => {
+    void vaultState().then(async (s) => {
       if (!s.exists) {
         setLocked(false)
         return
       }
-      // A vault that is already unlocked belongs to this same run (a reload
-      // after unlocking, say): re-adopt its contents instead of asking again.
+      // A vault that is ALREADY unlocked belongs to this same run: the page
+      // reloads itself on an account switch and on an island switch, and both
+      // used to land back on the lock screen and ask for the PIN a second time
+      // in one session. The key is still in Rust, so take the contents back and
+      // carry on. Only a fresh launch (or Lock now) has no key and asks.
+      if (s.unlocked) {
+        try {
+          await adoptUnlockedVault()
+          setLocked(false)
+          return
+        } catch {
+          /* the key went away between the two calls — ask properly */
+        }
+      }
       setLocked(true)
     })
   }, [])
@@ -182,15 +215,14 @@ export function PinGate({ children }: { children: ReactNode }) {
       // — the vault is already open, so this costs nothing and needs no PIN
       // prompt. Sweeping what is already on disk happens later, once the
       // account scope names the right database (pin-seal.ts).
-      if (!rows[HISTORY_KEY_ROW]) rows[HISTORY_KEY_ROW] = newHistoryKeyB64()
-      adoptVaultedRows(rows)
-      attachWriter()
-      await vaultWrite(JSON.stringify(rows)).catch(() => {})
+      if (!rows[HISTORY_KEY_ROW]) {
+        rows[HISTORY_KEY_ROW] = newHistoryKeyB64()
+        await vaultWrite(JSON.stringify(rows)).catch(() => {})
+      }
       // Before anything below the gate renders: Chat builds its state from the
       // outgoing log during a render and cannot wait on a decrypt, so the logs
       // are in memory by the time it mounts.
-      await setHistoryKey(rows[HISTORY_KEY_ROW])
-      await adoptSealedOutgoing()
+      await adoptRows(rows)
       setPin('')
       setLocked(false)
     } catch (err) {

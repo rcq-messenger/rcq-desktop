@@ -1012,6 +1012,31 @@ export function Chat() {
     if (!res.ok) toast(t('chat.error.send_failed'), 'error')
   }
 
+  /// The delete offered on an INCOMING row.
+  ///
+  /// In a conversation it hides the message here and nowhere else: there is no
+  /// deleting somebody else's message off their device, and it is labelled
+  /// "hide" for exactly that reason.
+  ///
+  /// In Saved Messages there is no somebody else. A row on the incoming side of
+  /// the notes thread is a note THIS ACCOUNT wrote on another device — it is
+  /// only "incoming" because that is the side of the wire it came in on — so
+  /// hiding it locally left it standing on the phone that typed it, and neither
+  /// a reload here nor a restart there could reconcile the two (report #601).
+  /// Same gesture, and now it retracts the note everywhere: the `delete` goes
+  /// to our own number, which is where every device of the account is listening.
+  async function deleteIncoming(id: string) {
+    setActionsForRowId(null)
+    // `fromSelf` so the tombstone is written even if the row has already been
+    // dropped from the incoming log — a note whose id lives in the OUTGOING log
+    // on some other device still has to stay buried here across reloads.
+    markDeleted(id, isSelf ? { fromSelf: true } : undefined)
+    if (!isSelf) return
+    const env: DeleteEnvelope = { kind: 'delete', targetID: id }
+    const res = await shipEnvelopeToCurrentThread(env)
+    if (!res.ok) toast(t('chat.error.send_failed'), 'error')
+  }
+
   async function send() {
     if (!identity) return
     if (editingRow) {
@@ -2400,11 +2425,15 @@ export function Chat() {
                           {/* Hides it HERE only. There is no deleting somebody
                               else's message off their device, and offering a
                               button that looks like it might is worse than not
-                              offering one — hence the wording, not "delete". */}
+                              offering one — hence the wording, not "delete".
+                              Saved Messages is the one thread where the "other
+                              device" is mine, so there it really does delete
+                              everywhere and says so — see [deleteIncoming]. */}
                           <ActionButton
-                            onClick={() => { markDeleted(m.id); setActionsForRowId(null) }}
-                            label={t('chat.actions.hide')}
-                            icon="⊘"
+                            onClick={() => void deleteIncoming(m.id)}
+                            label={t(isSelf ? 'chat.actions.delete' : 'chat.actions.hide')}
+                            icon={isSelf ? '🗑' : '⊘'}
+                            danger={isSelf}
                           />
                         </ActionMenu>
                       )}

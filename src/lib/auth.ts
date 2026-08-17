@@ -108,18 +108,23 @@ export function restoreAccountRowsToDisk(rows: Record<string, string>): void {
   for (const [k, v] of Object.entries(rows)) localStorage.setItem(k, v)
 }
 
-/// Does this JWT already name an install? Payload peek only — the signature
-/// is the server's business.
-export function tokenNamesAnInstall(jwt: string): boolean {
+/// The install this JWT is issued to (`dev` claim), or null. Payload peek only
+/// — the signature is the server's business.
+export function tokenDeviceId(jwt: string): string | null {
   const parts = jwt.split('.')
-  if (parts.length < 2) return false
+  if (parts.length < 2) return null
   try {
     const json = atob(parts[1].replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(parts[1].length / 4) * 4, '='))
     const dev = (JSON.parse(json) as { dev?: unknown }).dev
-    return typeof dev === 'string' && dev.length > 0
+    return typeof dev === 'string' && dev.length > 0 ? dev : null
   } catch {
-    return false
+    return null
   }
+}
+
+/// Does this JWT already name an install?
+export function tokenNamesAnInstall(jwt: string): boolean {
+  return tokenDeviceId(jwt) != null
 }
 
 /// Swap a pre-claim session for one that names this browser. Returns the new
@@ -132,7 +137,10 @@ export async function claimInstallToken(id: WebIdentity): Promise<string | null>
     const res = await fetch(`${id.apiBase}/auth/device`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${id.jwt}` },
-      body: JSON.stringify({ device_id: installId() }),
+      // [sessionDeviceId] and not plain `installId()`: this only ever runs for
+      // a token that names no install, but if a linked account ever reached it
+      // the claim must not move the session off the id its phone can revoke.
+      body: JSON.stringify({ device_id: sessionDeviceId(id) }),
     })
     if (!res.ok) return null
     const out = (await res.json()) as { token?: string }
@@ -225,6 +233,14 @@ export function adoptLinkBlob(blob: LinkBlob): WebIdentity {
     signingPub,
   }
   persistIdentity(identity)
+  // ★ This browser is now known to the island by the id the PHONE minted for
+  // it (`POST /devices/link`), and it has to stay known by that id: it is the
+  // one the phone's "отключить связь с браузером" acts on. Refreshing under
+  // this browser's own install id instead — which is what used to happen the
+  // moment the first token expired — put the session behind a name the
+  // disconnect button had never heard of, so the revoke denylisted an id
+  // nobody was using any more and the browser carried on (report #607).
+  rememberSessionDevice(identity.uin, tokenDeviceId(blob.jwt))
   return identity
 }
 
@@ -264,6 +280,21 @@ export function installId(): string {
   const fresh = crypto.randomUUID().replace(/-/g, '')
   localStorage.setItem(INSTALL_KEY, fresh)
   return fresh
+}
+
+/// The id THIS ACCOUNT's island knows this browser by.
+///
+/// Usually [installId] — a browser that made its own account named itself. A
+/// browser linked from a phone did not: the phone registered it and chose the
+/// id, and that id is what the linked-devices list shows and what "disconnect"
+/// revokes. Minting under anything else makes the disconnect a no-op, so the
+/// linked id wins wherever we have it.
+///
+/// Order matters. The live token is the freshest truth (it says what the island
+/// last issued to us); the stored row survives a reload, when a tokenless
+/// account has no token to read; the install id is the ordinary case.
+export function sessionDeviceId(id: WebIdentity): string {
+  return (id.jwt ? tokenDeviceId(id.jwt) : null) ?? storedSessionDevice(id.uin) ?? installId()
 }
 
 /// Mint a fresh account: generate keypairs, POST /auth/register,
@@ -481,6 +512,53 @@ interface StoredIdentity {
   /// account and asks for one at start-up. Set by [markTokenless] after a
   /// refresh has actually worked once — never optimistically.
   noToken?: true
+  /// The device id the island knows this browser by FOR THIS ACCOUNT, when it
+  /// is not this browser's own install id: a session linked from a phone is
+  /// registered under an id the phone minted, and that is the one the
+  /// linked-devices list revokes. Absent for accounts made or recovered here.
+  sessionDevice?: string
+}
+
+/// The linked-session id stored for `uin`, from whichever row we have — the
+/// active slot, else the switcher list (same shape as [isTokenless], and for
+/// the same reason: a call can be made on behalf of a non-active account).
+function storedSessionDevice(uin: number): string | undefined {
+  try {
+    const raw = acctGet(STORAGE_KEY)
+    if (raw) {
+      const active = JSON.parse(raw) as StoredIdentity
+      if (active.uin === uin) return active.sessionDevice
+    }
+  } catch {
+    /* fall through to the list */
+  }
+  return readAccounts().find((a) => a.uin === uin)?.sessionDevice
+}
+
+/// Pin the id this account's session is minted under. Written on both rows,
+/// like [markTokenless] — switching accounts must not restore an id the island
+/// no longer associates with this browser.
+export function rememberSessionDevice(uin: number, deviceId: string | null): void {
+  if (!deviceId || deviceId === installId()) return
+  try {
+    const raw = acctGet(STORAGE_KEY)
+    if (raw) {
+      const active = JSON.parse(raw) as StoredIdentity
+      if (active.uin === uin) {
+        acctSet(STORAGE_KEY, JSON.stringify({ ...active, sessionDevice: deviceId }))
+      }
+    }
+  } catch {
+    /* unreadable active row — the list below still gets its copy */
+  }
+  const list = readAccounts()
+  let touched = false
+  for (let i = 0; i < list.length; i++) {
+    if (list[i].uin !== uin) continue
+    list[i] = { ...list[i], sessionDevice: deviceId }
+    touched = true
+  }
+  if (touched) writeAccounts(list)
 }
 
 /// Is this account's token re-mintable, i.e. is there no point keeping one?
@@ -517,6 +595,10 @@ export function persistIdentity(id: WebIdentity, seed?: string) {
       /* no prior seed */
     }
   }
+  // Carried, never rebuilt: this row is written afresh on every token refresh,
+  // and dropping the linked-session id here would hand the browser straight
+  // back to its own install id at the next mint — the whole of report #607.
+  const keepDevice = storedSessionDevice(id.uin)
   const tokenless = isTokenless(id.uin)
   const stored: StoredIdentity = {
     uin: id.uin,
@@ -527,6 +609,7 @@ export function persistIdentity(id: WebIdentity, seed?: string) {
     signingPub: bytesToB64(id.signingPub),
     ...(tokenless ? { noToken: true } : { jwt: id.jwt }),
     ...(keepSeed ? { seed: keepSeed } : {}),
+    ...(keepDevice ? { sessionDevice: keepDevice } : {}),
   }
   acctSet(STORAGE_KEY, JSON.stringify(stored))
   // Keep the switcher row in step, or switching accounts would restore the
@@ -614,9 +697,17 @@ export interface TokenMint {
 /// ⚠ Not /auth/recover. That resolves a key to the OLDEST account carrying it,
 /// which for a shared key is somebody else's account — fine as a last-resort
 /// "take me home", wrong as a start-up step. /auth/refresh names the uin.
+///
+/// ⚠ Minted under [sessionDeviceId], NOT plain `installId()`. Proving the
+/// signing key says who is asking and nothing about where from, so the device
+/// id is the only thing that lets the island refuse a browser its owner has
+/// disconnected. A linked browser that asked under its own install id was
+/// simply handed a new session — the revoke had denylisted the id it used to
+/// carry, which by then it no longer used (report #607).
 export async function mintSessionToken(id: WebIdentity): Promise<TokenMint> {
   const miss: TokenMint = { token: null, dead: false, unsupported: false }
   const skB64 = bytesToB64(id.signingPub)
+  const deviceId = sessionDeviceId(id)
   try {
     const chRes = await fetch(`${id.apiBase}/auth/recover/challenge`, {
       method: 'POST',
@@ -634,7 +725,7 @@ export async function mintSessionToken(id: WebIdentity): Promise<TokenMint> {
         signing_key: skB64,
         challenge,
         signature,
-        device_id: installId(),
+        device_id: deviceId,
       }),
     })
     if (res.ok) {
@@ -642,7 +733,19 @@ export async function mintSessionToken(id: WebIdentity): Promise<TokenMint> {
       // The island answering with a different number is not a token we can
       // use — it is a bug or a shared key, and adopting it would put this
       // browser into somebody else's account.
-      if (out.token && out.uin === id.uin) return { token: out.token, dead: false, unsupported: false }
+      if (out.token && out.uin === id.uin) {
+        // Survive the reload: a tokenless account has no token to read the id
+        // back out of next time. No-op unless this is a linked session.
+        rememberSessionDevice(id.uin, deviceId)
+        return { token: out.token, dead: false, unsupported: false }
+      }
+      return miss
+    }
+    // The account disconnected this browser. Same ending as "identity gone":
+    // the session is over and no amount of retrying changes that.
+    if (res.status === 401) {
+      const text = await res.text()
+      if (text.includes('device_revoked')) return { token: null, dead: true, unsupported: false }
       return miss
     }
     if (res.status === 404) {

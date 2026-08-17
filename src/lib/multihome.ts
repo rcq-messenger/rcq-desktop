@@ -304,7 +304,7 @@ export async function autoPickBackupIsland(identity: WebIdentity): Promise<strin
   return picked
 }
 
-/// Where `enableAutoBackup` currently is. ⚠ #605: switching the toggle on is a
+/// How far along `enableAutoBackup` is. ⚠ #605: switching the toggle on is a
 /// long errand — a signed catalogue from up to two sources, a health probe of
 /// every candidate (6s ceiling each), then a recover-or-register handshake on
 /// the winner — and it used to report none of it, so the screen sat silent for

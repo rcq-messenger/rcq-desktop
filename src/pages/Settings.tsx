@@ -621,7 +621,7 @@ export function Settings() {
               // In the checkbox's own place, and its own size, so the row does
               // not jump: an unchecked box next to a line of small grey text is
               // exactly what read as "nothing is happening" (#605).
-              <span className="w-5 h-5 shrink-0 flex items-center justify-center text-fg-dim">
+              <span className="w-5 h-5 shrink-0 flex items-center justify-center text-accent">
                 <Spinner />
               </span>
             ) : (
@@ -634,7 +634,11 @@ export function Settings() {
               />
             )}
           </label>
-          {mhStage && <div className="text-xs text-fg-dim">{mhStage}</div>}
+          {/* Not `text-fg-dim`: this section's hints are already that colour,
+              and a live status the same shade as the static advice underneath
+              it is one more grey line, not an answer to "is it doing anything"
+              (#605). */}
+          {mhStage && <div className="text-xs text-fg-secondary">{mhStage}</div>}
           {backups
             .filter((h) => h.auto || h.adopted)
             .map((h) => (

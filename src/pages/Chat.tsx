@@ -516,6 +516,12 @@ export function Chat() {
       const root = bar.parentElement
       root?.style.setProperty('--rcq-composer-h', `${bar.offsetHeight}px`)
       root?.style.setProperty('--rcq-topbars-h', `${top.offsetHeight}px`)
+      // ...and on the document root, because the emoji panel is PORTALLED to
+      // body (the composer bar's backdrop-filter makes it the containing block
+      // for anything fixed inside it) and still has to sit exactly on top of
+      // this bar. A variable set on the composer's parent is invisible from
+      // there; one on the root is visible everywhere.
+      document.documentElement.style.setProperty('--rcq-composer-h', `${bar.offsetHeight}px`)
       // A bar that GROWS (a wrapped line, the reply strip, the emoji panel)
       // adds padding under the last message without moving the scroll — so
       // the message the reader was looking at slides under the bar. If they
@@ -2900,8 +2906,19 @@ export function Chat() {
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.14 }}
                   onClick={() => setShowPicker(false)}
-                  className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-md sm:items-center"
+                  className="fixed inset-0 z-50 bg-black/40 backdrop-blur-md"
                 >
+                  {/* Over the composer, not in the middle of the window. It was
+                      centred for a while and that is the wrong place for it:
+                      this panel is part of writing a message, so it belongs
+                      where the message is being written, the way it does on the
+                      phones. The one that stays a centred dialog is the pack
+                      PICKER (EmoticonConfigSheet) — that one is a setting, not
+                      a keystroke.
+                      ⚠ Positioned off `--rcq-composer-h`, published by the
+                      ResizeObserver above: the bar's height changes with a
+                      reply strip, a wrapped line and this very panel, so a
+                      constant offset would drift off it. */}
                   <motion.div
                     initial={{ y: 12, opacity: 0 }}
                     animate={{ y: 0, opacity: 1 }}
@@ -2909,7 +2926,8 @@ export function Chat() {
                     transition={{ duration: 0.16 }}
                     onClick={(e) => e.stopPropagation()}
                     data-emoji-panel
-                    className="w-full max-w-sm px-3 pb-3 sm:pb-0"
+                    style={{ bottom: 'calc(var(--rcq-composer-h, 4rem) + 0.5rem)' }}
+                    className="fixed inset-x-0 mx-auto w-full max-w-sm px-3"
                   >
                     <EmoticonPicker
                       uin={identity!.uin}

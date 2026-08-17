@@ -265,14 +265,20 @@ export function PinGate({ children }: { children: ReactNode }) {
       <div className="relative h-full flex flex-col items-center justify-center px-6">
       <form onSubmit={submit} className="w-full max-w-xs space-y-4 text-center">
         {/* The padlock with our flower tucked into its bottom-right corner, so
-            the locked screen still says whose app this is. */}
+            the locked screen still says whose app this is.
+            ⚠ The offsets are INSIDE the span, not negative. An emoji glyph is
+            drawn narrower than its box, so `-right-2` put the flower past the
+            padlock's own right edge with a gap between them — two marks side by
+            side rather than one, and the flower looked as if it had slipped off
+            (founder). Overlapping the corner is what "tucked" was supposed to
+            mean. */}
         <div className="relative inline-block select-none">
           <span className="text-5xl leading-none">🔒</span>
           <img
             src="/logo.png"
             alt=""
             aria-hidden
-            className="absolute -bottom-1 -right-2 w-5 h-5 drop-shadow"
+            className="absolute bottom-0.5 right-1 w-5 h-5 drop-shadow"
           />
         </div>
         <div className="text-sm text-fg-secondary">{t('pin.locked')}</div>

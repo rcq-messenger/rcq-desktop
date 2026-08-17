@@ -61,11 +61,20 @@ import {
 } from '../lib/multihome'
 import { publishHomeIslandRecord } from '../lib/federation-publish'
 import { pushHomeRecordToContacts } from '../lib/federation-gossip'
+import { useServerInfo, DEFAULT_CAPABILITIES } from '../lib/server-info'
 
 export function Settings() {
   const { identity, accounts, switchAccount, addAccount, signOutAccount, signOut } = useIdentity()
   const [revoked] = useState<number[]>(() => revokedAccounts())
   const { t } = useI18n()
+  // Who this island says it is, and which surfaces it runs. Permissive while
+  // the answer is in flight, so nothing blinks out and back in on open.
+  const islandInfo = useServerInfo(identity?.apiBase)
+  const caps = islandInfo?.capabilities ?? DEFAULT_CAPABILITIES
+  const islandName = islandInfo?.name.trim() || null
+  const islandRules = islandInfo?.welcome.trim() || null
+  const islandHost = (identity?.apiBase ?? '').replace(/^https?:\/\//, '')
+  const [showRules, setShowRules] = useState(false)
   const navigate = useNavigate()
   const [confirming, setConfirming] = useState(false)
   const [burnTyped, setBurnTyped] = useState('')
@@ -601,6 +610,45 @@ export function Settings() {
           <MyQRCode me={me} />
         </section>
 
+        {/* The island this account lives on, in its own words. Both fields are
+            typed by the operator in the admin panel and have been served on
+            /server/info since islands existed; no browser ever read them, so
+            the admin panel carried a note saying they changed nothing. Shown
+            for EVERY island including the flagship, which has a name and rules
+            of its own. */}
+        <section className="bg-surface rounded-lg p-4 space-y-3">
+          <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+            {t('settings.section.island')}
+          </div>
+          <div className="min-w-0">
+            <div className="text-sm font-medium truncate">{islandName ?? islandHost}</div>
+            {/* The host repeats under a name and nowhere else: two lines
+                saying the same host is one line of noise. */}
+            {islandName && (
+              <div className="font-mono text-xs text-fg-dim truncate">{islandHost}</div>
+            )}
+          </div>
+          {islandRules && (
+            <>
+              <button
+                onClick={() => setShowRules(!showRules)}
+                className="block text-left text-xs text-fg-secondary hover:text-fg-primary transition-colors"
+              >
+                {showRules ? '▾' : '▸'} {t('settings.island.rules')}
+              </button>
+              {/* Opened in place rather than in an overlay. Both bars on this
+                  app carry a backdrop-filter, which makes them the containing
+                  block for anything `fixed` inside them, and a sheet is how
+                  that trap gets sprung. */}
+              {showRules && (
+                <p className="text-xs text-fg-secondary leading-relaxed whitespace-pre-wrap max-h-72 overflow-y-auto">
+                  {islandRules}
+                </p>
+              )}
+            </>
+          )}
+        </section>
+
         {/* Multihoming (federation v1): this account also registered on a
             second island, messages get deposited into both mailboxes. */}
         <section className="bg-surface rounded-lg p-4 space-y-3">
@@ -944,6 +992,11 @@ export function Settings() {
           <p className="text-xs text-fg-dim">{t('settings.hof.footer')}</p>
         </section>
 
+        {/* An island may run no report desk at all, and then it gets neither
+            entry: the form would be answered 403 and the screen would stay
+            empty forever, which is worse than an absent menu item. Same rule
+            and same permissive default as Android. */}
+        {caps.reports && (<>
         {/* Report a problem — same /reports channel the mobile clients use. */}
         <section className="bg-surface rounded-lg p-4 space-y-3">
           <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
@@ -1032,6 +1085,7 @@ export function Settings() {
             <span className="text-fg-dim">→</span>
           </div>
         </Link>
+        </>)}
 
         {/* Desktop only: the bundled sing-box. The webview proxy is fixed when
             the webview is built, so flipping this needs a restart. */}

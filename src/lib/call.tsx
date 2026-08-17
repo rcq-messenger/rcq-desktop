@@ -307,8 +307,6 @@ export function CallProvider({ children }: { children: ReactNode }) {
   identityRef.current = identity
   const tRef = useRef(t)
   tRef.current = t
-  const connectedRef = useRef(connected)
-  connectedRef.current = connected
 
   /// Same-island signals owed to the peer while the socket happens to be down.
   /// `ws.send` on a closed socket silently drops the frame, and for a call
@@ -347,9 +345,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
             : null
       if (!host) {
         const frame = { type, to_uin: toUin, call_id: callId, ...extra }
-        if (connectedRef.current) {
-          sendRef.current(frame)
-        } else {
+        // The SEND's verdict, not the render's: `connected` state lags the
+        // socket by a render, and a frame handed to a just-closed socket is
+        // swallowed without a trace. send() itself checks the real readyState.
+        if (!sendRef.current(frame)) {
           // Bounded: a long outage accumulates ICE nobody will ever apply.
           // Endings are never the ones dropped — they are the frames the
           // island's busy registry depends on.
@@ -383,13 +382,21 @@ export function CallProvider({ children }: { children: ReactNode }) {
   // the peer to stop ringing. Everything else (ICE, renegotiation) is only
   // meaningful for the call still on foot, so frames from a call that ended
   // during the gap are dropped rather than replayed at a stranger.
+  //
+  // A frame the socket refuses (it died again between the render that flipped
+  // `connected` and this effect running — the flapping-socket case exactly)
+  // goes BACK in the box along with the rest, for the next reconnect. Frames
+  // this flush chose to drop are dropped for good.
   useEffect(() => {
     if (!connected || outboxRef.current.length === 0) return
     const held = outboxRef.current
     outboxRef.current = []
-    for (const frame of held) {
-      if (frame.type === 'call_end' || live.current.info?.id === frame.call_id) {
-        sendRef.current(frame)
+    for (let i = 0; i < held.length; i++) {
+      const frame = held[i]
+      if (frame.type !== 'call_end' && live.current.info?.id !== frame.call_id) continue
+      if (!sendRef.current(frame)) {
+        outboxRef.current = held.slice(i).concat(outboxRef.current)
+        return
       }
     }
   }, [connected])

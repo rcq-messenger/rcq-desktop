@@ -49,6 +49,13 @@ export async function vaultUnlock(pin: string): Promise<string> {
   return call<string>('vault_unlock', { pin })
 }
 
+/// The contents, for a page that reloaded inside an already-unlocked session
+/// (switching accounts or islands does exactly that). Throws `locked` when
+/// this run has never been unlocked, which is when the PIN must be asked for.
+export async function vaultRead(): Promise<string> {
+  return call<string>('vault_read')
+}
+
 /// Re-seal after a change. No PIN — the session is already unlocked.
 export async function vaultWrite(plaintext: string): Promise<void> {
   await call<void>('vault_write', { plaintext })

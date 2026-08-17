@@ -250,6 +250,30 @@ fn unlock_at(p: &std::path::Path, state: &Unlocked, pin: &str) -> Result<String,
     }
 }
 
+/// Read the contents back while ALREADY unlocked, with no PIN.
+///
+/// The page reloads itself for reasons that have nothing to do with locking:
+/// switching accounts and switching islands both tear the whole app down and
+/// build it again. Before this, every one of those reloads landed on the lock
+/// screen and asked for the PIN a second time in the same session — and
+/// founder, who does both often, hit it immediately. The key is already in
+/// memory; a session that has been unlocked once stays unlocked until the app
+/// quits or `lock()` is called on purpose.
+///
+/// Fails with `locked` when nobody has unlocked this run, which is exactly the
+/// case where the PIN must be asked for.
+pub fn read_unlocked(app: &AppHandle, state: &Unlocked) -> Result<String, String> {
+    let key = state.0.lock().map_err(|_| "poisoned")?.ok_or("locked")?;
+    let f = read(app).ok_or("no_vault")?;
+    let nonce = B64.decode(&f.nonce).map_err(|_| "corrupt_vault")?;
+    let ct = B64.decode(&f.ct).map_err(|_| "corrupt_vault")?;
+    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key));
+    let plain = cipher
+        .decrypt(Nonce::from_slice(&nonce), ct.as_ref())
+        .map_err(|_| "corrupt_vault".to_string())?;
+    String::from_utf8(plain).map_err(|_| "corrupt_vault".into())
+}
+
 /// Re-seal the contents while unlocked. This is the ordinary write: the
 /// account material changes constantly (a refreshed token, a second account, a
 /// UIN migration) and none of that should ask for the PIN again.

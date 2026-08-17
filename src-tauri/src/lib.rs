@@ -230,6 +230,17 @@ fn vault_write(
     vault::write_unlocked(&app, &open, &plaintext)
 }
 
+/// Hand the contents back to a page that reloaded inside an already-unlocked
+/// session (an account switch, an island switch). No PIN: the key is already
+/// held, and asking again is what taught people to type it at any prompt.
+#[tauri::command]
+fn vault_read(
+    app: tauri::AppHandle,
+    open: tauri::State<vault::Unlocked>,
+) -> Result<String, String> {
+    vault::read_unlocked(&app, &open)
+}
+
 #[tauri::command]
 fn vault_lock(open: tauri::State<vault::Unlocked>) {
     vault::lock(&open)
@@ -337,6 +348,7 @@ pub fn run() {
                 vault_state,
                 vault_create,
                 vault_unlock,
+                vault_read,
                 vault_write,
                 vault_lock,
                 vault_remove

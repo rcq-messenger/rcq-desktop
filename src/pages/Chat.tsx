@@ -56,6 +56,7 @@ import {
   type ReactionEnvelope,
   type ReplyContext,
   type TextEnvelope,
+  type PollEnvelope,
 } from '../lib/crypto'
 import {
   type OutgoingRow,
@@ -67,6 +68,8 @@ import {
 } from '../lib/outgoing-store'
 import { buildGroupDualSend, encryptGroupEnvelope } from '../lib/group-crypto'
 import { parseGroupInvite } from '../lib/group-invite'
+import { PollComposerSheet } from '../components/PollComposerSheet'
+import { ShareGroupSheet } from '../components/ShareGroupSheet'
 import {
   clearMention,
   markMentionSeen,
@@ -95,7 +98,7 @@ import { useWS } from '../lib/ws'
 /// Envelope kinds `shipEnvelopeToCurrentThread` is allowed to encrypt + send.
 /// (Carbons take a separate path; this gates the in-thread sends.) `edit` was
 /// missing here, which silently rejected edit propagation to the peer.
-const SHIPPABLE_KINDS = new Set<Envelope['kind']>(['text', 'reaction', 'photo', 'video', 'file', 'edit', 'delete'])
+const SHIPPABLE_KINDS = new Set<Envelope['kind']>(['text', 'reaction', 'photo', 'video', 'file', 'edit', 'delete', 'poll'])
 
 /// Message kinds we mirror to the user's other devices via a carbon
 /// (NOT reactions — those sync through their own self-echo).
@@ -174,6 +177,12 @@ export function Chat() {
   // The attach button opens a small menu (Photo / File) — the web couldn't
   // send documents before (#16). Each picks a different hidden <input>.
   const [attachMenuOpen, setAttachMenuOpen] = useState(false)
+  // The two attach-menu entries that open a sheet of their own: a poll to
+  // compose (groups only, the endpoint lives under /groups/{id}) and one of my
+  // groups to hand over as an invite link. Both existed on Android long before
+  // the desktop had either (#578).
+  const [pollSheetOpen, setPollSheetOpen] = useState(false)
+  const [shareGroupOpen, setShareGroupOpen] = useState(false)
   // A file is being dragged over the conversation (drop-to-send overlay).
   const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -900,6 +909,20 @@ export function Chat() {
         ...(row.replyTo ? { reply: row.replyTo } : {}),
         ...(row.fwdName ? { fwdName: row.fwdName } : {}),
       }
+    } else if (row.kind === 'poll' && row.poll) {
+      // Terse keys, and this exact order, are the mobile wire: Android writes
+      // kind/id/poll/q/opts/sc/anon in `Envelope.kt:300`. `poll` is the id the
+      // island handed back a moment ago — the ballot itself never reaches it.
+      const poll: PollEnvelope = {
+        kind: 'poll',
+        id: row.id,
+        poll: row.poll.pollId,
+        q: row.poll.question,
+        opts: row.poll.options,
+        sc: row.poll.single,
+        anon: row.poll.anon,
+      }
+      env = poll
     } else if (row.kind === 'other' && row.mediaKind === 'location' && row.lat != null && row.lng != null) {
       env = {
         kind: 'location',
@@ -1102,6 +1125,75 @@ export function Chat() {
     }
     setOutgoing((rows) => [...rows, row])
     if (caption) setInput('')
+    setReplyTo(null)
+    stickToBottom()
+    await attemptSendRow(row)
+  }
+
+  /// Post a group poll (#578 — the desktop could vote but not ask). Two steps,
+  /// in Android's order (`Session.sendPoll`, Session.kt:3340):
+  ///   1. mint the message UUID here, uppercase, because it is the id the
+  ///      island files the tally rows under AND the id of the envelope;
+  ///   2. register the poll's SHAPE on the group's island — how many options,
+  ///      single-choice, anonymous — and take the poll_id it returns;
+  ///   3. ship a `poll` envelope carrying that id plus the question and the
+  ///      option labels, which the island never sees.
+  /// Order matters: the envelope cannot go first, because it has to carry the
+  /// poll_id, and a member who received a ballot with no id could not vote.
+  /// Returns null on success, or a message for the sheet to show — a failed
+  /// create must not close the composer and throw away what was typed.
+  async function sendPoll(
+    question: string,
+    options: string[],
+    single: boolean,
+    anon: boolean,
+  ): Promise<string | null> {
+    // Polls are group-only: the create endpoint lives under /groups/{id}, and
+    // both phones ignore a `poll` envelope that arrives in a 1:1.
+    if (!identity || !isGroup || !gctx || !group) return t('chat.error.send_failed')
+    const id = newUUIDv4() // uppercase UUID, same convention as the phones
+    let pollId: number
+    try {
+      const created = await Api.createPoll(gctx.ident, gctx.gid, {
+        message_id: id,
+        num_options: options.length,
+        single_choice: single,
+        anonymous: anon,
+      })
+      pollId = created.poll_id
+    } catch (e) {
+      return e instanceof Error ? e.message : t('chat.error.send_failed')
+    }
+    const row: OutgoingRow = {
+      id,
+      // The question doubles as this row's text so the chat list preview, the
+      // search index and a reply quote all read as the phones' do.
+      text: question,
+      sentAt: Date.now(),
+      state: 'sending',
+      kind: 'poll',
+      poll: { pollId, question, options, single, anon },
+    }
+    setOutgoing((rows) => [...rows, row])
+    stickToBottom()
+    await attemptSendRow(row)
+    return null
+  }
+
+  /// Send a group invite link into the open conversation. It goes as plain
+  /// text, exactly as Android sends it (ChatScreen.kt:1706): every client
+  /// already recognises the link and paints a join card over it, so this needs
+  /// no envelope of its own and reaches old versions intact.
+  async function sendGroupInvite(link: string) {
+    if (!identity) return
+    const row: OutgoingRow = {
+      id: newUUIDv4(),
+      text: link,
+      sentAt: Date.now(),
+      state: 'sending',
+      ...(replyTo ? { replyTo } : {}),
+    }
+    setOutgoing((rows) => [...rows, row])
     setReplyTo(null)
     stickToBottom()
     await attemptSendRow(row)
@@ -2483,6 +2575,40 @@ export function Chat() {
                   </li>
                 )
               }
+              if (row.kind === 'poll' && row.poll) {
+                // A ballot I posted. Same bubble the received half uses, so the
+                // author watches the same tallies everyone else does — one
+                // component, one source of truth (/polls/{id}).
+                return (
+                  <li key={row.id} id={`msg-${row.id}`} className={`group flex justify-end rounded-lg transition-colors duration-500 ${item.cont ? '-mt-1' : ''} ${highlightId === row.id ? 'bg-accent/15' : ''}`}>
+                    <div className="relative max-w-[80%] flex flex-col items-end gap-1">
+                      <PollBubble poll={row.poll} mine />
+                      <div className="flex items-center justify-end gap-1 text-[0.625rem] font-mono text-fg-dim">
+                        {new Date(row.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        {row.state === 'sending' && <ClockMark />}
+                        {row.state === 'sent' && <TickMark />}
+                        {row.state === 'failed' && (
+                          <>
+                            <span className="text-red-500">·{t('chat.delivery.failed')}</span>
+                            <button
+                              onClick={() => void retry(row.id)}
+                              className="ml-1 rounded px-1.5 py-0.5 text-red-600 hover:bg-red-100 transition-colors"
+                            >
+                              ↻ {t('chat.delivery.retry')}
+                            </button>
+                            <button
+                              onClick={() => dismiss(row.id)}
+                              className="rounded px-1.5 py-0.5 text-fg-dim hover:bg-line transition-colors"
+                            >
+                              × {t('chat.delivery.dismiss')}
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </li>
+                )
+              }
               if (row.kind === 'other') {
                 // A still-unsupported media (voice/location) the user sent from
                 // another device, echoed here via a carbon.
@@ -2886,14 +3012,18 @@ export function Chat() {
                       exit={{ opacity: 0, y: 6 }}
                       transition={{ duration: 0.14 }}
                       data-chat-menu
-                      className="absolute bottom-full left-0 mb-2 z-20 w-44 rounded-xl bg-surface shadow-lg overflow-hidden"
+                      // Wide enough for the longest label in the longest
+                      // language: RU's «Приглашение в группу» wrapped to two
+                      // lines at w-44 and left the row ragged next to the
+                      // one-word ones.
+                      className="absolute bottom-full left-0 mb-2 z-20 w-52 rounded-xl bg-surface shadow-lg overflow-hidden"
                     >
                       <button
                         onClick={() => {
                           setAttachMenuOpen(false)
                           fileInputRef.current?.click()
                         }}
-                        className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm hover:bg-field transition-colors"
+                        className="flex w-full items-center gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm hover:bg-field transition-colors"
                       >
                         <AttachIcon />
                         {t('chat.attach.photo')}
@@ -2903,18 +3033,42 @@ export function Chat() {
                           setAttachMenuOpen(false)
                           docInputRef.current?.click()
                         }}
-                        className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm hover:bg-field transition-colors"
+                        className="flex w-full items-center gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm hover:bg-field transition-colors"
                       >
                         <DocIcon />
                         {t('chat.attach.file')}
                       </button>
                       <button
                         onClick={() => void sendLocation()}
-                        className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm hover:bg-field transition-colors"
+                        className="flex w-full items-center gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm hover:bg-field transition-colors"
                       >
                         <PinIcon />
                         {t('chat.attach.location')}
                       </button>
+                      {/* Same order the phones use: group invite, then the
+                          poll (groups only, where the endpoint lives). */}
+                      <button
+                        onClick={() => {
+                          setAttachMenuOpen(false)
+                          setShareGroupOpen(true)
+                        }}
+                        className="flex w-full items-center gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm hover:bg-field transition-colors"
+                      >
+                        <GroupInviteIcon />
+                        {t('chat.attach.group')}
+                      </button>
+                      {isGroup && (
+                        <button
+                          onClick={() => {
+                            setAttachMenuOpen(false)
+                            setPollSheetOpen(true)
+                          }}
+                          className="flex w-full items-center gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm hover:bg-field transition-colors"
+                        >
+                          <PollIcon />
+                          {t('chat.attach.poll')}
+                        </button>
+                      )}
                     </motion.div>
                   </>
                 )}
@@ -2993,6 +3147,17 @@ export function Chat() {
         authors={reactionAuthors}
         onClose={() => setReactionAuthorsFor(null)}
       />
+
+      {pollSheetOpen && isGroup && (
+        <PollComposerSheet onClose={() => setPollSheetOpen(false)} onCreate={sendPoll} />
+      )}
+
+      {shareGroupOpen && (
+        <ShareGroupSheet
+          onClose={() => setShareGroupOpen(false)}
+          onPick={(link) => void sendGroupInvite(link)}
+        />
+      )}
     </div>
   )
 }
@@ -3302,6 +3467,29 @@ function PinIcon() {
   )
 }
 
+/// Two people — "hand this group to someone" in the attach menu.
+function GroupInviteIcon() {
+  return (
+    <svg className="text-fg-secondary shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+    </svg>
+  )
+}
+
+/// Bars of a tally — the ballot the composer is about to make.
+function PollIcon() {
+  return (
+    <svg className="text-fg-secondary shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <line x1="4" y1="7" x2="16" y2="7" />
+      <line x1="4" y1="12" x2="20" y2="12" />
+      <line x1="4" y1="17" x2="10" y2="17" />
+    </svg>
+  )
+}
+
 /// Renders the pinned announcement the way the native apps do (#pin-native):
 /// group-invite links become join CARDS, #UIN mentions become clickable nicks,
 /// plain URLs become clickable links, everything else is plain text. Whitespace
@@ -3346,7 +3534,7 @@ function PinnedRichText({ text, group }: { text: string; group: RCQGroup }) {
 /// Renders a group poll inline (#7 — polls were invisible on web). The ballot
 /// comes from the envelope; live tallies + the caller's vote come from
 /// /polls/{id}. Tap an option to (un)vote.
-function PollBubble({ poll }: { poll: PollRow }) {
+function PollBubble({ poll, mine = false }: { poll: PollRow; mine?: boolean }) {
   const { t } = useI18n()
   const { identity } = useIdentity()
   const [tally, setTally] = useState<PollOut | null>(null)
@@ -3366,7 +3554,7 @@ function PollBubble({ poll }: { poll: PollRow }) {
     try { setTally(await Api.votePoll(identity, poll.pollId, i)) } catch { /* ignore */ }
   }
   return (
-    <div className="rounded-lg px-3 py-2 bg-bubble-other w-[18rem] max-w-full">
+    <div className={`rounded-lg px-3 py-2 w-[18rem] max-w-full text-left ${mine ? 'bg-bubble-self' : 'bg-bubble-other'}`}>
       <div className="text-sm font-semibold">{poll.question}</div>
       <div className="text-[0.625rem] text-fg-dim mb-2">
         {poll.single ? t('poll.single') : t('poll.multi')}

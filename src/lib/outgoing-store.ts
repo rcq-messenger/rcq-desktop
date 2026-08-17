@@ -12,6 +12,7 @@
 import { scopedKey } from './account-scope'
 import { isSealedText, openText, sealText } from './pin-seal'
 import type { Envelope, CarbonEnvelope, ReplyContext } from './crypto'
+import type { PollRow } from './incoming-store'
 
 export interface OutgoingRow {
   id: string
@@ -26,7 +27,12 @@ export interface OutgoingRow {
   /// in the conversation, the way both phones write one. It never goes on the
   /// wire — each device logs its own — and it renders as a centred line rather
   /// than a bubble.
-  kind?: 'text' | 'photo' | 'video' | 'file' | 'other' | 'call'
+  kind?: 'text' | 'photo' | 'video' | 'file' | 'other' | 'call' | 'poll'
+  /// For 'poll': the ballot I posted, stored the same way the received half
+  /// keeps it (IncomingRow.poll) so both sides render through one component.
+  /// Only the ballot is kept — tallies are always fetched fresh from
+  /// /polls/{id}, never persisted, exactly as on the phones.
+  poll?: PollRow
   /// For 'call': nobody picked up (or it was declined). Drives the icon.
   callMissed?: boolean
   /// For 'call': the island the other party lives on, when it is not ours

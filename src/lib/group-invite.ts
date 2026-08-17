@@ -15,9 +15,34 @@
 // accept `chat.rcq.app/g/<id>` so a link shared from the web client
 // round-trips.
 
+import type { WebIdentity } from './crypto'
+import { groupInviteLink } from './crossisland-groupadd'
+import { hostOfApiBase } from './multihome'
+import { isForeignGroupId, refByAlias } from './visited-islands'
+
 export interface GroupInviteRef {
   id: number
   host: string | null // null = own island
+}
+
+/// The (id, host) pair a group must be SHARED as. A route id is local to this
+/// device — a negative one is an alias for a group that lives on another
+/// island — so neither half can be taken from it directly: the id has to be
+/// the one that island issued, and the host has to be that island, not ours.
+/// Byte-for-byte the same rule as Android's `Session.groupShareRef`
+/// (Session.kt:2957) so a link built here parses on a phone and back.
+export function groupShareRef(identity: WebIdentity, routeId: number): { id: number; host: string } {
+  const ref = isForeignGroupId(routeId) ? refByAlias(routeId) : null
+  return ref
+    ? { id: ref.remoteId, host: ref.host }
+    : { id: routeId, host: hostOfApiBase(identity.apiBase) }
+}
+
+/// The shareable link for a group I am in, host and all. Android builds the
+/// same string in `GroupLinkParser.canonicalUrl` (ChatScreen.kt:2215).
+export function groupShareLink(identity: WebIdentity, routeId: number): string {
+  const ref = groupShareRef(identity, routeId)
+  return groupInviteLink(ref.id, ref.host)
 }
 
 const PATTERNS: RegExp[] = [

@@ -8,6 +8,7 @@ import { AddMemberSheet } from '../components/AddMemberSheet'
 import { GroupSettingsModal } from '../components/GroupSettingsModal'
 import { GroupAvatar } from '../components/GroupAvatar'
 import { Api, type RCQGroup } from '../lib/api'
+import { groupShareLink } from '../lib/group-invite'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
 import { groupApiCtx } from '../lib/visited-islands'
@@ -26,6 +27,7 @@ export function GroupInfo() {
   const [showAdd, setShowAdd] = useState(false)
   const [confirmDestroy, setConfirmDestroy] = useState(false)
   const [membersExpanded, setMembersExpanded] = useState(false)
+  const [copied, setCopied] = useState(false)
 
   // Cross-island group: a negative route id is the local alias — resolve the
   // guest identity + server-side id for every call (local groups pass through).
@@ -76,6 +78,20 @@ export function GroupInfo() {
         return (a.nickname || `#${a.uin}`).localeCompare(b.nickname || `#${b.uin}`)
       })
     : []
+
+  /// Put the group's invite link on the clipboard. The route id is local to
+  /// this device, so the link is built from the (island id, host) pair the rest
+  /// of the world uses.
+  async function copyShareLink() {
+    if (!identity) return
+    try {
+      await navigator.clipboard.writeText(groupShareLink(identity, groupId))
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1600)
+    } catch {
+      /* clipboard denied — nothing was copied, so say nothing */
+    }
+  }
 
   async function removeMember(uin: number) {
     if (!group || !gctx) return
@@ -259,6 +275,21 @@ export function GroupInfo() {
                   <AddPersonIcon />
                   {t('group.add.title')}
                 </button>
+                {/* "Поделиться группой" (#578). It was reachable only from
+                    inside the add-member sheet, which is the last place someone
+                    looks for it: on the phones sharing a group is its own
+                    action. The link is the phones' canonical one, host and all
+                    — see groupShareLink. */}
+                <button
+                  onClick={() => void copyShareLink()}
+                  className="w-full h-11 rounded-md flex items-center justify-center gap-2 text-sm font-medium text-accent hover:bg-field transition-colors"
+                >
+                  <LinkIcon />
+                  {copied ? t('group.share.copied') : t('group.share.title')}
+                </button>
+                <p className="px-3 pb-1 pt-0.5 text-center text-xs text-fg-dim">
+                  {t('group.share.hint')}
+                </p>
               </section>
             )}
 
@@ -309,6 +340,15 @@ function AddPersonIcon() {
       <circle cx="9" cy="7" r="4" />
       <line x1="19" y1="8" x2="19" y2="14" />
       <line x1="22" y1="11" x2="16" y2="11" />
+    </svg>
+  )
+}
+
+function LinkIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
     </svg>
   )
 }

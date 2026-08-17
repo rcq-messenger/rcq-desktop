@@ -652,6 +652,19 @@ export function addIncoming(from: number, env: Envelope): void {
   byPeer.set(from, [...prev, row])
   persist()
   emit()
+  // A note I wrote on my OTHER device is not news, it is this device catching
+  // up. It arrived as an ordinary envelope to my own number — which is what
+  // makes it sync at all — and was then announced like a stranger's message:
+  // a chime, a banner and an unread badge for something I typed myself a
+  // second ago on the laptop in front of me. File it silently.
+  //
+  // ⚠ This is only the half a client can fix. The island pushes it too,
+  // because a note ships as envelope_type "message" and that type is
+  // pushable — and sealed sender means the island cannot tell a note from a
+  // stranger's message to decide otherwise. Silencing the push needs the
+  // SENDING side to mark a self-note as a non-pushable type, which is a wire
+  // decision, not a local one.
+  if (from === _activeUin) return
   bumpUnread(peerKey(from), row, null)
 }
 

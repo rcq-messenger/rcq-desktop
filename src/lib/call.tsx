@@ -217,15 +217,23 @@ interface Live {
   accepting: boolean
 }
 
-/// Can this network actually get a relay candidate? Measured once per session
-/// on a throwaway connection with no media: cheap, and the alternative is
-/// guessing from the presence of credentials, which says nothing about
-/// reachability.
+/// Can this network actually get a relay candidate? Measured on a throwaway
+/// connection with no media: cheap, and the alternative is guessing from the
+/// presence of credentials, which says nothing about reachability.
+///
+/// Cached briefly, not for the session: a desktop window lives for days across
+/// network changes, and a verdict measured on a long-gone Wi-Fi either forced
+/// relay-only against a TURN that is no longer reachable (no candidates at
+/// all) or silently skipped the relay this network now needs.
 let relayProbe: Promise<boolean> | null = null
+let relayProbeAt = 0
+const RELAY_PROBE_TTL_MS = 120_000
 
 function relayReachable(servers: RTCIceServer[]): Promise<boolean> {
   if (!servers.some((s) => 'username' in s && !!s.username)) return Promise.resolve(false)
-  if (relayProbe) return relayProbe
+  if (relayProbe && Date.now() - relayProbeAt < RELAY_PROBE_TTL_MS) return relayProbe
+  relayProbe = null
+  relayProbeAt = Date.now()
   relayProbe = new Promise<boolean>((resolve) => {
     let pc: RTCPeerConnection | null = null
     let done = false
@@ -299,6 +307,16 @@ export function CallProvider({ children }: { children: ReactNode }) {
   identityRef.current = identity
   const tRef = useRef(t)
   tRef.current = t
+  const connectedRef = useRef(connected)
+  connectedRef.current = connected
+
+  /// Same-island signals owed to the peer while the socket happens to be down.
+  /// `ws.send` on a closed socket silently drops the frame, and for a call
+  /// that is not a lost optimization — a dropped `call_end` leaves the island
+  /// convinced both parties are still on a call, and it answers every next
+  /// offer from or to either of them with "busy" until that registration goes
+  /// stale. Held here and flushed the moment the socket returns.
+  const outboxRef = useRef<Array<Record<string, unknown> & { type: string; call_id: string }>>([])
 
   /// Put one signal on whichever road reaches the peer, and say whether it got
   /// there. §5d: our own island's socket for a local peer, a sealed deposit to
@@ -328,7 +346,20 @@ export function CallProvider({ children }: { children: ReactNode }) {
             ? l.info.peerHost ?? null
             : null
       if (!host) {
-        sendRef.current({ type, to_uin: toUin, call_id: callId, ...extra })
+        const frame = { type, to_uin: toUin, call_id: callId, ...extra }
+        if (connectedRef.current) {
+          sendRef.current(frame)
+        } else {
+          // Bounded: a long outage accumulates ICE nobody will ever apply.
+          // Endings are never the ones dropped — they are the frames the
+          // island's busy registry depends on.
+          const box = outboxRef.current
+          if (box.length >= 64) {
+            const i = box.findIndex((f) => f.type !== 'call_end')
+            box.splice(i === -1 ? 0 : i, 1)
+          }
+          box.push(frame)
+        }
         return true
       }
       const id = identityRef.current
@@ -346,6 +377,22 @@ export function CallProvider({ children }: { children: ReactNode }) {
     },
     [dispatch],
   )
+
+  // Flush the held signals when the socket returns. A `call_end` goes out no
+  // matter what — it is what clears the island's busy registration and tells
+  // the peer to stop ringing. Everything else (ICE, renegotiation) is only
+  // meaningful for the call still on foot, so frames from a call that ended
+  // during the gap are dropped rather than replayed at a stranger.
+  useEffect(() => {
+    if (!connected || outboxRef.current.length === 0) return
+    const held = outboxRef.current
+    outboxRef.current = []
+    for (const frame of held) {
+      if (frame.type === 'call_end' || live.current.info?.id === frame.call_id) {
+        sendRef.current(frame)
+      }
+    }
+  }, [connected])
 
   const clearTimers = useCallback(() => {
     const l = live.current
@@ -973,6 +1020,27 @@ export function CallProvider({ children }: { children: ReactNode }) {
           return
         }
 
+        // The island's own verdicts about the callee. Android has routed both
+        // for a while; ignoring them here meant a caller listened to fake
+        // ringback for the full minute over a person who was never going to
+        // hear it. `call_unreachable` = no socket AND no wake channel: nobody
+        // will ever ring, so the call ends now. `call_offline` = the offer
+        // left as a push and may yet raise their screen: keep the call open
+        // but stop the ringback — a tone is a promise their device is ringing,
+        // and right now nothing is.
+        case 'call_unreachable': {
+          if (!l.info) return
+          if (callId && l.info.id !== callId) return
+          teardown('unavailable')
+          return
+        }
+        case 'call_offline': {
+          if (!l.info || !l.info.outgoing) return
+          if (callId && l.info.id !== callId) return
+          stopTone()
+          return
+        }
+
         case 'call_renegotiate': {
           const pc = l.pc
           if (!l.info || l.info.id !== callId || !pc || !sdp) return
@@ -1056,6 +1124,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
       'call_answer',
       'call_ice',
       'call_end',
+      'call_unreachable',
+      'call_offline',
       'call_renegotiate',
       'call_renegotiate_answer',
       'call_renegotiate_decline',

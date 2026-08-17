@@ -220,9 +220,30 @@ function hostOf(apiBase: string): string {
 //
 // Single-flight: a flapping socket re-runs the connect effect faster than a
 // drain finishes, and two drains racing would double-fetch the same rows.
+//
+// ⚠ Coalesced, not swallowed. A request that arrives DURING a drain is not
+// satisfied by that drain's rows — they were fetched before whatever prompted
+// the new request (typically the socket opening, and the island only replays
+// the queue over this endpoint; a row queued in between is covered by nothing
+// else while the socket then stays healthy). So a request folded into a
+// running drain schedules exactly one follow-up pass after it finishes.
 let drainInFlight: Promise<void> | null = null
+let drainAgain = false
+
+// A fetch that black-holes (a middlebox that eats the response) must not pin
+// the single-flight forever. Plain AbortController — AbortSignal.timeout is
+// still missing from older webviews this page runs in.
+function fetchWithTimeout(url: string, init: RequestInit, ms = 30_000): Promise<Response> {
+  const ctl = new AbortController()
+  const timer = setTimeout(() => ctl.abort(), ms)
+  return fetch(url, { ...init, signal: ctl.signal }).finally(() => clearTimeout(timer))
+}
+
 function drainPrimaryQueue(identity: WebIdentity, catchUp: boolean): Promise<void> {
-  if (drainInFlight) return drainInFlight
+  if (drainInFlight) {
+    drainAgain = true
+    return drainInFlight
+  }
   const run = (async () => {
     await ensureHydrated(identity.uin) // restore persisted history first
     // The quarantine store is sealed at rest and opens asynchronously. Wait
@@ -235,7 +256,7 @@ function drainPrimaryQueue(identity: WebIdentity, catchUp: boolean): Promise<voi
     // said all of it.
     if (catchUp) beginCatchUp()
     try {
-      const res = await fetch(`${identity.apiBase}/messages/queue?ack=1`, {
+      const res = await fetchWithTimeout(`${identity.apiBase}/messages/queue?ack=1`, {
         headers: { Authorization: `Bearer ${identity.jwt}` },
       })
       if (!res.ok) return
@@ -262,7 +283,7 @@ function drainPrimaryQueue(identity: WebIdentity, catchUp: boolean): Promise<voi
       }
       if (directIds.length || groupIds.length) {
         // Best-effort, like Android: a lost ack redelivers, the dedup absorbs.
-        await fetch(`${identity.apiBase}/messages/queue/ack`, {
+        await fetchWithTimeout(`${identity.apiBase}/messages/queue/ack`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${identity.jwt}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ direct_ids: directIds, group_ids: groupIds }),
@@ -275,6 +296,12 @@ function drainPrimaryQueue(identity: WebIdentity, catchUp: boolean): Promise<voi
     }
   })().finally(() => {
     drainInFlight = null
+    if (drainAgain) {
+      drainAgain = false
+      // Never as catch-up: the follow-up exists to pick up what arrived while
+      // the first pass ran, and that is news, not backlog.
+      void drainPrimaryQueue(identity, false)
+    }
   })
   drainInFlight = run
   return run

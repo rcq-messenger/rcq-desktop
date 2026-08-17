@@ -35,10 +35,13 @@ interface WsCtx {
   /// the unsubscribe function — call from the cleanup of a useEffect
   /// to avoid leaks.
   on: (type: string, listener: Listener) => () => void
-  /// Send a JSON message on the open socket. No-op when not
-  /// connected — the iOS client treats the WS as a best-effort
-  /// channel and the server's authoritative state lives in REST.
-  send: (msg: unknown) => void
+  /// Send a JSON message on the open socket. Returns whether the frame was
+  /// actually handed to an OPEN socket — a closed one silently swallows the
+  /// frame, and a caller holding something that MUST go out (a call ending)
+  /// needs to know to keep holding it. Most callers ignore the result: the
+  /// iOS client treats the WS as a best-effort channel and the server's
+  /// authoritative state lives in REST.
+  send: (msg: unknown) => boolean
 }
 
 const Ctx = createContext<WsCtx | undefined>(undefined)
@@ -87,6 +90,12 @@ export function WSProvider({ children }: { children: ReactNode }) {
       clearTimeout(reconnectTimerRef.current)
       reconnectTimerRef.current = null
     }
+    // This dial's socket has not opened yet. Without the reset, a socket
+    // REPLACED while open (identity change mid-session) leaves its open-stamp
+    // behind — the guard below keeps its close event from clearing it — and
+    // the next socket's failure would then read as a five-minute session:
+    // backoff forgiven, escalation streak wiped.
+    openedAtRef.current = null
 
     // wss://api.rcq.app/ws/<uin>?token=<jwt>. apiBase usually carries the
     // https URL; swap scheme to wss (http→ws for local dev). When served
@@ -160,7 +169,13 @@ export function WSProvider({ children }: { children: ReactNode }) {
       // redialling once a second forever.
       if (lived >= STABLE_MS) backoffRef.current = 0
       openedAtRef.current = null
-      shortLivedRef.current = lived > 0 && lived < 10_000 ? shortLivedRef.current + 1 : 0
+      // A socket that never opened (handshake refused or eaten) counts INTO
+      // the streak, same as one that opened and died: both are the socket
+      // road failing while the HTTP road may be fine, and both must be able
+      // to reach the escalation below — including the leg where sockets die
+      // THROUGH the front and the only way back to direct is another streak.
+      // Only a socket that held a while resets the count.
+      shortLivedRef.current = lived >= 10_000 ? 0 : shortLivedRef.current + 1
       const delay = Math.min(30_000, 1000 * 2 ** backoffRef.current)
       backoffRef.current = Math.min(backoffRef.current + 1, 5)
       // A socket that keeps dying is the first sign of a network that started
@@ -242,8 +257,9 @@ export function WSProvider({ children }: { children: ReactNode }) {
 
   const send = useCallback<WsCtx['send']>((msg) => {
     const ws = sockRef.current
-    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    if (!ws || ws.readyState !== WebSocket.OPEN) return false
     ws.send(JSON.stringify(msg))
+    return true
   }, [])
 
   const value = useMemo<WsCtx>(() => ({ connected, on, send }), [connected, on, send])

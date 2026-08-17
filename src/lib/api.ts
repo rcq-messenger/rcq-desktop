@@ -246,6 +246,15 @@ export interface PollOut {
   my_votes: number[]
 }
 
+/// What `POST /groups/{id}/polls` hands back. The island only ever sees the
+/// SHAPE of a ballot (how many options, single-choice, anonymous) — the
+/// question and the option labels ride encrypted in the `poll` envelope — so
+/// this id is the whole of the server-side link between the two.
+export interface CreatePollOut {
+  poll_id: number
+  created_at?: string
+}
+
 /// Lightweight group info shown to a non-member who's about to join
 /// (the join card / `/g/:id` page). Mirrors backend `GroupPreviewOut`
 /// — name + member count + owner, no roster or history.
@@ -493,6 +502,18 @@ export const Api = {
   // Toggle the caller's vote on an option; returns the refreshed tally.
   votePoll(id: WebIdentity, pollId: number, optionIndex: number): Promise<PollOut> {
     return request<PollOut>(id, 'POST', `/polls/${pollId}/vote`, { option_index: optionIndex })
+  },
+
+  /// Register a new poll's shape on the group's island. `message_id` is the
+  /// envelope UUID we are about to send — that is what ties the tally rows to
+  /// the ballot the members will decrypt. Body fields and their order mirror
+  /// Android's `RcqApi.CreatePollBody`.
+  createPoll(
+    id: WebIdentity,
+    groupId: number,
+    body: { message_id: string; num_options: number; single_choice: boolean; anonymous: boolean },
+  ): Promise<CreatePollOut> {
+    return request<CreatePollOut>(id, 'POST', `/groups/${groupId}/polls`, body)
   },
 
   createGroup(id: WebIdentity, name: string, memberUINs: number[]): Promise<RCQGroup> {

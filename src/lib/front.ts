@@ -37,6 +37,11 @@ const DEFAULT_FRONT = 'https://cdn.rcq.app'
 let frontHttps = DEFAULT_FRONT
 let engaged = false
 let installed = false
+/// True when the front was engaged on SOCKET evidence (sockets die moments
+/// after opening while HTTPS answers). The regular health probe cannot see
+/// that failure — `/health` is one HTTPS request — so while this is set the
+/// probe must not vote the routing back to direct.
+let engagedForSockets = false
 
 /// True while requests to the flagship are being sent to the front instead.
 export function frontEngaged(): boolean {
@@ -127,6 +132,10 @@ async function reachable(base: string, timeoutMs: number): Promise<boolean> {
 ///
 /// Returns true when the front is now carrying traffic.
 export async function refreshFrontRouting(): Promise<boolean> {
+  // Engaged on socket evidence: the HTTPS probe below would say "direct is
+  // fine" — that is exactly the lie that kept the ladder off while every
+  // socket died. Only `escalateForDeadSockets` may end this engagement.
+  if (engaged && engagedForSockets) return true
   const wasEngaged = engaged
   // Probe direct with the front OFF, so the answer is about the island.
   engaged = false
@@ -142,5 +151,34 @@ export async function refreshFrontRouting(): Promise<boolean> {
   // Neither answered. Stay direct: the tunnel is the next layer, and pinning
   // requests to a front that is also blocked would only add a timeout to every
   // one of them.
+  return false
+}
+
+/// Escalate on socket evidence alone. Called by the socket layer after every
+/// third consecutive socket that died moments after opening — the signature of
+/// a middlebox that passes HTTPS and kills WebSocket streams, which the
+/// `/health` probe above is structurally unable to notice.
+///
+/// Direct → front on the first streak; if sockets keep dying THROUGH the
+/// front, the next streak hands the routing back to direct — each leg of that
+/// alternation is three dead sockets long, so a network where neither road
+/// works idles at the ordinary backoff pace rather than thrashing.
+///
+/// Returns true when the front is now carrying traffic.
+export async function escalateForDeadSockets(): Promise<boolean> {
+  if (engaged) {
+    if (engagedForSockets) {
+      engaged = false
+      engagedForSockets = false
+      console.info('[front] sockets die via the front too — back to direct')
+    }
+    return engaged
+  }
+  if (await reachable(frontHttps, 5000)) {
+    engaged = true
+    engagedForSockets = true
+    console.info(`[front] sockets keep dying while HTTPS answers — routing via ${frontHost()}`)
+    return true
+  }
   return false
 }

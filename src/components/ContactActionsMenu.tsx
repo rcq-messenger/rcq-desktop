@@ -83,7 +83,7 @@ export function ContactActionsMenu({ contact, onClose, onChanged }: Props) {
   return (
     <div
       ref={ref}
-      className="absolute right-0 top-full mt-1 w-56 bg-surface rounded-lg shadow-lg py-1 z-30 text-sm"
+      className="rcq-menu absolute right-0 top-full mt-1 w-56 rounded-lg shadow-lg py-1 z-30 text-sm"
       onClick={(e) => e.stopPropagation()}
     >
       <Row

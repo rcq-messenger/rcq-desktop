@@ -33,6 +33,8 @@ import { memberCount } from '../lib/group-roster'
 import { usePeerUnread, useGroupUnread, useTotalUnread, peerUnreadCount, groupUnreadCount } from '../lib/incoming-store'
 import { useHasMention } from '../lib/mentions'
 import { useI18n } from '../lib/i18n-context'
+import { lockNow } from '../lib/pin-gate'
+import { vaultState, vaultSupported } from '../lib/desktop-vault'
 import { useIdentity } from '../lib/identity-context'
 import {
   useArchive,
@@ -388,6 +390,7 @@ export function Contacts() {
               <MicIcon />
             </Link>
             <NewsButton className="relative text-fg-secondary hover:text-fg-primary p-2 rounded-md" />
+            <LockNowButton />
             <ThemeToggle className="text-fg-secondary hover:text-fg-primary p-2 rounded-md hover:bg-surface-dim transition-colors" />
             <Link
               to="/settings"
@@ -904,6 +907,49 @@ function BellIcon() {
     </svg>
   )
 }
+/// Lock the app right now. Desktop only, and only once a PIN exists — there is
+/// nothing to lock otherwise, and a padlock that does nothing is worse than no
+/// padlock.
+///
+/// Until this button the only ways to lock were the row buried in Settings and
+/// waiting out the auto-lock timer, which is not a timer everybody sets. The
+/// moment someone needs it is the moment they are walking away from the screen,
+/// and that is not a moment to go looking through Settings (founder).
+function LockNowButton() {
+  const { t } = useI18n()
+  const [hasVault, setHasVault] = useState(false)
+  useEffect(() => {
+    if (!vaultSupported()) return
+    let alive = true
+    void vaultState().then((s) => {
+      if (alive) setHasVault(s.exists)
+    })
+    return () => {
+      alive = false
+    }
+  }, [])
+  if (!hasVault) return null
+  return (
+    <button
+      onClick={() => void lockNow()}
+      className="text-fg-secondary hover:text-fg-primary p-2 rounded-md hover:bg-surface-dim transition-colors"
+      title={t('pin.lock_now')}
+      aria-label={t('pin.lock_now')}
+    >
+      <PadlockIcon />
+    </button>
+  )
+}
+
+function PadlockIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="4" y="10" width="16" height="11" rx="2" />
+      <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+    </svg>
+  )
+}
+
 function CogIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">

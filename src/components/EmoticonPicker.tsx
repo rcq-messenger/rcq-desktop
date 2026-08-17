@@ -42,10 +42,10 @@ export function EmoticonPicker({ uin, onPick }: Props) {
           </div>
         ) : (
           <div className="max-h-56 overflow-y-auto p-2">
-            <div className="flex items-center justify-between px-1 pb-1">
-              <span className="font-mono text-[0.625rem] uppercase tracking-[0.2em] text-fg-dim">
-                {t('chat.picker.section.base')}
-              </span>
+            {/* No section caption. There is exactly one section in this panel,
+                and "KOLOBOK" over a grid of koloboks names what the reader is
+                already looking at. */}
+            <div className="flex items-center justify-end px-1 pb-1">
               <button
                 onClick={() => setShowConfig(true)}
                 className="text-[0.6875rem] font-semibold text-accent hover:underline"
@@ -75,8 +75,7 @@ function Grid({ items, onPick }: { items: PaletteEntry[]; onPick: (code: string,
           <img
             src={emoticonAssetURL(p.asset)}
             alt={p.name}
-            width={28}
-            height={28}
+            className="h-7 w-7 object-contain"
             draggable={false}
           />
         </button>

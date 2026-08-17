@@ -143,7 +143,7 @@ export function EmoticonText({ text, emoticonSize = 18, className = '', mention 
             alt={tok.code}
             title={tok.code}
             style={{ width: side, height: side }}
-            className="inline-block align-middle mx-0.5"
+            className="inline-block align-middle mx-0.5 object-contain"
             draggable={false}
           />
         )

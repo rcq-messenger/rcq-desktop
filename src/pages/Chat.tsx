@@ -2705,17 +2705,48 @@ export function Chat() {
               thread. They used to be two absolute layers pinned to the same
               edge, which is why opening the panel while replying put it BEHIND
               the strip. */}
-          <div className="absolute bottom-full inset-x-0 px-3 mb-2 z-10 flex flex-col gap-2 pointer-events-none [&>*]:pointer-events-auto">
+          {/* The emoticon panel is a dialog, centred, over a dimmed and blurred
+              window — the shape every other picker in this app already has.
+              It used to hang off the left edge of the composer column, which on
+              a desktop window reads as a stray box rather than as a choice you
+              are making now.
+
+              ⚠ Through a portal for the same reason the pinned-message modal
+              is: `.rcq-floating-bar` carries a backdrop-filter, and that makes
+              it the containing block for `position: fixed` children, so a
+              fixed overlay rendered here would be clipped to the composer. */}
+          {createPortal(
             <AnimatePresence>
               {showPicker && (
-                <div key="picker" data-emoji-panel>
-                  <EmoticonPicker
-                    uin={identity!.uin}
-                    onPick={(code, asset) => insertEmoticon(code, asset)}
-                  />
-                </div>
+                <motion.div
+                  key="picker-veil"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.14 }}
+                  onClick={() => setShowPicker(false)}
+                  className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-md sm:items-center"
+                >
+                  <motion.div
+                    initial={{ y: 12, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    exit={{ y: 12, opacity: 0 }}
+                    transition={{ duration: 0.16 }}
+                    onClick={(e) => e.stopPropagation()}
+                    data-emoji-panel
+                    className="w-full max-w-sm px-3 pb-3 sm:pb-0"
+                  >
+                    <EmoticonPicker
+                      uin={identity!.uin}
+                      onPick={(code, asset) => insertEmoticon(code, asset)}
+                    />
+                  </motion.div>
+                </motion.div>
               )}
-            </AnimatePresence>
+            </AnimatePresence>,
+            document.body,
+          )}
+          <div className="absolute bottom-full inset-x-0 px-3 mb-2 z-10 flex flex-col gap-2 pointer-events-none [&>*]:pointer-events-auto">
             <AnimatePresence>
               {editingRow && (
                 <motion.div

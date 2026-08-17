@@ -220,25 +220,29 @@ export function PinGate({ children }: { children: ReactNode }) {
     )
   }
 
-  // A locked app is the app, out of focus — not a black rectangle. The frosted
-  // pane over a dimmed backdrop is the same gesture the message menu makes, and
-  // it says the right thing: what you are looking at is still yours, it is
-  // simply shut. There is deliberately nothing legible behind the glass: the
-  // account is not in the page at all while locked, so there is nothing to leak
-  // through it.
+  // No card, no glass, no blur: the field simply stands in the middle of a
+  // quiet background. The frosted pane was tried and read as a dialog on top of
+  // something, which is wrong here — there is nothing underneath while the app
+  // is locked, because the account is not in the page at all.
   return (
     <div className="relative h-screen [height:100dvh] overflow-hidden bg-surface-dim">
       <div
         aria-hidden
-        className="absolute inset-0 bg-gradient-to-br from-accent/10 via-surface to-surface-dim"
+        className="absolute inset-0 bg-gradient-to-br from-accent/10 via-surface-dim to-surface-dim"
       />
-      <div aria-hidden className="absolute inset-0 bg-black/40 backdrop-blur-xl" />
       <div className="relative h-full flex flex-col items-center justify-center px-6">
-      <form
-        onSubmit={submit}
-        className="w-full max-w-xs space-y-4 text-center rounded-2xl bg-surface/80 backdrop-blur-md px-6 py-7 shadow-xl ring-1 ring-line/40"
-      >
-        <div className="text-4xl select-none">🔒</div>
+      <form onSubmit={submit} className="w-full max-w-xs space-y-4 text-center">
+        {/* The padlock with our flower tucked into its bottom-right corner, so
+            the locked screen still says whose app this is. */}
+        <div className="relative inline-block select-none">
+          <span className="text-5xl leading-none">🔒</span>
+          <img
+            src="/logo.png"
+            alt=""
+            aria-hidden
+            className="absolute -bottom-1 -right-2 w-5 h-5 drop-shadow"
+          />
+        </div>
         <div className="text-sm text-fg-secondary">{t('pin.locked')}</div>
         <input
           autoFocus

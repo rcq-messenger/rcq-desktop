@@ -35,10 +35,13 @@ export function ReactionPicker({
             title={a}
             aria-label={a}
           >
+            {/* ⚠ object-contain. The koloboks are not all square, and a bare
+                h-6 w-6 stretched the wide ones into the box: founder, on the
+                reaction row, "эмотиконы сжаты почему то (некоторые)". */}
             <img
               src={emoticonAssetURL(a)}
               alt={a}
-              className="h-6 w-6 select-none"
+              className="h-6 w-6 object-contain select-none"
               draggable={false}
             />
           </button>

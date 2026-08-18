@@ -783,8 +783,29 @@ export function Chat() {
     // receiver routes a control envelope live) and gates owner_only posts +
     // pushes on it. Reaction/edit/delete carry their own type; content is
     // "message".
+    //
+    // ⚠ A NOTE goes out as "carbon", not "message" (#599). A note is addressed
+    // to our own number — that is what makes it appear on our other devices at
+    // all — and the island cannot tell it from a stranger's letter, because
+    // sealed sender means it never sees who sent what. So it pushed it, and the
+    // phone rang for something its owner had typed a second earlier on this
+    // very screen.
+    //
+    // No new wire type for it: "carbon" is already outside _PUSHABLE_TYPES on
+    // the island and already routed live by every client, which is exactly what
+    // a note needs. A brand-new label would have been invisible to the clients
+    // in the field until they updated. iOS already had this right — its notes
+    // go through sendMessageCarbon.
     const etype =
-      envelope.kind === 'reaction' ? 'reaction' : envelope.kind === 'edit' ? 'edit' : envelope.kind === 'delete' ? 'delete' : 'message'
+      envelope.kind === 'reaction'
+        ? 'reaction'
+        : envelope.kind === 'edit'
+          ? 'edit'
+          : envelope.kind === 'delete'
+            ? 'delete'
+            : isSelf
+              ? 'carbon'
+              : 'message'
     try {
       if (isGroup && group && gctx) {
         // Sender-keys dual-send (only for a LOCAL group — cross-island groups

@@ -57,6 +57,13 @@ const MIGRATED_FLAG = 'rcq.web.scoped.v2'
 /// Only the FIRST account to run this claims the flat data: it belonged to
 /// whoever was signed in, and that is the account being scoped right now.
 export function migrateFlatDataInto(uin: number) {
+  // ⚠ BEFORE the flag check, and unconditionally. The flag says "the one-time
+  // copy of the outgoing logs already happened", which is true for every
+  // install since 0.3.3 — so anything added to the flat list AFTER that shipped
+  // would never have been deleted on the machines that most need it. The call
+  // is idempotent (removing an absent key is a no-op), and the rule it enforces
+  // is "this data must not exist", not "we deleted it once".
+  dropFlatFederationData()
   if (localStorage.getItem(MIGRATED_FLAG)) return
   const prefix = 'rcq.web.'
   const scopedPrefix = `rcq.web.${uin}.`
@@ -82,7 +89,6 @@ export function migrateFlatDataInto(uin: number) {
     // newer than a copy of the pre-scope world.
     if (localStorage.getItem(target) == null) localStorage.setItem(target, v)
   }
-  dropFlatFederationData()
   localStorage.setItem(MIGRATED_FLAG, String(uin))
 }
 
@@ -95,6 +101,15 @@ const FLAT_FEDERATION_KEYS = [
   'ci-blocked.v1',
   'visited.v1',
   'fgroup-alias.v1',
+  // Missed in 0.3.3 and worse than the rest while it lasted: this one carried a
+  // BEARER TOKEN per backup island, so a flat key handed one account's backup
+  // mailboxes to every other account in the browser. Deleted, not copied, for
+  // the reason spelled out above — and the cost is lower here than anywhere
+  // else in this list, because the homes are re-adopted from the account's own
+  // signed record on the next connect (#605) and the token is re-minted through
+  // /auth/recover the first time it is needed.
+  'multihome.v1',
+  'multihome.peers.v1',
 ]
 
 /// Delete the pre-0.3.3 flat federation data outright.

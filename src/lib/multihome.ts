@@ -28,9 +28,29 @@ import { b64ToBytes, bytesToB64, encryptV1, type Envelope, type PeerBundle, type
 import { suggestNickname, persistIdentity } from './auth'
 import { verifyHomeIslandRecord, type IslandHome } from './federation'
 import { verifySigned } from './signing-keys'
+import { scopedKey } from './account-scope'
 
-const STORE_KEY = 'rcq.web.multihome.v1'
-const PEER_CACHE_KEY = 'rcq.web.multihome.peers.v1'
+// ⚠⚠ SCOPED, and it was not until now. A flat key is readable by every account
+// in this browser, and this one carried a BEARER TOKEN per backup island: sign
+// into a second account here and the first account's backup mailboxes were one
+// `localStorage.getItem` away. The federation stores next door were scoped for
+// exactly this reason in 0.3.3 and this one was missed.
+const STORE_KEY = () => scopedKey('multihome.v1')
+const PEER_CACHE_KEY = () => scopedKey('multihome.peers.v1')
+
+/// ⚠⚠ Tokens live HERE and nowhere else. They are not written to disk at all.
+///
+/// A backup island's token is a live credential for a mailbox of this account,
+/// and it sat in plain localStorage next to the host it belonged to. Nothing
+/// needed it to be there: every path that uses one already refreshes it through
+/// `/auth/recover` on a 401 (see `publishRecordToBackups` / `drainBackupQueue`
+/// below), because a stored token expires anyway. So the copy on disk bought a
+/// slightly faster first request after a restart and cost a credential at rest.
+///
+/// Restarting the app therefore starts with an empty map, the first request to
+/// each island is answered 401, and the recover flow mints a fresh one — the
+/// same path that already ran whenever a token aged out.
+const tokens = new Map<string, string>()
 /// How long a resolved peer-homes entry stays fresh. After expiry we re-fetch
 /// the record, but a STALE entry is still used when the primary is unreachable
 /// (that's the failover moment the cache exists for).
@@ -64,17 +84,27 @@ export interface BackupHome {
 
 export function listBackupHomes(): BackupHome[] {
   try {
-    const raw = localStorage.getItem(STORE_KEY)
+    const raw = localStorage.getItem(STORE_KEY())
     if (!raw) return []
     const list = JSON.parse(raw) as BackupHome[]
-    return Array.isArray(list) ? list : []
+    if (!Array.isArray(list)) return []
+    // The token comes from memory. A record written by an older build still has
+    // one on disk; it is ignored rather than trusted, so an upgrade drops the
+    // stored credential on the first read instead of keeping it alive.
+    return list.map((h) => ({ ...h, jwt: tokens.get(h.host) ?? '' }))
   } catch {
     return []
   }
 }
 
 function saveBackupHomes(list: BackupHome[]): void {
-  localStorage.setItem(STORE_KEY, JSON.stringify(list))
+  // Strip the token on the way out. This is the only writer, which is what
+  // makes "no credential at rest" a property of the file rather than a habit.
+  const onDisk = list.map(({ jwt, ...rest }) => {
+    if (jwt) tokens.set(rest.host, jwt)
+    return { ...rest, jwt: '' }
+  })
+  localStorage.setItem(STORE_KEY(), JSON.stringify(onDisk))
 }
 
 /// `is2.rcq.app`, `https://is2.rcq.app/`, `is2.rcq.app/x` → `is2.rcq.app`.
@@ -538,7 +568,7 @@ interface PeerHomesCacheEntry {
 
 function readPeerCache(): Record<string, PeerHomesCacheEntry> {
   try {
-    return JSON.parse(localStorage.getItem(PEER_CACHE_KEY) || '{}') as Record<string, PeerHomesCacheEntry>
+    return JSON.parse(localStorage.getItem(PEER_CACHE_KEY()) || '{}') as Record<string, PeerHomesCacheEntry>
   } catch {
     return {}
   }
@@ -547,7 +577,7 @@ function readPeerCache(): Record<string, PeerHomesCacheEntry> {
 function writePeerCache(uin: number, entry: PeerHomesCacheEntry): void {
   const cache = readPeerCache()
   cache[String(uin)] = entry
-  localStorage.setItem(PEER_CACHE_KEY, JSON.stringify(cache))
+  localStorage.setItem(PEER_CACHE_KEY(), JSON.stringify(cache))
 }
 
 /// Apply a contact's SELF-PUSHED home-island record (federation gossip B1):

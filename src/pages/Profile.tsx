@@ -241,11 +241,20 @@ function ReadView({
 }) {
   // My own name for them. Device-only, and shown alongside what they call
   // themselves so a rename never hides who you are actually talking to.
+  // ⚠ Keyed WITH the host for a cross-island peer (see aliasKey): the bare-uin
+  // lookup this page used to do could never find a name saved from the
+  // cross-island menu — and worse, its own Save renamed the local contact
+  // wearing the same digits.
   const { aliasFor, setAlias } = useContactAliases()
-  const alias = aliasFor(info.uin)
+  const alias = aliasFor(info.uin, crossIslandHost)
   const [editingAlias, setEditingAlias] = useState<string | null>(null)
   const fullName = [info.first_name, info.last_name].filter(Boolean).join(' ')
   const location = [info.city, info.country].filter(Boolean).join(', ')
+  // Their name as THEY chose it. A cross-island card with nothing deposited
+  // falls back to the synthetic `uin@host`, and "calls themselves
+  // 134@is2.rcq.app" is an address, not a name — hide the line then.
+  const selfName =
+    crossIslandHost && info.nickname === `${info.uin}@${crossIslandHost}` ? null : info.nickname
 
   return (
     <div className="space-y-4">
@@ -262,9 +271,9 @@ function ReadView({
           />
           <div className="min-w-0">
             <div className="text-2xl font-bold truncate">{alias || info.nickname || `#${info.uin}`}</div>
-            {alias && info.nickname && alias !== info.nickname && (
+            {alias && selfName && alias !== selfName && (
               <div className="text-xs text-fg-secondary truncate">
-                {t('profile.their_name', { name: info.nickname })}
+                {t('profile.their_name', { name: selfName })}
               </div>
             )}
           </div>
@@ -297,7 +306,7 @@ function ReadView({
               <button
                 type="button"
                 className="text-accent hover:underline"
-                onClick={() => { setAlias(info.uin, editingAlias); setEditingAlias(null) }}
+                onClick={() => { setAlias(info.uin, editingAlias, crossIslandHost); setEditingAlias(null) }}
               >
                 {t('common.save')}
               </button>
@@ -305,7 +314,7 @@ function ReadView({
                 <button
                   type="button"
                   className="text-fg-secondary hover:underline"
-                  onClick={() => { setAlias(info.uin, null); setEditingAlias(null) }}
+                  onClick={() => { setAlias(info.uin, null, crossIslandHost); setEditingAlias(null) }}
                 >
                   {t('profile.name.clear')}
                 </button>

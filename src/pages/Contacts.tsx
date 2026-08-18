@@ -674,9 +674,12 @@ function ContactRow({
   const [menuOpen, setMenuOpen] = useState(false)
   const unread = usePeerUnread(contact.uin)
   // My own name for this person wins over the nickname they chose. Device-only
-  // (see useContactAliases).
+  // (see useContactAliases). ⚠ Keyed WITH the host when the server row carries
+  // one (an F2 cross-island contact): the chat header and the row menu use the
+  // composite key, and a bare lookup here made the same rename show in one
+  // place and not the other.
   const { aliasFor } = useContactAliases()
-  const alias = aliasFor(contact.uin)
+  const alias = aliasFor(contact.uin, contact.host)
   return (
     <li className="relative">
       <div className={'flex items-center gap-3 px-4 py-3 lg:py-2 ' + (archived ? 'opacity-60' : '')}>

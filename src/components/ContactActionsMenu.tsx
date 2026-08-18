@@ -11,6 +11,7 @@ import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
 import {
   useArchive,
+  useContactAliases,
   useFavorites,
   useMutedPeers,
 } from '../lib/local-store'
@@ -27,7 +28,14 @@ export function ContactActionsMenu({ contact, onClose, onChanged }: Props) {
   const favorites = useFavorites()
   const archive = useArchive()
   const muted = useMutedPeers()
+  const { aliasFor, setAlias } = useContactAliases()
   const ref = useRef<HTMLDivElement | null>(null)
+  const [renaming, setRenaming] = useState(false)
+  // ⚠ contact.host rides along everywhere: for a normal contact it is absent
+  // and the alias keeps the bare-uin key, but if a host-bearing row ever
+  // reaches this menu, a bare-key write would rename the LOCAL person wearing
+  // the same digits (see aliasKey in local-store).
+  const [name, setName] = useState(() => aliasFor(contact.uin, contact.host) ?? '')
   const [confirmRemove, setConfirmRemove] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -80,12 +88,63 @@ export function ContactActionsMenu({ contact, onClose, onChanged }: Props) {
   const isMuted = muted.has(contact.uin)
   const isArchived = archive.has(contact.uin)
 
+  if (renaming) {
+    const save = () => {
+      setAlias(contact.uin, name || null, contact.host)
+      onChanged()
+      onClose()
+    }
+    return (
+      <div
+        ref={ref}
+        className="rcq-menu absolute right-0 top-full mt-1 w-56 rounded-lg shadow-lg z-30 text-sm"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="p-3 space-y-2">
+          <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+            {t('ci.actions.rename')}
+          </div>
+          <input
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            maxLength={48}
+            placeholder={contact.nickname || `#${contact.uin}`}
+            className="w-full h-9 px-2 rounded-md bg-field outline-none focus:ring-1 focus:ring-accent text-sm"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') save()
+            }}
+          />
+          <div className="flex gap-2">
+            <button
+              onClick={() => setRenaming(false)}
+              className="flex-1 h-8 rounded-md bg-field text-xs font-medium hover:bg-line/50"
+            >
+              {t('common.cancel')}
+            </button>
+            <button
+              onClick={save}
+              className="flex-1 h-8 rounded-md bg-accent hover:bg-accent-dim text-white text-xs font-semibold"
+            >
+              {t('common.save')}
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div
       ref={ref}
       className="rcq-menu absolute right-0 top-full mt-1 w-56 rounded-lg shadow-lg py-1 z-30 text-sm"
       onClick={(e) => e.stopPropagation()}
     >
+      {/* Same first row as the cross-island menu: my own name for them,
+          device-only. It existed only there and on the profile page, so
+          renaming an ordinary contact meant leaving the list — reported as
+          "cannot set a name at all". */}
+      <Row icon={<PencilIcon />} label={t('ci.actions.rename')} onClick={() => setRenaming(true)} />
       <Row
         icon={<StarIcon filled={isFav} />}
         label={isFav ? t('contact_actions.unfavorite') : t('contact_actions.favorite')}
@@ -187,6 +246,15 @@ function Divider() {
 // Inline SVG icons — Lucide-style 16px, 1.5 stroke. Inline rather
 // than depending on lucide-react keeps the bundle a few KB lighter
 // for what is a tiny set of glyphs.
+function PencilIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </svg>
+  )
+}
+
 function StarIcon({ filled }: { filled: boolean }) {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill={filled ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">

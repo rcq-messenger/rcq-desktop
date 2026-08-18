@@ -297,7 +297,10 @@ export function GroupInfo() {
               {!confirmDestroy ? (
                 <button
                   onClick={() => setConfirmDestroy(true)}
-                  className="w-full h-11 rounded-md flex items-center justify-center gap-2 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors"
+                  // Founder-picked reference: the "wipe everything" button on
+                  // the storage screen — red text, translucent red hover, no
+                  // solid pill in either theme.
+                  className="w-full h-11 rounded-md flex items-center justify-center gap-2 text-sm font-semibold text-red-600 hover:bg-red-500/10 transition-colors"
                 >
                   <LeaveIcon />
                   {isOwner ? t('group.info.delete') : t('group.info.leave')}

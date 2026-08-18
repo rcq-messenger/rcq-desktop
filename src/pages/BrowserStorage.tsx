@@ -20,6 +20,7 @@ import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
 import { forgetRecoverySeed, hasStoredRecoverySeed, hasStoredToken } from '../lib/auth'
 import { sealingAvailable } from '../lib/local-seal'
+import { isTauri } from '../lib/desktop'
 import { vaultState, vaultSupported } from '../lib/desktop-vault'
 import { ensureRequestsLoaded, requestCount } from '../lib/crossisland-requests'
 import { useToast } from '../lib/toast'
@@ -65,6 +66,10 @@ function human(bytes: number): string {
 
 export function BrowserStorage() {
   const { t } = useI18n()
+  // In the desktop app this page is about a computer, not a browser — the
+  // browser wording read as a mistake there ("что лежит в этом БРАУЗЕРЕ" on a
+  // Mac). Every key with a platform difference has a `.desktop` twin.
+  const dk = isTauri() ? '.desktop' : ''
   const { identity, signOut } = useIdentity()
   const { toast } = useToast()
   const [version, setVersion] = useState(0)
@@ -98,13 +103,13 @@ export function BrowserStorage() {
           <Link to="/settings" className="text-fg-secondary hover:text-fg-primary px-2">
             ←
           </Link>
-          <div className="font-semibold">{t('storage.title')}</div>
+          <div className="font-semibold">{t('storage.title' + dk)}</div>
         </div>
       </header>
 
       <main className="max-w-2xl mx-auto px-4 py-4 space-y-3">
         <p className="text-sm text-fg-secondary leading-relaxed whitespace-pre-line px-1">
-          {t('storage.intro')}
+          {t('storage.intro' + dk)}
         </p>
 
         {/* 1. The account itself. */}
@@ -141,7 +146,7 @@ export function BrowserStorage() {
           {hasSeed && confirmForget && (
             <div className="space-y-2 rounded-md bg-surface-dim p-3">
               <p className="text-xs text-fg-secondary leading-relaxed">
-                {t('settings.recovery.forget.warn')}
+                {t('settings.recovery.forget.warn' + dk)}
               </p>
               <div className="flex gap-2">
                 <button
@@ -169,9 +174,9 @@ export function BrowserStorage() {
         {/* 2. Conversations. */}
         <section className="bg-surface rounded-lg p-4 space-y-3">
           <Head title={t('storage.messages.title')} size={human(bytes.messages)} n={counts.messages} t={t} />
-          <p className="text-sm text-fg-secondary leading-relaxed">{t('storage.messages.body')}</p>
+          <p className="text-sm text-fg-secondary leading-relaxed">{t('storage.messages.body' + dk)}</p>
           {idbBytes != null && (
-            <Fact label={t('storage.idb.label')} value={human(idbBytes)} />
+            <Fact label={t('storage.idb.label' + dk)} value={human(idbBytes)} />
           )}
         </section>
 
@@ -186,7 +191,7 @@ export function BrowserStorage() {
                 ? '…'
                 : sealed
                   ? t('storage.requests.sealed', { n: String(requests) })
-                  : t('storage.requests.plain', { n: String(requests) })
+                  : t('storage.requests.plain' + dk, { n: String(requests) })
             }
             warn={sealed === false}
           />
@@ -206,7 +211,7 @@ export function BrowserStorage() {
             {t('storage.limits.title')}
           </div>
           <p className="text-sm text-fg-secondary leading-relaxed whitespace-pre-line">
-            {t('storage.limits.body')}
+            {t('storage.limits.body' + dk)}
           </p>
         </section>
 
@@ -221,7 +226,7 @@ export function BrowserStorage() {
             </button>
           ) : (
             <div className="space-y-2">
-              <p className="text-xs text-fg-secondary leading-relaxed">{t('storage.wipe.warn')}</p>
+              <p className="text-xs text-fg-secondary leading-relaxed">{t('storage.wipe.warn' + dk)}</p>
               <div className="flex gap-2">
                 <button
                   onClick={() => setConfirmWipe(false)}

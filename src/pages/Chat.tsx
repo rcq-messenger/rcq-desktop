@@ -456,6 +456,10 @@ export function Chat() {
   // New messages that arrived while the user was reading further up, so the
   // button can say how many are waiting instead of just pointing down.
   const [unseenBelow, setUnseenBelow] = useState(0)
+  // The ids behind that number, oldest first. The badge counts DOWN as these
+  // rows scroll into view (the way the phones and every other messenger do),
+  // so each one has to be crossed off individually, not zeroed wholesale.
+  const unseenIdsRef = useRef<string[]>([])
 
   // Escape backs out of whatever is open, innermost first, and a click
   // anywhere else closes the floating bits. Neither existed: the only key this
@@ -541,11 +545,18 @@ export function Chat() {
   /** Pin the list to the bottom and mark it as followed. Called when the user
    *  does something that means "I want to be at the newest": sending, or
    *  tapping the jump button. */
+  /** Nothing is waiting below any more — empty the id list WITH the number,
+   *  or the next arrival resurrects a count the user has already read past. */
+  function clearUnseenBelow() {
+    unseenIdsRef.current = []
+    setUnseenBelow(0)
+  }
+
   function stickToBottom() {
     atBottomRef.current = true
     pinTargetRef.current = 'bottom'
     setAtBottom(true)
-    setUnseenBelow(0)
+    clearUnseenBelow()
     const jump = () => {
       const el = scrollRef.current
       if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'auto' })
@@ -579,7 +590,7 @@ export function Chat() {
       pinTargetRef.current = 'bottom'
       atBottomRef.current = true
       setAtBottom(true)
-      setUnseenBelow(0)
+      clearUnseenBelow()
     }
   }
 
@@ -613,18 +624,23 @@ export function Chat() {
 
     let seen = 0
     let anchor: string | null = null
+    const run: string[] = []
     for (let i = incoming.length - 1; i >= 0; i--) {
       // Count back over other people's messages only. `addGroupIncoming` has
       // no self-echo guard, so a carbon of our own can sit in here, and
       // counting it puts the divider inside the unread run rather than above
       // it — the exact complaint Android's own comment records.
       if (identity && incoming[i].from === identity.uin) continue
+      run.push(incoming[i].id)
       seen += 1
       if (seen === n) {
         anchor = incoming[i].id
         break
       }
     }
+    // The rows behind the divider, oldest first — what the jump-button badge
+    // will cross off one by one as they scroll into view.
+    unseenIdsRef.current = anchor ? run.reverse() : []
     setUnreadAnchor({ key: persistKey, id: anchor })
   }, [persistKey, incoming, identity])
 
@@ -648,20 +664,24 @@ export function Chat() {
     setAtBottom(false)
     // The jump button carries the backlog rather than starting at zero, so the
     // way back to the newest message is one click from the moment the thread
-    // opens.
-    setUnseenBelow(unreadOnOpenRef.current?.n ?? 0)
+    // opens. Sized by the id list the anchor effect just built, so the badge
+    // and the rows it can cross off never disagree.
+    setUnseenBelow(unseenIdsRef.current.length)
     // May correct all of the above on the spot, if the thread turns out to be
     // too short to scroll.
     scrollToUnreadDivider()
   }, [persistKey, unreadAnchor])
 
   const lastCountRef = useRef(0)
+  const lastIncomingLenRef = useRef(0)
   useEffect(() => {
     const switched = lastThreadRef.current !== persistKey
     lastThreadRef.current = persistKey
     const total = outgoing.length + incoming.length
     const grew = switched ? 0 : Math.max(0, total - lastCountRef.current)
     lastCountRef.current = total
+    const prevIncomingLen = switched ? incoming.length : lastIncomingLenRef.current
+    lastIncomingLenRef.current = incoming.length
     // Opening a thread that has unread messages is the one case where the
     // newest message is NOT where the user wants to land, so the bottom jump
     // is left to the effect above, which knows whether a divider exists.
@@ -669,16 +689,28 @@ export function Chat() {
     if (switched) {
       if (openingOnUnread) {
         pinTargetRef.current = null
+        // The previous thread's unseen ids must not leak into this one — the
+        // anchor effect rebuilds the list once this thread's rows are in.
+        unseenIdsRef.current = []
       } else {
         pinTargetRef.current = 'bottom'
         setAtBottom(true)
-        setUnseenBelow(0)
+        clearUnseenBelow()
       }
     } else if (grew && !atBottomRef.current) {
       // Arrived while the user is reading further up: count it for the jump
       // button instead of yanking the list, which is what the early return
-      // below has always (correctly) done.
-      setUnseenBelow((n) => n + grew)
+      // below has always (correctly) done. By id and others-only — counting
+      // the combined length growth let a carbon of my own send inflate the
+      // badge with something that was never waiting to be read.
+      const fresh = incoming
+        .slice(prevIncomingLen)
+        .filter((m) => !(identity && m.from === identity.uin) && !unseenIdsRef.current.includes(m.id))
+        .map((m) => m.id)
+      if (fresh.length) {
+        unseenIdsRef.current = [...unseenIdsRef.current, ...fresh]
+        setUnseenBelow(unseenIdsRef.current.length)
+      }
     }
     const el = scrollRef.current
     if (!el) return
@@ -1626,7 +1658,10 @@ export function Chat() {
   }
 
   const { aliasFor: peerAliasFor } = useContactAliases()
-  const peerAlias = peerUIN ? peerAliasFor(peerUIN) : undefined
+  // ⚠ With the host: a cross-island alias lives under `uin@host` (see
+  // aliasKey), and a bare-uin lookup here made every name set for a foreign
+  // peer vanish from the chat while the contacts list showed it fine.
+  const peerAlias = peerUIN ? peerAliasFor(peerUIN, peer?.host ?? islandHost) : undefined
 
   // ── @-mentions ──────────────────────────────────────────────────────
   // Everyone who can be named in this thread. Only a group has a roster: in a
@@ -1785,7 +1820,7 @@ export function Chat() {
       const member = isGroup ? group?.members.find((m) => m.uin === uin) : undefined
       const mine = uin === identity.uin
       const name =
-        peerAliasFor(uin) ??
+        peerAliasFor(uin, uin === peerUIN ? peer?.host ?? islandHost : undefined) ??
         (mine ? myNickname : undefined) ??
         member?.nickname ??
         (uin === peerUIN ? peer?.nickname : undefined) ??
@@ -1801,7 +1836,7 @@ export function Chat() {
       }
     })
     // `reactionsVersion` is what makes this recompute when a reaction lands.
-  }, [reactionAuthorsFor, identity, isGroup, group, peer, peerUIN, myNickname, peerAliasFor, reactionsVersion])
+  }, [reactionAuthorsFor, identity, isGroup, group, peer, peerUIN, islandHost, myNickname, peerAliasFor, reactionsVersion])
   const headerName = isGroup
     ? group?.name ?? `#${groupId}`
     : isSelf
@@ -2224,10 +2259,31 @@ export function Chat() {
           // wheel/touch handlers cannot see those.
           if (bottom) releaseUnreadPin()
           atBottomRef.current = bottom
-          setAtBottom((was) => {
-            if (was !== bottom && bottom) setUnseenBelow(0)
-            return bottom
-          })
+          setAtBottom(bottom)
+          // Cross rows off the jump-button badge as they come into view. The
+          // floor is the composer's top edge, the same maths as roomAround: a
+          // row still under the blurred bar has not been seen. The list is a
+          // contiguous tail, so only the front needs checking — O(newly seen).
+          const ids = unseenIdsRef.current
+          if (bottom) {
+            clearUnseenBelow()
+          } else if (ids.length) {
+            const cs = el.parentElement ? getComputedStyle(el.parentElement) : null
+            const composerH = cs ? parseFloat(cs.getPropertyValue('--rcq-composer-h')) || 0 : 0
+            const floor = el.getBoundingClientRect().bottom - composerH
+            let crossed = 0
+            while (crossed < ids.length) {
+              const row = document.getElementById(`msg-${ids[crossed]}`)
+              // A row that is gone (deleted, pruned) can never scroll into
+              // view — cross it off too, or the badge sticks forever.
+              if (row && row.getBoundingClientRect().top >= floor) break
+              crossed += 1
+            }
+            if (crossed) {
+              unseenIdsRef.current = ids.slice(crossed)
+              setUnseenBelow(unseenIdsRef.current.length)
+            }
+          }
         }}
         className="flex-1 max-w-2xl w-full mx-auto px-4 py-4 overflow-y-auto no-scrollbar"
         style={{
@@ -2325,7 +2381,12 @@ export function Chat() {
                   ? peerAliasFor(m.from) || senderMember?.nickname || `#${m.from}`
                   : null
                 const invite = parseGroupInvite(m.text)
-                const replyAuthor = senderName ?? peer?.nickname ?? `#${m.from}`
+                // ⚠ NO aliases in here: ReplyContext ships INSIDE the sealed
+                // envelope, so the quote's author label reaches the peer. My
+                // own name for someone is device-only by contract — sending it
+                // to the very person it describes is the one leak worse than
+                // storing it. Their self-chosen nickname only.
+                const replyAuthor = (isGroup ? senderMember?.nickname : peer?.nickname) ?? `#${m.from}`
                 const isPlainText =
                   m.kind !== 'photo' && m.kind !== 'video' && m.kind !== 'file' && m.kind !== 'other' && invite == null
                 const showActions = actionsForRowId === m.id
@@ -2522,7 +2583,7 @@ export function Chat() {
                             <span className="text-red-500">·{t('chat.delivery.failed')}</span>
                             <button
                               onClick={() => void retry(row.id)}
-                              className="ml-1 rounded px-1.5 py-0.5 text-red-600 hover:bg-red-100 transition-colors"
+                              className="ml-1 rounded px-1.5 py-0.5 text-red-600 hover:bg-red-500/15 transition-colors"
                             >
                               ↻ {t('chat.delivery.retry')}
                             </button>
@@ -2554,7 +2615,7 @@ export function Chat() {
                             <span className="text-red-500">·{t('chat.delivery.failed')}</span>
                             <button
                               onClick={() => void retry(row.id)}
-                              className="ml-1 rounded px-1.5 py-0.5 text-red-600 hover:bg-red-100 transition-colors"
+                              className="ml-1 rounded px-1.5 py-0.5 text-red-600 hover:bg-red-500/15 transition-colors"
                             >
                               ↻ {t('chat.delivery.retry')}
                             </button>
@@ -2624,7 +2685,7 @@ export function Chat() {
                             <span className="text-red-500">·{t('chat.delivery.failed')}</span>
                             <button
                               onClick={() => void retry(row.id)}
-                              className="ml-1 rounded px-1.5 py-0.5 text-red-600 hover:bg-red-100 transition-colors"
+                              className="ml-1 rounded px-1.5 py-0.5 text-red-600 hover:bg-red-500/15 transition-colors"
                             >
                               ↻ {t('chat.delivery.retry')}
                             </button>
@@ -2658,7 +2719,7 @@ export function Chat() {
                             <span className="text-red-500">·{t('chat.delivery.failed')}</span>
                             <button
                               onClick={() => void retry(row.id)}
-                              className="ml-1 rounded px-1.5 py-0.5 text-red-600 hover:bg-red-100 transition-colors"
+                              className="ml-1 rounded px-1.5 py-0.5 text-red-600 hover:bg-red-500/15 transition-colors"
                             >
                               ↻ {t('chat.delivery.retry')}
                             </button>
@@ -2741,7 +2802,7 @@ export function Chat() {
                         <span className="text-red-500">·{t('chat.delivery.failed')}</span>
                         <button
                           onClick={() => void retry(row.id)}
-                          className="ml-1 rounded px-1.5 py-0.5 text-red-600 hover:bg-red-100 transition-colors"
+                          className="ml-1 rounded px-1.5 py-0.5 text-red-600 hover:bg-red-500/15 transition-colors"
                         >
                           ↻ {t('chat.delivery.retry')}
                         </button>
@@ -2855,9 +2916,17 @@ export function Chat() {
               }}
               aria-label={t('chat.jump_to_mention')}
               title={t('chat.jump_to_mention')}
-              className={`absolute right-4 z-20 h-10 min-w-10 px-2 rounded-full bg-surface shadow-lg text-accent flex items-center justify-center gap-1 hover:bg-field transition-colors ${
-                atBottom ? 'bottom-2' : 'bottom-14'
-              }`}
+              className="absolute right-4 z-20 h-10 min-w-10 px-2 rounded-full bg-surface shadow-lg text-accent flex items-center justify-center gap-1 hover:bg-field transition-colors"
+              // ⚠ Off `--rcq-composer-h`, not a viewport-bottom constant: the
+              // composer is an OVERLAY, so `bottom-2` put these buttons ON the
+              // bar, not above it. Same variable the emoji panel hangs off,
+              // and it tracks the bar as a reply strip or a wrapped line grows
+              // it. Takes the lower slot when the ↓ arrow is hidden.
+              style={{
+                bottom: atBottom
+                  ? 'calc(var(--rcq-composer-h, 4rem) + 0.5rem)'
+                  : 'calc(var(--rcq-composer-h, 4rem) + 3.5rem)',
+              }}
             >
               <span aria-hidden="true" className="text-base leading-none font-semibold">@</span>
               <span className="text-xs font-semibold tabular-nums">{mentionsLeft}</span>
@@ -2869,7 +2938,8 @@ export function Chat() {
               onClick={stickToBottom}
               aria-label={t('chat.jump_to_newest')}
               title={t('chat.jump_to_newest')}
-              className="absolute bottom-2 right-4 z-20 h-10 min-w-10 px-2 rounded-full bg-surface shadow-lg text-fg-primary flex items-center justify-center gap-1 hover:bg-field transition-colors"
+              className="absolute right-4 z-20 h-10 min-w-10 px-2 rounded-full bg-surface shadow-lg text-fg-primary flex items-center justify-center gap-1 hover:bg-field transition-colors"
+              style={{ bottom: 'calc(var(--rcq-composer-h, 4rem) + 0.5rem)' }}
             >
               <span aria-hidden="true" className="text-base leading-none">↓</span>
               {unseenBelow > 0 && (

@@ -224,9 +224,20 @@ export function AddContact({ embedded = false }: { embedded?: boolean } = {}) {
         <ul className="bg-surface rounded-lg">
           {results.map((u) => (
             <li key={u.uin} className="p-4 flex items-center gap-3">
+              {/* Number first, nickname under it — the order Android uses on
+                  this screen and the reason is the screen, not the platform:
+                  here you are checking that you found the RIGHT person, and
+                  the number is the only part of a search result nobody else
+                  can wear. A nickname can be set to anything, including
+                  somebody else's. The reverse order is correct in the member
+                  list and on a profile, where you are recognising a person you
+                  already know by name.
+                  ⚠ Reported by a tester who was told exactly this reasoning
+                  about the phones and pointed out, fairly, that the web then
+                  did the opposite (#610 → #612). */}
               <div className="flex-1 min-w-0">
-                <div className="font-medium truncate">{u.nickname || `#${u.uin}`}</div>
-                <div className="font-mono text-xs text-fg-dim">#{u.uin}</div>
+                <div className="font-mono font-medium truncate">#{u.uin}</div>
+                <div className="text-xs text-fg-secondary truncate">{u.nickname || '—'}</div>
                 {u.city && (
                   <div className="text-xs text-fg-dim truncate">{u.city}{u.country ? `, ${u.country}` : ''}</div>
                 )}

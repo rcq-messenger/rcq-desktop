@@ -6,7 +6,7 @@
 import { useEffect } from 'react'
 import { useIdentity } from './identity-context'
 import { useWS } from './ws'
-import { decryptIncoming, getDevice } from './signal-device'
+import { decryptIncoming, getDevice, sendV2 } from './signal-device'
 import { addIncoming, addGroupIncoming, hydrateIncoming, beginCatchUp, endCatchUp, flushHistory } from './incoming-store'
 import { fileOutgoingCarbon } from './outgoing-store'
 import { publishHomeIslandRecord } from './federation-publish'
@@ -19,7 +19,8 @@ import { CALL_OFFER_TTL_SEC, fileMissedCrossIslandOffer } from './crossisland-ca
 import { deliverCrossIslandCallSignal } from './call'
 import { handleProfile, pushProfileTo } from './crossisland-profile'
 import { handleGmsg, handleSkdm, handleSknack } from './sender-key-receive'
-import { Api } from './api'
+import { Api, peerBundleFrom } from './api'
+import { encryptV1 } from './crypto'
 import type { CallEnvelope, ContactReqEnvelope, ProfileEnvelope, WebIdentity } from './crypto'
 
 // Hydrate the incoming store once per account per app load. Both receive paths
@@ -194,6 +195,52 @@ function route(
     }
   }
   addIncoming(senderUIN, envelope)
+  // Tell the sender it ARRIVED.
+  //
+  // ⚠ Asymmetric on purpose: this browser has no second tick of its own (its
+  // outgoing rows are sending/sent/failed and nothing else, deliberately), so
+  // it never APPLIES a delivery receipt — but a phone talking to it has one,
+  // and without this its message to a web user would keep a single tick
+  // forever. The island cannot fill that in: a deposit is sealed and
+  // unauthenticated, so it does not know who sent the row it handed us.
+  //
+  // 1:1 only and never our own carbon: a group message has as many recipients
+  // as members and one tick cannot stand for all of them.
+  if (identity && senderUIN !== myUin && groupId == null && 'id' in envelope && envelope.id) {
+    void sendDeliveredReceipt(identity, senderUIN, envelope.id)
+  }
+}
+
+/// Ship one delivery receipt, v=2 with a v=1 fallback, exactly like an ordinary
+/// 1:1 send. Best-effort by design: a receipt that does not arrive costs a
+/// second tick, never a message.
+///
+/// ⚠ The OUTER type is "read", not a new label. It decides whether the island
+/// pushes (it does not for "read") and whether a client routes the packet live
+/// at all — a brand new label would be routed by nobody until every client in
+/// the field updated, which for a receipt means the tick stays broken for
+/// exactly the oldest builds. The INNER kind is "delivered".
+async function sendDeliveredReceipt(
+  identity: WebIdentity,
+  peerUin: number,
+  targetID: string,
+): Promise<void> {
+  const env = { kind: 'delivered', targetIDs: [targetID] } as unknown as Parameters<typeof sendV2>[2]
+  try {
+    const reached = await sendV2(identity, peerUin, env, 'read').catch(() => 0)
+    if (reached === 0) {
+      const info = await Api.userInfo(identity, peerUin).catch(() => null)
+      if (!info?.identity_key || !info.signing_key) return
+      const bundle = peerBundleFrom({
+        uin: peerUin,
+        identity_key: info.identity_key,
+        signing_key: info.signing_key,
+      })
+      await Api.sendSealed(identity, peerUin, encryptV1(env, identity, bundle), 'read')
+    }
+  } catch {
+    /* the tick stays where it was */
+  }
 }
 
 function hostOf(apiBase: string): string {

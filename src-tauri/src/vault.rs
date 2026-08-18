@@ -86,6 +86,18 @@ struct VaultFile {
     t_cost: u32,
     #[serde(default)]
     failures: u32,
+    /// Unix seconds of the last WRONG pin. Absent on a file written before
+    /// 2026-08-18, which reads as 0 and therefore as "long ago" — that is
+    /// deliberate: those installs are the ones this field exists to rescue.
+    #[serde(default)]
+    last_fail: u64,
+}
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 fn default_m() -> u32 {
@@ -144,7 +156,9 @@ fn derive(pin: &str, salt: &[u8], m_cost: u32, t_cost: u32) -> Result<[u8; 32], 
     Ok(key)
 }
 
-/// How long the next attempt is refused for, given how many have failed.
+/// How long a wait the failure count EARNS. Not how much of it is left — see
+/// [`cooldown_remaining`], and read the warning there before touching either.
+///
 /// Deliberately a delay and not a wipe: the most likely person mistyping a PIN
 /// five times is the owner.
 fn cooldown_secs(failures: u32) -> u32 {
@@ -157,6 +171,28 @@ fn cooldown_secs(failures: u32) -> u32 {
     }
 }
 
+/// Seconds still owed, which is the earned wait MINUS the time already served.
+///
+/// ⚠⚠ The bug this exists to kill: `unlock` used to refuse whenever
+/// `cooldown_secs(failures) > 0`, and that value depends on the failure count
+/// ALONE — there was no timestamp anywhere in the file. So the fifth wrong PIN
+/// did not start a five-second wait, it closed the vault FOREVER: the check ran
+/// before the decrypt, and `failures` is only ever reset BY a successful
+/// decrypt, which could no longer happen. Waiting did nothing. Reinstalling did
+/// nothing either, because the vault lives in the config directory and deleting
+/// the app does not touch it. Founder lost access to his desktop this way.
+///
+/// A file from before the fix has `last_fail: 0`, which reads as 1970 and
+/// therefore as fully served — those installs unbrick themselves on first run.
+fn cooldown_remaining(f: &VaultFile) -> u32 {
+    let earned = cooldown_secs(f.failures);
+    if earned == 0 {
+        return 0;
+    }
+    let served = now_secs().saturating_sub(f.last_fail);
+    (earned as u64).saturating_sub(served) as u32
+}
+
 pub fn state(app: &AppHandle, unlocked: &Unlocked) -> VaultState {
     let open = unlocked.0.lock().map(|g| g.is_some()).unwrap_or(false);
     match read(app) {
@@ -164,7 +200,7 @@ pub fn state(app: &AppHandle, unlocked: &Unlocked) -> VaultState {
             exists: true,
             unlocked: open,
             failures: f.failures,
-            cooldown: cooldown_secs(f.failures),
+            cooldown: cooldown_remaining(&f),
         },
         None => VaultState {
             exists: false,
@@ -210,6 +246,7 @@ fn create_at(
             m_cost: M_COST,
             t_cost: T_COST,
             failures: 0,
+            last_fail: 0,
         },
     )
 }
@@ -222,10 +259,11 @@ pub fn unlock(app: &AppHandle, state: &Unlocked, pin: &str) -> Result<String, St
 
 fn unlock_at(p: &std::path::Path, state: &Unlocked, pin: &str) -> Result<String, String> {
     let mut f = read_at(p).ok_or("no_vault")?;
-    let wait = cooldown_secs(f.failures);
+    let wait = cooldown_remaining(&f);
     if wait > 0 {
         // The wait is enforced here rather than in the page, where a reload
-        // would clear it.
+        // would clear it. ⚠ It is what is LEFT of the wait, not what the
+        // failure count earns — see `cooldown_remaining`.
         return Err(format!("locked_out:{wait}"));
     }
     let salt = B64.decode(&f.salt).map_err(|_| "corrupt_vault")?;
@@ -235,8 +273,9 @@ fn unlock_at(p: &std::path::Path, state: &Unlocked, pin: &str) -> Result<String,
     let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key));
     match cipher.decrypt(Nonce::from_slice(&nonce), ct.as_ref()) {
         Ok(plain) => {
-            if f.failures != 0 {
+            if f.failures != 0 || f.last_fail != 0 {
                 f.failures = 0;
+                f.last_fail = 0;
                 let _ = write_at(p, &f);
             }
             *state.0.lock().map_err(|_| "poisoned")? = Some(key);
@@ -244,6 +283,8 @@ fn unlock_at(p: &std::path::Path, state: &Unlocked, pin: &str) -> Result<String,
         }
         Err(_) => {
             f.failures = f.failures.saturating_add(1);
+            // Starts the clock. Without it the wait has no end.
+            f.last_fail = now_secs();
             let _ = write_at(p, &f);
             Err("wrong_pin".into())
         }

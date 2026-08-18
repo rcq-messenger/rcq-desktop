@@ -24,6 +24,7 @@ import {
   recoverFromPhrase,
   suggestNickname,
 } from '../lib/auth'
+import { flushVaultWriter } from '../lib/pin-gate'
 import { defaultHome } from '../lib/routing'
 import { clientLabel } from '../lib/client-name'
 import { bytesToB64, newLinkEphemeral, openLinkSeal, type WebIdentity } from '../lib/crypto'
@@ -75,7 +76,10 @@ export function Login() {
             <button
               type="button"
               onClick={() => {
-                if (activateStoredIdentity(resume.uin)) window.location.assign('/')
+                // The activation is a vault write on desktop; it has to land
+                // before the reload or the login screen resurrects (same race
+                // as addAccount, see flushVaultWriter).
+                if (activateStoredIdentity(resume.uin)) void flushVaultWriter().finally(() => window.location.assign('/'))
               }}
               className="w-full text-center text-sm text-fg-secondary hover:text-fg-primary transition-colors"
             >

@@ -48,19 +48,41 @@ import {
 ///
 /// Writes are coalesced: adopting an account fires several in a row, and each
 /// one is an Argon2-free but still real file write.
+let flushPending: (() => Promise<void>) | null = null
+
 function attachWriter(): void {
   let timer: ReturnType<typeof setTimeout> | null = null
   let latest: Record<string, string> | null = null
+  const write = (): Promise<void> => {
+    if (timer) {
+      clearTimeout(timer)
+      timer = null
+    }
+    const payload = latest
+    latest = null
+    return payload ? vaultWrite(JSON.stringify(payload)).catch(() => {}) : Promise.resolve()
+  }
+  flushPending = write
   setVaultWriter((rows) => {
     latest = rows
     if (timer) return
-    timer = setTimeout(() => {
-      timer = null
-      const payload = latest
-      latest = null
-      if (payload) void vaultWrite(JSON.stringify(payload)).catch(() => {})
-    }, 120)
+    timer = setTimeout(() => void write(), 120)
   })
+}
+
+// A reload the app did not schedule itself (Cmd+R, the OS) must not lose a
+// coalesced row either.
+if (typeof window !== 'undefined') {
+  window.addEventListener('pagehide', () => void flushPending?.())
+}
+
+/// Push any coalesced account-row change to the vault NOW, and only then let
+/// the caller navigate. A hard reload right after a roster change (add
+/// account, switch, sign out) otherwise unloads the page before the 120 ms
+/// timer fires; the vault key survives in the Rust process, so the next boot
+/// re-reads the STALE rows from disk and the change silently un-happens.
+export function flushVaultWriter(): Promise<void> {
+  return flushPending ? flushPending() : Promise.resolve()
 }
 
 /// Take the account off the disk and put it behind `pin`. Order matters: the
@@ -101,6 +123,9 @@ export async function disablePin(pin: string): Promise<void> {
 /// the page is left holding an account in a closure. The reload lands on the
 /// lock screen because the vault answers "not unlocked".
 export async function lockNow(): Promise<void> {
+  // A locked vault rejects writes, so a still-coalescing row (a token refresh
+  // moments ago) has to land first.
+  await flushVaultWriter()
   await vaultLock()
   window.location.assign('/')
 }

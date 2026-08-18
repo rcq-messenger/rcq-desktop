@@ -20,7 +20,7 @@ import { Api, ApiError, type GroupPreview } from '../lib/api'
 import { useIdentity } from '../lib/identity-context'
 import { useI18n } from '../lib/i18n-context'
 import { hostOfApiBase } from '../lib/multihome'
-import { aliasFor, ensureGuestOn, guestIdentityFor } from '../lib/visited-islands'
+import { aliasFor, ensureGuestAuth, ensureGuestOn } from '../lib/visited-islands'
 import { GroupAvatar } from './GroupAvatar'
 
 // Per-account cache of "which groups am I in", so the card can show
@@ -83,7 +83,7 @@ export function GroupJoinCard({ groupId, host, compact = false }: Props) {
     setUnvisited(false)
     void (async () => {
       try {
-        const ident = foreignHost ? guestIdentityFor(identity, foreignHost) : identity
+        const ident = foreignHost ? await ensureGuestAuth(identity, foreignHost) : identity
         if (!ident) {
           // Never visited this island — minimal card, no network.
           if (alive) setUnvisited(true)
@@ -128,7 +128,7 @@ export function GroupJoinCard({ groupId, host, compact = false }: Props) {
         // First touch of the island happens HERE, on the explicit Join tap:
         // recover-first guest registration with our own keys.
         await ensureGuestOn(identity, foreignHost)
-        const guest = guestIdentityFor(identity, foreignHost)
+        const guest = await ensureGuestAuth(identity, foreignHost)
         if (!guest) throw new Error('guest registration failed')
         ident = guest
       }

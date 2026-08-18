@@ -38,19 +38,40 @@ interface ForeignGroupRef {
   aliasId: number // negative, stable per account
 }
 
+/// ⚠⚠ Guest tokens live HERE and nowhere else — never on disk.
+///
+/// A guest token is a live credential for this identity on somebody else's
+/// island, and it sat in plain localStorage next to the host it belonged to.
+/// It never needed to: `refreshGuestAuth` below already re-mints one through
+/// the recover handshake with our own signing key, which is what happens when
+/// a stored token ages out anyway. So the copy at rest bought a slightly
+/// faster first request after a restart and cost a credential in the clear.
+/// Same treatment the backup-island tokens just got in `multihome.ts`.
+const tokens = new Map<string, string>()
+
 const VISITED_KEY = () => scopedKey('visited.v1')
 const ALIAS_KEY = () => scopedKey('fgroup-alias.v1')
 
 export function listVisitedIslands(): VisitedIsland[] {
   try {
-    return JSON.parse(localStorage.getItem(VISITED_KEY()) || '[]') as VisitedIsland[]
+    const list = JSON.parse(localStorage.getItem(VISITED_KEY()) || '[]') as VisitedIsland[]
+    // The token comes from memory. A record written by an older build still
+    // carries one on disk; it is ignored rather than trusted, so upgrading
+    // drops the stored credential on the first read.
+    return list.map((v) => ({ ...v, jwt: tokens.get(v.host) ?? '' }))
   } catch {
     return []
   }
 }
 
 function saveVisited(list: VisitedIsland[]): void {
-  localStorage.setItem(VISITED_KEY(), JSON.stringify(list))
+  // The only writer, which is what makes "no credential at rest" a property of
+  // the file rather than a habit.
+  const onDisk = list.map(({ jwt, ...rest }) => {
+    if (jwt) tokens.set(rest.host, jwt)
+    return { ...rest, jwt: '' }
+  })
+  localStorage.setItem(VISITED_KEY(), JSON.stringify(onDisk))
 }
 
 /// Guest credentials for `hostInput`, registering (recover-first) on first
@@ -82,6 +103,23 @@ export async function refreshGuestAuth(identity: WebIdentity, host: string): Pro
   } catch {
     return null
   }
+}
+
+/// A guest identity that is guaranteed to carry a token, minting one when this
+/// run has not needed that island yet.
+///
+/// ⚠ Use this, not `guestIdentityFor`, anywhere that does not already handle a
+/// 401 by refreshing. Tokens are no longer persisted, so the first call to an
+/// island after a restart has none — the contact list survives that because it
+/// retries on 401, and the join card did not.
+export async function ensureGuestAuth(
+  identity: WebIdentity,
+  host: string,
+): Promise<WebIdentity | null> {
+  const known = listVisitedIslands().find((v) => v.host === host)
+  if (!known) return null
+  if (known.jwt) return guestIdentityFor(identity, host)
+  return (await refreshGuestAuth(identity, host)) ? guestIdentityFor(identity, host) : null
 }
 
 /// Identity clone that targets `host` with the guest credentials — every

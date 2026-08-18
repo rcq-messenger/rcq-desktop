@@ -172,6 +172,15 @@ async function adoptUnlockedVault(): Promise<void> {
   await adoptRows(rows)
 }
 
+function LockGlyph() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <rect x="4" y="10" width="16" height="11" rx="2" />
+      <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+    </svg>
+  )
+}
+
 /// `95` → `1:35`, `9` → `0:09`. The cap is five minutes, so hours never happen.
 function mmss(total: number): string {
   const m = Math.floor(total / 60)
@@ -359,8 +368,14 @@ export function PinGate({ children }: { children: ReactNode }) {
             screen moves while it runs. A disabled empty box would have said
             "broken"; a number that goes down says "wait, and how long". */}
         {cooldown > 0 ? (
-          <div className="w-full h-11 rounded-lg bg-field px-3 flex items-center justify-center text-sm text-fg-secondary tabular-nums">
-            {t('pin.cooldown', { t: mmss(cooldown) })}
+          // ⚠ One line, always. The first version put a whole sentence in a
+          // box the height of the input it replaces, and it wrapped — a
+          // two-line paragraph crammed into a field, which is what the founder
+          // saw. What belongs here is the number; the sentence goes under it,
+          // outside the box, where it has room.
+          <div className="w-full h-11 rounded-lg bg-field px-3 flex items-center justify-center gap-2 text-sm text-fg-secondary whitespace-nowrap">
+            <LockGlyph />
+            <span className="tabular-nums">{mmss(cooldown)}</span>
           </div>
         ) : (
           <input
@@ -374,6 +389,9 @@ export function PinGate({ children }: { children: ReactNode }) {
             // field it stretched the placeholder into a ransom note.
             className={`w-full h-11 rounded-lg bg-field px-3 text-center outline-none focus:ring-2 focus:ring-accent/60 ${pin ? 'tracking-[0.3em]' : ''}`}
           />
+        )}
+        {cooldown > 0 && (
+          <p className="text-xs text-fg-dim leading-relaxed">{t('pin.cooldown.hint')}</p>
         )}
         <button
           type="submit"

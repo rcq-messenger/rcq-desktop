@@ -296,6 +296,7 @@ export const en: Record<string, string> = {
   'pin.forgot.title': 'Forgotten PIN',
   'pin.forgot.body': 'There is no way to open the vault without the PIN: the conversations on this computer are encrypted with a key derived from it, and nobody holds a copy. What we can do is clear this computer and start over. Your account itself comes back from the 24-word phrase, on the login screen right after this. Without that phrase written down, the account is lost with it.',
   'pin.forgot.confirm': 'Clear this computer',
+  'pin.cooldown.hint': 'Too many attempts. The field unlocks when the count reaches zero.',
   'pin.locked': 'RCQ is locked',
   'pin.unlock': 'Unlock',
   'pin.checking': 'Checking…',

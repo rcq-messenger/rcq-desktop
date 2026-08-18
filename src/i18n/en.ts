@@ -283,6 +283,23 @@ export const en: Record<string, string> = {
   'storage.wipe.warn.desktop': 'Everything leaves this computer: keys, history, lists. If the recovery phrase is not written down somewhere else, there is nothing left to get the account back with.',
   'settings.recovery.forget.warn.desktop': 'Only do this if the words are written down somewhere else. The phrase re-creates your account on any island, forever, and anyone holding this computer unlocked can read it. Your account and messages here keep working — you just will not be able to read the words off this computer again.',
   'settings.session.unlink_footer.desktop': 'Signs out and clears only this computer (the messages, contacts and keys kept here). If you linked this device from your phone by QR, the account stays on the phone — just disconnect this device there, under "Linked devices". But if you signed in with the recovery phrase and this is the only copy, the account is lost for good after you leave.',
+  'login.recover.body.desktop':
+    'Enter your 24-word recovery phrase to restore your account on this computer — including an account you first created on a phone.',
+  'login.phrase.body.desktop':
+    'These 24 words ARE your account. Write them down and keep them safe — you can use them to restore this account on a phone or another device.',
+  'login.phrase.warning.desktop':
+    "Anyone with these words can access your account. We can't recover them for you — if you lose them and remove the app's data, the account is gone.",
+  'settings.recovery.body.desktop':
+    'Your 24-word phrase restores this account on a phone or another device. Keep it private.',
+  'login.link.security_note.desktop':
+    'While your phone and this device are both connected, your direct messages use a simpler encryption so both can receive them (group chats are unaffected). Disconnect this device anytime in the phone app under Settings → Linked devices for maximum security again.',
+  'login.create.body.desktop':
+    'Creates a fresh RCQ account that lives on this computer, with its own UIN and keys.',
+  'login.create.note.desktop':
+    "This is a separate account, not your phone account. It lives on this computer, so don't remove the app's data if you want to keep it.",
+  'settings.multihome.footer.desktop':
+    'The island list is signed with your key and published, so contacts on the latest app versions deliver to every island automatically. Only this app polls the backup mailbox.',
+  'chat.error.no_geolocation.desktop': 'Sharing a location is not available here.',
   'pin.title': 'PIN on this computer',
   'pin.off.body': 'Locks the app and takes your account off this disk: the keys, the recovery phrase and the session are sealed with your PIN and cannot be read without it — not while the app is closed, not by anyone who opens this laptop.\nThe message history goes with it: what you received, what you sent and the pictures in your chats are sealed under the same PIN. The device keys, the contact snapshot and the sender keys are not sealed yet.',
   'pin.on.body': 'The app is locked with a PIN. Your account and your conversations are sealed on this disk and come back only when you type it.\nThe device keys, the contact snapshot and the sender keys are not sealed yet.',

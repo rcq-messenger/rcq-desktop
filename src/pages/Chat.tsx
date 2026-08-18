@@ -25,6 +25,7 @@ import { ReactionPicker } from '../components/ReactionPicker'
 import { PersonAvatar } from '../components/PersonAvatar'
 import { SenderAvatar } from '../components/SenderAvatar'
 import { Api, peerBundleFrom, type Contact, type PollOut, type RCQGroup, type UserInfo } from '../lib/api'
+import { isTauri } from '../lib/desktop'
 import {
   useIncoming,
   useGroupIncoming,
@@ -1191,7 +1192,7 @@ export function Chat() {
     if (!identity) return
     setAttachMenuOpen(false)
     if (!navigator.geolocation) {
-      toast(t('chat.error.no_geolocation'), 'error')
+      toast(t(isTauri() ? 'chat.error.no_geolocation.desktop' : 'chat.error.no_geolocation'), 'error')
       return
     }
     const pos = await new Promise<GeolocationPosition | null>((resolve) => {

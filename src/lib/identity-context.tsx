@@ -22,6 +22,7 @@ import {
   withSessionToken,
 } from './auth'
 import { migrateFlatDataInto, setAccountScope } from './account-scope'
+import { flushVaultWriter } from './pin-gate'
 import { defaultHome } from './routing'
 import { Api, setTokenRefresher, setUnauthorizedHandler } from './api'
 import { idbClearAll } from './signal-persist'
@@ -241,14 +242,14 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
       switchAccount: (uin: number) => {
         if (uin === identity?.uin) return
         if (!activateStoredIdentity(uin)) return
-        window.location.assign('/')
+        void flushVaultWriter().finally(() => window.location.assign('/'))
       },
       addAccount: () => {
         // The roster keeps every account; clearing only the ACTIVE slot lands
         // on the login screen with the others still here, so "add" cannot
         // become "sign out of everything" by accident.
         clearIdentity()
-        window.location.assign('/')
+        void flushVaultWriter().finally(() => window.location.assign('/'))
       },
       signOutAccount: (uin: number) => {
         // Tell the ACCOUNT BEING SIGNED OUT that this session is gone, not
@@ -281,7 +282,7 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
         // active slot, so this lands signed in as that one — but at the app's
         // home, not on the chat of the account that just left.
         const remaining = listStoredIdentities()
-        window.location.assign(remaining.length ? defaultHome() : '/')
+        void flushVaultWriter().finally(() => window.location.assign(remaining.length ? defaultHome() : '/'))
       },
       // Sign-out / unlink: wipe ALL account-scoped local data (identity,
       // per-thread message logs, contacts state, device keys + decrypted
@@ -304,7 +305,7 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
         if (identity) void Api.unlinkSelf(identity).catch(() => {})
         clearIdentity()
         wipeLocalAccountData()
-        void idbClearAll().finally(() => {
+        void Promise.allSettled([idbClearAll(), flushVaultWriter()]).then(() => {
           window.location.assign('/')
         })
       },
@@ -320,7 +321,7 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
         setIdentity(adoptMigratedUin(identity, newUin, token))
         // Hard reload, not a route change: every module-level cache is keyed
         // by the old uin/jwt (ws socket, libsignal device, incoming store).
-        window.location.assign(to)
+        void flushVaultWriter().finally(() => window.location.assign(to))
       },
     }),
     [identity, accounts],

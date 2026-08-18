@@ -320,6 +320,28 @@ pub fn remove(app: &AppHandle, state: &Unlocked, pin: &str) -> Result<String, St
     remove_at(&path(app)?, state, pin)
 }
 
+/// Delete the vault WITHOUT the PIN, losing whatever it held.
+///
+/// The way out of "I forgot it". Everything the vault protects is derived from
+/// the PIN, so there is nothing to recover here and nothing to ask: the account
+/// itself comes back from the recovery phrase, which lives outside this file.
+///
+/// ⚠ This grants no capability an attacker did not already have. Anyone holding
+/// the machine can delete the same file from the OS; refusing to do it from
+/// inside the app would only have trapped the owner. What it must never be is
+/// easy to hit by accident, so the confirmation lives in the UI and says plainly
+/// what goes.
+pub fn destroy(app: &AppHandle, state: &Unlocked) -> Result<(), String> {
+    lock(state);
+    let p = path(app)?;
+    match std::fs::remove_file(&p) {
+        Ok(()) => Ok(()),
+        // Already gone is the outcome we wanted.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("cannot remove vault: {e}")),
+    }
+}
+
 fn remove_at(p: &std::path::Path, state: &Unlocked, pin: &str) -> Result<String, String> {
     let plain = unlock_at(p, state, pin)?;
     lock(state);

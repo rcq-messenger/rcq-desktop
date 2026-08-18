@@ -14,12 +14,14 @@
 
 import { useEffect, useState, type ReactNode } from 'react'
 import { useI18n } from './i18n-context'
+import { useToast } from './toast'
 import {
   accountRowsOnDisk,
   adoptVaultedRows,
   clearAccountRowsOnDisk,
   restoreAccountRowsToDisk,
   setVaultWriter,
+  wipeLocalAccountData,
 } from './auth'
 import {
   vaultCreate,
@@ -29,6 +31,7 @@ import {
   vaultSupported,
   vaultRead,
   vaultUnlock,
+  vaultDestroy,
   vaultWrite,
 } from './desktop-vault'
 import { adoptSealedOutgoing, releaseSealedOutgoing } from './outgoing-store'
@@ -169,13 +172,35 @@ async function adoptUnlockedVault(): Promise<void> {
   await adoptRows(rows)
 }
 
+/// `95` → `1:35`, `9` → `0:09`. The cap is five minutes, so hours never happen.
+function mmss(total: number): string {
+  const m = Math.floor(total / 60)
+  const s = total % 60
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
 export function PinGate({ children }: { children: ReactNode }) {
   const { t } = useI18n()
   // null = still asking Rust; true = show the lock screen.
   const [locked, setLocked] = useState<boolean | null>(vaultSupported() ? null : false)
   const [pin, setPin] = useState('')
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  /// Seconds left before another attempt is allowed. The back-off is a ladder,
+  /// not a flat wall: five wrong PINs cost 5s, then 10, 20, 40 and so on to a
+  /// five-minute cap. Shown as a live count because "try again later" without a
+  /// number is indistinguishable from a broken field.
+  const [cooldown, setCooldown] = useState(0)
+  const [forgot, setForgot] = useState(false)
+  const { toast } = useToast()
+
+  // Tick it down. Also re-read on mount below: a cool-down survives quitting
+  // the app, and coming back to a field that silently refuses is the same
+  // dead-end this replaces.
+  useEffect(() => {
+    if (cooldown <= 0) return
+    const h = setInterval(() => setCooldown((n) => (n <= 1 ? 0 : n - 1)), 1000)
+    return () => clearInterval(h)
+  }, [cooldown > 0])
 
   useEffect(() => {
     if (!vaultSupported()) return
@@ -189,6 +214,7 @@ export function PinGate({ children }: { children: ReactNode }) {
       // used to land back on the lock screen and ask for the PIN a second time
       // in one session. The key is still in Rust, so take the contents back and
       // carry on. Only a fresh launch (or Lock now) has no key and asks.
+      if (s.cooldown > 0) setCooldown(s.cooldown)
       if (s.unlocked) {
         try {
           await adoptUnlockedVault()
@@ -204,9 +230,8 @@ export function PinGate({ children }: { children: ReactNode }) {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
-    if (busy || !pin) return
+    if (busy || !pin || cooldown > 0) return
     setBusy(true)
-    setError(null)
     try {
       const payload = await vaultUnlock(pin)
       const rows = JSON.parse(payload) as Record<string, string>
@@ -227,17 +252,39 @@ export function PinGate({ children }: { children: ReactNode }) {
       setLocked(false)
     } catch (err) {
       const code = String((err as Error)?.message ?? err)
+      // ⚠ Every one of these used to render UNDER the input, which moved the
+      // input. Type the wrong PIN twice and the field jumped down, up and down
+      // again, because the line is cleared at the start of the next attempt and
+      // painted again at its end. A notice is not a state of this screen; it
+      // belongs in the same corner as every other passing notice in the app.
       if (code.startsWith('locked_out:')) {
-        setError(t('pin.error.wait', { n: code.split(':')[1] ?? '?' }))
+        const secs = Number(code.split(':')[1] ?? 0)
+        setCooldown(secs > 0 ? secs : 5)
       } else if (code.includes('wrong_pin')) {
-        setError(t('pin.error.wrong'))
+        toast(t('pin.error.wrong'), 'error')
       } else if (code.includes('corrupt_vault')) {
-        setError(t('pin.error.corrupt'))
+        toast(t('pin.error.corrupt'), 'error')
       } else {
-        setError(code)
+        toast(code, 'error')
       }
       setPin('')
     } finally {
+      setBusy(false)
+    }
+  }
+
+  /// Drop the vault unopened and land on the login screen, where "recover by
+  /// phrase" and "new account" already live. Nothing here can hand the old
+  /// conversations back: they are sealed under a key that only existed inside
+  /// the vault, which is the point of the PIN.
+  async function resetVault() {
+    setBusy(true)
+    try {
+      await vaultDestroy()
+      wipeLocalAccountData()
+      window.location.assign('/')
+    } catch (err) {
+      toast(String((err as Error)?.message ?? err), 'error')
       setBusy(false)
     }
   }
@@ -263,6 +310,32 @@ export function PinGate({ children }: { children: ReactNode }) {
         className="absolute inset-0 bg-gradient-to-br from-accent/10 via-surface-dim to-surface-dim"
       />
       <div className="relative h-full flex flex-col items-center justify-center px-6">
+      {forgot ? (
+        /* Deliberately a whole panel and not a confirm(): what goes is not
+           obvious, and a one-line browser dialog would have been read as "are
+           you sure you want to continue" rather than "this erases the history
+           on this computer". The account itself is not in danger IF the phrase
+           is written down, and that "if" is the whole message. */
+        <div className="w-full max-w-xs space-y-4">
+          <div className="text-sm font-semibold">{t('pin.forgot.title')}</div>
+          <p className="text-xs text-fg-secondary leading-relaxed">{t('pin.forgot.body')}</p>
+          <button
+            type="button"
+            onClick={() => void resetVault()}
+            disabled={busy}
+            className="w-full h-11 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold disabled:opacity-40 transition-colors"
+          >
+            {t('pin.forgot.confirm')}
+          </button>
+          <button
+            type="button"
+            onClick={() => setForgot(false)}
+            className="w-full h-11 rounded-lg bg-field text-sm hover:bg-line/50 transition-colors"
+          >
+            {t('common.cancel')}
+          </button>
+        </div>
+      ) : (
       <form onSubmit={submit} className="w-full max-w-xs space-y-4 text-center">
         {/* The padlock with our flower tucked into its bottom-right corner, so
             the locked screen still says whose app this is.
@@ -282,27 +355,45 @@ export function PinGate({ children }: { children: ReactNode }) {
           />
         </div>
         <div className="text-sm text-fg-secondary">{t('pin.locked')}</div>
-        <input
-          autoFocus
-          type="password"
-          inputMode="numeric"
-          value={pin}
-          onChange={(e) => setPin(e.target.value)}
-          placeholder={t('pin.placeholder')}
-          // The wide tracking is for the dots of a typed PIN; on the empty
-          // field it stretched the placeholder into a ransom note.
-          className={`w-full h-11 rounded-lg bg-field px-3 text-center outline-none focus:ring-2 focus:ring-accent/60 ${pin ? 'tracking-[0.3em]' : ''}`}
-        />
-        {error && <div className="text-xs text-red-500">{error}</div>}
+        {/* The count-down lives IN the field, in its place, so nothing on this
+            screen moves while it runs. A disabled empty box would have said
+            "broken"; a number that goes down says "wait, and how long". */}
+        {cooldown > 0 ? (
+          <div className="w-full h-11 rounded-lg bg-field px-3 flex items-center justify-center text-sm text-fg-secondary tabular-nums">
+            {t('pin.cooldown', { t: mmss(cooldown) })}
+          </div>
+        ) : (
+          <input
+            autoFocus
+            type="password"
+            inputMode="numeric"
+            value={pin}
+            onChange={(e) => setPin(e.target.value)}
+            placeholder={t('pin.placeholder')}
+            // The wide tracking is for the dots of a typed PIN; on the empty
+            // field it stretched the placeholder into a ransom note.
+            className={`w-full h-11 rounded-lg bg-field px-3 text-center outline-none focus:ring-2 focus:ring-accent/60 ${pin ? 'tracking-[0.3em]' : ''}`}
+          />
+        )}
         <button
           type="submit"
-          disabled={busy || pin.length < 4}
+          disabled={busy || pin.length < 4 || cooldown > 0}
           className="w-full h-11 rounded-lg bg-accent text-ink-black font-semibold disabled:opacity-40 transition-opacity"
         >
           {busy ? t('pin.checking') : t('pin.unlock')}
         </button>
-        <p className="text-xs text-fg-dim leading-relaxed">{t('pin.forgot')}</p>
+        {/* The way out of "I forgot it". Without it the only exits were the
+            OS file manager and giving up, which is a trap the owner falls into
+            and nobody else. */}
+        <button
+          type="button"
+          onClick={() => setForgot(true)}
+          className="text-xs text-fg-secondary hover:text-fg-primary transition-colors"
+        >
+          {t('pin.forgot.link')}
+        </button>
       </form>
+      )}
       </div>
     </div>
   )

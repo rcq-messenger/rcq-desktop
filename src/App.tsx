@@ -52,12 +52,17 @@ export default function App() {
             locked there is no account in the page at all — not a hidden one,
             not one behind a route guard. Nothing below this line runs until
             the PIN is typed. In a browser it renders its children and stops. */}
+        {/* Above the gate, not under it: the lock screen has notices of its
+            own now (a wrong PIN, a cool-down), and until this moved they had
+            nowhere to go but inline text that shoved the input around on every
+            attempt. Nothing else changes — the provider is a context and a
+            host, it knows nothing about an account. */}
+        <ToastProvider>
         <PinGate>
         <IdentityProvider>
           <WSProvider>
             <CallProvider>
             <RoomsProvider>
-            <ToastProvider>
             <MessageReceiver />
             <Router>
             <MessageToasts />
@@ -211,12 +216,12 @@ export default function App() {
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Router>
-            </ToastProvider>
             </RoomsProvider>
             </CallProvider>
           </WSProvider>
         </IdentityProvider>
         </PinGate>
+        </ToastProvider>
       </I18nProvider>
     </ThemeProvider>
   )

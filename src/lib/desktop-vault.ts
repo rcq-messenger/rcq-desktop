@@ -71,6 +71,14 @@ export async function vaultLock(): Promise<void> {
 }
 
 /// Turn the PIN off, handing back what was inside.
+/// Forgot the PIN: delete the vault without opening it. Everything it held is
+/// derived from the PIN, so there is nothing to hand back — the ACCOUNT returns
+/// from the recovery phrase, which never lived in here.
+export async function vaultDestroy(): Promise<void> {
+  if (!isTauri()) return
+  await call<void>('vault_destroy')
+}
+
 export async function vaultRemove(pin: string): Promise<string> {
   return call<string>('vault_remove', { pin })
 }

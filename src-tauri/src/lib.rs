@@ -255,6 +255,15 @@ fn vault_remove(
     vault::remove(&app, &open, &pin)
 }
 
+/// Forgot the PIN: drop the vault unopened. See `vault::destroy`.
+#[tauri::command]
+fn vault_destroy(
+    app: tauri::AppHandle,
+    open: tauri::State<vault::Unlocked>,
+) -> Result<(), String> {
+    vault::destroy(&app, &open)
+}
+
 /// Stop the bundled sing-box so an installer can replace its file.
 ///
 /// ⚠ Windows will not overwrite a running executable. The updater downloads
@@ -351,7 +360,8 @@ pub fn run() {
                 vault_read,
                 vault_write,
                 vault_lock,
-                vault_remove
+                vault_remove,
+                vault_destroy
             ]);
     }
 

@@ -341,7 +341,10 @@ export function PinGate({ children }: { children: ReactNode }) {
     <div className="relative h-screen [height:100dvh] overflow-hidden bg-surface-dim">
       <div
         aria-hidden
-        className="absolute inset-0 bg-gradient-to-br from-accent/10 via-surface-dim to-surface-dim"
+        // Rising, not falling: the tint sits at the BOTTOM and fades upward
+        // (founder, 19.08). `to-tr` runs bottom-left → top-right, so the
+        // `from-` stop is the low corner.
+        className="absolute inset-0 bg-gradient-to-tr from-accent/10 via-surface-dim to-surface-dim"
       />
       <div className="relative h-full flex flex-col items-center justify-center px-6">
       {forgot ? (

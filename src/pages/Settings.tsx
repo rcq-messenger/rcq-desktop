@@ -783,7 +783,7 @@ export function Settings() {
           {mhError && (
             <div className="text-sm text-red-600 bg-red-500/5 rounded-md p-2">{mhError}</div>
           )}
-          <p className="text-xs text-fg-dim">{t('settings.multihome.footer')}</p>
+          <p className="text-xs text-fg-dim">{t(isTauri() ? 'settings.multihome.footer.desktop' : 'settings.multihome.footer')}</p>
         </section>
 
         {/* Privacy — its own page now that there are five pickers.
@@ -1496,7 +1496,7 @@ function RecoveryPhraseSection() {
       <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
         {t('settings.recovery.title')}
       </div>
-      <p className="text-xs text-fg-dim leading-relaxed">{t('settings.recovery.body')}</p>
+      <p className="text-xs text-fg-dim leading-relaxed">{t(isTauri() ? 'settings.recovery.body.desktop' : 'settings.recovery.body')}</p>
       {!revealed ? (
         <button
           onClick={() => setRevealed(true)}

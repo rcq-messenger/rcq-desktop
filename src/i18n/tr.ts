@@ -253,6 +253,23 @@ export const tr: Record<string, string> = {
   'storage.wipe.warn.desktop': 'Bu bilgisayardan her şey gider: anahtarlar, geçmiş, listeler. Kurtarma cümlesi başka bir yere yazılmadıysa hesabı geri getirecek hiçbir şey kalmaz.',
   'settings.recovery.forget.warn.desktop': 'Bunu yalnızca kelimeler başka bir yerde yazılıysa yapın. Cümle hesabınızı herhangi bir adada, sonsuza dek yeniden oluşturur ve bu bilgisayarı kilitsiz eline geçiren onu okuyabilir. Buradaki hesabınız ve mesajlarınız çalışmaya devam eder; sadece kelimeleri bu bilgisayardan bir daha okuyamazsınız.',
   'settings.session.unlink_footer.desktop': 'Yalnızca bu bilgisayardan çıkar ve burayı temizler (burada tutulan mesajlar, kişiler ve anahtarlar). Bu cihazı telefondan QR ile bağladıysanız hesap telefonda kalır; oradan, «Bağlı cihazlar» bölümünden bu cihazın bağlantısını kesmeniz yeter. Ama kurtarma cümlesiyle girdiyseniz ve bu tek kopyaysa, çıktıktan sonra hesap sonsuza dek kaybolur.',
+  'login.recover.body.desktop':
+    'Hesabınızı bu bilgisayarda geri yüklemek için 24 kelimelik kurtarma cümlenizi girin; önce telefonda oluşturduğunuz bir hesap da buna dahil.',
+  'login.phrase.body.desktop':
+    'Bu 24 kelime hesabınızın ta kendisi. Bunları yazın ve güvenli bir yerde saklayın: onlarla bu hesabı bir telefonda ya da başka bir cihazda geri yükleyebilirsiniz.',
+  'login.phrase.warning.desktop':
+    'Bu kelimelere sahip olan herkes hesabınıza erişebilir. Onları sizin için kurtaramayız: kaybeder ve uygulama verilerini silerseniz hesap gider.',
+  'settings.recovery.body.desktop':
+    '24 kelimelik cümleniz bu hesabı bir telefonda ya da başka bir cihazda geri yükler. Gizli tutun.',
+  'login.link.security_note.desktop':
+    'Telefonunuz ve bu cihaz birlikte bağlıyken, ikisi de alabilsin diye direkt mesajlar daha basit bir şifreleme kullanır (grup sohbetleri etkilenmez). En yüksek güvenliğe dönmek için bu cihazın bağlantısını telefondaki uygulamadan istediğiniz zaman kesin: Ayarlar → Bağlı cihazlar.',
+  'login.create.body.desktop':
+    "Bu bilgisayarda yaşayan, kendi UIN'i ve anahtarları olan yeni bir RCQ hesabı oluşturur.",
+  'login.create.note.desktop':
+    'Bu ayrı bir hesap, telefonunuzdaki hesap değil. Bu bilgisayarda yaşar; saklamak istiyorsanız uygulama verilerini silmeyin.',
+  'settings.multihome.footer.desktop':
+    'Ada listesi anahtarınızla imzalanır ve yayımlanır: güncel uygulama sürümlerindeki kişiler her adaya otomatik teslim eder. Yedek kutusunu yalnızca bu uygulama yoklar.',
+  'chat.error.no_geolocation.desktop': 'Burada konum paylaşılamıyor.',
   'pin.title': 'Bu bilgisayarda PIN',
   'pin.off.body': 'Uygulamayı kilitler ve hesabınızı bu diskten kaldırır: anahtarlar, kurtarma cümlesi ve oturum PIN’inizle mühürlenir; onsuz ne uygulama kapalıyken ne de bu dizüstünü açan biri tarafından okunabilir.\nMesaj geçmişi de onlarla gider: aldıklarınız, gönderdikleriniz ve sohbetlerdeki fotoğraflar aynı PIN ile mühürlenir. Cihaz anahtarları, kişi listesi kopyası ve gönderen anahtarları henüz mühürlü değil.',
   'pin.on.body': 'Uygulama bir PIN ile kilitli. Hesabınız ve yazışmalarınız bu diskte mühürlü, yalnızca PIN’i yazınca geri gelir.\nCihaz anahtarları, kişi listesi kopyası ve gönderen anahtarları henüz mühürlü değil.',

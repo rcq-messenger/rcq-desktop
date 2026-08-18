@@ -253,6 +253,23 @@ export const pt: Record<string, string> = {
   'storage.wipe.warn.desktop': 'Sai tudo deste computador: chaves, histórico, listas. Se a frase de recuperação não estiver anotada em outro lugar, não sobra nada para recuperar a conta.',
   'settings.recovery.forget.warn.desktop': 'Faça isso apenas se as palavras estiverem anotadas em outro lugar. A frase recria sua conta em qualquer ilha, para sempre, e quem estiver com este computador desbloqueado pode lê-la. Sua conta e suas mensagens aqui continuam funcionando; você só não vai mais conseguir ler as palavras a partir deste computador.',
   'settings.session.unlink_footer.desktop': 'Sai e limpa apenas este computador (as mensagens, contatos e chaves guardados aqui). Se você conectou este dispositivo pelo telefone via QR, a conta continua no telefone: basta desconectar este dispositivo lá, em «Dispositivos conectados». Mas se você entrou com a frase de recuperação e esta é a única cópia, depois de sair a conta se perde para sempre.',
+  'login.recover.body.desktop':
+    'Digite sua frase de recuperação de 24 palavras para restaurar sua conta neste computador, incluindo uma conta que você criou primeiro no telefone.',
+  'login.phrase.body.desktop':
+    'Estas 24 palavras SÃO a sua conta. Anote-as e guarde-as bem: com elas você pode restaurar esta conta em um telefone ou em outro dispositivo.',
+  'login.phrase.warning.desktop':
+    'Qualquer pessoa com estas palavras pode acessar sua conta. Não podemos recuperá-las por você: se você as perder e apagar os dados do aplicativo, a conta se perde.',
+  'settings.recovery.body.desktop':
+    'Sua frase de 24 palavras restaura esta conta em um telefone ou em outro dispositivo. Mantenha-a em segredo.',
+  'login.link.security_note.desktop':
+    'Enquanto seu telefone e este dispositivo estão conectados juntos, as mensagens diretas usam uma criptografia mais simples para que ambos possam recebê-las (chats em grupo não são afetados). Desconecte este dispositivo quando quiser no aplicativo do telefone, em Configurações → Dispositivos conectados, para voltar à segurança máxima.',
+  'login.create.body.desktop':
+    'Cria uma conta RCQ nova que vive neste computador, com UIN e chaves próprios.',
+  'login.create.note.desktop':
+    'É uma conta separada, não a conta do seu telefone. Ela vive neste computador, então não apague os dados do aplicativo se quiser mantê-la.',
+  'settings.multihome.footer.desktop':
+    'A lista de ilhas é assinada com a sua chave e publicada: contatos nas versões recentes do aplicativo entregam a todas as ilhas automaticamente. Só este aplicativo consulta a caixa reserva.',
+  'chat.error.no_geolocation.desktop': 'Não é possível compartilhar a localização aqui.',
   'pin.title': 'PIN neste computador',
   'pin.off.body': 'Tranca o aplicativo e tira a sua conta deste disco: as chaves, a frase de recuperação e a sessão ficam seladas com o seu PIN e não podem ser lidas sem ele, nem com o app fechado, nem por quem abrir este notebook.\nO histórico vai junto: o que você recebeu, o que enviou e as fotos das conversas ficam selados com o mesmo PIN. As chaves do dispositivo, a cópia dos contatos e as chaves de envio ainda não estão seladas.',
   'pin.on.body': 'O aplicativo está trancado com um PIN. Sua conta e suas conversas estão seladas neste disco e voltam só quando você digita.\nAs chaves do dispositivo, a cópia dos contatos e as chaves de envio ainda não estão seladas.',

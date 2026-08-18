@@ -25,6 +25,7 @@ import {
   suggestNickname,
 } from '../lib/auth'
 import { flushVaultWriter } from '../lib/pin-gate'
+import { isTauri } from '../lib/desktop'
 import { defaultHome } from '../lib/routing'
 import { clientLabel } from '../lib/client-name'
 import { bytesToB64, newLinkEphemeral, openLinkSeal, type WebIdentity } from '../lib/crypto'
@@ -32,6 +33,11 @@ import { islandLabel, normaliseIsland, rememberIsland, rememberedIsland } from '
 import { useI18n } from '../lib/i18n-context'
 import { useToast } from '../lib/toast'
 import { useIdentity } from '../lib/identity-context'
+
+// The login copy talks about "this browser"; in the desktop app the same
+// screens are about a computer. Keys with a platform difference have a
+// `.desktop` twin, and isTauri() never changes at runtime.
+const dk = isTauri() ? '.desktop' : ''
 
 export function Login() {
   const { setIdentity } = useIdentity()
@@ -171,7 +177,7 @@ function RecoverPane({ onDone }: { onDone: (id: WebIdentity) => void }) {
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-fg-secondary">{t('login.recover.body')}</p>
+      <p className="text-sm text-fg-secondary">{t('login.recover.body' + dk)}</p>
       <textarea
         value={phrase}
         onChange={(e) => setPhrase(e.target.value)}
@@ -337,7 +343,7 @@ function LinkPane({ onDone }: { onDone: (id: WebIdentity) => void }) {
           trade-off (convenience vs max security), not an alarm. The "learn
           more" link deep-links to the FAQ answer that explains it in full. */}
       <div className="space-y-1">
-        <p className="text-xs text-fg-dim leading-relaxed">{t('login.link.security_note')}</p>
+        <p className="text-xs text-fg-dim leading-relaxed">{t('login.link.security_note' + dk)}</p>
         <a
           href="https://rcq.app/faq#web-link"
           target="_blank"
@@ -403,7 +409,7 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
       <div className="space-y-4">
         <div className="space-y-1">
           <h2 className="text-base font-semibold">{t('login.phrase.title')}</h2>
-          <p className="text-sm text-fg-secondary leading-relaxed">{t('login.phrase.body')}</p>
+          <p className="text-sm text-fg-secondary leading-relaxed">{t('login.phrase.body' + dk)}</p>
         </div>
         <PhraseGrid words={pending.words} />
         <button
@@ -416,7 +422,7 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
           {t('login.phrase.copy')}
         </button>
         <div className="text-xs text-fg-dim bg-amber-500/10 border border-amber-500/30 rounded-md p-2 leading-relaxed">
-          {t('login.phrase.warning')}
+          {t('login.phrase.warning' + dk)}
         </div>
         <button
           onClick={() => onDone(pending.id)}
@@ -430,7 +436,7 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-fg-secondary">{t('login.create.body')}</p>
+      <p className="text-sm text-fg-secondary">{t('login.create.body' + dk)}</p>
 
       <div className="space-y-1">
         <label className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
@@ -466,7 +472,7 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
         {busy ? t('login.create.busy') : t('login.create.cta')}
       </button>
 
-      <p className="text-xs text-fg-dim text-center leading-relaxed">{t('login.create.note')}</p>
+      <p className="text-xs text-fg-dim text-center leading-relaxed">{t('login.create.note' + dk)}</p>
     </div>
   )
 }

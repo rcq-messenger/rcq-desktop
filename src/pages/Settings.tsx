@@ -34,6 +34,7 @@ import {
 import { uploadReportAttachment } from '../lib/media'
 import { useI18n } from '../lib/i18n-context'
 import { PinSettings } from '../components/PinSettings'
+import { flushVaultWriter } from '../lib/pin-gate'
 import { useToast } from '../lib/toast'
 import type { UserInfo } from '../lib/api'
 import { DEFAULT_API_BASE } from '../lib/auth'
@@ -388,6 +389,9 @@ export function Settings() {
       // Push the new primary order to contacts BEFORE the reload tears the
       // session down (best-effort; contacts also re-resolve via the mirror).
       await pushHomeRecordToContacts(next)
+      // The promoted identity is a vault write on desktop — land it before
+      // the reload tears the page down (see flushVaultWriter).
+      await flushVaultWriter()
       window.location.reload()
     } catch (e) {
       const msg = String((e as Error).message || e)
@@ -833,7 +837,7 @@ export function Settings() {
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
               <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
-                {t('storage.title')}
+                {t(isTauri() ? 'storage.title.desktop' : 'storage.title')}
               </div>
               <div className="text-xs text-fg-dim mt-0.5 truncate">{t('storage.footer.short')}</div>
             </div>
@@ -1301,7 +1305,7 @@ export function Settings() {
           >
             {t('settings.session.unlink')}
           </button>
-          <p className="text-xs text-fg-dim">{t('settings.session.unlink_footer')}</p>
+          <p className="text-xs text-fg-dim">{t(isTauri() ? 'settings.session.unlink_footer.desktop' : 'settings.session.unlink_footer')}</p>
         </section>
 
         {/* Burn account — redesigned off the old "red-outlined everything"
@@ -1530,7 +1534,7 @@ function RecoveryPhraseSection() {
           {!confirmForget ? (
             <button
               onClick={() => setConfirmForget(true)}
-              className="w-full h-9 rounded-md text-sm font-medium text-red-600 hover:bg-red-50 transition-colors"
+              className="w-full h-9 rounded-md text-sm font-medium text-red-600 hover:bg-red-500/10 transition-colors"
             >
               {t('settings.recovery.forget')}
             </button>

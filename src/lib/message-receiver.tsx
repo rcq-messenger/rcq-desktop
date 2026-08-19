@@ -21,7 +21,7 @@ import { handleProfile, pushProfileTo } from './crossisland-profile'
 import { handleGmsg, handleSkdm, handleSknack } from './sender-key-receive'
 import { Api, peerBundleFrom } from './api'
 import { encryptV1 } from './crypto'
-import type { CallEnvelope, ContactReqEnvelope, ProfileEnvelope, WebIdentity } from './crypto'
+import type { CallEnvelope, ContactReqEnvelope, Envelope, ProfileEnvelope, WebIdentity } from './crypto'
 
 // Hydrate the incoming store once per account per app load. Both receive paths
 // (the primary connect-drain and the backup-island poll, which runs even when
@@ -225,7 +225,7 @@ async function sendDeliveredReceipt(
   peerUin: number,
   targetID: string,
 ): Promise<void> {
-  const env = { kind: 'delivered', targetIDs: [targetID] } as unknown as Parameters<typeof sendV2>[2]
+  const env: Envelope = { kind: 'delivered', targetIDs: [targetID] }
   try {
     const reached = await sendV2(identity, peerUin, env, 'read').catch(() => 0)
     if (reached === 0) {

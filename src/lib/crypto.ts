@@ -202,6 +202,21 @@ export interface DeleteEnvelope {
   targetID: string
 }
 
+/// Receipt (iOS/Android kinds "read" and "delivered"): the recipient reports
+/// that `targetIDs` were seen / landed on their device, which is what moves
+/// the sender's ticks.
+///
+/// ⚠ This is a WIRE type, not a local one: without it in the union the
+/// receipt built by `sendDeliveredReceipt` had to be cast, `envelopeToObject`
+/// had no branch for it, and every receipt this client sent went out as a
+/// bare `{"kind":"delivered"}`. iOS then failed to decode it (`targetIDs`
+/// missing), which means it also never ACKed the queue row — so each broken
+/// receipt was redelivered to the phone on every drain, forever.
+export interface ReceiptEnvelope {
+  kind: 'read' | 'delivered'
+  targetIDs: string[]
+}
+
 /// Home-island record self-push (federation gossip B1, kind "homerec"): the
 /// sender hands a contact their own signed home-island record so the contact
 /// caches where to reach them even if the sender's island later dies. `rec` is
@@ -325,6 +340,7 @@ export type Envelope =
   | PollEnvelope
   | EditEnvelope
   | DeleteEnvelope
+  | ReceiptEnvelope
   | HomeRecordEnvelope
   | SkdmEnvelope
   | SknackEnvelope
@@ -442,6 +458,8 @@ export function envelopeToObject(env: Envelope): Record<string, unknown> {
     obj.text = env.text
   } else if (env.kind === 'delete') {
     obj.targetID = env.targetID
+  } else if (env.kind === 'read' || env.kind === 'delivered') {
+    obj.targetIDs = env.targetIDs
   } else if (env.kind === 'homerec') {
     obj.rec = env.rec
   } else if (env.kind === 'skdm') {

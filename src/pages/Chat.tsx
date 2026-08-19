@@ -144,6 +144,7 @@ export function Chat() {
   // to self). The server omits your own UIN from /contacts, so we synthesise a
   // peer and keep the whole thread LOCAL — never delivered over the wire
   // (mirrors iOS). #3. (A cross-island thread is never "self".)
+
   const isSelf = !isGroup && !islandHost && identity != null && peerUIN === identity.uin
 
   // Cross-island groups (§5c): a NEGATIVE route id is a local alias for a
@@ -170,6 +171,10 @@ export function Chat() {
   const [group, setGroup] = useState<RCQGroup | null>(() =>
     isGroup && groupId != null ? _groupCache.get(groupId) ?? null : null,
   )
+  // Owner-only group we cannot post in: the composer below is replaced by a
+  // notice, so nothing on this screen may invite a reply either.
+  const readOnlyHere =
+    isGroup && group?.post_policy === 'owner_only' && identity != null && group.owner_uin !== identity.uin
   const [myInfo, setMyInfo] = useState<UserInfo | null>(null)
   const [input, setInput] = useState('')
   const [showPicker, setShowPicker] = useState(false)
@@ -2315,12 +2320,18 @@ export function Chat() {
 
         {timeline.length === 0 && (
           <div className="h-full flex flex-col items-center justify-center gap-3 text-center px-6 -mt-8">
-            <div className="text-4xl select-none">{isSelf ? '🔖' : '👋'}</div>
+            <div className="text-4xl select-none">{isSelf ? '🔖' : readOnlyHere ? '📣' : '👋'}</div>
             <div className="text-fg-secondary text-sm max-w-xs">
               {isSelf
                 ? t('chat.empty.saved')
-                : t('chat.empty.peer', { name: headerName })}
+                : readOnlyHere
+                  ? t('chat.empty.readonly')
+                  : t('chat.empty.peer', { name: headerName })}
             </div>
+            {/* No invitation to say hello where the composer is a notice: in an
+                owner-only group the button filled a composer that is not there,
+                so it did nothing at all. */}
+            {!readOnlyHere && (
             <button
               type="button"
               onClick={() => {
@@ -2331,6 +2342,7 @@ export function Chat() {
             >
               {isSelf ? t('chat.empty.cta_saved') : t('chat.empty.cta')}
             </button>
+            )}
           </div>
         )}
         <ul ref={contentRef} className="space-y-2">

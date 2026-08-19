@@ -4,7 +4,8 @@
 // (byte-identical between them) — see docs/web-multidevice-plan.md. v=2 reuses
 // the SAME outer ECIES as v=1 (crypto.ts), changing only:
 //   - HKDF info "RCQ-1to1-v1" -> "RCQ-1to1-v2"
-//   - inner {from,spub,sig,env}  ->  {from, kind:"prekey"|"signal", msg:b64(libsignal ct)}
+//   - inner {from,spub,sig,env}  ->  {from, kind:"prekey"|"signal", msg:b64(libsignal ct),
+//     dev?:<sender device id, omitted when 1>}
 //     (no Ed25519 sig — the libsignal session authenticates the sender)
 //
 // `WebSignalDevice` is the per-device session/store manager: it owns this
@@ -42,6 +43,11 @@ import { bytesToB64, b64ToBytes, concat, encodeEnvelopeBytes, type Envelope } fr
 const HKDF_INFO_V2 = new TextEncoder().encode('RCQ-1to1-v2')
 const WIRE_VERSION_V2 = 2
 
+/// libsignal deviceId of an account's PRIMARY device — the one whose bundle
+/// lives in the account's single `POST /keys/bundle` slot. Secondary devices
+/// are numbered by the island, from 2 up.
+export const PRIMARY_DEVICE_ID = 1
+
 // Memoised one-time WASM instantiation. Safe to await many times.
 let _wasmReady: Promise<void> | null = null
 export function ensureWasm(): Promise<void> {
@@ -72,6 +78,10 @@ interface InnerV2 {
   from: number
   kind: 'prekey' | 'signal'
   msg: string
+  /// Which of the SENDER's devices holds the other half of this ratchet. The
+  /// receiver addresses the session by it. Omitted for device 1: every build in
+  /// the field reads an absent `dev` as the primary device.
+  dev?: number
 }
 
 export function outerUnwrapV2(payloadB64: string, myOuterPriv: Uint8Array, myOuterPub: Uint8Array): InnerV2 {
@@ -250,22 +260,26 @@ export class WebSignalDevice {
     const ct = await encryptMessage(envBytes, this.addr(peerUin, peerDeviceId), this.localAddr, this.sessionStore, this.identityStore)
     this.markSession(peerUin, peerDeviceId)
     const inner: InnerV2 = { from: this.uin, kind: ct.message_type === 3 ? 'prekey' : 'signal', msg: bytesToB64(ct.body) }
+    if (this.deviceId !== PRIMARY_DEVICE_ID) inner.dev = this.deviceId
     return outerWrapV2(new TextEncoder().encode(JSON.stringify(inner)), peerOuterPub)
   }
 
   /// Decrypt an inbound v=2 payload addressed to THIS device. The sender's UIN
   /// is read from the unwrapped inner envelope (`inner.from`) — the receiver
-  /// doesn't need to know it in advance (sealed sender). `senderUin` may be
-  /// passed to override/pin it; `senderDeviceId` defaults to 1 (the only case
-  /// today — multi-device SENDERS will add a from_device field, see the plan).
-  async decrypt(payloadB64: string, senderUin?: number, senderDeviceId = 1): Promise<{ senderUIN: number; envelope: Envelope }> {
+  /// doesn't need to know it in advance (sealed sender). So is the sender's
+  /// DEVICE (`inner.dev`, absent = 1): a ratchet belongs to one pair of
+  /// devices, so a session addressed as (uin, 1) for a message the peer's
+  /// second device sent has no state to decrypt with. Both may be passed to
+  /// override/pin them.
+  async decrypt(payloadB64: string, senderUin?: number, senderDeviceId?: number): Promise<{ senderUIN: number; envelope: Envelope }> {
     const inner = outerUnwrapV2(payloadB64, this.outerPriv, this.outerPub)
     const from = senderUin ?? inner.from
+    const fromDevice = senderDeviceId ?? inner.dev ?? PRIMARY_DEVICE_ID
     const type = inner.kind === 'prekey' ? 3 : 2
     const plaintext = await decryptMessage(
       b64ToBytes(inner.msg),
       type,
-      this.addr(from, senderDeviceId),
+      this.addr(from, fromDevice),
       this.localAddr,
       this.sessionStore,
       this.identityStore,
@@ -273,7 +287,7 @@ export class WebSignalDevice {
       this.signedStore,
       this.kyberStore,
     )
-    this.markSession(from, senderDeviceId)
+    this.markSession(from, fromDevice)
     const envelope = JSON.parse(new TextDecoder().decode(plaintext)) as Envelope
     return { senderUIN: inner.from, envelope }
   }

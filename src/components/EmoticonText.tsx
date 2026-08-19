@@ -142,8 +142,13 @@ export function EmoticonText({ text, emoticonSize = 18, className = '', mention 
             src={emoticonAssetURL(tok.asset)}
             alt={tok.code}
             title={tok.code}
-            style={{ width: side, height: side }}
-            className="inline-block align-middle mx-0.5 object-contain"
+            // Height only: the kolobok set is not square (glyphs run from
+            // 20x20 to 38x27), and a square box shrinks a wide one to fit,
+            // so a line of smileys came out visibly uneven. Fixing the
+            // height and letting the width follow the aspect ratio is what
+            // iOS does, and it keeps the text line steady either way.
+            style={{ height: side, width: 'auto' }}
+            className="inline-block align-middle mx-0.5"
             draggable={false}
           />
         )

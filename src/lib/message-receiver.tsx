@@ -307,6 +307,11 @@ function drainPrimaryQueue(identity: WebIdentity, catchUp: boolean): Promise<voi
       // copies that were encrypted for a sibling device of this account, which
       // no ratchet here can open.
       const myDev = await myDeviceId(identity)
+      // ⚠ No id, no drain. Draining under a guessed one asks for another
+      // device's rows — unreadable here — and then acks a cursor computed for
+      // that device, which is how a backlog disappears without being read. The
+      // queue keeps everything until this install knows which device it is.
+      if (myDev === null) return
       const res = await fetchWithTimeout(`${identity.apiBase}/messages/queue?ack=1&dev=${myDev}`, {
         headers: { Authorization: `Bearer ${identity.jwt}` },
       })
@@ -350,7 +355,10 @@ function drainPrimaryQueue(identity: WebIdentity, catchUp: boolean): Promise<voi
         // messages for good.
         await flushHistory()
         // Best-effort, like Android: a lost ack redelivers, the dedup absorbs.
-        await fetchWithTimeout(`${identity.apiBase}/messages/queue/ack`, {
+        // ⚠ The SAME `dev` the drain above was served with. The island advances
+        // the cursor over the contiguous prefix of what it handed THAT device;
+        // computing that prefix over another device's rows wedges the queue.
+        await fetchWithTimeout(`${identity.apiBase}/messages/queue/ack?dev=${myDev}`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${identity.jwt}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ direct_ids: directIds, group_ids: groupIds }),
@@ -457,7 +465,10 @@ export function MessageReceiver() {
       if (catchingUp) beginCatchUp()
       await drainBackupQueues(identity, async (row, host) => {
         if (cancelled) return
-        const got = await decryptIncoming(identity, row.payload)
+        // ⚠ Swallowed here, unlike the primary drain: this fetch is the legacy
+        // ack-less one, so the island has already let go of the whole page. A
+        // throw would abandon the rows behind this one for good.
+        const got = await decryptIncoming(identity, row.payload).catch(() => null)
         if (!got) return
         // A group row in a BACKUP mailbox = that island also hosts a group we
         // joined (same identity, same mailbox) — alias it like the visited poll.
@@ -494,7 +505,7 @@ export function MessageReceiver() {
       if (catchingUp) beginCatchUp()
       await drainVisitedQueues(identity, async (row, host) => {
         if (cancelled) return
-        const got = await decryptIncoming(identity, row.payload)
+        const got = await decryptIncoming(identity, row.payload).catch(() => null) // ack-less fetch, as above
         if (!got) return
         const gid = typeof row.group_id === 'number' ? aliasFor(host, row.group_id) : row.group_id
         route(got.senderUIN, got.senderHost, got.envelope, gid, identity.uin, hostOf(identity.apiBase), got.senderSigningKey, identity)
@@ -528,9 +539,13 @@ export function MessageReceiver() {
       // device is dropped here. It is queued for that device, not for this one.
       const toDevice = ev.to_device_id
       if (typeof toDevice === 'number' && toDevice !== currentDeviceId()) return
-      void decryptIncoming(identity, payload).then((got) => {
-        if (got) route(got.senderUIN, got.senderHost, got.envelope, ev.group_id, identity.uin, hostOf(identity.apiBase), got.senderSigningKey, identity)
-      })
+      void decryptIncoming(identity, payload)
+        .then((got) => {
+          if (got) route(got.senderUIN, got.senderHost, got.envelope, ev.group_id, identity.uin, hostOf(identity.apiBase), got.senderSigningKey, identity)
+        })
+        // No device to open it with yet. The same envelope is in the queue, and
+        // the drain that runs once there IS one delivers it.
+        .catch(() => {})
     }
     // Every sealed 1:1 envelope_type a peer / our own other device can push.
     // skdm/sknack ride this same path and route() has handlers for both, but

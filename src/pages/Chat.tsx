@@ -42,7 +42,7 @@ import {
   noteOwnEnvelope,
   type PollRow,
 } from '../lib/incoming-store'
-import { sendV2 } from '../lib/signal-device'
+import { PartialFanOutError, sendV2 } from '../lib/signal-device'
 import { getCrossIsland } from '../lib/crossisland-store'
 import { deliverCrossIsland } from '../lib/federation-send'
 import { depositToExtraHomes } from '../lib/multihome'
@@ -899,7 +899,15 @@ export function Chat() {
         // (reached === 0 — e.g. a Stage-2-only account), fall back to the
         // v=1 ECIES envelope so the message still goes through.
         try {
-          const reached = await sendV2(identity, peer.uin, envelope, etype).catch(() => 0)
+          const reached = await sendV2(identity, peer.uin, envelope, etype).catch((e) => {
+            // Everything else means v=2 did not happen at all, and the v=1
+            // envelope below is the way through. A fan-out that reached only
+            // SOME of the peer's devices is not that: the v=1 copy would reach
+            // the device that already has this message and still not the one
+            // that missed it. It is a failed send, and the retry fans out again.
+            if (e instanceof PartialFanOutError) throw new Error(t('chat.error.send_failed'))
+            return 0
+          })
           if (reached === 0) {
             const wireB64 = encryptV1(envelope, identity, peerBundleFrom(peer))
             await Api.sendSealed(identity, peer.uin, wireB64, etype)

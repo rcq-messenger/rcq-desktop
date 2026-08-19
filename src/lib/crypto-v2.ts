@@ -130,6 +130,25 @@ export interface BundleUpload {
   one_time_prekeys: Array<{ id: number; public: string }>
 }
 
+/// A peer device's sealed-sender key, and when its bundle was read. The key is
+/// not a fact forever — the peer publishes a new one when their install is
+/// replaced — and a wrong one is invisible from this side: the island takes the
+/// ciphertext all the same and the device simply never opens it. So the age
+/// travels with the key, and the caller decides how old is too old.
+export interface OuterKey {
+  pub: Uint8Array
+  at: number
+  /// The identity key that device published alongside this outer key.
+  ///
+  /// Kept so a re-read of the bundle can tell a rotated sealed-sender key
+  /// (refresh the key, leave the ratchet alone) from a REPLACED INSTALL
+  /// (the peer reinstalled; the session we hold is against an identity that
+  /// no longer exists, and every copy sent on it is unreadable). Without it
+  /// the two look identical from here, and the second one loses messages
+  /// until the peer happens to write first.
+  ik?: string
+}
+
 // -----------------------------------------------------------
 // Per-device session/store manager.
 // -----------------------------------------------------------
@@ -150,12 +169,16 @@ export class WebSignalDevice {
   readonly kyberStore: WasmInMemKyberPreKeyStore
   private localAddr: WasmProtocolAddress
 
-  // Captured prekey records (for persistence) + the set of peer addresses we
-  // hold a session with, so serialize() can export exactly those sessions.
+  // Captured prekey records (for persistence) + the peer addresses we hold a
+  // session with, so serialize() can export exactly those sessions. The value
+  // is that peer device's sealed-sender key when we have seen its bundle:
+  // holding it is what lets a later send skip the bundle fetch entirely.
   private signedRec?: { id: number; rec: Uint8Array }
   private kyberRec?: { id: number; rec: Uint8Array }
   private prekeyRecs: Array<{ id: number; rec: Uint8Array }> = []
-  private sessionPeers = new Set<string>() // "uin:device"
+  private sessionPeers = new Map<string, OuterKey | undefined>() // "uin:device" -> outer key
+  /// The bundle this device published, kept so a republish is the SAME bundle.
+  private bundle?: BundleUpload
 
   private constructor(uin: number, deviceId: number, outerPriv: Uint8Array, idkp?: WasmIdentityKeyPair, regId?: number) {
     this.uin = uin
@@ -185,8 +208,38 @@ export class WebSignalDevice {
     return new WebSignalDevice(uin, deviceId, outerPriv ?? x25519.utils.randomPrivateKey())
   }
 
-  private markSession(uin: number, deviceId: number): void {
-    this.sessionPeers.add(`${uin}:${deviceId}`)
+  private markSession(uin: number, deviceId: number, outer?: OuterKey): void {
+    const key = `${uin}:${deviceId}`
+    // An encrypt/decrypt knows the address but not the peer's outer key, so it
+    // must not erase one a bundle fetch already recorded.
+    this.sessionPeers.set(key, outer ?? this.sessionPeers.get(key))
+  }
+
+  /// The peer device's sealed-sender key, when this device already holds a
+  /// session with it. A sender that has both needs neither the bundle (fetching
+  /// one consumes a one-time prekey of the peer) nor a second X3DH.
+  knownTarget(uin: number, deviceId: number): OuterKey | undefined {
+    return this.sessionPeers.get(`${uin}:${deviceId}`)
+  }
+
+  /// Record a peer device's sealed-sender key on its own, leaving the session
+  /// alone. Re-reading a bundle to pick up a rotated key must not drag the
+  /// ratchet along: X3DH again would restart it and eat one of the peer's
+  /// one-time prekeys for a key exchange that already happened.
+  noteTarget(uin: number, deviceId: number, pub: Uint8Array, ik?: string): void {
+    if (pub.length === 32) this.markSession(uin, deviceId, { pub, at: Date.now(), ik })
+  }
+
+  /// Forget a peer device's sealed-sender key, keeping the session. The next
+  /// send to that device reads its bundle again.
+  forgetTarget(uin: number, deviceId: number): void {
+    const key = `${uin}:${deviceId}`
+    if (this.sessionPeers.has(key)) this.sessionPeers.set(key, undefined)
+  }
+
+  /// Whether this device already holds a libsignal session with a peer device.
+  hasSession(uin: number, deviceId: number): Promise<boolean> {
+    return this.sessionStore.has_session(this.addr(uin, deviceId))
   }
 
   private addr(uin: number, deviceId: number): WasmProtocolAddress {
@@ -208,23 +261,32 @@ export class WebSignalDevice {
     return bytesToB64(this.idkp.public_key.serialize())
   }
 
-  /// Generate this device's published bundle (signed + kyber prekey + an OPK
-  /// pool) and return the upload payload. Side effect: the keys are saved into
-  /// this device's stores so it can answer X3DH from peers.
+  /// This device's published bundle (signed + kyber prekey + an OPK pool).
+  /// Side effect on the FIRST call: the keys are saved into this device's
+  /// stores so it can answer X3DH from peers.
+  ///
+  /// ⚠ Built once and then remembered, because the prekey ids are fixed (1, and
+  /// 1..n for the pool). Building it again mints different keys under those
+  /// same ids, and a peer holding the bundle published earlier then opens its
+  /// X3DH against an id whose key this device no longer has: the message is
+  /// undecryptable and the sender never learns it. A republish — the primary
+  /// slot being re-claimed — has to be the SAME bundle peers already hold.
   async buildBundle(opkCount = 20): Promise<BundleUpload> {
+    if (this.bundle) return this.bundle
     const spk = await generateSignedPreKey(1, this.idkp, this.signedStore)
     const kpk = await generateKyberPreKey(1, this.idkp, this.kyberStore)
     const opks = await generatePreKeys(1, opkCount, this.preKeyStore)
     this.signedRec = { id: spk.id, rec: spk.record }
     this.kyberRec = { id: kpk.id, rec: kpk.record }
     this.prekeyRecs = opks.map((p) => ({ id: p.id, rec: p.record }))
-    return {
+    this.bundle = {
       signal_identity_key: bytesToB64(this.idkp.public_key.serialize()),
       registration_id: this.regId,
       signed_prekey: { id: spk.id, public: bytesToB64(spk.public_key), signature: bytesToB64(spk.signature) },
       kyber_prekey: { id: kpk.id, public: bytesToB64(kpk.public_key), signature: bytesToB64(kpk.signature) },
       one_time_prekeys: opks.map((p) => ({ id: p.id, public: bytesToB64(p.public_key) })),
     }
+    return this.bundle
   }
 
   /// Establish an outbound session with a peer device from its fetched bundle
@@ -249,6 +311,9 @@ export class WebSignalDevice {
       this.sessionStore,
       this.identityStore,
     )
+    // Legacy rows can carry an empty sealed_sender_pub; only a real key is
+    // worth remembering, the rest re-read the bundle.
+    this.noteTarget(peer.uin, peer.device_id, b64ToBytes(peer.sealed_sender_pub || ''), peer.signal_identity_key)
     this.markSession(peer.uin, peer.device_id)
   }
 
@@ -297,11 +362,11 @@ export class WebSignalDevice {
   /// re-snapshot after each). Uint8Array fields survive IndexedDB structured
   /// clone, so no base64 needed.
   async serialize(): Promise<DeviceBlob> {
-    const sessions: Array<{ uin: number; device: number; rec: Uint8Array }> = []
-    for (const key of this.sessionPeers) {
+    const sessions: DeviceBlob['sessions'] = []
+    for (const [key, outer] of this.sessionPeers) {
       const [u, d] = key.split(':').map(Number)
       const rec = await this.sessionStore.export_session(this.addr(u, d))
-      if (rec) sessions.push({ uin: u, device: d, rec })
+      if (rec) sessions.push({ uin: u, device: d, rec, outer: outer?.pub, outerAt: outer?.at })
     }
     return {
       uin: this.uin,
@@ -312,6 +377,7 @@ export class WebSignalDevice {
       signed: this.signedRec,
       kyber: this.kyberRec,
       prekeys: this.prekeyRecs,
+      bundle: this.bundle,
       sessions,
     }
   }
@@ -327,11 +393,14 @@ export class WebSignalDevice {
     for (const p of blob.prekeys) await dev.preKeyStore.import_pre_key(p.id, p.rec)
     for (const s of blob.sessions) {
       await dev.sessionStore.import_session(dev.addr(s.uin, s.device), s.rec)
-      dev.markSession(s.uin, s.device)
+      // A blob written before the key carried its age says nothing about how
+      // old this one is, and an outer key of unknown age is one to re-read.
+      dev.markSession(s.uin, s.device, s.outer && s.outerAt ? { pub: s.outer, at: s.outerAt } : undefined)
     }
     dev.signedRec = blob.signed
     dev.kyberRec = blob.kyber
     dev.prekeyRecs = blob.prekeys
+    dev.bundle = blob.bundle
     return dev
   }
 }
@@ -346,5 +415,12 @@ export interface DeviceBlob {
   signed?: { id: number; rec: Uint8Array }
   kyber?: { id: number; rec: Uint8Array }
   prekeys: Array<{ id: number; rec: Uint8Array }>
-  sessions: Array<{ uin: number; device: number; rec: Uint8Array }>
+  /// The bundle this device published, so a republish is not a re-key. Absent
+  /// in blobs written before it was kept.
+  bundle?: BundleUpload
+  /// `outer` is that peer device's sealed-sender key, `outerAt` when its bundle
+  /// was read. Absent in blobs written before they were kept, and in sessions
+  /// this device only ever received on — a send to those resolves the bundle
+  /// once, as it always did.
+  sessions: Array<{ uin: number; device: number; rec: Uint8Array; outer?: Uint8Array; outerAt?: number }>
 }

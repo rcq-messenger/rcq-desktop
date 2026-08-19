@@ -6,7 +6,7 @@
 import { useEffect } from 'react'
 import { useIdentity } from './identity-context'
 import { useWS } from './ws'
-import { decryptIncoming, getDevice, sendV2 } from './signal-device'
+import { currentDeviceId, decryptIncoming, getDevice, myDeviceId, sendV2 } from './signal-device'
 import { addIncoming, addGroupIncoming, hydrateIncoming, beginCatchUp, endCatchUp, flushHistory } from './incoming-store'
 import { fileOutgoingCarbon } from './outgoing-store'
 import { publishHomeIslandRecord } from './federation-publish'
@@ -303,16 +303,31 @@ function drainPrimaryQueue(identity: WebIdentity, catchUp: boolean): Promise<voi
     // said all of it.
     if (catchUp) beginCatchUp()
     try {
-      const res = await fetchWithTimeout(`${identity.apiBase}/messages/queue?ack=1`, {
+      // Drain as OUR libsignal device: the island then withholds the fan-out
+      // copies that were encrypted for a sibling device of this account, which
+      // no ratchet here can open.
+      const myDev = await myDeviceId(identity)
+      const res = await fetchWithTimeout(`${identity.apiBase}/messages/queue?ack=1&dev=${myDev}`, {
         headers: { Authorization: `Bearer ${identity.jwt}` },
       })
       if (!res.ok) return
-      const rows = (await res.json()) as Array<{ id: number; envelope_type: string; payload: string; group_id: number | null }>
+      const rows = (await res.json()) as Array<{
+        id: number
+        envelope_type: string
+        payload: string
+        group_id: number | null
+        to_device_id?: number | null
+      }>
       const directIds: number[] = []
       const groupIds: number[] = []
       for (const r of rows) {
         try {
-          if (r.envelope_type === 'gmsg' && typeof r.group_id === 'number') {
+          if (typeof r.to_device_id === 'number' && r.to_device_id !== myDev) {
+            // A fan-out copy for a sibling device of this account: it was
+            // encrypted against a ratchet that lives there, so no decrypt is
+            // attempted and it is acked away below. An island that predates the
+            // `dev` filter hands out every copy, so this is not dead code.
+          } else if (r.envelope_type === 'gmsg' && typeof r.group_id === 'number') {
             // Sender-keys broadcast: not a sealed envelope — decode via the chain.
             const got = await handleGmsg(identity, r.payload, r.group_id)
             if (got) route(got.senderUIN, undefined, got.envelope, r.group_id, identity.uin, hostOf(identity.apiBase), undefined, identity)
@@ -363,15 +378,16 @@ export function MessageReceiver() {
   const { identity } = useIdentity()
   const { on, connected } = useWS()
 
-  // Provision (publish our libsignal bundle so peers can reach us) + drain the
-  // offline queue whenever we (re)connect.
+  // Provision (publish our libsignal bundle so peers can reach us, as this
+  // account's primary device or as a secondary one alongside the phone) + drain
+  // the offline queue whenever we (re)connect.
   useEffect(() => {
     if (!identity || !connected) return
     void (async () => {
       try {
-        await getDevice(identity) // provision-once (publishes bundle)
+        await getDevice(identity) // provision-once (publishes/registers a bundle)
       } catch {
-        /* provisioning failed (e.g. linked account whose bundle is the phone's) — skip */
+        /* the island could not say who owns the primary slot — v=1 still works */
       }
       // Federation F1: publish our signed home-island record. Fire-and-forget —
       // publishHomeIslandRecord swallows all errors, so it can never block the
@@ -507,6 +523,11 @@ export function MessageReceiver() {
     const handle = (ev: Parameters<Parameters<typeof on>[1]>[0]) => {
       const payload = ev.payload as string | undefined
       if (!payload) return
+      // Live delivery is NOT filtered by the island — every socket of the
+      // account sees every copy of a fan-out — so a copy addressed to a sibling
+      // device is dropped here. It is queued for that device, not for this one.
+      const toDevice = ev.to_device_id
+      if (typeof toDevice === 'number' && toDevice !== currentDeviceId()) return
       void decryptIncoming(identity, payload).then((got) => {
         if (got) route(got.senderUIN, got.senderHost, got.envelope, ev.group_id, identity.uin, hostOf(identity.apiBase), got.senderSigningKey, identity)
       })

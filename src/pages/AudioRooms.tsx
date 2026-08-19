@@ -142,7 +142,7 @@ export default function AudioRooms() {
 
       {sheet && (
         <NameSheet
-          title={sheet.mode === 'create' ? t('rooms.create') : t('rooms.rename')}
+          title={sheet.mode === 'create' ? t('rooms.create.title') : t('rooms.rename')}
           initial={sheet.mode === 'rename' ? sheet.room.name : ''}
           confirm={sheet.mode === 'create' ? t('rooms.create') : t('common.save')}
           onClose={() => setSheet(null)}

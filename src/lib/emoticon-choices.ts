@@ -11,7 +11,14 @@
 // the two with `arr.length ? arr : DEFAULT`.
 
 import { useEffect, useState } from 'react'
-import { DEFAULT_REACTIONS, PANEL_CAP, REACTION_CAP } from './emoticons'
+import { DEFAULT_REACTIONS, PALETTE, PANEL_CAP, REACTION_CAP } from './emoticons'
+
+// Only assets a CURRENT pack can draw. A panel curated before a pack was
+// retired keeps its asset names, and a name with no glyph behind it renders
+// as bare text (reported 2026-08-20, the day the old pack left). Filtered on
+// READ, so the stored value heals on the next write without a migration.
+const VALID_ASSETS = new Set(PALETTE.map((p) => p.asset))
+const onlyValid = (arr: string[]) => arr.filter((a) => VALID_ASSETS.has(a))
 
 const panelKey = (uin: number) => `rcq.web.emoticons.panel.${uin}`
 const reactionKey = (uin: number) => `rcq.web.emoticons.reactions.${uin}`
@@ -36,10 +43,15 @@ function write(key: string, arr: string[]) {
 }
 
 export function getPanelAssets(uin: number): string[] {
-  return read(panelKey(uin)) ?? []
+  return onlyValid(read(panelKey(uin)) ?? [])
 }
 export function getReactionAssets(uin: number): string[] {
-  return read(reactionKey(uin)) ?? [...DEFAULT_REACTIONS]
+  const stored = read(reactionKey(uin))
+  if (stored == null) return [...DEFAULT_REACTIONS]
+  const filtered = onlyValid(stored)
+  // A set the pack retirement emptied is not the user's "cleared them all":
+  // fall back to the defaults rather than leaving a bare reaction bar.
+  return filtered.length === 0 && stored.length > 0 ? [...DEFAULT_REACTIONS] : filtered
 }
 
 // Remove if present; append (preserving pick order) if absent and under the
@@ -71,8 +83,10 @@ function useStoredChoice(key: string, fallback: () => string[]): string[] {
   return read(key) ?? fallback()
 }
 export function usePanelAssets(uin: number): string[] {
-  return useStoredChoice(panelKey(uin), () => [])
+  useStoredChoice(panelKey(uin), () => [])
+  return getPanelAssets(uin)
 }
 export function useReactionAssets(uin: number): string[] {
-  return useStoredChoice(reactionKey(uin), () => [...DEFAULT_REACTIONS])
+  useStoredChoice(reactionKey(uin), () => [...DEFAULT_REACTIONS])
+  return getReactionAssets(uin)
 }

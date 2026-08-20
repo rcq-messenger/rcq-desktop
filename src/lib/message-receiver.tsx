@@ -461,6 +461,39 @@ export function MessageReceiver() {
     }
   }, [identity, connected])
 
+  // The socket being OPEN is not proof the queue is empty. A row deposited in
+  // the moment of a reconnect — or a live frame the island failed to deliver —
+  // sits above our cursor with nothing scheduled to fetch it: the connect
+  // drain has passed, and the offline poll above is gated on the socket being
+  // DOWN. So a stable, healthy session meant that row waited forever
+  // (fan-out live test, 2026-08-20). A slow sweep behind the healthy socket
+  // picks those up; the id dedup absorbs the overlap with everything the
+  // socket already delivered. 90s + per-tab jitter: cheap for the island
+  // (a watermark query), desynchronised across tabs, and Chrome throttling
+  // it further in background tabs is fine — slower is still not never.
+  useEffect(() => {
+    if (!identity || !connected) return
+    const handle = setInterval(
+      () => void drainPrimaryQueue(identity, false),
+      90_000 + Math.floor(Math.random() * 15_000),
+    )
+    return () => clearInterval(handle)
+  }, [identity, connected])
+
+  // And the moment the tab comes back to the foreground, sweep once right
+  // away: a background tab's socket dies in ~30-50s (throttled timers starve
+  // the ping), so "returned to the tab" very often means "something queued
+  // while the socket flapped" — catching up NOW beats waiting for the next
+  // interval to come around.
+  useEffect(() => {
+    if (!identity) return
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void drainPrimaryQueue(identity, false)
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [identity])
+
   // Multihoming v1: poll the BACKUP islands' queues. Deliberately NOT gated on
   // the primary's WS being connected — when the primary island is down, this
   // loop IS the delivery path. Copies of primary-delivered messages are

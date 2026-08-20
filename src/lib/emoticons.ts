@@ -198,12 +198,10 @@ export const ENTRIES: EmoticonEntry[] = (() => {
 export const PALETTE: PaletteEntry[] = (() => {
   const seen = new Set<string>()
   const out: PaletteEntry[] = []
-  for (const [asset, name] of RAW) {
-    if (!seen.has(asset)) {
-      seen.add(asset)
-      out.push({ asset, name, primaryCode: `:${asset}:` })
-    }
-  }
+  // The CURRENT pack, and only it. The retired set stays bundled and stays
+  // tokenizable (see ENTRIES) so a `:smile:` sent last week still draws a
+  // smiley instead of turning into raw text — but it is not offered any more,
+  // or the grid would mix two drawing styles.
   for (const asset of STANDARD_PACK) {
     if (!seen.has(asset)) {
       seen.add(asset)
@@ -218,7 +216,7 @@ export const PALETTE: PaletteEntry[] = (() => {
 /// Used ONLY when the stored reactions key is ABSENT; a stored `[]` is an
 /// intentional empty set and is respected (see emoticon-choices.ts).
 export const DEFAULT_REACTIONS: readonly string[] = [
-  'good', 'give_heart', 'biggrin', 'shok', 'cray', 'mad',
+  'good', 'give_heart', 'laugh1', 'scare', 'cray', 'ireful1',
 ] as const
 
 /// Caps: the composer panel holds up to 40 emoticons, reactions up to 6

@@ -22,7 +22,15 @@ import { statePath } from './state'
 /// Envelope kinds that are a MESSAGE (rendered, receipted, kept in history).
 /// Everything else is control traffic: receipts, reactions, edits, sender-key
 /// plumbing, federation gossip — reported on stderr, never stored in v1.
-const CONTENT_KINDS = new Set(['text', 'photo', 'video', 'file', 'location', 'poll'])
+export const CONTENT_KINDS = new Set(['text', 'photo', 'video', 'file', 'location', 'poll'])
+
+// Where a rendered line goes. Plain stdout for `send`/`watch` (stdout is
+// data); interactive mode swaps in a printer that clears the readline prompt,
+// writes the line, and redraws the prompt with whatever was being typed.
+let emit: (line: string) => void = (line) => process.stdout.write(line)
+export function setEmitter(fn: (line: string) => void): void {
+  emit = fn
+}
 
 export function historyPath(uin: number): string {
   return statePath(`history-${uin}.jsonl`)
@@ -57,7 +65,7 @@ function ensureSeen(uin: number): void {
   }
 }
 
-function stamp(): string {
+export function stamp(): string {
   return new Date().toTimeString().slice(0, 8)
 }
 
@@ -92,7 +100,7 @@ interface HistoryRecord {
   envelope: Envelope
 }
 
-function appendHistory(uin: number, rec: HistoryRecord): void {
+export function appendHistory(uin: number, rec: HistoryRecord): void {
   fs.appendFileSync(historyPath(uin), JSON.stringify(rec) + '\n', { mode: 0o600 })
 }
 
@@ -100,6 +108,9 @@ export interface IngestResult {
   /// targetIDs of delivery/read receipts seen (the send command watches for
   /// its own message id here).
   receiptTargets: string[]
+  /// UIN of the last PEER whose content message was ingested — interactive
+  /// mode's auto-reply target when nobody was picked with /to yet.
+  lastPeerFrom?: number
 }
 
 interface Decrypted {
@@ -133,7 +144,7 @@ export async function ingestDecrypted(
     }
     const dest = c.to != null ? `#${c.to}` : c.gid != null ? `group ${c.gid}` : '?'
     appendHistory(identity.uin, { at: new Date().toISOString(), from: identity.uin, to: c.to ?? undefined, envelope: inner })
-    process.stdout.write(`[${stamp()}] me -> ${dest}: ${describeEnvelope(inner)}\n`)
+    emit(`[${stamp()}] me -> ${dest}: ${describeEnvelope(inner)}\n`)
     return
   }
   if (env.kind === 'read' || env.kind === 'delivered') {
@@ -162,7 +173,8 @@ export async function ingestDecrypted(
     host: got.senderHost,
     envelope: env,
   })
-  process.stdout.write(`[${stamp()}] #${got.senderUIN}: ${describeEnvelope(env)}\n`)
+  emit(`[${stamp()}] #${got.senderUIN}: ${describeEnvelope(env)}\n`)
+  if (got.senderUIN !== identity.uin) out.lastPeerFrom = got.senderUIN
   // Tell the sender it ARRIVED (moves their second tick). 1:1 content from a
   // peer only — a group message has as many recipients as members and one
   // tick cannot stand for all of them. The history append above already

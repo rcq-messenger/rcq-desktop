@@ -10,6 +10,7 @@ import { openValue, pinSealActive, sealExistingHistory, sealValue } from './pin-
 import { playSound } from './sounds'
 import { markMention, mentionsMe } from './mentions'
 import { contactsCache, snapshotFor } from './contacts-cache'
+import { applyReceiptToOutgoing } from './outgoing-store'
 
 export interface IncomingRow {
   id: string // envelope UUID
@@ -636,6 +637,12 @@ function applyEditTo(map: Map<number, IncomingRow[]>, key: number, targetID: str
 }
 
 export function addIncoming(from: number, env: Envelope): void {
+  // The peer's delivered/read receipt for OUR messages: second tick / read
+  // tint on the outgoing rows of that thread (#636/#637). Never a row.
+  if (env.kind === 'delivered' || env.kind === 'read') {
+    applyReceiptToOutgoing(from, env.kind, env.targetIDs)
+    return
+  }
   // A reaction the peer placed on one of OUR messages (or removed) — apply
   // it to the reactions store rather than creating a message row.
   if (env.kind === 'reaction') {

@@ -66,7 +66,9 @@ import {
   savePersisted,
   appendToThreadLog,
   setOutgoingSink,
+  setReceiptSink,
 } from '../lib/outgoing-store'
+import { noteThreadViewed } from '../lib/read-receipts'
 import { buildGroupDualSend, encryptGroupEnvelope } from '../lib/group-crypto'
 import { parseGroupInvite } from '../lib/group-invite'
 import { PollComposerSheet } from '../components/PollComposerSheet'
@@ -781,13 +783,44 @@ export function Chat() {
   // Register a live sink so multi-device carbons (a message this user sent
   // from another device) for the OPEN thread appear instantly — merged into
   // state, deduped by id. Carbons for other threads go to localStorage.
+  // The receipt sink rides along: the open thread owns its rows in state, so
+  // a delivered/read receipt has to land here (the store's own localStorage
+  // write would be overwritten by the persist effect above) (#637).
   useEffect(() => {
     if (!persistKey) return
     setOutgoingSink(persistKey, (row) =>
       setOutgoing((rows) => (rows.some((r) => r.id === row.id) ? rows : [...rows, row])),
     )
-    return () => setOutgoingSink(null, null)
+    setReceiptSink((ids, state) => {
+      const idSet = new Set(ids)
+      setOutgoing((rows) =>
+        rows.map((r) =>
+          idSet.has(r.id) && (r.state === 'sent' || (r.state === 'delivered' && state === 'read'))
+            ? { ...r, state }
+            : r,
+        ),
+      )
+    })
+    return () => {
+      setOutgoingSink(null, null)
+      setReceiptSink(null)
+    }
   }, [persistKey])
+
+  // The sending half of read receipts (#636): the peer's messages in a 1:1
+  // thread count as read while it is open on a visible tab. Local island
+  // only in v1 (the receipt path is same-island API + sessions), and never
+  // for Saved Messages. Re-runs on new arrivals and on the tab coming back.
+  useEffect(() => {
+    if (!identity || isGroup || isSelf || peerUIN == null || peer?.host) return
+    const announce = () => {
+      if (document.visibilityState !== 'visible') return
+      noteThreadViewed(identity, peerUIN, peerIncoming)
+    }
+    announce()
+    document.addEventListener('visibilitychange', announce)
+    return () => document.removeEventListener('visibilitychange', announce)
+  }, [identity, isGroup, isSelf, peerUIN, peer?.host, peerIncoming])
 
   // Auto-clear the transient notice (forward toast) after a moment
   // so it doesn't linger on the screen.
@@ -2619,7 +2652,7 @@ export function Chat() {
                       <div className="flex items-center justify-end gap-1 text-[0.625rem] font-mono text-fg-dim">
                         {new Date(row.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         {row.state === 'sending' && <ClockMark />}
-                        {row.state === 'sent' && <TickMark />}
+                        <DeliveryMarks state={row.state} />
                         {row.state === 'failed' && (
                           <>
                             <span className="text-red-500">·{t('chat.delivery.failed')}</span>
@@ -2651,7 +2684,7 @@ export function Chat() {
                       <div className="flex items-center justify-end gap-1 text-[0.625rem] font-mono text-fg-dim">
                         {new Date(row.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         {row.state === 'sending' && <ClockMark />}
-                        {row.state === 'sent' && <TickMark />}
+                        <DeliveryMarks state={row.state} />
                         {row.state === 'failed' && (
                           <>
                             <span className="text-red-500">·{t('chat.delivery.failed')}</span>
@@ -2721,7 +2754,7 @@ export function Chat() {
                       <div className="flex items-center justify-end gap-1 text-[0.625rem] font-mono text-fg-dim">
                         {new Date(row.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         {row.state === 'sending' && <ClockMark />}
-                        {row.state === 'sent' && <TickMark />}
+                        <DeliveryMarks state={row.state} />
                         {row.state === 'failed' && (
                           <>
                             <span className="text-red-500">·{t('chat.delivery.failed')}</span>
@@ -2755,7 +2788,7 @@ export function Chat() {
                       <div className="flex items-center justify-end gap-1 text-[0.625rem] font-mono text-fg-dim">
                         {new Date(row.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         {row.state === 'sending' && <ClockMark />}
-                        {row.state === 'sent' && <TickMark />}
+                        <DeliveryMarks state={row.state} />
                         {row.state === 'failed' && (
                           <>
                             <span className="text-red-500">·{t('chat.delivery.failed')}</span>
@@ -2838,7 +2871,7 @@ export function Chat() {
                   <div className="flex items-center justify-end gap-1 text-[0.625rem] font-mono text-fg-dim">
                     {new Date(row.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     {row.state === 'sending' && <ClockMark />}
-                    {row.state === 'sent' && <TickMark />}
+                    <DeliveryMarks state={row.state} />
                     {row.state === 'failed' && (
                       <>
                         <span className="text-red-500">·{t('chat.delivery.failed')}</span>
@@ -2865,7 +2898,7 @@ export function Chat() {
                   {/* Floats for the same reason as the incoming side above,
                       anchored right because this column is right-aligned. */}
                   <AnimatePresence>
-                  {showActions && row.state === 'sent' && (
+                  {showActions && (row.state === 'sent' || row.state === 'delivered' || row.state === 'read') && (
                     <ActionMenu align="end" up={actionsUp} max={actionsMax}>
                       {/* Reacting to your own message: the founder's report.
                           The menu listed reply / edit / copy / forward / delete
@@ -3306,7 +3339,7 @@ export function Chat() {
                 if (editingRow) return
                 const last = [...outgoing]
                   .reverse()
-                  .find((r) => r.state === 'sent' && (!r.kind || r.kind === 'text'))
+                  .find((r) => (r.state === 'sent' || r.state === 'delivered' || r.state === 'read') && (!r.kind || r.kind === 'text'))
                 if (last) startEdit(last)
               }}
               onPasteImage={(file) => void sendPhoto(file)}
@@ -3475,15 +3508,40 @@ function ClockMark() {
   )
 }
 
-/// The island has it. Deliberately a SINGLE tick: two ticks mean "they have it"
-/// everywhere anyone has seen them, and this client is never told that — there
-/// is no delivery or read receipt on the web, only sending / sent / failed.
+/// The island has it. A single tick — the peer has said nothing yet.
 function TickMark() {
   return (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="text-accent" aria-hidden>
       <path d="M4 12.5l5 5L20 7" />
     </svg>
   )
+}
+
+/// Two ticks: a device of theirs has it ('delivered') — and on a green tint,
+/// they have SEEN it ('read'). Fed by the peer's receipts (#636/#637); rows
+/// from before receipts existed simply stay at one tick.
+function DoubleTickMark() {
+  return (
+    <svg width="17" height="15" viewBox="0 0 28 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M2 12.5l5 5L18 7" />
+      <path d="M12.5 16l2 1.5L25 7" />
+    </svg>
+  )
+}
+
+/// The delivery ladder after the composer let go: sent -> delivered -> read.
+/// 'sending' and 'failed' keep their own inline markup (clock / retry row).
+function DeliveryMarks({ state }: { state: OutgoingRow['state'] }) {
+  if (state === 'sent') return <TickMark />
+  if (state === 'delivered') return <span className="text-accent"><DoubleTickMark /></span>
+  if (state === 'read') {
+    return (
+      <span className="rounded bg-accent/25 px-0.5 text-accent">
+        <DoubleTickMark />
+      </span>
+    )
+  }
+  return null
 }
 
 function SearchIcon() {

@@ -4,7 +4,8 @@ import App from './App'
 import './index.css'
 import { bypassStatus, installExternalLinkHandler, isTauri } from './lib/desktop'
 import { installFrontRouting, refreshFrontRouting, setFrontHost } from './lib/front'
-import { wipeLocalAccountData } from './lib/auth'
+import { loadStoredIdentity, wipeLocalAccountData } from './lib/auth'
+import { setAccountScope } from './lib/account-scope'
 import { idbClearAll } from './lib/signal-persist'
 import { initFontScale } from './lib/fontscale'
 
@@ -86,6 +87,17 @@ if (!isTauri() && window.location.hostname.startsWith('market.')) {
 }
 
 function mount() {
+  // ⚠ Scope BEFORE the first render, not in IdentityProvider's effect. Any IDB
+  // touch pins the connection to a database name for the page's whole life, and
+  // an effect that runs a beat too late left a QR-link page writing its device
+  // keys into the FLAT database — the next boot read the scoped one, found
+  // nothing, and minted fresh keys over the primary slot (2026-08-20). The
+  // provider still sets the scope again on hydration; this only closes the gap.
+  try {
+    setAccountScope(loadStoredIdentity()?.uin ?? null)
+  } catch {
+    /* unreadable storage — the provider's own boot handles it */
+  }
 
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>

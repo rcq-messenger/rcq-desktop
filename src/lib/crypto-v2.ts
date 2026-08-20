@@ -237,6 +237,7 @@ export class WebSignalDevice {
     if (this.sessionPeers.has(key)) this.sessionPeers.set(key, undefined)
   }
 
+
   /// Whether this device already holds a libsignal session with a peer device.
   hasSession(uin: number, deviceId: number): Promise<boolean> {
     return this.sessionStore.has_session(this.addr(uin, deviceId))
@@ -336,7 +337,7 @@ export class WebSignalDevice {
   /// devices, so a session addressed as (uin, 1) for a message the peer's
   /// second device sent has no state to decrypt with. Both may be passed to
   /// override/pin them.
-  async decrypt(payloadB64: string, senderUin?: number, senderDeviceId?: number): Promise<{ senderUIN: number; envelope: Envelope }> {
+  async decrypt(payloadB64: string, senderUin?: number, senderDeviceId?: number): Promise<{ senderUIN: number; senderDeviceId: number; envelope: Envelope }> {
     const inner = outerUnwrapV2(payloadB64, this.outerPriv, this.outerPub)
     const from = senderUin ?? inner.from
     const fromDevice = senderDeviceId ?? inner.dev ?? PRIMARY_DEVICE_ID
@@ -354,7 +355,10 @@ export class WebSignalDevice {
     )
     this.markSession(from, fromDevice)
     const envelope = JSON.parse(new TextDecoder().decode(plaintext)) as Envelope
-    return { senderUIN: inner.from, envelope }
+    // The sending DEVICE, not just the account: the silence probe needs to know
+    // which of the peer's installs is provably alive, because one of them
+    // answering says nothing about a sibling whose session is dead.
+    return { senderUIN: inner.from, senderDeviceId: fromDevice, envelope }
   }
 
   /// Snapshot this device's full libsignal state for persistence (IndexedDB).

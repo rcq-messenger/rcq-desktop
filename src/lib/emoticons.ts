@@ -39,29 +39,6 @@ export interface PackPalette {
 // is parsed (iOS/Android deliberately ignore typed shortcuts like `:-)` to
 // avoid colliding with URLs/math), so each code list is empty and the `:asset:`
 // form is appended by ENTRIES below. GIFs live in `public/emoticons/`.
-const RAW: Array<[string, string, string[]]> = [
-  ['smile', 'Happy', []], ['biggrin', 'Laughing', []], ['lol', 'LOL', []], ['rofl', 'ROFL', []],
-  ['good', 'Thumbs Up', []], ['give_heart', 'Heart', []], ['man_in_love', 'In Love', []], ['give_rose', 'Rose', []],
-  ['kiss', 'Kiss', []], ['kiss3', 'Smooch', []], ['air_kiss', 'Air Kiss', []], ['blush', 'Embarrassed', []],
-  ['i_am_so_happy', 'So Happy', []], ['dance', 'Dancing', []], ['music', 'Music', []], ['cool', 'Cool', []],
-  ['gamer', 'Gamer', []], ['drinks', 'Cheers', []], ['hi', 'Hi', []], ['bye2', 'Bye', []],
-  ['blum1', 'Tongue', []], ['mocking', 'Teasing', []], ['crazy', 'Crazy', []], ['wacko1', 'Wacko', []],
-  ['nea', 'Pensive', []], ['scratch_one-s_head', 'Thinking', []], ['unknown', 'Dunno', []], ['shok', 'Shocked', []],
-  ['sad', 'Sad', []], ['cray', 'Crying', []], ['pardon', 'Pardon', []], ['sorry', 'Sorry', []],
-  ['mad', 'Angry', []], ['ireful', 'Furious', []], ['shout', 'Shouting', []], ['bad', 'Sick', []],
-  ['diablo', 'Devil', []], ['bomb', 'Bomb', []], ['girl_angel', 'Angel', []], ['hang1', 'Hang', []],
-  // 20 "extra" koloboks — the SAME set the iOS/Android clients added (40→60),
-  // appended in native order. asset == display name; wire code is `:asset:`.
-  // Filename casing is load-bearing (case-sensitive on the deploy server).
-  ['Cherna_01', 'Cherna_01', []], ['FinouCat_02', 'FinouCat_02', []], ['Koshechka_06', 'Koshechka_06', []],
-  ['Laie_74', 'Laie_74', []], ['Mauridia_02', 'Mauridia_02', []], ['Rulezzz_03', 'Rulezzz_03', []],
-  ['WhiteVoid_1', 'WhiteVoid_1', []], ['d_clock', 'd_clock', []], ['kirtsun_05', 'kirtsun_05', []],
-  ['l_girl_kiss', 'l_girl_kiss', []], ['l_lovers', 'l_lovers', []], ['l_teddy', 'l_teddy', []],
-  ['snoozer_likelinux_man', 'snoozer_likelinux_man', []], ['viannen_03', 'viannen_03', []], ['viannen_06', 'viannen_06', []],
-  ['viannen_09', 'viannen_09', []], ['viannen_35', 'viannen_35', []], ['viannen_48', 'viannen_48', []],
-  ['viannen_76', 'viannen_76', []], ['viannen_88', 'viannen_88', []],
-]
-
 interface PackManifest {
   kindID: string
   name: string
@@ -151,7 +128,6 @@ const KOLOBOK_FOLDER = '/emoticons'
 /// name clash (none today, but keeps the rule explicit).
 const ASSET_URL: Record<string, string> = (() => {
   const map: Record<string, string> = {}
-  for (const [asset] of RAW) map[asset] = `${KOLOBOK_FOLDER}/${asset}.gif`
   for (const asset of STANDARD_PACK) map[asset] = `${KOLOBOK_FOLDER}/${asset}.gif`
   for (const pack of PACK_MANIFESTS) {
     for (const e of pack.entries) {
@@ -167,20 +143,11 @@ const ASSET_URL: Record<string, string> = (() => {
 /// equipped — the assets are bundled regardless.
 export const ENTRIES: EmoticonEntry[] = (() => {
   const flat: EmoticonEntry[] = []
-  for (const [asset, name, codes] of RAW) {
-    // Always include the `:asset:` form — that's the ONLY shape iOS/
-    // Android parse (they deliberately ignore typed shortcuts like
-    // `:-)` to avoid colliding with URLs/math). So the picker inserts
-    // `:asset:` (see PALETTE) and we must tokenize it here too, even
-    // for assets whose RAW list only has text shortcuts. The typed
-    // shortcuts stay tokenizable on web for users who type them.
-    const assetCode = `:${asset}:`
-    const all = codes.includes(assetCode) ? codes : [...codes, assetCode]
-    for (const code of all) flat.push({ code, asset, name })
-  }
-  const curated = new Set(RAW.map(([asset]) => asset))
+  // The `:asset:` form is the ONLY shape iOS/Android parse — they deliberately
+  // ignore typed shortcuts like `:-)` so a smiley never eats a URL or a bit of
+  // maths — so it is what the picker inserts and what we tokenize.
   for (const asset of STANDARD_PACK) {
-    if (!curated.has(asset)) flat.push({ code: `:${asset}:`, asset, name: packName(asset) })
+    flat.push({ code: `:${asset}:`, asset, name: packName(asset) })
   }
   for (const pack of PACK_MANIFESTS) {
     for (const e of pack.entries) {
@@ -198,10 +165,6 @@ export const ENTRIES: EmoticonEntry[] = (() => {
 export const PALETTE: PaletteEntry[] = (() => {
   const seen = new Set<string>()
   const out: PaletteEntry[] = []
-  // The CURRENT pack, and only it. The retired set stays bundled and stays
-  // tokenizable (see ENTRIES) so a `:smile:` sent last week still draws a
-  // smiley instead of turning into raw text — but it is not offered any more,
-  // or the grid would mix two drawing styles.
   for (const asset of STANDARD_PACK) {
     if (!seen.has(asset)) {
       seen.add(asset)

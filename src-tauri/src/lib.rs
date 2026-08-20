@@ -435,6 +435,49 @@ pub fn run() {
                             log::error!("could not hand {url} to the browser: {e}");
                         }
                         false
+                    })
+                    // Without a download handler wry CANCELS every <a download>
+                    // click on macOS and registers no handler at all on Linux,
+                    // so saving a received file silently did nothing there
+                    // (report #634; Windows/WebView2 has its own download UI
+                    // and never hits this). The blob URL carries the decrypted
+                    // bytes; all this decides is where they land.
+                    .on_download(|webview, event| {
+                        use tauri::webview::DownloadEvent;
+                        match event {
+                            DownloadEvent::Requested { destination, .. } => {
+                                let name = destination
+                                    .file_name()
+                                    .map(|n| n.to_os_string())
+                                    .unwrap_or_else(|| std::ffi::OsString::from("file"));
+                                let dir = tauri::Manager::path(webview.app_handle())
+                                    .download_dir()
+                                    .unwrap_or_else(|_| std::env::temp_dir());
+                                let mut target = dir.join(&name);
+                                let mut n = 1u32;
+                                while target.exists() {
+                                    let stem = std::path::Path::new(&name)
+                                        .file_stem()
+                                        .map(|s| s.to_string_lossy().into_owned())
+                                        .unwrap_or_else(|| "file".into());
+                                    let ext = std::path::Path::new(&name)
+                                        .extension()
+                                        .map(|e| format!(".{}", e.to_string_lossy()))
+                                        .unwrap_or_default();
+                                    target = dir.join(format!("{stem} ({n}){ext}"));
+                                    n += 1;
+                                }
+                                *destination = target;
+                                true
+                            }
+                            DownloadEvent::Finished { success, path, .. } => {
+                                if !success {
+                                    log::error!("download failed for {path:?}");
+                                }
+                                true
+                            }
+                            _ => true,
+                        }
                     });
                 if let Some(port) = proxy_port {
                     let url = format!("socks5://127.0.0.1:{port}");

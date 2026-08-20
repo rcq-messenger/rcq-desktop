@@ -606,6 +606,7 @@ async function resolveTargets(
       // next time.
       dev.noteTarget(bundle.uin, bundle.device_id, outerPub, bundle.signal_identity_key)
     } else {
+      if (rebuild) console.warn(`fresh X3DH with ${bundle.uin}:${bundle.device_id}`)
       await dev.establishSession(bundle)
     }
     devices.push({ deviceId: bundle.device_id, outerPub, at: Date.now() })
@@ -651,6 +652,11 @@ export async function sendV2(identity: WebIdentity, peerUin: number, env: Envelo
         rebuildDevices.add(t.deviceId)
       }
     }
+    // Rare by design, so worth a permanent trace: this is the one footprint a
+    // replaced peer install leaves anywhere.
+    if (rebuildDevices.size) {
+      console.warn(`silence probe: rebuilding sessions with ${peerUin}, devices [${[...rebuildDevices]}]`)
+    }
   }
 
   let targets = _peerTargets.get(peerUin)
@@ -661,6 +667,11 @@ export async function sendV2(identity: WebIdentity, peerUin: number, env: Envelo
       // A refresh that fails leaves the devices we already reached in place —
       // they were reachable a minute ago. With nothing cached there is no send
       // to make, and the caller falls back to v=1.
+      //
+      // ⚠ Loud, because this catch once swallowed the failure that kept a
+      // probe-triggered rebuild from ever landing: the send then went out on
+      // the very session the probe had just declared dead.
+      console.warn('resolveTargets failed:', e instanceof Error ? e.message : e)
       if (!targets) throw e
       targets = { ...targets, at: Date.now() - TARGETS_TTL_MS + TARGETS_RETRY_MS }
     }
@@ -716,7 +727,10 @@ export async function sendV2(identity: WebIdentity, peerUin: number, env: Envelo
   for (const t of targets.devices) {
     if (missed.has(t.deviceId)) continue
     const key = `${peerUin}:${t.deviceId}`
-    if (!_awaitingReplySince.has(key)) _awaitingReplySince.set(key, Date.now())
+    if (!_awaitingReplySince.has(key)) {
+      _awaitingReplySince.set(key, Date.now())
+      console.debug(`silence probe armed for ${key}`)
+    }
   }
   // Reaching some of the peer's devices is not delivery. A retry re-sends to
   // every device and the recipient's envelope-id dedup collapses the copies

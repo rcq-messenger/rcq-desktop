@@ -162,7 +162,9 @@ export class WebSignalDevice {
 
   private idkp: WasmIdentityKeyPair
   private regId: number
-  readonly identityStore: WasmInMemIdentityKeyStore
+  // Not readonly: establishSession rebuilds it when the TOFU memory refuses a
+  // deliberate identity replacement (see there). Never reassigned elsewhere.
+  identityStore: WasmInMemIdentityKeyStore
   readonly sessionStore: WasmInMemSessionStore
   readonly preKeyStore: WasmInMemPreKeyStore
   readonly signedStore: WasmInMemSignedPreKeyStore
@@ -296,22 +298,46 @@ export class WebSignalDevice {
   async establishSession(peer: SignalBundle): Promise<void> {
     const peerAddr = this.addr(peer.uin, peer.device_id)
     const opk = peer.one_time_prekey
-    await processPreKeyBundle(
-      peerAddr,
-      this.localAddr,
-      peer.registration_id,
-      WasmPublicKey.deserialize(b64ToBytes(peer.signal_identity_key)),
-      peer.signed_prekey.id,
-      WasmPublicKey.deserialize(b64ToBytes(peer.signed_prekey.public)),
-      b64ToBytes(peer.signed_prekey.signature),
-      opk ? opk.id : undefined,
-      opk ? b64ToBytes(opk.public) : undefined,
-      peer.kyber_prekey.id,
-      b64ToBytes(peer.kyber_prekey.public),
-      b64ToBytes(peer.kyber_prekey.signature),
-      this.sessionStore,
-      this.identityStore,
-    )
+    const process = () =>
+      processPreKeyBundle(
+        peerAddr,
+        this.localAddr,
+        peer.registration_id,
+        WasmPublicKey.deserialize(b64ToBytes(peer.signal_identity_key)),
+        peer.signed_prekey.id,
+        WasmPublicKey.deserialize(b64ToBytes(peer.signed_prekey.public)),
+        b64ToBytes(peer.signed_prekey.signature),
+        opk ? opk.id : undefined,
+        opk ? b64ToBytes(opk.public) : undefined,
+        peer.kyber_prekey.id,
+        b64ToBytes(peer.kyber_prekey.public),
+        b64ToBytes(peer.kyber_prekey.signature),
+        this.sessionStore,
+        this.identityStore,
+      )
+    try {
+      await process()
+    } catch (e) {
+      // The in-memory TOFU store refuses an identity that differs from the one
+      // it remembers for this address — correct for a passive decrypt, wrong
+      // here: every call to THIS method is already the deliberate decision to
+      // accept the peer's current identity (an ik mismatch on a bundle re-read,
+      // or a silence-probe rebuild). The store has no per-address override, so
+      // rebuild it from our own key pair — it holds nothing persistent anyway
+      // (peer identities never survive a reload) — and run the exchange again.
+      // Without this, a peer whose install was replaced stayed unreachable
+      // FOREVER: the probe fired, the rebuild threw right here, the swallowed
+      // failure left the dead session in place (live-tested 2026-08-20).
+      console.warn(`identity replaced for ${peer.uin}:${peer.device_id}, re-keying:`, e instanceof Error ? e.message : e)
+      const old = this.identityStore
+      this.identityStore = new WasmInMemIdentityKeyStore(this.idkp, this.regId)
+      try {
+        old.free()
+      } catch {
+        /* already freed */
+      }
+      await process()
+    }
     // Legacy rows can carry an empty sealed_sender_pub; only a real key is
     // worth remembering, the rest re-read the bundle.
     this.noteTarget(peer.uin, peer.device_id, b64ToBytes(peer.sealed_sender_pub || ''), peer.signal_identity_key)

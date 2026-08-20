@@ -12,7 +12,18 @@ import { statePath, writeFileAtomic } from './state'
 // traces, decrypt warnings) is STATUS, not data — and under Node console.log/
 // debug write to stdout, which this CLI reserves for data alone. One shared
 // Console pointed at stderr keeps the discipline without touching src/lib.
+//
+// And by default that status is QUIET: "fresh X3DH with 911:1" is protocol
+// internals nobody chatting from a terminal asked to see (founder, first
+// session with the tool). RCQ_VERBOSE=1 brings it all back; errors always
+// come through.
 globalThis.console = new Console({ stdout: process.stderr, stderr: process.stderr })
+if (!process.env.RCQ_VERBOSE) {
+  console.debug = () => {}
+  console.log = () => {}
+  console.warn = () => {}
+  console.info = () => {}
+}
 
 // localStorage backed by one JSON file, written synchronously on every set.
 // The data is a handful of small rows (identity, install id, accounts list);

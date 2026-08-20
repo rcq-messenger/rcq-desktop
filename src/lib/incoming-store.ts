@@ -517,17 +517,26 @@ function writeNow(): Promise<void> {
   const uin = _activeUin
   // Sealed under the desktop PIN when there is one; the plain object otherwise
   // (a browser tab has nowhere to keep a key the page cannot reach).
-  persistInFlight = sealValue(blob)
+  //
+  // The caller gets the REAL promise: flushHistory runs before a queue ack, and
+  // an ack issued on the strength of a write that actually failed erases the
+  // island's only copy of rows this store never kept (that is how a fan-out
+  // copy vanished on 2026-08-20). Only the background chain swallows.
+  //
+  // Chained behind the previous write: each write is a full snapshot, so two
+  // in flight at once could land out of order and leave the OLDER one on disk.
+  const write = persistInFlight
+    .then(() => sealValue(blob))
     .then((stored) => idbSet(histKey(uin), stored))
-    .catch(() => {})
-  return persistInFlight
+  persistInFlight = write.catch(() => {})
+  return write
 }
 
 function persist() {
   if (persistTimer) return
   persistTimer = setTimeout(() => {
     persistTimer = null
-    void writeNow()
+    writeNow().catch(() => {})
   }, 300)
 }
 
@@ -535,14 +544,17 @@ function persist() {
 /// this before acking: an ack tells the island it may let go of those rows, and
 /// promising that while their only copy is a scheduled write is how a crash
 /// between the two loses messages for good.
+///
+/// Unconditional on purpose. The old "only if a timer is pending" gate assumed
+/// every change arrives through persist(); a row added and flushed inside the
+/// same tick has no timer yet, and waiting on the previous write then vouched
+/// for a snapshot that predates the row (2026-08-20 fan-out loss).
 export async function flushHistory(): Promise<void> {
   if (persistTimer) {
     clearTimeout(persistTimer)
     persistTimer = null
-    await writeNow()
-    return
   }
-  await persistInFlight
+  await writeNow()
 }
 
 // A tab being closed or hidden gets no second chance at a scheduled write.
@@ -551,7 +563,7 @@ if (typeof document !== 'undefined') {
     if (persistTimer) {
       clearTimeout(persistTimer)
       persistTimer = null
-      void writeNow()
+      writeNow().catch(() => {})
     }
   }
   document.addEventListener('visibilitychange', () => {

@@ -206,8 +206,18 @@ function route(
   //
   // 1:1 only and never our own carbon: a group message has as many recipients
   // as members and one tick cannot stand for all of them.
+  //
+  // ⚠ Receipt AFTER the history write lands. The receipt tells the sender the
+  // message arrived, and the decrypt above already advanced the ratchet on
+  // disk — the queued copy of this same ciphertext can never be opened again.
+  // Vouching for arrival while the plaintext's only copy is a scheduled write
+  // is how a fan-out copy vanished for good on 2026-08-20. A failed write keeps
+  // the tick back — the sender retries nothing, but nothing was promised.
   if (identity && senderUIN !== myUin && groupId == null && 'id' in envelope && envelope.id) {
-    void sendDeliveredReceipt(identity, senderUIN, envelope.id)
+    const targetID = envelope.id
+    void flushHistory()
+      .then(() => sendDeliveredReceipt(identity, senderUIN, targetID))
+      .catch(() => {})
   }
 }
 
@@ -539,10 +549,16 @@ export function MessageReceiver() {
       // device is dropped here. It is queued for that device, not for this one.
       const toDevice = ev.to_device_id
       if (typeof toDevice === 'number' && toDevice !== currentDeviceId()) return
-      void decryptIncoming(identity, payload)
-        .then((got) => {
-          if (got) route(got.senderUIN, got.senderHost, got.envelope, ev.group_id, identity.uin, hostOf(identity.apiBase), got.senderSigningKey, identity)
-        })
+      void (async () => {
+        // The invariant at the top of this file — every receive path waits on
+        // the same hydration — held for both drains but not here. A live frame
+        // ingested before hydrateIncoming ran was added to a store whose
+        // writes were still silently disabled (_activeUin unset), so the row
+        // never reached disk while the decrypt had already burned the ratchet.
+        await ensureHydrated(identity.uin)
+        const got = await decryptIncoming(identity, payload)
+        if (got) route(got.senderUIN, got.senderHost, got.envelope, ev.group_id, identity.uin, hostOf(identity.apiBase), got.senderSigningKey, identity)
+      })()
         // No device to open it with yet. The same envelope is in the queue, and
         // the drain that runs once there IS one delivers it.
         .catch(() => {})
@@ -574,9 +590,13 @@ export function MessageReceiver() {
       const payload = ev.payload as string | undefined
       const gid = ev.group_id
       if (!payload || typeof gid !== 'number') return
-      void handleGmsg(identity, payload, gid).then((got) => {
+      void (async () => {
+        // Same hydration invariant as the sealed live path above: never ingest
+        // into a store whose writes are still disabled.
+        await ensureHydrated(identity.uin)
+        const got = await handleGmsg(identity, payload, gid)
         if (got) route(got.senderUIN, undefined, got.envelope, gid, identity.uin, hostOf(identity.apiBase), undefined, identity)
-      })
+      })().catch(() => {})
     })
   }, [identity, on])
 

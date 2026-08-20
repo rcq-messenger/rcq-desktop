@@ -6,7 +6,7 @@
 import { useEffect } from 'react'
 import { useIdentity } from './identity-context'
 import { useWS } from './ws'
-import { currentDeviceId, decryptIncoming, getDevice, myDeviceId, sendV2 } from './signal-device'
+import { currentDeviceId, decryptIncoming, getDevice, myDeviceId, noteInboundFrom, sendV2 } from './signal-device'
 import { addIncoming, addGroupIncoming, hydrateIncoming, beginCatchUp, endCatchUp, flushHistory } from './incoming-store'
 import { fileOutgoingCarbon } from './outgoing-store'
 import { publishHomeIslandRecord } from './federation-publish'
@@ -348,7 +348,12 @@ function drainPrimaryQueue(identity: WebIdentity, catchUp: boolean): Promise<voi
             if (got) route(got.senderUIN, undefined, got.envelope, r.group_id, identity.uin, hostOf(identity.apiBase), undefined, identity)
           } else {
             const got = await decryptIncoming(identity, r.payload)
-            if (got) route(got.senderUIN, got.senderHost, got.envelope, r.group_id, identity.uin, hostOf(identity.apiBase), got.senderSigningKey, identity)
+            if (got) {
+              // A decrypted envelope proves the sending DEVICE can talk to us —
+              // its silence probe stands down (device-scoped; v=1 names none).
+              if (got.senderUIN !== identity.uin) noteInboundFrom(got.senderUIN, got.senderDeviceId)
+              route(got.senderUIN, got.senderHost, got.envelope, r.group_id, identity.uin, hostOf(identity.apiBase), got.senderSigningKey, identity)
+            }
           }
           // Processed to its end — including "decrypted to nothing", which is
           // terminal. Only a THROW leaves a row unacked: the cursor then stops
@@ -557,7 +562,11 @@ export function MessageReceiver() {
         // never reached disk while the decrypt had already burned the ratchet.
         await ensureHydrated(identity.uin)
         const got = await decryptIncoming(identity, payload)
-        if (got) route(got.senderUIN, got.senderHost, got.envelope, ev.group_id, identity.uin, hostOf(identity.apiBase), got.senderSigningKey, identity)
+        if (got) {
+          // Device-scoped liveness for the silence probe (v=1 names no device).
+          if (got.senderUIN !== identity.uin) noteInboundFrom(got.senderUIN, got.senderDeviceId)
+          route(got.senderUIN, got.senderHost, got.envelope, ev.group_id, identity.uin, hostOf(identity.apiBase), got.senderSigningKey, identity)
+        }
       })()
         // No device to open it with yet. The same envelope is in the queue, and
         // the drain that runs once there IS one delivers it.

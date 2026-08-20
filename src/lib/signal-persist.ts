@@ -17,6 +17,18 @@ let _dbp: Promise<IDBDatabase> | null = null
 
 function db(): Promise<IDBDatabase> {
   if (_dbp) return _dbp
+  // ⚠ Loud, because it is exactly how a device key went missing: a page that
+  // touches IDB before the account scope is set pins this cached connection to
+  // the FLAT database for its whole life, its device blob lands there, and the
+  // next (scoped) boot finds nothing and mints fresh keys over the primary
+  // slot — every peer with a session is then sending into a void (2026-08-20).
+  try {
+    if (scopedDbName() === 'rcq-web' && localStorage.getItem('rcq.web.identity.v1')) {
+      console.error('IDB opened UNSCOPED while an account exists — writes are landing in the flat database')
+    }
+  } catch {
+    /* storage gated — nothing to warn about */
+  }
   _dbp = new Promise((resolve, reject) => {
     const req = indexedDB.open(scopedDbName(), 1)
     req.onupgradeneeded = () => {
@@ -27,6 +39,34 @@ function db(): Promise<IDBDatabase> {
     req.onerror = () => reject(req.error)
   })
   return _dbp
+}
+
+/// Read one key from the FLAT (pre-multi-account, and accidentally-unscoped)
+/// database, regardless of the current scope. Rescue path only: a QR-link page
+/// used to live its whole life unscoped, so the device blob it wrote sits in
+/// 'rcq-web' while every later boot reads 'rcq-web-<uin>'. Opening the flat DB
+/// when it does not exist creates an empty shell, which is harmless.
+export async function idbGetFlat<T>(key: string): Promise<T | undefined> {
+  if (scopedDbName() === 'rcq-web') return undefined // flat IS the current db
+  const flat = await new Promise<IDBDatabase>((resolve, reject) => {
+    const req = indexedDB.open('rcq-web', 1)
+    req.onupgradeneeded = () => {
+      const d = req.result
+      if (!d.objectStoreNames.contains(STORE)) d.createObjectStore(STORE)
+    }
+    req.onsuccess = () => resolve(req.result)
+    req.onerror = () => reject(req.error)
+  })
+  try {
+    return await new Promise<T | undefined>((resolve, reject) => {
+      const tx = flat.transaction(STORE, 'readonly')
+      const req = tx.objectStore(STORE).get(key)
+      req.onsuccess = () => resolve(req.result as T | undefined)
+      req.onerror = () => reject(req.error)
+    })
+  } finally {
+    flat.close()
+  }
 }
 
 export async function idbGet<T>(key: string): Promise<T | undefined> {

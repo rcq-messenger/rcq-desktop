@@ -33,7 +33,7 @@
 
 import { PRIMARY_DEVICE_ID, WebSignalDevice, type SignalBundle, type DeviceBlob } from './crypto-v2'
 import { decryptV1, b64ToBytes, bytesToB64, type Envelope, type WebIdentity } from './crypto'
-import { idbDel, idbGet, idbSet } from './signal-persist'
+import { idbDel, idbGet, idbGetFlat, idbSet } from './signal-persist'
 import { clientLabel } from './client-name'
 
 const _devices = new Map<number, Promise<WebSignalDevice>>()
@@ -95,20 +95,44 @@ async function claimPrimary(identity: WebIdentity, saved?: DeviceBlob): Promise<
     ? await WebSignalDevice.restore(saved)
     : await WebSignalDevice.create(identity.uin, PRIMARY_DEVICE_ID, identity.identityPriv)
   const bundle = await dev.buildBundle(OPK_POOL)
-  const res = await fetchWithTimeout(`${identity.apiBase}/keys/bundle`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${identity.jwt}` },
-    body: JSON.stringify(bundle),
-  })
+  // ⚠ For a fresh mint, persist BEFORE the POST. A claim whose response is
+  // lost (timeout after the island applied it) used to leave the slot holding
+  // keys that existed nowhere on disk — and the next boot minted another set
+  // over it, killing every session peers had built in between. With the blob
+  // written first, that boot finds its own key in the slot and carries on; if
+  // the island never applied the claim, the republish path retries with the
+  // SAME keys. Only an explicit refusal below deletes the write-ahead.
+  if (!saved) await idbSet(blobKey(identity.uin), await dev.serialize())
+  let res: Response
+  try {
+    res = await fetchWithTimeout(`${identity.apiBase}/keys/bundle`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${identity.jwt}` },
+      body: JSON.stringify(bundle),
+    })
+  } catch (e) {
+    // Ambiguous outcome — keep the write-ahead so a claim that DID land is
+    // still openable next boot.
+    throw e
+  }
   if (!res.ok) {
-    if (!saved) throw new Error(`keys/bundle upload failed: ${res.status}`)
+    if (!saved) {
+      // The island explicitly refused, so nothing of these keys exists there.
+      await idbDel(blobKey(identity.uin)).catch(() => {})
+      throw new Error(`keys/bundle upload failed: ${res.status}`)
+    }
     // ⚠ A fresh restore, not `dev`: a blob written before the published bundle
     // was remembered has none to republish, so buildBundle minted new keys over
     // it in memory — and the ones the queued backlog was encrypted against are
     // the ones still on disk. The upload is retried on the next provision.
     return WebSignalDevice.restore(saved)
   }
-  await idbSet(blobKey(identity.uin), await dev.serialize())
+  // Refresh the stored blob with the memoized bundle. Best-effort here: the
+  // fresh path already wrote ahead, and a republish path has a valid blob on
+  // disk — a failed rewrite must not fail the claim that already landed.
+  await idbSet(blobKey(identity.uin), await dev.serialize()).catch((e) => {
+    console.warn('device blob rewrite after claim failed:', e)
+  })
   return dev
 }
 
@@ -184,6 +208,29 @@ async function becomeSecondary(identity: WebIdentity, prev?: DeviceBlob): Promis
   return dev
 }
 
+/// Copy this account's device state (blob, unfinished claim, previous device)
+/// out of the FLAT database into the scoped one, and return the blob if one was
+/// found. Never overwrites a scoped record — the scoped copy is newer by
+/// construction (the flat one could only have been written by an earlier,
+/// unscoped page life). Best-effort: a failure to read flat is a plain miss.
+async function adoptFlatDeviceState(uin: number): Promise<DeviceBlob | undefined> {
+  try {
+    const [blob, claim, prev] = await Promise.all([
+      idbGetFlat<DeviceBlob>(blobKey(uin)),
+      idbGetFlat<DeviceBlob>(claimKey(uin)),
+      idbGetFlat<DeviceBlob>(prevKey(uin)),
+    ])
+    if (!blob && !claim && !prev) return undefined
+    if (blob && !(await idbGet(blobKey(uin)))) await idbSet(blobKey(uin), blob)
+    if (claim && !(await idbGet(claimKey(uin)))) await idbSet(claimKey(uin), claim)
+    if (prev && !(await idbGet(prevKey(uin)))) await idbSet(prevKey(uin), prev)
+    console.warn(`adopted device state for ${uin} from the flat database`)
+    return blob
+  } catch {
+    return undefined
+  }
+}
+
 // ⚠ Nothing the island says — or fails to say — is worth a device over. What
 // this install already holds is what opens the backlog addressed to it, and a
 // drain that runs without it acks that backlog away as undecryptable. So every
@@ -192,7 +239,17 @@ async function becomeSecondary(identity: WebIdentity, prev?: DeviceBlob): Promis
 async function provision(identity: WebIdentity): Promise<WebSignalDevice> {
   // Restore the SAME device across reloads (stable identity → peers' sessions
   // stay valid + prior conversations decrypt).
-  const saved = await idbGet<DeviceBlob>(blobKey(identity.uin))
+  let saved = await idbGet<DeviceBlob>(blobKey(identity.uin))
+  if (!saved) {
+    // Nothing under the scoped name — look in the FLAT database before minting
+    // anything. A QR-link page lived its whole life unscoped (the link flow
+    // used to be an SPA navigation, not a reload), so the device it published
+    // sits under 'rcq-web' while this boot reads 'rcq-web-<uin>'. Minting here
+    // re-claimed the primary slot with fresh keys and every peer with a
+    // session kept sealing to the old ones — silently, forever (2026-08-20).
+    // Adopt, never re-mint.
+    saved = await adoptFlatDeviceState(identity.uin)
+  }
   // An island-assigned id is final: asking again would register a second
   // device on every reload and leave the previous ones addressed by peers who
   // cached them.
@@ -375,7 +432,7 @@ export class DeviceUnavailableError extends Error {}
 export async function decryptIncoming(
   identity: WebIdentity,
   payloadB64: string,
-): Promise<{ senderUIN: number; senderHost?: string; senderSigningKey?: string; envelope: Envelope } | null> {
+): Promise<{ senderUIN: number; senderDeviceId?: number; senderHost?: string; senderSigningKey?: string; envelope: Envelope } | null> {
   const v = wireVersion(payloadB64)
   if (v === 2) {
     let dev: WebSignalDevice
@@ -388,16 +445,21 @@ export async function decryptIncoming(
       const out = await dev.decrypt(payloadB64) // sender UIN read from the envelope
       await persist(identity, dev) // ratchet advanced — snapshot
       return out // v=2 is same-island only; no senderHost
-    } catch {
+    } catch (e) {
       // Not ours to read — or ours to read with the identity this install
-      // published before it became a secondary.
+      // published before it became a secondary. Logged, never thrown: the
+      // caller treats null as terminal and acks the row away, and a silent
+      // null here is how a swallowed decrypt failure erases a message with
+      // no trace to debug from (2026-08-20).
+      console.warn('v2 decrypt failed (current device):', e instanceof Error ? e.message : e)
       const prev = await previousDevice(identity)
       if (!prev) return null
       try {
         const out = await prev.decrypt(payloadB64)
         await persist(identity, prev, prevKey(identity.uin)) // its ratchet advanced too
         return out
-      } catch {
+      } catch (e2) {
+        console.warn('v2 decrypt failed (previous device):', e2 instanceof Error ? e2.message : e2)
         return null
       }
     }
@@ -456,11 +518,50 @@ function usable(t: PeerTarget | undefined): PeerTarget | undefined {
   return t && Date.now() - t.at < OUTER_KEY_TTL_MS ? t : undefined
 }
 
+// ---- Silence probe: notice a peer whose install was replaced under us. ----
+//
+// A replaced install (re-claimed primary slot, reinstall, restore onto a new
+// machine) is INVISIBLE from the sending side: the island takes every copy
+// sealed to the key the peer no longer holds, the receipt simply never comes,
+// and an established session means the bundle — where the new identity would
+// show — is not read again for OUTER_KEY_TTL_MS (12h). Messages sent in that
+// window are lost without a trace (live-tested 2026-08-20).
+//
+// So sustained silence IS the signal: if this side keeps sending and the peer
+// has answered nothing — no receipt, no message, nothing — for PEER_SILENCE_MS,
+// the next send REBUILDS the sessions outright (fresh bundle read + X3DH per
+// device). Not merely an ik comparison: the identity this side recorded may
+// itself have been read only after the replacement, in which case it compares
+// clean against a bundle the peer's dead session cannot open — a rebuild is
+// the one move that works from any wrong state. An unchanged peer (merely
+// offline) costs one prekey exchange per device per
+// SILENCE_PROBE_MIN_INTERVAL_MS; their client reads both the old-session
+// backlog and the new session fine.
+// Tracked PER DEVICE, not per account. A peer's phone answering promptly says
+// nothing about their linked browser whose session is dead — a per-account
+// timer was cleared by the living sibling's receipts and the dead device never
+// healed (live-tested 2026-08-20). Keys are "uin:deviceId".
+const PEER_SILENCE_MS = 2 * 60_000
+const SILENCE_PROBE_MIN_INTERVAL_MS = 30 * 60_000
+const _awaitingReplySince = new Map<string, number>()
+const _lastSilenceProbeAt = new Map<string, number>()
+
+/// A decrypted envelope from [uin]'s device [deviceId] — a message, a receipt,
+/// anything — proves THAT install can read us: its silence probe stands down.
+/// An envelope that does not name its device (v=1, or a pre-fan-out sender)
+/// clears nothing: v=1 peers never arm the probe (it arms only on v=2 sends),
+/// and crediting the primary for a copy that may have come from a sibling is
+/// exactly the confusion that kept a dead device unhealed.
+export function noteInboundFrom(uin: number, deviceId?: number): void {
+  if (typeof deviceId === 'number') _awaitingReplySince.delete(`${uin}:${deviceId}`)
+}
+
 async function resolveTargets(
   identity: WebIdentity,
   dev: WebSignalDevice,
   peerUin: number,
   known: PeerTarget[],
+  rebuildDevices: ReadonlySet<number> = new Set(),
 ): Promise<PeerTargets> {
   const byId = new Map(known.map((t) => [t.deviceId, t]))
   const list = (await apiGet(identity, `/keys/${peerUin}/devices`)) as { devices?: Array<{ device_id: number }> }
@@ -472,7 +573,13 @@ async function resolveTargets(
     // one-time prekeys, a pool that only refills while their client runs. A
     // peer who lost their own store re-keys this side with the prekey message
     // their next send carries, which replaces the session under this address.
-    const cached = usable(byId.get(d.device_id)) ?? sessionTarget(dev, peerUin, d.device_id)
+    // A rebuild trusts nothing this side holds — not the cached target, not
+    // the session, not even the recorded identity key (it may itself have been
+    // read only after the peer's install was replaced, in which case it
+    // compares clean against a bundle whose session is dead). Straight to a
+    // fresh bundle and a fresh X3DH.
+    const rebuild = rebuildDevices.has(d.device_id)
+    const cached = rebuild ? undefined : (usable(byId.get(d.device_id)) ?? sessionTarget(dev, peerUin, d.device_id))
     if (cached) {
       devices.push(cached)
       continue
@@ -491,9 +598,9 @@ async function resolveTargets(
     // identity key rebuilds the session here.
     const held = dev.knownTarget(bundle.uin, bundle.device_id)
     const sameIdentity = held?.ik !== undefined && held.ik === bundle.signal_identity_key
-    if (sameIdentity && (await dev.hasSession(bundle.uin, bundle.device_id))) {
+    if (!rebuild && sameIdentity && (await dev.hasSession(bundle.uin, bundle.device_id))) {
       dev.noteTarget(bundle.uin, bundle.device_id, outerPub, bundle.signal_identity_key)
-    } else if (held?.ik === undefined && (await dev.hasSession(bundle.uin, bundle.device_id))) {
+    } else if (!rebuild && held?.ik === undefined && (await dev.hasSession(bundle.uin, bundle.device_id))) {
       // First read since this cache learned to record identities: nothing to
       // compare against, so the session stands and the key is recorded for
       // next time.
@@ -527,10 +634,29 @@ export class PartialFanOutError extends Error {}
 export async function sendV2(identity: WebIdentity, peerUin: number, env: Envelope, envelopeType = 'message'): Promise<number> {
   const dev = await getDevice(identity)
 
+  // Silence probe (see PEER_SILENCE_MS above): rebuild the session of every
+  // peer DEVICE that has answered nothing since a previous send to it.
+  const rebuildDevices = new Set<number>()
+  {
+    const now = Date.now()
+    for (const t of _peerTargets.get(peerUin)?.devices ?? []) {
+      const key = `${peerUin}:${t.deviceId}`
+      const waitingSince = _awaitingReplySince.get(key)
+      if (
+        waitingSince !== undefined &&
+        now - waitingSince > PEER_SILENCE_MS &&
+        now - (_lastSilenceProbeAt.get(key) ?? 0) > SILENCE_PROBE_MIN_INTERVAL_MS
+      ) {
+        _lastSilenceProbeAt.set(key, now)
+        rebuildDevices.add(t.deviceId)
+      }
+    }
+  }
+
   let targets = _peerTargets.get(peerUin)
-  if (!targets || Date.now() - targets.at > TARGETS_TTL_MS) {
+  if (rebuildDevices.size || !targets || Date.now() - targets.at > TARGETS_TTL_MS) {
     try {
-      targets = await resolveTargets(identity, dev, peerUin, targets?.devices ?? [])
+      targets = await resolveTargets(identity, dev, peerUin, targets?.devices ?? [], rebuildDevices)
     } catch (e) {
       // A refresh that fails leaves the devices we already reached in place —
       // they were reachable a minute ago. With nothing cached there is no send
@@ -584,6 +710,14 @@ export async function sendV2(identity: WebIdentity, peerUin: number, env: Envelo
     targets.at = 0
   }
   if (sent > 0 || missed.size) await persist(identity, dev) // ratchet advanced / target expired — snapshot
+  // Arm the silence probe per DEVICE a copy actually reached, on the first
+  // send that device has not answered yet. A v=2 envelope from it clears the
+  // timer (noteInboundFrom).
+  for (const t of targets.devices) {
+    if (missed.has(t.deviceId)) continue
+    const key = `${peerUin}:${t.deviceId}`
+    if (!_awaitingReplySince.has(key)) _awaitingReplySince.set(key, Date.now())
+  }
   // Reaching some of the peer's devices is not delivery. A retry re-sends to
   // every device and the recipient's envelope-id dedup collapses the copies
   // that did land, so saying so costs a duplicate at worst.

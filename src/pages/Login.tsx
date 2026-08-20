@@ -7,7 +7,6 @@
 
 import { AnimatePresence, motion } from 'framer-motion'
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import QRCode from 'qrcode'
 import { LanguagePicker } from '../components/LanguagePicker'
 import { ThemeToggle } from '../components/ThemeToggle'
@@ -32,7 +31,6 @@ import { bytesToB64, newLinkEphemeral, openLinkSeal, type WebIdentity } from '..
 import { islandLabel, normaliseIsland, rememberIsland, rememberedIsland } from '../lib/island-choice'
 import { useI18n } from '../lib/i18n-context'
 import { useToast } from '../lib/toast'
-import { useIdentity } from '../lib/identity-context'
 
 // The login copy talks about "this browser"; in the desktop app the same
 // screens are about a computer. Keys with a platform difference have a
@@ -40,8 +38,6 @@ import { useIdentity } from '../lib/identity-context'
 const dk = isTauri() ? '.desktop' : ''
 
 export function Login() {
-  const { setIdentity } = useIdentity()
-  const navigate = useNavigate()
   const { t } = useI18n()
 
   // "Add account" in Settings clears the ACTIVE slot and lands here, with the
@@ -72,9 +68,18 @@ export function Login() {
           </header>
 
           <ModeSwitch
-            onDone={(id) => {
-              setIdentity(id)
-              navigate(defaultHome(), { replace: true })
+            onDone={() => {
+              // A HARD reload, not a route change. This page has lived without
+              // an account scope, so any store it touched — the device database
+              // above all — is pinned to the FLAT namespace for the rest of the
+              // page's life. Continuing as an SPA kept exactly one session type
+              // (a fresh QR link) writing its libsignal keys where no later
+              // boot would look, and the next reload minted new keys over the
+              // primary slot (2026-08-20). The identity is already persisted by
+              // the time onDone runs; the reload starts the app scoped.
+              // Desktop: the vault write has to land first (same race as the
+              // resume button below).
+              void flushVaultWriter().finally(() => window.location.assign(defaultHome()))
             }}
           />
 

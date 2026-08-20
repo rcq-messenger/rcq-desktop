@@ -18,7 +18,10 @@ export interface OutgoingRow {
   id: string
   text: string
   sentAt: number
-  state: 'sending' | 'sent' | 'failed'
+  /// 'delivered'/'read' arrive as receipts from the peer (#636/#637) and only
+  /// ever climb: sent -> delivered -> read, never back down (a delivered
+  /// receipt straggling in after a read one must not un-read the row).
+  state: 'sending' | 'sent' | 'delivered' | 'read' | 'failed'
   error?: string
   /// Photo / video / file attachment, or a still-unsupported media kind echoed
   /// from another device via a carbon ('other' — voice/location the web can't
@@ -255,6 +258,47 @@ let _openThreadSink: ((row: OutgoingRow) => void) | null = null
 export function setOutgoingSink(threadKey: string | null, sink: ((row: OutgoingRow) => void) | null): void {
   _openThreadKey = threadKey
   _openThreadSink = sink
+}
+
+// ── Receipts (#636/#637) ────────────────────────────────────────────────────
+
+/// How far along the delivery ladder a state is. Receipts only move a row UP:
+/// 'failed'/'sending' rows never got an id to the peer, so a receipt cannot
+/// name them at all.
+const STATE_RANK: Record<OutgoingRow['state'], number> = {
+  sending: 0,
+  failed: 0,
+  sent: 1,
+  delivered: 2,
+  read: 3,
+}
+
+let _openThreadReceiptSink: ((ids: string[], state: 'delivered' | 'read') => void) | null = null
+
+/// Chat registers this alongside setOutgoingSink: the open thread OWNS its
+/// rows in component state, so a receipt for it must land there (the state
+/// write below would be silently overwritten by Chat's own persist effect).
+export function setReceiptSink(sink: ((ids: string[], state: 'delivered' | 'read') => void) | null): void {
+  _openThreadReceiptSink = sink
+}
+
+/// Apply a peer's delivered/read receipt to our outgoing rows in that 1:1
+/// thread — the second tick and the read tint (#637). Storage always, the
+/// open thread additionally via its sink.
+export function applyReceiptToOutgoing(peerUin: number, kind: 'delivered' | 'read', targetIDs: unknown): void {
+  const ids = Array.isArray(targetIDs) ? targetIDs.filter((t): t is string => typeof t === 'string') : []
+  if (ids.length === 0) return
+  const key = storageKey(false, peerUin)
+  const idSet = new Set(ids)
+  const rows = loadPersisted(key)
+  let changed = false
+  const next = rows.map((r) => {
+    if (!idSet.has(r.id) || STATE_RANK[r.state] >= STATE_RANK[kind]) return r
+    changed = true
+    return { ...r, state: kind }
+  })
+  if (changed) savePersisted(key, next)
+  if (_openThreadKey === key) _openThreadReceiptSink?.(ids, kind)
 }
 
 /// Build a `sent` outgoing row from a carbon's inner envelope. Returns null

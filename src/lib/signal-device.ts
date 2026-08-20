@@ -765,3 +765,15 @@ async function apiGet(identity: WebIdentity, path: string): Promise<any> {
   if (!res.ok) throw new Error(`GET ${path} -> ${res.status}`)
   return res.json()
 }
+
+/// The key slots of OUR OWN account, for the settings screen (#643). This is
+/// the cryptographic device list — every install that can read v=2 holds a
+/// slot here, which makes it the one list a phrase login cannot stay out of.
+export async function myAccountDevices(
+  identity: WebIdentity,
+): Promise<Array<{ device_id: number; label: string | null }>> {
+  const list = (await apiGet(identity, `/keys/${identity.uin}/devices`)) as {
+    devices?: Array<{ device_id: number; label?: string | null }>
+  }
+  return (list.devices ?? []).map((d) => ({ device_id: d.device_id, label: d.label ?? null }))
+}

@@ -118,7 +118,14 @@ export function NewsButton({ className }: { className?: string }) {
     if (!identity) return
     try {
       const res = await fetchNews(identity)
-      const items = [...res.items].sort((a, b) => b.id - a.id)
+      // Newest first by PUBLISH TIME, id as the tiebreak — the same order the
+      // island serves and Android renders. Sorting by id alone put the posts
+      // in a different sequence than the phone whenever ids and publish times
+      // disagree, e.g. a translation post backdated a second to sit under its
+      // original (report #644).
+      const items = [...res.items].sort(
+        (a, b) => Date.parse(b.published_at) - Date.parse(a.published_at) || b.id - a.id,
+      )
       seedIfUnset(res.latest_id ?? items[0]?.id ?? null)
       const seen = readSeen()
       setPosts(items)

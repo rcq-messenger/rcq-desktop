@@ -1,9 +1,10 @@
-# rcq — console client (v1)
+# rcq — console client
 
 The distribution-proof RCQ client: one Node bundle, no app store, no native
-deps. Scriptable plumbing first (design: `RCQ/docs/console-client-design.md`)
-— register/restore, contacts, 1:1 text both ways, delivered receipts,
-dev-scoped queue drain, `watch`.
+deps. Scriptable plumbing (design: `RCQ/docs/console-client-design.md`) —
+register/restore, contacts, 1:1 text both ways, delivered receipts,
+dev-scoped queue drain, `watch` — plus an interactive mode: run `rcq` with no
+arguments and you are in a live conversation.
 
 ## Build
 
@@ -18,6 +19,7 @@ self-contained: ship `rcq.mjs` together with the `pkg-node/` directory.
 ## Use
 
 ```
+node cli/dist/rcq.mjs                        # interactive (TTY only)
 node cli/dist/rcq.mjs register [--nick NAME] [--island URL]
 node cli/dist/rcq.mjs restore "<24 words>" [--island URL]
 node cli/dist/rcq.mjs whoami | contacts | add <uin> | export
@@ -25,8 +27,19 @@ node cli/dist/rcq.mjs send <uin> "text"
 node cli/dist/rcq.mjs watch
 ```
 
-stdout is data only (messages, the phrase, lists); status goes to stderr.
-Exit codes: 0 ok, 1 error, 2 usage.
+For subcommands, stdout is data only (messages, the phrase, lists); status
+goes to stderr. Exit codes: 0 ok, 1 error, 2 usage.
+
+## Interactive mode
+
+`rcq` with no arguments (on a TTY; a pipe still gets usage + exit 2): live
+receive exactly like `watch`, with a readline prompt on top. Typed text goes
+to the active contact — picked with `/to <uin>`, or auto-picked as whoever
+writes first. Incoming messages print above the prompt; your sends echo with
+a `✓ delivered` note when the receipt lands. `/contacts` lists, `/help`
+helps, `/quit` (or Ctrl+C / Ctrl+D) leaves. Output discipline is relaxed by
+design here — it is a UI, not a pipe; `send`/`watch` keep the strict
+contract.
 
 ## State
 

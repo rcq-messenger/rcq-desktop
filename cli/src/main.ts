@@ -18,11 +18,12 @@ import {
   suggestNickname,
 } from '../../src/lib/auth'
 import { Api, setTokenRefresher } from '../../src/lib/api'
-import { getDevice, myDeviceId, PartialFanOutError, sendV2, setProvisionPolicy } from '../../src/lib/signal-device'
-import { bytesToB64, encryptV1, type CarbonEnvelope, type Envelope, type TextEnvelope, type WebIdentity } from '../../src/lib/crypto'
-import { peerBundleFrom } from '../../src/lib/api'
+import { getDevice, myDeviceId, setProvisionPolicy } from '../../src/lib/signal-device'
+import type { WebIdentity } from '../../src/lib/crypto'
 import { idbGet } from '../shims/signal-persist'
-import { drainQueue, historyPath, ingestDecrypted, markSent, type IngestResult } from './receive'
+import { drainQueue, historyPath, ingestDecrypted, type IngestResult } from './receive'
+import { runInteractive } from './interactive'
+import { sendText } from './send'
 import { RcqSocket } from './socket'
 import { acquireStateLock } from './state'
 import { decryptIncoming, noteInboundFrom } from '../../src/lib/signal-device'
@@ -37,9 +38,10 @@ setProvisionPolicy('secondary')
 // — the same path that keeps a 30-day-old web session alive.
 setTokenRefresher(async (id) => (await mintSessionToken(id)).token)
 
-const USAGE = `rcq — RCQ console client (v1)
+const USAGE = `rcq — RCQ console client
 
 usage:
+  rcq                                         interactive: live incoming + a prompt that sends
   rcq register [--nick NAME] [--island URL]   create an account, print UIN + recovery phrase
   rcq restore "<24 words>" [--island URL]     restore an account from its phrase
   rcq whoami                                  print uin, island, device id
@@ -172,24 +174,6 @@ async function cmdAdd(pos: string[]): Promise<void> {
   process.stderr.write(`contact request sent to #${uin}\n`)
 }
 
-/// Deposit a self-carbon so the phone/desktop show this message as ours —
-/// mirrors Chat.tsx sendMessageCarbon: v=1 sealed to our OWN account key,
-/// outer type 'carbon' (non-pushable — our phone must not ring for a message
-/// we just typed). Best-effort: the message already went out.
-async function sendMessageCarbon(identity: WebIdentity, peerUin: number, inner: Envelope): Promise<void> {
-  try {
-    const carbon: CarbonEnvelope = { kind: 'carbon', to: peerUin, gid: null, env: inner }
-    const selfBundle = peerBundleFrom({
-      uin: identity.uin,
-      identity_key: bytesToB64(identity.identityPub),
-      signing_key: bytesToB64(identity.signingPub),
-    })
-    await Api.sendSealed(identity, identity.uin, encryptV1(carbon, identity, selfBundle), 'carbon')
-  } catch {
-    /* best-effort multi-device echo */
-  }
-}
-
 async function cmdSend(pos: string[]): Promise<void> {
   const uin = Number(pos[0])
   const text = pos[1]
@@ -200,37 +184,17 @@ async function cmdSend(pos: string[]): Promise<void> {
     process.stderr.write(`provision failed (${e instanceof Error ? e.message : e}) — v=1 only\n`)
   })
   await drainQueue(identity)
-  const env: TextEnvelope = { kind: 'text', id: crypto.randomUUID().toUpperCase(), text }
-  // Prefer v=2 (one ciphertext per device of the peer). reached === 0 means
-  // the peer published no libsignal bundle — fall back to v=1 ECIES. A
-  // PARTIAL fan-out is a failed send, not a smaller number: the v=1 copy
-  // would reach the device that already has the message and still not the
-  // one that missed it (Chat.tsx, same rule).
-  let mode: string
+  let sent: { id: string; mode: string }
   try {
-    const reached = await sendV2(identity, uin, env, 'message').catch((e) => {
-      if (e instanceof PartialFanOutError) throw e
-      return 0
-    })
-    if (reached > 0) {
-      mode = `v2 devices=${reached}`
-    } else {
-      const info = await Api.userInfo(identity, uin)
-      await Api.sendSealed(identity, uin, encryptV1(env, identity, peerBundleFrom(info)), 'message')
-      mode = 'v1'
-    }
+    sent = await sendText(identity, uin, text)
   } catch (e) {
     die(`send failed: ${e instanceof Error ? e.message : e}`)
   }
-  await sendMessageCarbon(identity, uin, env)
-  // Our own id is "seen" from here on: the drain below would otherwise pull
-  // the self-carbon back and echo the typed text onto stdout as peer data.
-  markSent(env.id)
   // One more drain to pick up an instant receipt from a peer that is online.
   await new Promise((r) => setTimeout(r, 2000))
   const drained = await drainQueue(identity)
-  const delivered = drained?.receiptTargets.includes(env.id) ?? false
-  process.stdout.write(`sent ${mode}${delivered ? ' delivered' : ''}\n`)
+  const delivered = drained?.receiptTargets.includes(sent.id) ?? false
+  process.stdout.write(`sent ${sent.mode}${delivered ? ' delivered' : ''}\n`)
 }
 
 async function cmdWatch(): Promise<void> {
@@ -301,8 +265,14 @@ async function main(): Promise<void> {
     process.stdout.write(USAGE)
     process.exit(0)
   }
-  // No command is an error path: usage goes to stderr, stdout stays data-only.
-  if (!cmd) usageDie('no command')
+  // No command on a TTY is the interactive mode (the founder's daily spell);
+  // no command on a PIPE is still an error — a script that forgot its verb
+  // must not hang on a hidden prompt.
+  if (!cmd) {
+    if (!process.stdin.isTTY || !process.stdout.isTTY) usageDie('no command')
+    acquireStateLock()
+    return runInteractive(await withToken(requireIdentity()))
+  }
   // One process per state dir for anything that can touch the ratchet store —
   // see acquireStateLock. whoami/export are read-only peeks and stay lock-free.
   if (cmd !== 'whoami' && cmd !== 'export') acquireStateLock()
@@ -331,9 +301,10 @@ async function main(): Promise<void> {
 
 main().then(
   () => {
-    // `watch` keeps the loop alive via its socket; every other command is
-    // done when its promise settles.
-    if (process.argv[2] !== 'watch') process.exit(0)
+    // `watch` and the no-arg interactive mode stay alive on their socket;
+    // every other command is done when its promise settles.
+    const cmd = process.argv[2]
+    if (cmd !== undefined && cmd !== 'watch') process.exit(0)
   },
   (e) => die(e instanceof Error ? e.message : String(e)),
 )

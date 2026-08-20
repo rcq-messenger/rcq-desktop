@@ -3252,8 +3252,11 @@ export function Chat() {
               title={t('chat.emoticons')}
               aria-label={t('chat.emoticons')}
             >
+              {/* 'smile' left with the retired pack (2026-08-20) and a broken
+                  img made the whole button read as MISSING. i-m_so_happy is
+                  the current pack's face for the job. */}
               <img
-                src={emoticonAssetURL('smile')}
+                src={emoticonAssetURL('i-m_so_happy')}
                 alt=""
                 width={22}
                 height={22}

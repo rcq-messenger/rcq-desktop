@@ -846,11 +846,25 @@ export function Chat() {
               : 'message'
     try {
       if (isGroup && group && gctx) {
+        // A roster with just US in it is not an error to post to: everyone
+        // else left (or never joined), and Android in the same group happily
+        // "sends" — empty fan-out, state SENT, carbon to the other devices
+        // (Session.fanOutGroup). The web threw "no one else in this group"
+        // instead, so the very message the phone accepted showed as failed
+        // here. No one to seal to means the wire part is simply empty — the
+        // carbon below is the whole delivery.
+        // ⚠ Gate on OUR OWN row being present: an empty members list is an
+        // UNLOADED roster (see forwardTo), and skipping the wire on one would
+        // fake-send into a group that does have people.
+        const me = gctx.ident.uin
+        const soloGroup = group.members.some((m) => m.uin === me) && !group.members.some((m) => m.uin !== me)
         // Sender-keys dual-send (only for a LOCAL group — cross-island groups
         // keep the legacy per-member path in v1; their capability lookup +
         // broadcast endpoint live on the foreign island we have no token for).
         const anyCapable = !group.host && group.members.some((m) => m.sender_keys && m.uin !== gctx.ident.uin)
-        if (anyCapable) {
+        if (soloGroup) {
+          /* nothing on the group wire — fall through to the carbon */
+        } else if (anyCapable) {
           const ds = buildGroupDualSend(envelope, gctx.ident, gctx.gid, group.members)
           if (!ds.broadcastPayload && ds.legacyPayloads.length === 0) {
             throw new Error(
@@ -1565,15 +1579,22 @@ export function Chat() {
         // payloads at all, and the forward would report an empty group — or
         // worse, on a partial roster, quietly reach only some of it.
         const full = await ensureRoster(fctx.ident, target.group)
-        const { payloads, skipped } = encryptGroupEnvelope(env, fctx.ident, full.members)
-        if (payloads.length === 0) {
-          throw new Error(
-            skipped.length > 0
-              ? t('chat.error.group_no_valid_members')
-              : t('chat.error.group_empty'),
-          )
+        // A solo group (only us in the fresh roster) takes the forward with an
+        // empty wire, same as shipEnvelopeToCurrentThread — the row lands in
+        // the target thread below and nobody else exists to reach.
+        const soloTarget =
+          full.members.some((m) => m.uin === fctx.ident.uin) && !full.members.some((m) => m.uin !== fctx.ident.uin)
+        if (!soloTarget) {
+          const { payloads, skipped } = encryptGroupEnvelope(env, fctx.ident, full.members)
+          if (payloads.length === 0) {
+            throw new Error(
+              skipped.length > 0
+                ? t('chat.error.group_no_valid_members')
+                : t('chat.error.group_empty'),
+            )
+          }
+          await Api.sendGroupSealed(fctx.ident, fctx.gid, payloads)
         }
-        await Api.sendGroupSealed(fctx.ident, fctx.gid, payloads)
       } else {
         const wireB64 = encryptV1(env, identity, peerBundleFrom(target.contact))
         await Api.sendSealed(identity, target.uin, wireB64)

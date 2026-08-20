@@ -139,7 +139,11 @@ export async function ingestDecrypted(
   if (env.kind === 'read' || env.kind === 'delivered') {
     const ids = Array.isArray(env.targetIDs) ? env.targetIDs.filter((t) => typeof t === 'string') : []
     out.receiptTargets.push(...ids)
-    process.stderr.write(`[${stamp()}] ${env.kind} receipt from #${got.senderUIN}: ${ids.join(', ')}\n`)
+    // Receipt-by-receipt noise is for debugging; the send command already says
+    // "delivered" in its one summary line.
+    if (process.env.RCQ_VERBOSE) {
+      process.stderr.write(`[${stamp()}] ${env.kind} receipt from #${got.senderUIN}: ${ids.join(', ')}\n`)
+    }
     return
   }
   if (!CONTENT_KINDS.has(env.kind)) {

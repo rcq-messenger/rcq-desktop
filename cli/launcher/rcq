@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Thin launcher so nobody types `node .../rcq.mjs` per command. Ship it beside
+# rcq.mjs; `ln -s` it anywhere on PATH and `rcq` just works.
+exec node "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/rcq.mjs" "$@"

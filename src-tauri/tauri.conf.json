@@ -36,7 +36,12 @@
     },
     "externalBin": [
       "binaries/sing-box"
-    ]
+    ],
+    "windows": {
+      "nsis": {
+        "installerHooks": "./windows/hooks.nsi"
+      }
+    }
   },
   "plugins": {
     "updater": {

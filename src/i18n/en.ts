@@ -463,6 +463,11 @@ export const en: Record<string, string> = {
   'settings.session.unlink_footer':
     'Signs out and clears this browser only (messages, contacts, keys stored here). If you connected this web from your phone via QR, your account stays on the phone — just disconnect this browser there under Linked devices. But if you signed in with a recovery phrase and this is the only copy, signing out loses the account for good.',
   'settings.section.island': 'This island',
+  'settings.section.devices': 'Account devices',
+  'settings.devices.body': 'Every install holding its own encryption keys: the phone, browsers, the console client. A recovery-phrase login shows up here too.',
+  'settings.devices.primary': 'Primary device',
+  'settings.devices.this': 'this device',
+  'settings.devices.unnamed': 'Unnamed',
   'settings.island.rules': 'House rules',
   'settings.section.multihome': 'Backup on another island',
   'settings.multihome.body':

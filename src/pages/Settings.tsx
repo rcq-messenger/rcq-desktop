@@ -8,6 +8,7 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { currentRecoveryPhrase, forgetRecoverySeed, revokedAccounts } from '../lib/auth'
+import { myAccountDevices, myDeviceId } from '../lib/signal-device'
 import { exportBackup, importBackup } from '../lib/backup-data'
 import { Dropdown, type DropdownOption } from '../components/Dropdown'
 import { LanguagePicker } from '../components/LanguagePicker'
@@ -76,6 +77,22 @@ export function Settings() {
   const islandRules = islandInfo?.welcome.trim() || null
   const islandHost = (identity?.apiBase ?? '').replace(/^https?:\/\//, '')
   const [showRules, setShowRules] = useState(false)
+  // The account's key slots (#643): every install with its own encryption
+  // keys, which is the one list a phrase login must show up in. null while
+  // loading; [] when the island could not answer.
+  const [accountDevices, setAccountDevices] = useState<Array<{ device_id: number; label: string | null }> | null>(null)
+  const [ownDeviceId, setOwnDeviceId] = useState<number | null>(null)
+  useEffect(() => {
+    if (!identity) return
+    let alive = true
+    void myAccountDevices(identity)
+      .then((list) => { if (alive) setAccountDevices(list) })
+      .catch(() => { if (alive) setAccountDevices([]) })
+    void myDeviceId(identity)
+      .then((d) => { if (alive) setOwnDeviceId(d) })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [identity])
   const navigate = useNavigate()
   const [confirming, setConfirming] = useState(false)
   const [burnTyped, setBurnTyped] = useState('')
@@ -650,6 +667,33 @@ export function Settings() {
                 </p>
               )}
             </>
+          )}
+        </section>
+
+        {/* #643: the account's key slots. The QR-linked web registry lives on
+            the phone's screen; THIS list is the cryptographic one — every
+            install that can read v=2 holds a slot here, so a phrase login
+            cannot stay out of it. Read-only in v1: revoking a slot is a key
+            operation with its own consequences, not a button to add lightly. */}
+        <section className="bg-surface rounded-lg p-4 space-y-3">
+          <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+            {t('settings.section.devices')}
+          </div>
+          <p className="text-xs text-fg-secondary">{t('settings.devices.body')}</p>
+          {accountDevices != null && (
+            <ul className="space-y-1.5">
+              {accountDevices.map((d) => (
+                <li key={d.device_id} className="flex items-center gap-2 text-sm min-w-0">
+                  <span className="font-mono text-xs text-fg-dim flex-none">#{d.device_id}</span>
+                  <span className="truncate">
+                    {d.device_id === 1 ? t('settings.devices.primary') : d.label || t('settings.devices.unnamed')}
+                  </span>
+                  {ownDeviceId != null && d.device_id === ownDeviceId && (
+                    <span className="text-xs text-accent flex-none">{t('settings.devices.this')}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
           )}
         </section>
 

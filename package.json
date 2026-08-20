@@ -10,7 +10,9 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "desktop:dev": "tauri dev",
-    "desktop:build": "tauri build"
+    "desktop:build": "tauri build",
+    "cli:build": "node cli/build.mjs",
+    "cli:test": "node cli/build.mjs && node cli/test/roundtrip.mjs"
   },
   "dependencies": {
     "@noble/ciphers": "^1.0.0",
@@ -34,6 +36,7 @@
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.4.19",
+    "esbuild": "^0.21.5",
     "postcss": "^8.4.40",
     "tailwindcss": "^3.4.10",
     "typescript": "^5.5.4",

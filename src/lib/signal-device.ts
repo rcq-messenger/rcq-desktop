@@ -231,6 +231,20 @@ async function adoptFlatDeviceState(uin: number): Promise<DeviceBlob | undefined
   }
 }
 
+/// What a fresh install does about the account's primary slot. 'auto' is the
+/// web rule (take it — see the ★ comment in provision below). 'secondary'
+/// forbids the claim outright: the console client runs headless on machines
+/// nobody is watching, and a CLI that stole the slot would put every peer's
+/// session onto keys the phone no longer answers for — the 2026-08-20 live
+/// test showed what a surprise re-claim does to peers' sessions
+/// (docs/console-client-design.md). Default 'auto' keeps web behaviour
+/// byte-identical.
+export type ProvisionPolicy = 'auto' | 'secondary'
+let _provisionPolicy: ProvisionPolicy = 'auto'
+export function setProvisionPolicy(p: ProvisionPolicy): void {
+  _provisionPolicy = p
+}
+
 // ⚠ Nothing the island says — or fails to say — is worth a device over. What
 // this install already holds is what opens the backlog addressed to it, and a
 // drain that runs without it acks that backlog away as undecryptable. So every
@@ -261,6 +275,10 @@ async function provision(identity: WebIdentity): Promise<WebSignalDevice> {
     // is what makes that row reachable, so it comes before the claim below.
     const claimed = await idbGet<DeviceBlob>(claimKey(identity.uin))
     if (claimed) return becomeSecondary(identity)
+    // A 'secondary' policy never reaches the claim below: whoever holds the
+    // slot — a phone, or nobody yet — keeps it, and this install registers
+    // alongside. See ProvisionPolicy above for why the console client must.
+    if (_provisionPolicy === 'secondary') return becomeSecondary(identity)
     // ★ Nothing of ours on this machine: take the primary slot, whoever holds
     // it, and without asking. There are no sessions here to preserve, the
     // account key this device seals to is the one every sender already has, and

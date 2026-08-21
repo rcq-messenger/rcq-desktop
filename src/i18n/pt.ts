@@ -173,6 +173,7 @@ export const pt: Record<string, string> = {
   'chat.report.sent': 'Denúncia enviada. Obrigado.',
   'chat.report.error': 'Não foi possível enviar a denúncia.',
   'chat.pin.attachment': '📎 Anexo',
+  'chat.pin.failed': 'Não foi possível fixar a mensagem.',
   'chat.copied': 'Copiado',
   'chat.edit.editing': 'Editando mensagem',
   'chat.edit.edited': '(editada)',

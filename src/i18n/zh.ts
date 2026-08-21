@@ -173,6 +173,7 @@ export const zh: Record<string, string> = {
   'chat.report.sent': '举报已发送，谢谢。',
   'chat.report.error': '举报发送失败。',
   'chat.pin.attachment': '📎 附件',
+  'chat.pin.failed': '无法置顶这条消息。',
   'chat.copied': '已复制',
   'chat.edit.editing': '正在编辑消息',
   'chat.edit.edited': '（已编辑）',

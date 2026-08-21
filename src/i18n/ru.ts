@@ -198,6 +198,7 @@ export const ru: Record<string, string> = {
   'chat.report.sent': 'Жалоба отправлена. Спасибо.',
   'chat.report.error': 'Не удалось отправить жалобу.',
   'chat.pin.attachment': '📎 Вложение',
+  'chat.pin.failed': 'Не получилось закрепить сообщение.',
   'chat.copied': 'Скопировано',
   'chat.edit.editing': 'Редактирование',
   'chat.edit.edited': '(изм.)',

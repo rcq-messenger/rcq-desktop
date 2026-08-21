@@ -14,6 +14,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { scopedKey } from '../lib/account-scope'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { EmoticonInput, insertEmoticonAt, serialize as serializeComposer } from '../components/EmoticonInput'
@@ -354,6 +355,7 @@ export function Chat() {
     setUnreadAnchor(null)
     anchorDecidedRef.current = null
     didUnreadScrollRef.current = null
+    posRestoredRef.current = null
   }, [persistKey])
 
   // Persist on every change. Cheaper than a debounce here — the
@@ -468,6 +470,16 @@ export function Chat() {
   // message that hydrated/drained after open reeled the list down.
   const lastThreadRef = useRef<string | null>(null)
   const atBottomRef = useRef(true)
+  // Where reading LEFT OFF in each thread, as a distance from the bottom —
+  // founder batch 21.08, item 13a: leaving a chat and coming back must land
+  // in the same place, the way every messenger does it. Distance-from-bottom
+  // rather than a scrollTop: the number stays meaningful when older history
+  // hydrates above. The UNREAD divider always wins over this (new messages
+  // move the landing point to where reading actually stopped); the saved spot
+  // only answers the quiet case where nothing new arrived.
+  const savedPosKey = (k: string) => scopedKey(`chat.pos.${k}`)
+  const posRestoredRef = useRef<string | null>(null)
+  const posSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // The same fact as `atBottomRef`, but in state so the view can react to it:
   // a ref cannot render the "jump to newest" button, which is why there never
   // was one. Kept as a pair rather than replacing the ref — the scroll effect
@@ -698,7 +710,8 @@ export function Chat() {
     const switched = lastThreadRef.current !== persistKey
     lastThreadRef.current = persistKey
     const total = outgoing.length + incoming.length
-    const grew = switched ? 0 : Math.max(0, total - lastCountRef.current)
+    const prevTotal = lastCountRef.current
+    const grew = switched ? 0 : Math.max(0, total - prevTotal)
     lastCountRef.current = total
     const prevIncomingLen = switched ? incoming.length : lastIncomingLenRef.current
     lastIncomingLenRef.current = incoming.length
@@ -706,17 +719,47 @@ export function Chat() {
     // newest message is NOT where the user wants to land, so the bottom jump
     // is left to the effect above, which knows whether a divider exists.
     const openingOnUnread = switched && (unreadOnOpenRef.current?.n ?? 0) > 0
+    // The quiet re-entry (item 13a): no unread, but a saved reading spot.
+    // Attempted on the switch itself, or on the hydration tick right after it
+    // (a cold open briefly has no rows — there is nothing to scroll yet).
+    // Once per thread visit; scrolling past the guard just overwrites the
+    // saved spot with a fresher one.
+    let resumeFromBottom: number | null = null
+    if (
+      persistKey &&
+      posRestoredRef.current !== persistKey &&
+      total > 0 &&
+      (unreadOnOpenRef.current?.key !== persistKey || (unreadOnOpenRef.current?.n ?? 0) < 1) &&
+      (switched || prevTotal === 0)
+    ) {
+      try {
+        const v = Number(localStorage.getItem(savedPosKey(persistKey)))
+        if (Number.isFinite(v) && v > 80) resumeFromBottom = v
+      } catch {
+        /* storage gone — open at the bottom as always */
+      }
+    }
+    if (resumeFromBottom != null) posRestoredRef.current = persistKey
     if (switched) {
       if (openingOnUnread) {
         pinTargetRef.current = null
         // The previous thread's unseen ids must not leak into this one — the
         // anchor effect rebuilds the list once this thread's rows are in.
         unseenIdsRef.current = []
+      } else if (resumeFromBottom != null) {
+        pinTargetRef.current = null
+        atBottomRef.current = false
+        setAtBottom(false)
+        clearUnseenBelow()
       } else {
         pinTargetRef.current = 'bottom'
         setAtBottom(true)
         clearUnseenBelow()
       }
+    } else if (resumeFromBottom != null) {
+      pinTargetRef.current = null
+      atBottomRef.current = false
+      setAtBottom(false)
     } else if (grew && !atBottomRef.current) {
       // Arrived while the user is reading further up: count it for the jump
       // button instead of yanking the list, which is what the early return
@@ -738,6 +781,15 @@ export function Chat() {
     // measured before we pin to the bottom — otherwise the jump lands short
     // and the last bubbles hide under the composer.
     requestAnimationFrame(() => {
+      if (resumeFromBottom != null) {
+        el.scrollTo({ top: Math.max(0, el.scrollHeight - el.clientHeight - resumeFromBottom), behavior: 'auto' })
+        const dist = el.scrollHeight - el.scrollTop - el.clientHeight
+        // A thread shorter than the pane cannot resume anywhere but the
+        // bottom — report where we actually are, not where we aimed.
+        atBottomRef.current = dist < 80
+        setAtBottom(dist < 80)
+        return
+      }
       if (switched) {
         if (openingOnUnread) return
         el.scrollTo({ top: el.scrollHeight, behavior: 'auto' })
@@ -2424,6 +2476,21 @@ export function Chat() {
           if (bottom) releaseUnreadPin()
           atBottomRef.current = bottom
           setAtBottom(bottom)
+          // Remember where reading is, debounced (item 13a). At the bottom the
+          // spot is cleared — "resume at the newest" is just opening normally.
+          if (posSaveTimer.current) clearTimeout(posSaveTimer.current)
+          const key = persistKey
+          posSaveTimer.current = setTimeout(() => {
+            const live = scrollRef.current
+            if (!key || !live) return
+            const dist = Math.round(live.scrollHeight - live.scrollTop - live.clientHeight)
+            try {
+              if (dist < 80) localStorage.removeItem(savedPosKey(key))
+              else localStorage.setItem(savedPosKey(key), String(dist))
+            } catch {
+              /* quota — resuming is a nicety, not state */
+            }
+          }, 250)
           // Cross rows off the jump-button badge as they come into view. The
           // floor is the composer's top edge, the same maths as roomAround: a
           // row still under the blurred bar has not been seen. The list is a

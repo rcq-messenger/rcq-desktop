@@ -12,22 +12,15 @@ import readline from 'node:readline'
 import { Api } from '../../src/lib/api'
 import type { WebIdentity } from '../../src/lib/crypto'
 import { decryptIncoming, getDevice, myDeviceId, noteInboundFrom } from '../../src/lib/signal-device'
+import { tr } from './i18n'
 import { drainQueue, ingestDecrypted, setEmitter, stamp, type IngestResult } from './receive'
 import { sendText } from './send'
 import { RcqSocket } from './socket'
 import { out } from './style'
 
-const HELP = `  /to <uin>   talk to this contact (replies auto-pick whoever writes first)
-  /add <uin>  send a contact request
-  /nick NAME  rename this account
-  /contacts   list contacts
-  /help       this text
-  /quit       leave (Ctrl+C and Ctrl+D work too)
-anything else you type goes to the active contact.`
-
 export async function runInteractive(identity: WebIdentity): Promise<void> {
   await getDevice(identity).catch((e) => {
-    process.stderr.write(`provision failed (${e instanceof Error ? e.message : e}) — v=1 only\n`)
+    process.stderr.write(tr('provision.v1only', { err: e instanceof Error ? e.message : String(e) }) + '\n')
   })
   // Correct the live-frame device filter from the saved blob even when the
   // provision above failed (same reason as watch: until then currentDeviceId
@@ -88,12 +81,12 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
         continue
       }
       pendingSent.delete(id)
-      printAbove(`${out.dim(`[${stamp()}]`)} ${out.green(`✓ delivered to #${uin}`)}`)
+      printAbove(`${out.dim(`[${stamp()}]`)} ${out.green(tr('interactive.delivered', { uin }))}`)
     }
     if (res.lastPeerFrom !== undefined) {
       if (active === null) {
         switchTo(res.lastPeerFrom)
-        printAbove(out.dim(`(replying to #${res.lastPeerFrom} — /to <uin> switches)`))
+        printAbove(out.dim(tr('interactive.replyingTo', { uin: res.lastPeerFrom })))
       }
       res.lastPeerFrom = undefined // the live result object is long-lived
     }
@@ -110,7 +103,7 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
     sock.stop()
     process.stderr.write = rawStderr
     rl.close()
-    rawStderr('bye\n')
+    rawStderr(tr('bye') + '\n')
     process.exit(0)
   }
 
@@ -134,7 +127,7 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
     },
     () => {
       process.stderr.write = rawStderr
-      rawStderr('rcq: the island rejected this session (unlinked or revoked)\n')
+      rawStderr(`rcq: ${tr('err.sessionRejected')}\n`)
       process.exit(1)
     },
   )
@@ -147,13 +140,13 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
       return
     }
     if (line === '/help' || line === '/?') {
-      printAbove(HELP)
+      printAbove(tr('interactive.help'))
       return
     }
     if (line === '/contacts') {
       const list = await Api.contacts(identity)
       if (list.length === 0) {
-        printAbove("(no contacts yet — 'rcq add <uin>' sends a request)")
+        printAbove(tr('interactive.noContacts'))
         return
       }
       for (const c of list) {
@@ -165,7 +158,7 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
     if (line === '/to' || line.startsWith('/to ')) {
       const uin = Number(line.slice(3).trim())
       if (!Number.isInteger(uin) || uin <= 0) {
-        printAbove('usage: /to <uin>')
+        printAbove(tr('interactive.usageTo'))
         return
       }
       switchTo(uin)
@@ -174,36 +167,36 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
     if (line === '/nick' || line.startsWith('/nick ')) {
       const name = line.slice(5).trim()
       if (!name) {
-        printAbove('usage: /nick NAME')
+        printAbove(tr('interactive.usageNick'))
         return
       }
       await Api.updateProfile(identity, { nickname: name })
-      printAbove(out.dim(`you are now "${name}"`))
+      printAbove(out.dim(tr('nick.done', { name })))
       return
     }
     if (line === '/add' || line.startsWith('/add ')) {
       const uin = Number(line.slice(4).trim())
       if (!Number.isInteger(uin) || uin <= 0) {
-        printAbove('usage: /add <uin>')
+        printAbove(tr('interactive.usageAdd'))
         return
       }
       await Api.sendContactRequest(identity, uin)
-      printAbove(out.dim(`contact request sent to #${uin}`))
+      printAbove(out.dim(tr('add.sent', { uin })))
       return
     }
     if (line.startsWith('/')) {
-      printAbove(`unknown command ${line.split(' ')[0]} — /help lists them`)
+      printAbove(tr('interactive.unknownSlash', { cmd: line.split(' ')[0] }))
       return
     }
     // Muscle memory from the one-shot commands: `rcq send 911 hi` typed INTO
     // rcq would go out as literal text starting with the word "rcq". Catch it
     // — the founder typed exactly this into watch on day one.
     if (/^rcq(\s|$)/.test(line)) {
-      printAbove(out.dim("you are already inside rcq — just type the message (or /to <uin> to switch)"))
+      printAbove(out.dim(tr('interactive.insideRcq')))
       return
     }
     if (active === null) {
-      printAbove('no one to send to yet — /to <uin> picks a contact, /contacts lists them')
+      printAbove(tr('interactive.noActive'))
       return
     }
     const to = active
@@ -211,7 +204,7 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
     printAbove(`${out.dim(`[${stamp()}]`)} ${out.green(`me -> #${to}`)}: ${line}${process.env.RCQ_VERBOSE ? out.dim(` (${mode})`) : ''}`)
     if (earlyReceipts.delete(id)) {
       // The receipt outran us (see earlyReceipts) — settle it now.
-      printAbove(`${out.dim(`[${stamp()}]`)} ${out.green(`✓ delivered to #${to}`)}`)
+      printAbove(`${out.dim(`[${stamp()}]`)} ${out.green(tr('interactive.delivered', { uin: to }))}`)
     } else {
       pendingSent.set(id, to)
     }
@@ -228,7 +221,7 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
   rl.on('SIGINT', shutdown) // readline swallows the signal into this event
   rl.on('close', shutdown) // Ctrl+D
 
-  process.stderr.write(`you are #${identity.uin} — /help for commands\n`)
+  process.stderr.write(tr('interactive.hello', { uin: identity.uin }) + '\n')
   // The backlog first (its lines print above the still-empty prompt), socket
   // second, and keep draining on a timer while no socket is open — same
   // network reality as watch: HTTPS may answer while every WebSocket dies.

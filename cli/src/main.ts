@@ -28,6 +28,7 @@ import { sendText } from './send'
 import { RcqSocket } from './socket'
 import { acquireStateLock } from './state'
 import { decryptIncoming, noteInboundFrom } from '../../src/lib/signal-device'
+import { currentLang, setLang, tr } from './i18n'
 import { err, out } from './style'
 import { noteUpdateIfAny } from './update-check'
 import { CLI_VERSION } from './version'
@@ -42,32 +43,13 @@ setProvisionPolicy('secondary')
 // — the same path that keeps a 30-day-old web session alive.
 setTokenRefresher(async (id) => (await mintSessionToken(id)).token)
 
-// ⚠ The order below is the pitch. `rcq` with no arguments IS the client — the
-// live conversation — and everything under "for scripts" is plumbing for
-// pipes and cron. The first printed usage led with a wall of subcommands, and
-// the founder's own first session went send → watch → confusion before
-// discovering the bare command ("другие команды вводят в заблуждение", 21.08).
-const USAGE = `rcq — RCQ console client v${CLI_VERSION}
-
-start here:
-  rcq                                         the conversation: live incoming + a prompt that sends
-  rcq register [--nick NAME] [--island URL]   create an account, print UIN + recovery phrase
-  rcq restore "<24 words>" [--island URL]     restore an account from its phrase
-
-for scripts and one-shots (stdout is data, status goes to stderr):
-  rcq whoami                                  print uin, nickname, island, device id
-  rcq nick "NAME"                             rename this account
-  rcq contacts                                list contacts (uin, nickname, status)
-  rcq add <uin>                               send a contact request
-  rcq send <uin> "text"                       one-shot: drain, send, wait for the receipt, exit
-  rcq watch                                   read-only stream of incoming messages
-  rcq export                                  print the history file path and line count
-  rcq --version                               version + update check
-  rcq --help                                  this text
-
-state lives in $RCQ_CLI_HOME (default ~/.config/rcq), chmod 0600/0700.
-RCQ_VERBOSE=1 shows protocol detail; NO_COLOR strips colour.
-`
+// ⚠ The order of the usage text is the pitch. `rcq` with no arguments IS the
+// client (the live conversation), and everything under "for scripts" is
+// plumbing for pipes and cron. The first printed usage led with a wall of
+// subcommands, and the founder's own first session went send, then watch,
+// then confusion before discovering the bare command ("другие команды вводят
+// в заблуждение", 21.08). The text itself lives in i18n.ts, both languages.
+const usage = (): string => tr('usage', { version: CLI_VERSION })
 
 function die(msg: string, code = 1): never {
   process.stderr.write(`rcq: ${msg}\n`)
@@ -76,7 +58,7 @@ function die(msg: string, code = 1): never {
 
 function usageDie(msg?: string): never {
   if (msg) process.stderr.write(`rcq: ${msg}\n`)
-  process.stderr.write(USAGE)
+  process.stderr.write(usage())
   process.exit(2)
 }
 
@@ -88,7 +70,7 @@ function parseArgs(argv: string[]): { pos: string[]; opts: Map<string, string> }
     const a = argv[i]
     if (a.startsWith('--')) {
       const v = argv[i + 1]
-      if (v === undefined || v.startsWith('--')) usageDie(`${a} needs a value`)
+      if (v === undefined || v.startsWith('--')) usageDie(tr('args.flagNeedsValue', { flag: a }))
       opts.set(a, v)
       i++
     } else {
@@ -100,7 +82,7 @@ function parseArgs(argv: string[]): { pos: string[]; opts: Map<string, string> }
 
 function requireIdentity(): WebIdentity {
   const id = loadStoredIdentity()
-  if (!id) die("no account here — run 'rcq register' or 'rcq restore' first")
+  if (!id) die(tr('err.noAccount'))
   return id
 }
 
@@ -122,12 +104,12 @@ function jwtTtl(jwt: string): number {
 async function withToken(id: WebIdentity): Promise<WebIdentity> {
   if (id.jwt && jwtTtl(id.jwt) > 3600) return id
   const mint = await mintSessionToken(id)
-  if (mint.dead) die('the island refused this session (revoked or account gone)')
+  if (mint.dead) die(tr('err.sessionRefused'))
   if (!mint.token) {
     // Unreachable island but a token that is formally still alive: let the
     // command try with it rather than dying at the door.
     if (id.jwt && jwtTtl(id.jwt) > 0) return id
-    die('could not mint a session token (island unreachable?)')
+    die(tr('err.mintFailed'))
   }
   const fresh = { ...id, jwt: mint.token }
   persistIdentity(fresh)
@@ -138,17 +120,13 @@ function printPhraseBlock(uin: number): void {
   const phrase = currentRecoveryPhrase()
   process.stdout.write(`uin: ${uin}\n`)
   if (phrase) {
-    process.stdout.write(`phrase: ${phrase.join(' ')}\n`)
-    process.stderr.write(
-      '\nKEEP THIS PHRASE. It recreates the account on any device, forever.\n' +
-        'Anyone who has it IS this account. It is stored in the state dir —\n' +
-        'delete it there after writing it down if this box is not trusted.\n',
-    )
+    process.stdout.write(`${tr('label.phrase')}: ${phrase.join(' ')}\n`)
+    process.stderr.write(tr('phrase.keep'))
   }
 }
 
 async function cmdRegister(opts: Map<string, string>): Promise<void> {
-  if (loadStoredIdentity()) die("an account already lives here — 'rcq whoami'. Use RCQ_CLI_HOME for a second one")
+  if (loadStoredIdentity()) die(tr('err.accountExists'))
   const nick = opts.get('--nick') ?? suggestNickname()
   const island = (opts.get('--island') ?? DEFAULT_API_BASE).replace(/\/+$/, '')
   const identity = await createNewAccount(nick, island)
@@ -157,11 +135,11 @@ async function cmdRegister(opts: Map<string, string>): Promise<void> {
 
 async function cmdRestore(pos: string[], opts: Map<string, string>): Promise<void> {
   const phrase = pos[0]
-  if (!phrase) usageDie('restore needs the quoted 24-word phrase')
+  if (!phrase) usageDie(tr('restore.needsPhrase'))
   const island = (opts.get('--island') ?? DEFAULT_API_BASE).replace(/\/+$/, '')
   const identity = await recoverFromPhrase(phrase, island)
   process.stdout.write(`uin: ${identity.uin}\n`)
-  process.stderr.write('restored. The libsignal device registers on the first send/watch.\n')
+  process.stderr.write(tr('restore.done') + '\n')
 }
 
 async function cmdWhoami(): Promise<void> {
@@ -174,8 +152,9 @@ async function cmdWhoami(): Promise<void> {
   // (whoami must never mint or hang; 'rcq nick' is where renames happen).
   let nick: string | null = null
   if (id.jwt) nick = await Api.myInfo(id).then((m) => m.nickname ?? null).catch(() => null)
+  // Labels localize, VALUES never do: scripts read the right-hand side.
   process.stdout.write(
-    `uin: ${id.uin}\n${nick ? `nickname: ${nick}\n` : ''}island: ${id.apiBase}\ndevice: ${blob ? blob.deviceId : '-'}\n`,
+    `uin: ${id.uin}\n${nick ? `${tr('label.nickname')}: ${nick}\n` : ''}${tr('label.island')}: ${id.apiBase}\n${tr('label.device')}: ${blob ? blob.deviceId : '-'}\n`,
   )
 }
 
@@ -183,10 +162,10 @@ async function cmdWhoami(): Promise<void> {
 /// rest of the profile belongs to the visual clients.
 async function cmdNick(pos: string[]): Promise<void> {
   const name = pos[0]?.trim()
-  if (!name) usageDie('nick needs the new name in quotes')
+  if (!name) usageDie(tr('nick.needsName'))
   const id = await withToken(requireIdentity())
   await Api.updateProfile(id, { nickname: name })
-  process.stderr.write(`you are now "${name}"\n`)
+  process.stderr.write(tr('nick.done', { name }) + '\n')
 }
 
 async function cmdContacts(): Promise<void> {
@@ -199,20 +178,20 @@ async function cmdContacts(): Promise<void> {
 
 async function cmdAdd(pos: string[]): Promise<void> {
   const uin = Number(pos[0])
-  if (!Number.isInteger(uin) || uin <= 0) usageDie('add needs a numeric UIN')
+  if (!Number.isInteger(uin) || uin <= 0) usageDie(tr('add.needsUin'))
   const id = await withToken(requireIdentity())
   await Api.sendContactRequest(id, uin)
-  process.stderr.write(`contact request sent to #${uin}\n`)
+  process.stderr.write(tr('add.sent', { uin }) + '\n')
 }
 
 async function cmdSend(pos: string[]): Promise<void> {
   const uin = Number(pos[0])
   const text = pos[1]
-  if (!Number.isInteger(uin) || uin <= 0 || !text) usageDie('send needs <uin> and "text"')
+  if (!Number.isInteger(uin) || uin <= 0 || !text) usageDie(tr('send.needsArgs'))
   const identity = await withToken(requireIdentity())
   await getDevice(identity).catch((e) => {
     // v=1 still works without a libsignal device; say so rather than dying.
-    process.stderr.write(`provision failed (${e instanceof Error ? e.message : e}) — v=1 only\n`)
+    process.stderr.write(tr('provision.v1only', { err: e instanceof Error ? e.message : String(e) }) + '\n')
   })
   // The island's mailbox is open by design (UIN culture: anyone can write
   // first, the recipient decides what to do with strangers) — but writing to
@@ -222,13 +201,13 @@ async function cmdSend(pos: string[]): Promise<void> {
   const known = await Api.contacts(identity)
     .then((l) => l.some((c) => c.uin === uin))
     .catch(() => true)
-  if (!known) process.stderr.write(err.yellow(`note: #${uin} is not in your contacts\n`))
+  if (!known) process.stderr.write(err.yellow(tr('send.notContact', { uin }) + '\n'))
   const backlog = await drainQueue(identity)
   let sent: { id: string; mode: string }
   try {
     sent = await sendText(identity, uin, text)
   } catch (e) {
-    die(`send failed: ${e instanceof Error ? e.message : e}`)
+    die(tr('send.failed', { err: e instanceof Error ? e.message : String(e) }))
   }
   // One more drain to pick up an instant receipt from a peer that is online.
   await new Promise((r) => setTimeout(r, 2000))
@@ -238,19 +217,19 @@ async function cmdSend(pos: string[]): Promise<void> {
   // and device count are protocol detail ("ненормально что показывает скольким
   // девайсам", 21.08): verbose-only, and on stderr where detail lives.
   if (process.env.RCQ_VERBOSE) process.stderr.write(`mode: ${sent.mode}\n`)
-  const word = delivered ? 'delivered' : 'sent'
+  const word = delivered ? tr('word.delivered') : tr('word.sent')
   process.stdout.write(process.stdout.isTTY ? `${out.green('✓')} ${word}\n` : `${word}\n`)
   // The backlog just interleaved with the one thing this command was asked to
   // do — which is exactly the confusion the interactive mode does not have.
   if (((backlog?.contentCount ?? 0) + (drained?.contentCount ?? 0)) > 0 && process.stdout.isTTY) {
-    process.stderr.write(err.dim("tip: plain 'rcq' is the live conversation — incoming above, a prompt below") + '\n')
+    process.stderr.write(err.dim(tr('send.tip')) + '\n')
   }
 }
 
 async function cmdWatch(): Promise<void> {
   const identity = await withToken(requireIdentity())
   await getDevice(identity).catch((e) => {
-    process.stderr.write(`provision failed (${e instanceof Error ? e.message : e}) — v=1 receive only\n`)
+    process.stderr.write(tr('provision.v1receive', { err: e instanceof Error ? e.message : String(e) }) + '\n')
   })
   // Correct the live-frame device filter from the saved blob even when the
   // provision above failed: until then currentDeviceId() answers 1 (the
@@ -280,19 +259,19 @@ async function cmdWatch(): Promise<void> {
       void drainQueue(identity)
     },
     () => {
-      die('the island rejected this session (unlinked or revoked)')
+      die(tr('err.sessionRejected'))
     },
   )
   sock.start()
   const poll = setInterval(() => {
     if (!sock.isOpen) void drainQueue(identity)
   }, 30_000)
-  process.stderr.write(`watching as #${identity.uin} (Ctrl+C to stop)\n`)
+  process.stderr.write(tr('watch.hello', { uin: identity.uin }) + '\n')
   void noteUpdateIfAny()
   const bye = (): void => {
     clearInterval(poll)
     sock.stop()
-    process.stderr.write('\nbye\n')
+    process.stderr.write('\n' + tr('bye') + '\n')
     process.exit(0)
   }
   process.on('SIGINT', bye)
@@ -302,14 +281,29 @@ async function cmdWatch(): Promise<void> {
   // conversation lives instead of eating the line. The readline also swallows
   // Ctrl+C/Ctrl+D into events, so both are wired back to the same exit.
   if (process.stdin.isTTY && process.stderr.isTTY) {
-    process.stderr.write(err.dim("(read-only — plain 'rcq' opens the conversation mode)") + '\n')
+    process.stderr.write(err.dim(tr('watch.readonly')) + '\n')
     const rl = readline.createInterface({ input: process.stdin })
     rl.on('line', (l) => {
-      if (l.trim()) process.stderr.write(err.dim("watch is read-only — Ctrl+C, then plain 'rcq' to talk") + '\n')
+      if (l.trim()) process.stderr.write(err.dim(tr('watch.readonlyTyped')) + '\n')
     })
     rl.on('SIGINT', bye)
     rl.on('close', bye)
   }
+}
+
+/// `rcq lang` prints the active language (stdout, one word, scriptable) plus
+/// its usage; `rcq lang en|ru` remembers the choice in the state dir. Works
+/// with no account and no lock: it never touches the ratchet.
+function cmdLang(pos: string[]): void {
+  const pick = pos[0]
+  if (pick === undefined) {
+    process.stdout.write(`${currentLang()}\n`)
+    process.stderr.write(tr('lang.usage') + '\n')
+    return
+  }
+  if (pick !== 'en' && pick !== 'ru') usageDie(tr('lang.invalid', { arg: pick }))
+  setLang(pick)
+  process.stderr.write(tr('lang.set', { lang: pick }) + '\n')
 }
 
 async function cmdExport(): Promise<void> {
@@ -332,7 +326,7 @@ async function main(): Promise<void> {
   // with this one about whether interactive mode was entered.
   const cmd = argv[0] === '' ? undefined : argv[0]
   if (cmd === '--help' || cmd === '-h' || cmd === 'help') {
-    process.stdout.write(USAGE)
+    process.stdout.write(usage())
     process.exit(0)
   }
   if (cmd === '--version' || cmd === '-V' || cmd === 'version') {
@@ -347,7 +341,7 @@ async function main(): Promise<void> {
   // no command on a PIPE is still an error — a script that forgot its verb
   // must not hang on a hidden prompt.
   if (!cmd) {
-    if (!process.stdin.isTTY || !process.stdout.isTTY) usageDie('no command')
+    if (!process.stdin.isTTY || !process.stdout.isTTY) usageDie(tr('args.noCommand'))
     acquireStateLock()
     // Fire-and-forget: the daily driver is where an update notice earns its
     // keep, and it must never delay the prompt.
@@ -355,8 +349,9 @@ async function main(): Promise<void> {
     return runInteractive(await withToken(requireIdentity()))
   }
   // One process per state dir for anything that can touch the ratchet store —
-  // see acquireStateLock. whoami/export are read-only peeks and stay lock-free.
-  if (cmd !== 'whoami' && cmd !== 'export') acquireStateLock()
+  // see acquireStateLock. whoami/export are read-only peeks and lang only
+  // writes its own one-word file (atomic rename): all three stay lock-free.
+  if (cmd !== 'whoami' && cmd !== 'export' && cmd !== 'lang') acquireStateLock()
   const { pos, opts } = parseArgs(argv.slice(1))
   switch (cmd) {
     case 'register':
@@ -377,8 +372,10 @@ async function main(): Promise<void> {
       return cmdWatch()
     case 'export':
       return cmdExport()
+    case 'lang':
+      return cmdLang(pos)
     default:
-      usageDie(`unknown command '${cmd}'`)
+      usageDie(tr('args.unknownCmd', { cmd }))
   }
 }
 

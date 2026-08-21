@@ -6,6 +6,9 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+// Circular on purpose (i18n reads its saved choice through statePath); both
+// sides only touch each other inside function bodies, never at module init.
+import { tr } from './i18n'
 
 let _dir: string | null = null
 
@@ -56,7 +59,7 @@ export function acquireStateLock(): void {
         }
       }
       if (alive) {
-        process.stderr.write(`another rcq (pid ${pid}) is running against ${stateDir()} — one at a time\n`)
+        process.stderr.write(tr('lock.busy', { pid, dir: stateDir() }) + '\n')
         process.exit(1)
       }
       try {

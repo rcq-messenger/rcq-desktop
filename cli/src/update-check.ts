@@ -8,6 +8,7 @@
 // and cached in the state dir so a chatty day costs one request.
 
 import fs from 'node:fs'
+import { tr } from './i18n'
 import { statePath, writeFileAtomic } from './state'
 import { err } from './style'
 import { CLI_VERSION } from './version'
@@ -73,8 +74,8 @@ export async function noteUpdateIfAny(force = false): Promise<void> {
   const latest = await latestVersion(force)
   if (!latest || cmpVersions(latest, CLI_VERSION) <= 0) return
   process.stderr.write(
-    err.yellow(`update: v${CLI_VERSION} -> v${latest}`) +
-      err.dim(` ${RELEASES_URL}\n  (download rcq.tar.gz, unpack over the old install; state and account stay)`) +
+    err.yellow(tr('update.available', { from: CLI_VERSION, to: latest })) +
+      err.dim(` ${RELEASES_URL}\n  ${tr('update.how')}`) +
       '\n',
   )
 }

@@ -199,6 +199,7 @@ export const en: Record<string, string> = {
   'chat.report.sent': 'Report sent. Thank you.',
   'chat.report.error': 'Could not send the report.',
   'chat.pin.attachment': '📎 Attachment',
+  'chat.pin.failed': 'Could not pin that message.',
   'chat.copied': 'Copied',
   'chat.edit.editing': 'Editing message',
   'chat.edit.edited': '(edited)',

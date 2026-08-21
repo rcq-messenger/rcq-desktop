@@ -173,6 +173,7 @@ export const uk: Record<string, string> = {
   'chat.report.sent': 'Скаргу надіслано. Дякуємо.',
   'chat.report.error': 'Не вдалося надіслати скаргу.',
   'chat.pin.attachment': '📎 Вкладення',
+  'chat.pin.failed': 'Не вдалося закріпити повідомлення.',
   'chat.copied': 'Скопійовано',
   'chat.edit.editing': 'Редагування повідомлення',
   'chat.edit.edited': '(змінено)',

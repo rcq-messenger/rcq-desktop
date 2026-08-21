@@ -173,6 +173,7 @@ export const tr: Record<string, string> = {
   'chat.report.sent': 'Şikayet gönderildi. Teşekkürler.',
   'chat.report.error': 'Şikayet gönderilemedi.',
   'chat.pin.attachment': '📎 Ek',
+  'chat.pin.failed': 'Mesaj sabitlenemedi.',
   'chat.copied': 'Kopyalandı',
   'chat.edit.editing': 'Mesaj düzenleniyor',
   'chat.edit.edited': '(düzenlendi)',

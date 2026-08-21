@@ -1837,7 +1837,14 @@ export function Chat() {
   /// bar reflects it immediately.
   function pinMessage(text: string) {
     if (!gctx || !canPin || !group) return
-    const pinned = text.trim() || t('chat.pin.attachment')
+    // ⚠ The slot is 500 chars on the island (GroupPatchIn.pinned_text). Pinning
+    // a longer message used to 422 BEFORE the row was written, and the optimistic
+    // swap below then showed the new pin until the next refresh quietly restored
+    // the old one: a pin that looked like it worked and did nothing. Clamp here,
+    // and roll the swap back on any refusal instead of swallowing it.
+    const trimmed = text.trim() || t('chat.pin.attachment')
+    const pinned = trimmed.length > 500 ? trimmed.slice(0, 499) + '…' : trimmed
+    const previous = group
     setActionsForRowId(null)
     setPinExpanded(false)
     // Optimistic + instant: replace the displayed pin right away, then
@@ -1849,7 +1856,10 @@ export function Chat() {
         _groupCache.set(gctx.gid, updated)
         setGroup(updated)
       })
-      .catch(() => {})
+      .catch(() => {
+        setGroup(previous)
+        toast(t('chat.pin.failed'), 'error')
+      })
   }
 
   /// Swipe-left-to-reply (touch, mobile-web "like on phones"). Returns touch

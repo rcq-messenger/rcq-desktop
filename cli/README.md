@@ -25,10 +25,18 @@ node cli/dist/rcq.mjs restore "<24 words>" [--island URL]
 node cli/dist/rcq.mjs whoami | contacts | add <uin> | export
 node cli/dist/rcq.mjs send <uin> "text"
 node cli/dist/rcq.mjs watch
+node cli/dist/rcq.mjs lang [en|ru]
 ```
 
 For subcommands, stdout is data only (messages, the phrase, lists); status
 goes to stderr. Exit codes: 0 ok, 1 error, 2 usage.
+
+Human-facing lines speak English or Russian: `rcq lang ru` persists the
+choice in the state dir; unset, a `ru*` LC_ALL/LANG answers Russian. The
+string table is `cli/src/i18n.ts` (a plain dict, both languages side by
+side). Data output for scripts never translates: uin numbers, history
+lines, whoami values and message bodies are byte-identical in either
+language.
 
 ## Interactive mode
 
@@ -53,6 +61,7 @@ contract.
   every peer session gone.
 * `history-<uin>.jsonl` — append-only received messages. Rows are appended
   BEFORE the queue ack goes out (2026-08-20 rule: durable before ack).
+* `lang`: the chosen language (`en`/`ru`), written by `rcq lang`.
 
 ## Architecture
 

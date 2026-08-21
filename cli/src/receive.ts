@@ -17,6 +17,7 @@ import fs from 'node:fs'
 import { decryptIncoming, myDeviceId, noteInboundFrom, sendV2 } from '../../src/lib/signal-device'
 import { Api, peerBundleFrom } from '../../src/lib/api'
 import { encryptV1, type CarbonEnvelope, type Envelope, type WebIdentity } from '../../src/lib/crypto'
+import { tr } from './i18n'
 import { statePath } from './state'
 import { err, out, peer } from './style'
 
@@ -93,7 +94,7 @@ function groupLabel(identity: WebIdentity, gid: number): string {
       })
   }
   const name = groupNames.get(gid)
-  return out.dim(`[${name ?? `group ${gid}`}]`)
+  return out.dim(`[${name ?? tr('group.label', { gid })}]`)
 }
 
 /// One printable line per envelope. Files/media never dump bytes — kind and
@@ -285,7 +286,7 @@ export async function drainQueue(identity: WebIdentity): Promise<IngestResult | 
   const myDev = await myDeviceId(identity)
   // ⚠ No id, no drain — never guess (see the warning on myDeviceId).
   if (myDev === null) {
-    process.stderr.write('drain skipped: this install has no device id yet\n')
+    process.stderr.write(tr('drain.noDevice') + '\n')
     return null
   }
   let rows: QueueRow[]
@@ -294,12 +295,12 @@ export async function drainQueue(identity: WebIdentity): Promise<IngestResult | 
       headers: { Authorization: `Bearer ${identity.jwt}` },
     })
     if (!res.ok) {
-      process.stderr.write(`drain failed: HTTP ${res.status}\n`)
+      process.stderr.write(tr('drain.http', { status: res.status }) + '\n')
       return null
     }
     rows = (await res.json()) as QueueRow[]
   } catch (e) {
-    process.stderr.write(`drain failed: ${e instanceof Error ? e.message : e}\n`)
+    process.stderr.write(tr('drain.error', { err: e instanceof Error ? e.message : String(e) }) + '\n')
     return null
   }
   const directIds: number[] = []
@@ -315,7 +316,7 @@ export async function drainQueue(identity: WebIdentity): Promise<IngestResult | 
         // Sender-keys group broadcast — the CLI carries no group chains in
         // v1. Terminal for this device (the chain will never appear), so it
         // is acked rather than left to wedge the cursor forever.
-        process.stderr.write(err.dim(`[${stamp()}] group ${r.group_id}: <sender-keys broadcast — groups are not in the CLI yet>`) + '\n')
+        process.stderr.write(err.dim(`[${stamp()}] ${tr('group.senderKeys', { gid: r.group_id ?? '-' })}`) + '\n')
       } else {
         const got = await decryptIncoming(identity, r.payload)
         if (got) {
@@ -338,7 +339,7 @@ export async function drainQueue(identity: WebIdentity): Promise<IngestResult | 
   // surface. RCQ_VERBOSE prints the full lines instead.
   if (result.groupNew?.size && !process.env.RCQ_VERBOSE) {
     for (const [gid, n] of result.groupNew) {
-      emit(`${out.dim(`[${stamp()}]`)} ${groupLabel(identity, gid)} ${out.dim(`+${n} (history only; groups live in the apps)`)}\n`)
+      emit(`${out.dim(`[${stamp()}]`)} ${groupLabel(identity, gid)} ${out.dim(tr('group.banked', { n }))}\n`)
     }
   }
   if (directIds.length || groupIds.length) {

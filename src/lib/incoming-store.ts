@@ -243,12 +243,14 @@ export function isDeleted(targetId: string): boolean {
 /// from a peer) gates the incoming removal to that sender's OWN message, so a
 /// peer can't delete someone else's message; `fromSelf` (our own delete, or a
 /// carbon of it) also lets it retract an OUTGOING row (hidden via the filter).
-export function markDeleted(targetId: string, opts?: { senderUin?: number; fromSelf?: boolean }): void {
+export function markDeleted(targetId: string, opts?: { senderUin?: number; fromSelf?: boolean; moderator?: boolean }): void {
   if (deletedIds.has(targetId)) return
   let removed = false
   const drop = (map: Map<number, IncomingRow[]>, threadKey: (id: number) => string) => {
     for (const [key, rows] of map) {
-      const next = rows.filter((r) => !(r.id === targetId && (opts?.senderUin == null || r.from === opts.senderUin)))
+      const next = rows.filter(
+        (r) => !(r.id === targetId && (opts?.senderUin == null || opts?.moderator || r.from === opts.senderUin)),
+      )
       if (next.length !== rows.length) {
         map.set(key, next)
         removed = true
@@ -269,10 +271,14 @@ export function markDeleted(targetId: string, opts?: { senderUin?: number; fromS
   }
   drop(byPeer, peerKey)
   drop(byGroup, groupKey)
-  // Only tombstone when we either removed the sender's own incoming message or
-  // it's our own delete — never let a peer tombstone (and thus hide) a message
-  // that wasn't theirs.
-  if (!removed && !opts?.fromSelf) return
+  // Only tombstone when we either removed the sender's own incoming message,
+  // it's our own delete, or the sender holds moderator power in the group the
+  // delete arrived through — never let an ordinary peer tombstone (and thus
+  // hide) a message that wasn't theirs. The moderator case must tombstone
+  // even with nothing removed: the target may be OUR OWN message (it lives in
+  // the outgoing log, which renders through this same tombstone set), or one
+  // still in flight.
+  if (!removed && !opts?.fromSelf && !opts?.moderator) return
   deletedIds.add(targetId)
   if (reactionsByTarget.delete(targetId)) emitReactions()
   persist()
@@ -699,6 +705,20 @@ export function addIncoming(from: number, env: Envelope): void {
   bumpUnread(peerKey(from), row, null)
 }
 
+/// May `from` retract other people's messages in `groupId`? The owner may; an
+/// admin may when a roster is cached. The chat list is fetched `?members=0`,
+/// so the ROLE can be unknowable on the receive path — the owner check, off
+/// the group row itself, never is. An admin's delete that arrives before any
+/// roster was ever cached is simply ignored, same as on an old client.
+function groupModerator(groupId: number, from: number): boolean {
+  if (_activeUin == null) return false
+  const groups = contactsCache.get(_activeUin)?.groups ?? snapshotFor(_activeUin)?.groups ?? []
+  const g = groups.find((row) => row.id === groupId)
+  if (!g) return false
+  if (g.owner_uin === from) return true
+  return (g.members ?? []).find((m) => m.uin === from)?.role === 'admin'
+}
+
 /// Ingest a decrypted GROUP envelope: routed by `groupId` (from the transport),
 /// `from` is the member who sent it (from the sealed envelope). Deduped per
 /// group+envelope-id (each member gets their own ciphertext of the same envelope).
@@ -712,9 +732,17 @@ export function addGroupIncoming(groupId: number, from: number, env: Envelope): 
     return
   }
   if (env.kind === 'delete') {
-    // Group delete: the sender is the author OR a moderator (the native
-    // clients re-check moderator caps; the web honors the author's own).
-    markDeleted(env.targetID, from === _activeUin ? { fromSelf: true } : { senderUin: from })
+    // Group delete: the author retracts their own message, and the group's
+    // owner or an admin retracts anybody's (founder batch 21.08, item 3 —
+    // "админ не может удалить чужое сообщение"). The wire is unchanged; the
+    // RECEIVER decides whether this sender may. An older client ignores a
+    // foreign delete and keeps the message — nothing breaks, it just stays.
+    markDeleted(
+      env.targetID,
+      from === _activeUin
+        ? { fromSelf: true }
+        : { senderUin: from, moderator: groupModerator(groupId, from) },
+    )
     return
   }
   const row = rowFromEnvelope(from, env)

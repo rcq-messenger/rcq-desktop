@@ -160,6 +160,7 @@ export const es: Record<string, string> = {
   'chat.actions.copy_link': 'copiar enlace',
   'chat.actions.download': 'descargar',
   'chat.actions.report': 'denunciar',
+  'chat.actions.more': 'más',
   'chat.links_off.notice': 'Los enlaces están desactivados en este grupo.',
   'chat.files_off.notice': 'Los archivos están desactivados en este grupo.',
   'chat.files_off.chip': 'Archivos desactivados en este grupo',

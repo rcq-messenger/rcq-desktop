@@ -185,6 +185,7 @@ export const ru: Record<string, string> = {
   'chat.actions.copy_link': 'скопировать ссылку',
   'chat.actions.download': 'скачать',
   'chat.actions.report': 'пожаловаться',
+  'chat.actions.more': 'ещё',
   'chat.links_off.notice': 'Ссылки отключены в этой группе.',
   'chat.files_off.notice': 'Файлы отключены в этой группе.',
   'chat.files_off.chip': 'Файлы отключены в этой группе',

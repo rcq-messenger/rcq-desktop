@@ -160,6 +160,7 @@ export const uk: Record<string, string> = {
   'chat.actions.copy_link': 'скопіювати посилання',
   'chat.actions.download': 'завантажити',
   'chat.actions.report': 'поскаржитися',
+  'chat.actions.more': 'ще',
   'chat.links_off.notice': 'Посилання вимкнено в цій групі.',
   'chat.files_off.notice': 'Файли вимкнено в цій групі.',
   'chat.files_off.chip': 'Файли вимкнено в цій групі',

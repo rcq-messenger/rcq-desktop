@@ -118,6 +118,14 @@ const CONNECT_TIMEOUT_MS = 30_000
 /// ICE says "disconnected" on any blip. Wait before treating it as a real
 /// break, or a lift ride costs you the call.
 const DISCONNECT_GRACE_MS = 4_000
+/// A connected call whose media stays down this long is OVER, whatever the
+/// signalling said. #652: the peer hung up on a phone riding the obfuscated
+/// transport, its `call_end` died with the tunnel, and this side sat in an
+/// ICE-restart loop counting the call timer up forever. Restarts keep trying
+/// inside this window; when it closes without a single 'connected', the call
+/// ends locally. Generous on purpose - a network change plus a TURN
+/// re-allocation must fit, or a metro ride ends real calls.
+const DEAD_CALL_MS = 45_000
 const TURN_FETCH_ATTEMPTS = 3
 const TURN_RETRY_DELAY_MS = 700
 
@@ -212,6 +220,9 @@ interface Live {
   ringTimer: ReturnType<typeof setTimeout> | null
   connectTimer: ReturnType<typeof setTimeout> | null
   graceTimer: ReturnType<typeof setTimeout> | null
+  /// Armed when a CONNECTED call's media path goes down; cleared the moment it
+  /// comes back. Expiry = the peer is gone without a goodbye (#652).
+  deadTimer: ReturnType<typeof setTimeout> | null
   /// Guards a double accept (a double click, or a click racing the Enter key)
   /// from running the answer path twice on one connection.
   accepting: boolean
@@ -296,6 +307,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     ringTimer: null,
     connectTimer: null,
     graceTimer: null,
+    deadTimer: null,
     accepting: false,
   })
 
@@ -403,7 +415,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
   const clearTimers = useCallback(() => {
     const l = live.current
-    for (const key of ['ringTimer', 'connectTimer', 'graceTimer'] as const) {
+    for (const key of ['ringTimer', 'connectTimer', 'graceTimer', 'deadTimer'] as const) {
       if (l[key]) {
         clearTimeout(l[key] as ReturnType<typeof setTimeout>)
         l[key] = null
@@ -611,6 +623,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
             clearTimeout(l.graceTimer)
             l.graceTimer = null
           }
+          if (l.deadTimer) {
+            clearTimeout(l.deadTimer)
+            l.deadTimer = null
+          }
           stopTone()
           setConnectedAt((prev) => {
             const at = prev ?? Date.now()
@@ -618,6 +634,17 @@ export function CallProvider({ children }: { children: ReactNode }) {
             return at
           })
           return
+        }
+        if (state === 'failed' || state === 'disconnected') {
+          // The dead-call clock runs across every restart attempt below and
+          // only 'connected' above stops it - a loop of hopeful restarts must
+          // not keep a call that is over alive forever (#652).
+          if (!l.deadTimer) {
+            l.deadTimer = setTimeout(() => {
+              live.current.deadTimer = null
+              if (live.current.pc?.connectionState !== 'connected') endLocally('failed')
+            }, DEAD_CALL_MS)
+          }
         }
         if (state === 'failed') {
           void restartIce()
@@ -634,7 +661,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
       return pc
     },
-    [iceServers, restartIce, signal],
+    [iceServers, restartIce, signal, endLocally],
   )
 
   /// Candidates that arrived before their description. Applied in order once

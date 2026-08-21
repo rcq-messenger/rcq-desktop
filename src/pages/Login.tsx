@@ -31,6 +31,7 @@ import { bytesToB64, newLinkEphemeral, openLinkSeal, type WebIdentity } from '..
 import { islandLabel, normaliseIsland, rememberIsland, rememberedIsland } from '../lib/island-choice'
 import { useI18n } from '../lib/i18n-context'
 import { useToast } from '../lib/toast'
+import { showTransitionVeil } from '../lib/transition-veil'
 
 // The login copy talks about "this browser"; in the desktop app the same
 // screens are about a computer. Keys with a platform difference have a
@@ -69,6 +70,10 @@ export function Login() {
 
           <ModeSwitch
             onDone={() => {
+              // The veil while the scoped reload happens - restoring a phrase
+              // or creating an account used to end on a frozen form (founder,
+              // 21.08, same family as the PIN unlock reveal).
+              showTransitionVeil()
               // A HARD reload, not a route change. This page has lived without
               // an account scope, so any store it touched — the device database
               // above all — is pinned to the FLAT namespace for the rest of the

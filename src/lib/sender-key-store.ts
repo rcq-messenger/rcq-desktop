@@ -9,10 +9,17 @@
 import { b64ToBytes, bytesToB64 } from './crypto'
 import { deriveMessageKey, nextChainKey, newKid, MAX_SKIP } from './sender-keys'
 
-// v2: the inbound map is keyed by account now, and v1's entries cannot be
-// attributed to one after the fact. Dropping them costs a NACK and a fresh
-// distribution, which is what the recovery path is for.
-const STORE_KEY = 'rcq.web.senderkeys.v2'
+// v3: the OWN side is keyed by account now too. v2 scoped only the inbound
+// map, so in a two-account browser `ownsKid` answered for BOTH accounts —
+// account B read account A's broadcast kid as "my own echo" and silently
+// dropped every group message A posted (caught live 2026-08-21: a fresh
+// member saw an empty room while its chain sat un-advanced at i=0). The
+// shared `out` map was the same hazard in the send direction. Migration
+// keeps v2's inbound chains (already per-account, and dropping them would
+// NACK-storm every group after the update); own chains are dropped — the
+// next post simply rotates to a fresh kid and re-distributes.
+const STORE_KEY = 'rcq.web.senderkeys.v3'
+const V2_STORE_KEY = 'rcq.web.senderkeys.v2'
 
 interface OutChainJSON {
   kid: string
@@ -33,26 +40,38 @@ interface InChainJSON {
 }
 
 interface StoreJSON {
-  out: Record<number, OutChainJSON> // gid -> own chain
-  /// ⚠⚠ Keyed "<ownUin>:<kid>", not bare kid.
+  /// ⚠⚠ EVERY map here is keyed by account ("<ownUin>:…"), for the same
+  /// reason twice over.
   ///
-  /// A device with two accounts receives the SAME kid twice, once addressed to
-  /// each, and each copy has its own ratchet position. Sharing one chain meant
-  /// whichever account read the group first advanced it and consumed the
-  /// skipped keys, and the other account then hit `i < c.i` and could open
-  /// NOTHING from that point on — while `acceptSkdm` still answered "accepted"
-  /// for its distribution, because the chain was already past that index. The
-  /// founder's second account lost nine days of a group this way on iOS
-  /// (2026-08-13); this is the same store on the web and desktop.
+  /// Inbound: a device with two accounts receives the SAME kid twice, once
+  /// addressed to each, and each copy has its own ratchet position. Sharing
+  /// one chain meant whichever account read the group first advanced it and
+  /// consumed the skipped keys, and the other account then hit `i < c.i` and
+  /// could open NOTHING from that point on — the founder's second account
+  /// lost nine days of a group this way on iOS (2026-08-13).
+  ///
+  /// Own: with `owned` shared, account B answered `ownsKid` for account A's
+  /// kid and dropped A's every broadcast as "my own echo" (2026-08-21); a
+  /// shared `out` would likewise let two accounts fight over one ratchet.
+  out: Record<string, OutChainJSON> // "<ownUin>:<gid>" -> own chain
   in: Record<string, InChainJSON> // "<ownUin>:<kid>" -> inbound chain
-  owned: string[] // rolling list of kids I created (drop my own echoed gmsg)
+  owned: string[] // rolling "<ownUin>:<kid>" list (drop my own echoed gmsg)
 }
 
 const OWNED_CAP = 64
 
 /// Inbound chains are per ACCOUNT as well as per kid — see the note on
-/// `StoreJSON.in`.
+/// `StoreJSON`.
 function inKey(ownUin: number, kid: string): string {
+  return `${ownUin}:${kid}`
+}
+
+/// Own chains and owned kids carry the account too.
+function outKey(ownUin: number, gid: number): string {
+  return `${ownUin}:${gid}`
+}
+
+function ownedKey(ownUin: number, kid: string): string {
   return `${ownUin}:${kid}`
 }
 
@@ -62,6 +81,17 @@ function load(): StoreJSON {
     if (raw) {
       const p = JSON.parse(raw)
       return { out: p.out ?? {}, in: p.in ?? {}, owned: p.owned ?? [] }
+    }
+    // One-time v2 lift: carry the inbound chains over (they were already
+    // per-account, and dropping them would NACK-storm every group), leave
+    // the unattributable own side behind.
+    const v2raw = localStorage.getItem(V2_STORE_KEY)
+    if (v2raw) {
+      const p = JSON.parse(v2raw)
+      const lifted: StoreJSON = { out: {}, in: p.in ?? {}, owned: [] }
+      save(lifted)
+      localStorage.removeItem(V2_STORE_KEY)
+      return lifted
     }
   } catch {
     /* corrupt / unavailable — start fresh */
@@ -95,29 +125,31 @@ export interface OwnChainStep {
 /// the departed member can't read future messages, then returns the message
 /// key for the current index and who still needs the SKDM. After the caller
 /// ships the message it MUST call `advanceOwn(gid)`.
-export function prepareOwnSend(gid: number, capableUins: number[]): OwnChainStep {
+export function prepareOwnSend(ownUin: number, gid: number, capableUins: number[]): OwnChainStep {
   const s = load()
   const capable = new Set(capableUins)
-  let c = s.out[gid]
+  const k = outKey(ownUin, gid)
+  let c = s.out[k]
   const rotate = !c || c.distributed.some((u) => !capable.has(u))
   if (rotate) {
     const ck = bytesToB64(crypto.getRandomValues(new Uint8Array(32)))
     c = { kid: newKid(), e: (c?.e ?? -1) + 1, i: 0, ck, distributed: [] }
-    s.owned = [c.kid, ...s.owned.filter((k) => k !== c!.kid)].slice(0, OWNED_CAP)
+    const ok = ownedKey(ownUin, c.kid)
+    s.owned = [ok, ...s.owned.filter((x) => x !== ok)].slice(0, OWNED_CAP)
   }
   const ckBytes = b64ToBytes(c.ck)
   const mk = deriveMessageKey(ckBytes)
   const need = capableUins.filter((u) => !c!.distributed.includes(u))
-  s.out[gid] = c
+  s.out[k] = c
   save(s)
   return { kid: c.kid, e: c.e, i: c.i, mk, needDistribution: need, ckAtI: c.ck }
 }
 
 /// Mark members as having received the current chain's SKDM (so we don't
 /// re-seal it to them on every send — distribution is once per epoch).
-export function markDistributed(gid: number, uins: number[]): void {
+export function markDistributed(ownUin: number, gid: number, uins: number[]): void {
   const s = load()
-  const c = s.out[gid]
+  const c = s.out[outKey(ownUin, gid)]
   if (!c) return
   const set = new Set(c.distributed)
   uins.forEach((u) => set.add(u))
@@ -126,9 +158,9 @@ export function markDistributed(gid: number, uins: number[]): void {
 }
 
 /// Ratchet the outbound chain one step forward after a successful send.
-export function advanceOwn(gid: number): void {
+export function advanceOwn(ownUin: number, gid: number): void {
   const s = load()
-  const c = s.out[gid]
+  const c = s.out[outKey(ownUin, gid)]
   if (!c) return
   c.ck = bytesToB64(nextChainKey(b64ToBytes(c.ck)))
   c.i += 1
@@ -204,22 +236,25 @@ export function knowsKid(ownUin: number, kid: string): boolean {
   return !!load().in[inKey(ownUin, kid)]
 }
 
-/// True if this device created `kid` (so a gmsg under it is my own message
-/// echoed back by the server — own multi-device sync rides carbons, drop it).
-export function ownsKid(kid: string): boolean {
-  return load().owned.includes(kid)
+/// True if THIS ACCOUNT on this device created `kid` (so a gmsg under it is
+/// my own message echoed back by the server — own multi-device sync rides
+/// carbons, drop it). Account-scoped: the sibling account in this browser
+/// must NOT treat my kid as its own echo, that is how it went deaf.
+export function ownsKid(ownUin: number, kid: string): boolean {
+  return load().owned.includes(ownedKey(ownUin, kid))
 }
 
-/// The kid this device currently owns for a group (for answering a NACK).
-export function ownKidForGroup(gid: number): string | null {
-  return load().out[gid]?.kid ?? null
+/// The kid this account currently owns for a group (for answering a NACK).
+export function ownKidForGroup(ownUin: number, gid: number): string | null {
+  return load().out[outKey(ownUin, gid)]?.kid ?? null
 }
 
 /// Re-seal data for answering a NACK: the current chain key + position so we
 /// can hand a requester an SKDM that lets them read from here forward.
 export function ownChainSnapshot(
+  ownUin: number,
   gid: number,
 ): { kid: string; e: number; i: number; ck: string } | null {
-  const c = load().out[gid]
+  const c = load().out[outKey(ownUin, gid)]
   return c ? { kid: c.kid, e: c.e, i: c.i, ck: c.ck } : null
 }

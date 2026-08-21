@@ -159,7 +159,7 @@ export function buildGroupDualSend(
 
   // Encrypt once under the outbound chain's current message key.
   const capableUins = capable.map((m) => m.uin)
-  const step = prepareOwnSend(gid, capableUins)
+  const step = prepareOwnSend(sender.uin, gid, capableUins)
   const gmsg = sealGmsg(envelope, sender, gid, step.kid, step.e, step.i, step.mk)
   const broadcastPayload = bytesToB64(new TextEncoder().encode(JSON.stringify(gmsg)))
 
@@ -189,8 +189,8 @@ export function buildGroupDualSend(
     legacyPayloads,
     skipped,
     commit: () => {
-      if (distributedNow.length > 0) markDistributed(gid, distributedNow)
-      advanceOwn(gid)
+      if (distributedNow.length > 0) markDistributed(sender.uin, gid, distributedNow)
+      advanceOwn(sender.uin, gid)
     },
   }
 }

@@ -47,7 +47,9 @@ export async function handleGmsg(
 
   // My own broadcast echoed back by the server (the server can't exclude an
   // anonymous sender). Own multi-device sync rides the carbon, so drop it.
-  if (ownsKid(wire.kid)) return null
+  // Scoped to THIS account: the sibling account in the same browser owns its
+  // kids under its own uin and must still read ours as ordinary inbound.
+  if (ownsKid(identity.uin, wire.kid)) return null
 
   const key = deriveInbound(identity.uin, wire.kid, wire.e, wire.i)
   if (!key) {
@@ -86,8 +88,8 @@ export async function handleSknack(
   requesterUIN: number,
   env: { gid: number; kid: string },
 ): Promise<void> {
-  if (ownKidForGroup(env.gid) !== env.kid) return // not my kid (or rotated away)
-  const snap = ownChainSnapshot(env.gid)
+  if (ownKidForGroup(identity.uin, env.gid) !== env.kid) return // not my kid (or rotated away)
+  const snap = ownChainSnapshot(identity.uin, env.gid)
   if (!snap) return
   let group: RCQGroup
   try {

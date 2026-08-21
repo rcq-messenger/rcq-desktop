@@ -43,6 +43,12 @@ export function GroupSettingsModal({
   const [ownerOnly, setOwnerOnly] = useState(group.post_policy === 'owner_only')
   const [closed, setClosed] = useState(!!group.is_closed)
   const [hidden, setHidden] = useState(!!group.members_hidden)
+  // Content policy + slowmode (owner-only, like the three above). The
+  // toggles read as restrictions — ON means "switched off in this room" —
+  // while the wire carries the allowed-flags, hence the inversions.
+  const [noLinks, setNoLinks] = useState(group.links_allowed === false)
+  const [noFiles, setNoFiles] = useState(group.files_allowed === false)
+  const [slowmode, setSlowmode] = useState(group.slowmode_sec ?? 0)
   const [busy, setBusy] = useState(false)
   const [picBusy, setPicBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -61,6 +67,9 @@ export function GroupSettingsModal({
         }
         if (closed !== !!group.is_closed) body.is_closed = closed
         if (hidden !== !!group.members_hidden) body.members_hidden = hidden
+        if (noLinks !== (group.links_allowed === false)) body.links_allowed = !noLinks
+        if (noFiles !== (group.files_allowed === false)) body.files_allowed = !noFiles
+        if (slowmode !== (group.slowmode_sec ?? 0)) body.slowmode_sec = slowmode
       }
       // Nothing changed: don't spend a round trip saying so.
       const updated = Object.keys(body).length ? await Api.patchGroup(ident, gid, body) : group
@@ -185,6 +194,42 @@ export function GroupSettingsModal({
                   on={hidden}
                   onChange={setHidden}
                 />
+                <Toggle
+                  label={t('group.settings.no_links')}
+                  hint={t('group.settings.no_links.hint')}
+                  on={noLinks}
+                  onChange={setNoLinks}
+                />
+                <Toggle
+                  label={t('group.settings.no_files')}
+                  hint={t('group.settings.no_files.hint')}
+                  on={noFiles}
+                  onChange={setNoFiles}
+                />
+                <div className="px-1 py-2">
+                  <span className="block text-sm">{t('group.settings.slowmode')}</span>
+                  <span className="block text-xs text-fg-dim">{t('group.settings.slowmode.hint')}</span>
+                  <div className="mt-2 flex gap-1.5">
+                    {[0, 5, 10, 30, 60].map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => setSlowmode(s)}
+                        className={`flex-1 h-8 rounded-md text-xs font-medium transition-colors ${
+                          slowmode === s
+                            ? 'bg-accent text-white'
+                            : 'bg-field text-fg-secondary hover:bg-line/50'
+                        }`}
+                      >
+                        {s === 0
+                          ? t('group.settings.slowmode.off')
+                          : s < 60
+                            ? t('group.settings.slowmode.sec', { s: String(s) })
+                            : t('group.settings.slowmode.min')}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             )}
           </div>

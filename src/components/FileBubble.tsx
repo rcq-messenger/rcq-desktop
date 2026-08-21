@@ -1,7 +1,10 @@
 // Inline chat document (#16). A compact chip with a file glyph, the original
-// name + a human-readable size. Clicking decrypts the blob (lib/media) and
-// triggers a browser download with the original file name + MIME. Shows a
-// spinner while decrypting and an error label if the blob can't be fetched.
+// name + a human-readable size. A press opens the message menu (the caller
+// passes `onPress`), where "download" decrypts the blob (lib/media) and saves
+// it with the original file name + MIME; without `onPress` the click downloads
+// directly, as it always did. `busy` mirrors the caller-driven download so the
+// chip still shows its spinner while the menu's action runs. `disabledNote`
+// renders the chip inert — the group's owner turned files off.
 
 import { useState } from 'react'
 import { useIdentity } from '../lib/identity-context'
@@ -16,6 +19,15 @@ interface Props {
   size?: number
   /// Cross-island groups: fetch from the GROUP's island. Defaults to ours.
   apiBase?: string
+  /// Open the message menu at this element instead of downloading. The
+  /// download then lives in the menu — a file press must never trigger a
+  /// save by itself (same rule links follow now).
+  onPress?: (anchor: HTMLElement) => void
+  /// The caller is downloading this file right now (menu action) — show
+  /// the spinner even though the press didn't start it here.
+  busy?: boolean
+  /// Files are switched off in this group: render inert with this note.
+  disabledNote?: string
 }
 
 /// Human-readable byte size (1 KB = 1024 B).
@@ -31,29 +43,52 @@ function fmtSize(bytes?: number): string | null {
   return `${n >= 10 || i === 0 ? Math.round(n) : n.toFixed(1)} ${units[i]}`
 }
 
-export function FileBubble({ mediaId, mediaKey, fileName, mime, size, apiBase }: Props) {
+export function FileBubble({ mediaId, mediaKey, fileName, mime, size, apiBase, onPress, busy: busyOutside, disabledNote }: Props) {
   const { identity } = useIdentity()
   const { t } = useI18n()
-  const [busy, setBusy] = useState(false)
+  const [selfBusy, setSelfBusy] = useState(false)
   const [failed, setFailed] = useState(false)
 
   const name = fileName || 'file'
   const sizeLabel = fmtSize(size)
+  const busy = busyOutside || selfBusy
+  const disabled = disabledNote != null
 
   async function download() {
     if (!identity || busy) return
-    setBusy(true)
+    setSelfBusy(true)
     setFailed(false)
     const ok = await downloadEncryptedFile(apiBase ?? identity.apiBase, mediaId, mediaKey, name, mime)
-    setBusy(false)
+    setSelfBusy(false)
     if (!ok) setFailed(true)
   }
 
+  const subLabel = disabledNote
+    ? disabledNote
+    : failed
+      ? t('chat.media.unavailable')
+      : sizeLabel
+        ? `${sizeLabel} · ${t('chat.media.download')}`
+        : t('chat.media.download')
+
   return (
     <button
-      onClick={() => void download()}
-      className="flex items-center gap-3 rounded-lg bg-field px-3 py-2.5 text-left hover:bg-line/40 transition-colors max-w-[18rem]"
-      title={t('chat.media.download')}
+      onClick={(e) => {
+        if (disabled) return
+        if (onPress) return onPress(e.currentTarget)
+        void download()
+      }}
+      // No onContextMenu here on purpose: the chat wraps every file row in a
+      // right-click/long-press handler of its own, and a second one on the
+      // chip toggled the menu twice — open and instantly shut. And no HTML
+      // `disabled` for the files-off state: a disabled control swallows the
+      // wrapper's right-click/long-press too, which took report/reply/menu
+      // with it. Inert is a no-op click, not a dead element.
+      aria-disabled={disabled || undefined}
+      className={`flex items-center gap-3 rounded-lg bg-field px-3 py-2.5 text-left transition-colors max-w-[18rem] ${
+        disabled ? 'opacity-60 cursor-default' : 'hover:bg-line/40'
+      }`}
+      title={disabledNote ?? t('chat.media.download')}
     >
       <span className="flex h-9 w-9 flex-none items-center justify-center rounded-md bg-accent/15 text-accent">
         {busy ? (
@@ -67,9 +102,7 @@ export function FileBubble({ mediaId, mediaKey, fileName, mime, size, apiBase }:
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium">{name}</span>
-        <span className="block text-[0.6875rem] text-fg-dim">
-          {failed ? t('chat.media.unavailable') : sizeLabel ? `${sizeLabel} · ${t('chat.media.download')}` : t('chat.media.download')}
-        </span>
+        <span className="block text-[0.6875rem] text-fg-dim">{subLabel}</span>
       </span>
     </button>
   )

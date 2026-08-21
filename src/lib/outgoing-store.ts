@@ -383,12 +383,42 @@ function outgoingRowFromInner(inner: Envelope): OutgoingRow | null {
   return null
 }
 
+/// The thread a carbon belongs to, or null for a shape we don't file.
+export function carbonThreadKey(carbon: CarbonEnvelope): string | null {
+  return carbon.gid != null ? storageKey(true, carbon.gid) : carbon.to != null ? storageKey(false, carbon.to) : null
+}
+
+let _openThreadEditSink: ((targetID: string, text: string) => void) | null = null
+
+/// Chat registers this alongside setOutgoingSink, for the same reason the
+/// receipt sink exists: the open thread owns its rows in component state,
+/// and a bare storage write would be overwritten by Chat's persist effect.
+export function setEditSink(sink: ((targetID: string, text: string) => void) | null): void {
+  _openThreadEditSink = sink
+}
+
+/// Apply an edit made on ANOTHER of this account's devices to the outgoing
+/// row it targets — the missing half of edit sync (the founder edited on the
+/// desktop; the phone-side row never changed, and vice versa). Storage
+/// always; the open thread additionally via its sink. Idempotent: the origin
+/// device re-applies its own text. State/receipts stay untouched — an edit
+/// changes what was said, not whether it was delivered.
+export function applyEditToOutgoing(threadKey: string, targetID: string, text: string): void {
+  const rows = loadPersisted(threadKey)
+  if (rows.some((r) => r.id === targetID)) {
+    savePersisted(
+      threadKey,
+      rows.map((r) => (r.id === targetID ? { ...r, text, edited: true } : r)),
+    )
+  }
+  if (_openThreadKey === threadKey) _openThreadEditSink?.(targetID, text)
+}
+
 /// Handle a decrypted carbon: file its inner envelope as a fromMe row in the
 /// destination thread. Idempotent by inner id (the origin device no-ops its
 /// own carbon). Called from the receive dispatch for kind==='carbon'.
 export function fileOutgoingCarbon(carbon: CarbonEnvelope): void {
-  const threadKey =
-    carbon.gid != null ? storageKey(true, carbon.gid) : carbon.to != null ? storageKey(false, carbon.to) : null
+  const threadKey = carbonThreadKey(carbon)
   if (!threadKey) return
   const row = outgoingRowFromInner(carbon.env)
   if (!row) return

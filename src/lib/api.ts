@@ -228,6 +228,13 @@ export interface RCQGroup {
   // owner posts; the server now enforces this for identified callers, the
   // composer below hides for non-owners). Absent → 'all'.
   post_policy?: string
+  // Owner-set content policy. Absent (older island) → allowed. Both are
+  // honored by clients — the server can't see inside sealed envelopes.
+  links_allowed?: boolean
+  files_allowed?: boolean
+  /// Slowmode step in seconds (0/absent = off). One of 0/5/10/30/60.
+  /// Server-enforced on group-sealed for identified non-moderators.
+  slowmode_sec?: number
 }
 
 /// Live poll state from `/polls/{id}`. `voter_uins` is populated only for
@@ -549,6 +556,9 @@ export const Api = {
       post_policy?: 'all' | 'owner_only'
       is_closed?: boolean
       members_hidden?: boolean
+      links_allowed?: boolean
+      files_allowed?: boolean
+      slowmode_sec?: number
       avatar_media_id?: string
       avatar_media_key?: string
     },
@@ -657,6 +667,17 @@ export const Api = {
       reason: `${tag} ${text}`,
       context: 'bug_bounty',
       attachments,
+    })
+  },
+
+  /// Report somebody else's message/behaviour to the island's operators —
+  /// the abuse half of `/reports` (the same shape Android files, empty
+  /// context). Rate-limited server-side to 5/hr per uin.
+  reportAbuse(id: WebIdentity, targetUin: number, reason: string): Promise<{ id: number }> {
+    return request<{ id: number }>(id, 'POST', '/reports', {
+      target_uin: targetUin,
+      reason,
+      context: '',
     })
   },
 

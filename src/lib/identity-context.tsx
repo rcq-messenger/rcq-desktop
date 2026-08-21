@@ -22,6 +22,7 @@ import {
   withSessionToken,
 } from './auth'
 import { migrateFlatDataInto, setAccountScope } from './account-scope'
+import { showTransitionVeil } from './transition-veil'
 import { flushVaultWriter } from './pin-gate'
 import { defaultHome } from './routing'
 import { Api, setTokenRefresher, setUnauthorizedHandler } from './api'
@@ -242,6 +243,9 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
       switchAccount: (uin: number) => {
         if (uin === identity?.uin) return
         if (!activateStoredIdentity(uin)) return
+        // The veil, not a frozen click: the reload takes long enough to read
+        // as a hang (founder, 21.08 - same ask as the PIN unlock reveal).
+        showTransitionVeil()
         void flushVaultWriter().finally(() => window.location.assign('/'))
       },
       addAccount: () => {
@@ -249,6 +253,7 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
         // on the login screen with the others still here, so "add" cannot
         // become "sign out of everything" by accident.
         clearIdentity()
+        showTransitionVeil()
         void flushVaultWriter().finally(() => window.location.assign('/'))
       },
       signOutAccount: (uin: number) => {

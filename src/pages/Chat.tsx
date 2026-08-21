@@ -1616,6 +1616,28 @@ export function Chat() {
     (group.owner_uin === identity.uin ||
       (group.members.find((m) => m.uin === identity.uin)?.permissions?.includes('info') ?? false))
 
+  /// Owner / admin may retract SOMEBODY ELSE'S message for the whole group
+  /// (founder batch 21.08, item 3). Same wire as the author's own retract —
+  /// each receiver checks this sender against its own roster before honoring
+  /// it, so the button grants nothing the group did not already grant.
+  const canModerate =
+    isGroup &&
+    group != null &&
+    identity != null &&
+    (group.owner_uin === identity.uin ||
+      group.members.find((m) => m.uin === identity.uin)?.role === 'admin')
+
+  /// The moderator's delete of a message that is not ours. Tombstoned locally
+  /// with moderator power (the row sits in the INCOMING log under its author's
+  /// name), then the same `delete` envelope the author's retract ships.
+  async function deleteAsModerator(id: string) {
+    setActionsForRowId(null)
+    markDeleted(id, { fromSelf: true })
+    const env: DeleteEnvelope = { kind: 'delete', targetID: id }
+    const res = await shipEnvelopeToCurrentThread(env)
+    if (!res.ok) toast(t('chat.error.send_failed'), 'error')
+  }
+
   /// Pin a message's text (the pin slot is plaintext, so media without a
   /// caption falls back to a label). Updates the local group so the pinned
   /// bar reflects it immediately.
@@ -2657,6 +2679,19 @@ export function Chat() {
                               onClick={() => { setForwardingRow({ text: m.text, author: replyAuthor }); setActionsForRowId(null) }}
                               label={t('chat.actions.forward')}
                               icon={<MenuForwardIcon />}
+                            />
+                          )}
+                          {/* The group's owner / an admin retracts anybody's
+                              message for everyone (founder batch 21.08 item
+                              3). Sits above "hide": one is moderation, the
+                              other is housekeeping, and they answer different
+                              questions. */}
+                          {canModerate && !isSelf && (
+                            <ActionButton
+                              onClick={() => void deleteAsModerator(m.id)}
+                              label={t('chat.actions.delete')}
+                              icon={<MenuTrashIcon />}
+                              danger
                             />
                           )}
                           {/* Hides it HERE only. There is no deleting somebody

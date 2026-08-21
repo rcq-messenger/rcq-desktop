@@ -2643,20 +2643,20 @@ export function Chat() {
                           <ActionButton
                             onClick={() => { setActionsForRowId(null); setReactionForRowId(m.id) }}
                             label={t('chat.actions.react')}
-                            icon="☺"
+                            icon={<MenuReactIcon />}
                           />
-                          <ActionButton onClick={() => startReplyTo(m.id, m.text, replyAuthor)} label={t('chat.actions.reply')} icon="↩" />
+                          <ActionButton onClick={() => startReplyTo(m.id, m.text, replyAuthor)} label={t('chat.actions.reply')} icon={<MenuReplyIcon />} />
                           {m.kind === 'text' && (
-                            <ActionButton onClick={() => copyText(m.text)} label={t('chat.actions.copy')} icon="⧉" />
+                            <ActionButton onClick={() => copyText(m.text)} label={t('chat.actions.copy')} icon={<MenuCopyIcon />} />
                           )}
                           {canPin && (
-                            <ActionButton onClick={() => pinMessage(m.text)} label={t('chat.actions.pin')} icon="📌" />
+                            <ActionButton onClick={() => pinMessage(m.text)} label={t('chat.actions.pin')} icon={<MenuPinIcon />} />
                           )}
                           {m.kind === 'text' && (
                             <ActionButton
                               onClick={() => { setForwardingRow({ text: m.text, author: replyAuthor }); setActionsForRowId(null) }}
                               label={t('chat.actions.forward')}
-                              icon="↗"
+                              icon={<MenuForwardIcon />}
                             />
                           )}
                           {/* Hides it HERE only. There is no deleting somebody
@@ -2669,7 +2669,7 @@ export function Chat() {
                           <ActionButton
                             onClick={() => void deleteIncoming(m.id)}
                             label={t(isSelf ? 'chat.actions.delete' : 'chat.actions.hide')}
-                            icon={isSelf ? '🗑' : '⊘'}
+                            icon={isSelf ? <MenuTrashIcon /> : <MenuHideIcon />}
                             danger={isSelf}
                           />
                         </ActionMenu>
@@ -2709,7 +2709,7 @@ export function Chat() {
                       title={t('chat.actions.react')}
                       className="self-center ml-1 h-7 w-7 rounded-full bg-surface text-fg-dim opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity flex-none rcq-hover-only items-center justify-center"
                     >
-                      ☺
+                      <MenuReactIcon />
                     </button>
                   </li>
                 )
@@ -2981,20 +2981,20 @@ export function Chat() {
                       <ActionButton
                         onClick={() => { setActionsForRowId(null); setReactionForRowId(row.id) }}
                         label={t('chat.actions.react')}
-                        icon="☺"
+                        icon={<MenuReactIcon />}
                       />
-                      <ActionButton onClick={() => startReply(row)} label={t('chat.actions.reply')} icon="↩" />
+                      <ActionButton onClick={() => startReply(row)} label={t('chat.actions.reply')} icon={<MenuReplyIcon />} />
                       {(!row.kind || row.kind === 'text') && (
-                        <ActionButton onClick={() => startEdit(row)} label={t('chat.actions.edit')} icon="✎" />
+                        <ActionButton onClick={() => startEdit(row)} label={t('chat.actions.edit')} icon={<MenuEditIcon />} />
                       )}
                       {(!row.kind || row.kind === 'text') && (
-                        <ActionButton onClick={() => copyText(row.text)} label={t('chat.actions.copy')} icon="⧉" />
+                        <ActionButton onClick={() => copyText(row.text)} label={t('chat.actions.copy')} icon={<MenuCopyIcon />} />
                       )}
                       {canPin && (
-                        <ActionButton onClick={() => pinMessage(row.text)} label={t('chat.actions.pin')} icon="📌" />
+                        <ActionButton onClick={() => pinMessage(row.text)} label={t('chat.actions.pin')} icon={<MenuPinIcon />} />
                       )}
-                      <ActionButton onClick={() => setForwardingRow({ text: row.text, author: myNickname })} label={t('chat.actions.forward')} icon="↗" />
-                      <ActionButton onClick={() => void deleteForEveryone(row)} label={t('chat.actions.delete')} icon="🗑" danger />
+                      <ActionButton onClick={() => setForwardingRow({ text: row.text, author: myNickname })} label={t('chat.actions.forward')} icon={<MenuForwardIcon />} />
+                      <ActionButton onClick={() => void deleteForEveryone(row)} label={t('chat.actions.delete')} icon={<MenuTrashIcon />} danger />
                     </ActionMenu>
                   )}
                   </AnimatePresence>
@@ -3029,7 +3029,7 @@ export function Chat() {
                   title={t('chat.actions.react')}
                   className="self-center mr-1 order-first h-7 w-7 rounded-full bg-surface text-fg-dim opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity flex-none rcq-hover-only items-center justify-center"
                 >
-                  ☺
+                  <MenuReactIcon />
                 </button>
               </li>
             )
@@ -3468,7 +3468,7 @@ export function Chat() {
 /// not survive growth — seven actions made a bar wider than the message it
 /// belonged to, and on a phone it ran off the edge. A column reads top to
 /// bottom at any length, which is what every phone messenger settled on.
-function ActionButton({ onClick, label, icon, danger }: { onClick: () => void; label: string; icon?: string; danger?: boolean }) {
+function ActionButton({ onClick, label, icon, danger }: { onClick: () => void; label: string; icon?: ReactNode; danger?: boolean }) {
   return (
     <button
       onClick={onClick}
@@ -3476,12 +3476,107 @@ function ActionButton({ onClick, label, icon, danger }: { onClick: () => void; l
         danger ? 'text-red-500 hover:bg-red-500/15' : 'text-fg-primary hover:bg-field'
       }`}
     >
-      <span className={`w-3.5 shrink-0 text-center text-[0.6875rem] ${danger ? '' : 'text-fg-dim'}`}>{icon ?? '⊘'}</span>
+      <span className={`w-3.5 h-3.5 shrink-0 inline-flex items-center justify-center ${danger ? '' : 'text-fg-dim'}`}>{icon}</span>
       {/* The labels are lowercase in every dictionary because they used to be
           rendered in a uppercase mono chip. `first-letter` rather than
           `capitalize`: "удалить у всех" must not become "Удалить У Всех". */}
       <span className="first-letter:uppercase">{label}</span>
     </button>
+  )
+}
+
+// The message-menu glyphs. Same visual language as the contact menu on the
+// home screen (Lucide-style, 1.8 stroke, currentColor): the menu used to mix
+// emoji with lone unicode marks (☺ ↩ ⧉ 📌 ↗ 🗑 ⊘), and each of those rendered
+// in the platform's own emoji or symbol font — a different weight, size and
+// colour per OS, some of them in full colour on a menu that is otherwise
+// monochrome (founder, 21.08).
+function MenuIconSvg({ children }: { children: ReactNode }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      {children}
+    </svg>
+  )
+}
+
+function MenuReactIcon() {
+  return (
+    <MenuIconSvg>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+      <line x1="9" y1="9" x2="9.01" y2="9" />
+      <line x1="15" y1="9" x2="15.01" y2="9" />
+    </MenuIconSvg>
+  )
+}
+
+function MenuReplyIcon() {
+  return (
+    <MenuIconSvg>
+      <polyline points="9 14 4 9 9 4" />
+      <path d="M20 20v-7a4 4 0 0 0-4-4H4" />
+    </MenuIconSvg>
+  )
+}
+
+function MenuCopyIcon() {
+  return (
+    <MenuIconSvg>
+      <rect x="9" y="9" width="13" height="13" rx="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </MenuIconSvg>
+  )
+}
+
+function MenuPinIcon() {
+  return (
+    <MenuIconSvg>
+      <line x1="12" y1="17" x2="12" y2="22" />
+      <path d="M5 17h14l-1.5-3V6a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v8L5 17z" />
+    </MenuIconSvg>
+  )
+}
+
+function MenuForwardIcon() {
+  return (
+    <MenuIconSvg>
+      <polyline points="15 14 20 9 15 4" />
+      <path d="M4 20v-7a4 4 0 0 1 4-4h12" />
+    </MenuIconSvg>
+  )
+}
+
+function MenuEditIcon() {
+  return (
+    <MenuIconSvg>
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </MenuIconSvg>
+  )
+}
+
+function MenuTrashIcon() {
+  return (
+    <MenuIconSvg>
+      <polyline points="3 6 5 6 21 6" />
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+      <path d="M10 11v6" />
+      <path d="M14 11v6" />
+      <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2" />
+    </MenuIconSvg>
+  )
+}
+
+/// Hide-here-only: an eye that is off, because the action's whole meaning is
+/// "I stop seeing this" — the ⊘ it replaces read as "forbidden".
+function MenuHideIcon() {
+  return (
+    <MenuIconSvg>
+      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+      <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+      <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24" />
+      <line x1="1" y1="1" x2="23" y2="23" />
+    </MenuIconSvg>
   )
 }
 

@@ -213,12 +213,55 @@ function mmss(total: number): string {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
+function Spinner() {
+  return (
+    <span
+      role="status"
+      className="block h-7 w-7 rounded-full border-2 border-line border-t-accent animate-spin"
+    />
+  )
+}
+
+/// The moment between "the PIN was right" and "the app is on screen".
+///
+/// The gate used to swap instantly — correct PIN, and the form was simply
+/// replaced by the app mid-keystroke, which read as a glitch rather than an
+/// unlock (founder, 21.08). So the reveal is staged: the form fades away, a
+/// centered spinner fades in and holds for a beat (the hold is deliberate,
+/// not waiting on anything), then this overlay — mounted OVER the app so the
+/// first heavy render happens behind it — fades out and removes itself.
+function UnlockReveal({ onDone }: { onDone: () => void }) {
+  const [gone, setGone] = useState(false)
+  useEffect(() => {
+    // Two frames, not one: the overlay must reach the screen opaque before the
+    // transition starts, or the browser coalesces mount and fade into nothing.
+    const raf = requestAnimationFrame(() => requestAnimationFrame(() => setGone(true)))
+    const timer = setTimeout(onDone, 500)
+    return () => {
+      cancelAnimationFrame(raf)
+      clearTimeout(timer)
+    }
+  }, [onDone])
+  return (
+    <div
+      aria-hidden
+      className={`fixed inset-0 z-50 flex items-center justify-center bg-surface-dim transition-opacity duration-300 ${gone ? 'opacity-0' : 'opacity-100'}`}
+    >
+      <Spinner />
+    </div>
+  )
+}
+
 export function PinGate({ children }: { children: ReactNode }) {
   const { t } = useI18n()
   // null = still asking Rust; true = show the lock screen.
   const [locked, setLocked] = useState<boolean | null>(vaultSupported() ? null : false)
   const [pin, setPin] = useState('')
   const [busy, setBusy] = useState(false)
+  /// 'form' → the PIN prompt; 'loader' → the PIN was right, the form is fading
+  /// into a centered spinner (and, once `locked` flips, the spinner is fading
+  /// out over the mounting app). See UnlockReveal.
+  const [phase, setPhase] = useState<'form' | 'loader'>('form')
   /// Seconds left before another attempt is allowed. The back-off is a ladder,
   /// not a flat wall: five wrong PINs cost 5s, then 10, 20, 40 and so on to a
   /// five-minute cap. Shown as a live count because "try again later" without a
@@ -283,6 +326,12 @@ export function PinGate({ children }: { children: ReactNode }) {
       // are in memory by the time it mounts.
       await adoptRows(rows)
       setPin('')
+      // The staged reveal (founder, 21.08): fade the form into a spinner, hold
+      // a beat, only then flip `locked` — UnlockReveal carries the spinner over
+      // the app's first render and fades it out. The hold is artificial and
+      // deliberate; an instant swap read as a glitch, not an unlock.
+      setPhase('loader')
+      await new Promise((r) => setTimeout(r, 600))
       setLocked(false)
     } catch (err) {
       const code = String((err as Error)?.message ?? err)
@@ -329,6 +378,7 @@ export function PinGate({ children }: { children: ReactNode }) {
       <>
         {vaultSupported() && <AutoLock />}
         {children}
+        {phase === 'loader' && <UnlockReveal onDone={() => setPhase('form')} />}
       </>
     )
   }
@@ -373,7 +423,12 @@ export function PinGate({ children }: { children: ReactNode }) {
           </button>
         </div>
       ) : (
-      <form onSubmit={submit} className="w-full max-w-xs space-y-4 text-center">
+      <form
+        onSubmit={submit}
+        // While the reveal runs, the form gives way to the centered spinner
+        // below — same screen, two opacities crossing.
+        className={`w-full max-w-xs space-y-4 text-center transition-opacity duration-200 ${phase === 'loader' ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
+      >
         {/* The padlock with our flower tucked into its bottom-right corner, so
             the locked screen still says whose app this is.
             ⚠ The offsets are INSIDE the span, not negative. An emoji glyph is
@@ -440,6 +495,15 @@ export function PinGate({ children }: { children: ReactNode }) {
         </button>
       </form>
       )}
+      </div>
+      {/* The unlock spinner, fading in as the form fades out. Its twin lives in
+          UnlockReveal on the other side of the `locked` flip, in the same spot,
+          so the two states read as one continuous loader. */}
+      <div
+        aria-hidden
+        className={`absolute inset-0 flex items-center justify-center pointer-events-none transition-opacity duration-300 ${phase === 'loader' ? 'opacity-100' : 'opacity-0'}`}
+      >
+        <Spinner />
       </div>
     </div>
   )

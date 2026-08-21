@@ -608,7 +608,22 @@ async function resolveTargets(
     // and goes to the island for a fresh bundle. What it does with that bundle
     // is decided below: the published identity is the evidence, and an
     // unchanged one means the session stands.
-    const rebuild = rebuildDevices.has(d.device_id)
+    let rebuild = rebuildDevices.has(d.device_id)
+    // ⚠ Ask the FREE question first. The device list carries each install's
+    // published identity; a bundle read carries the same answer and consumes
+    // one of the peer's one-time prekeys on the way. "Unchanged" is the answer
+    // almost every time — a peer replying over v=1 never clears the probe at
+    // all — so paying a prekey per probe drains a pool that only refills while
+    // its owner is online, and every later X3DH with that account then loses
+    // its one-time secret. The probe would erode what it defends.
+    if (rebuild) {
+      const publishedIk = (d as { signal_identity_key?: string }).signal_identity_key
+      const heldIk = dev.knownTarget(peerUin, d.device_id)?.ik
+      if (publishedIk && heldIk !== undefined && heldIk === publishedIk && (await dev.hasSession(peerUin, d.device_id))) {
+        console.warn(`silence probe: ${peerUin}:${d.device_id} unchanged; session kept`)
+        rebuild = false
+      }
+    }
     const cached = rebuild ? undefined : (usable(byId.get(d.device_id)) ?? sessionTarget(dev, peerUin, d.device_id))
     if (cached) {
       devices.push(cached)
@@ -643,11 +658,25 @@ async function resolveTargets(
       dev.noteTarget(bundle.uin, bundle.device_id, outerPub, bundle.signal_identity_key)
     } else if (!rebuild && held?.ik === undefined && (await dev.hasSession(bundle.uin, bundle.device_id))) {
       // First read since this cache learned to record identities: nothing to
-      // compare against, so the session stands and the key is recorded for
-      // next time.
-      dev.noteTarget(bundle.uin, bundle.device_id, outerPub, bundle.signal_identity_key)
+      // compare against, so the session stands rather than being re-keyed for
+      // a peer who may be perfectly fine.
+      //
+      // ⚠ And the identity is deliberately NOT recorded here. Recording it
+      // would mean "the session was built from this identity" — which we do
+      // not know. If this bundle is the peer's NEW identity while our session
+      // is their OLD, dead one, writing it down makes every later comparison
+      // read "unchanged" and the silence probe can never heal that session:
+      // our messages would be accepted by the island and silently lost until
+      // the peer happens to write first. Left unrecorded, the next probe sees
+      // an unverified identity and does the handshake.
+      dev.noteTarget(bundle.uin, bundle.device_id, outerPub)
     } else {
       if (rebuild) console.warn(`fresh X3DH with ${bundle.uin}:${bundle.device_id}`)
+      // establishSession records the identity itself (crypto-v2 noteTarget at
+      // the end of it), and that recording is the earned one: this session was
+      // built FROM this identity, so comparing against it later means
+      // something. Contrast the branch above, which deliberately leaves it
+      // blank.
       await dev.establishSession(bundle)
     }
     devices.push({ deviceId: bundle.device_id, outerPub, at: Date.now() })

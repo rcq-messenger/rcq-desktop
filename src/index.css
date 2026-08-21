@@ -207,6 +207,35 @@ html.dark .rcq-wave {
   }
 }
 
+/* The "⋯" in the corner of a media bubble (see BubbleMenuButton). Same rule as
+   the ☺ above, and for the same reason it cannot be a `sm:` breakpoint: the
+   question is whether this machine can hover, not how wide its window is.
+
+   Where it can, the handle belongs to the row's hover state: a thread of photos
+   must not be a thread of photos with a button stamped on each. Where it cannot
+   (a phone, a touch laptop), there is no hover to reveal anything with, so it
+   simply stays. The long-press still works there, but a gesture nobody can see
+   is the whole thing this change is about.
+
+   Written by hand rather than as `opacity-0 group-hover:opacity-100`, because
+   the touch branch has to WIN over the base rule, and a media query adds no
+   specificity of its own: as two Tailwind utilities they would tie, and the
+   source order inside the generated sheet would decide it. */
+.rcq-bubble-menu {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+@media (hover: none), (pointer: coarse) {
+  .rcq-bubble-menu {
+    opacity: 1;
+  }
+}
+.group:hover .rcq-bubble-menu,
+.rcq-bubble-menu:focus-visible,
+.rcq-bubble-menu[data-open='true'] {
+  opacity: 1;
+}
+
 /* An expanded pin hangs OVER the conversation rather than pushing it down, so
    it needs to be readable against whatever happens to be behind it. The bar's
    own 0.72 is right for a strip a few pixels tall with nothing but its own

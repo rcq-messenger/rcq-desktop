@@ -1943,6 +1943,21 @@ export function Chat() {
     return vouchedOut(row) ? { 'data-chat-menu': true, ...pressMenu(row.id) } : {}
   }
 
+  /// The visible half of the same thing, for MY rows. Same gate: a row still in
+  /// flight has no menu to open, so it gets no handle to open one with either.
+  /// The parent has to be `relative` (the handle pins itself to its corner).
+  function outgoingMenuButton(row: OutgoingRow, tone: 'over' | 'chrome') {
+    if (!vouchedOut(row)) return null
+    return (
+      <BubbleMenuButton
+        tone={tone}
+        label={t('chat.actions.more')}
+        open={actionsForRowId === row.id}
+        onOpen={(el) => toggleActions(row.id, el)}
+      />
+    )
+  }
+
   /// The floating menu + reaction picker for MY photo/video/file rows — the
   /// media rows had neither (no way to reply to your own photo from a
   /// desktop, no way to retract a file). One helper, because the three
@@ -3026,12 +3041,16 @@ export function Chat() {
                         </button>
                       )}
                       {m.kind === 'poll' && m.poll ? (
-                        <div data-chat-menu {...pressMenu(m.id)}>
+                        <div className="relative" data-chat-menu {...pressMenu(m.id)}>
                           <PollBubble poll={m.poll} />
+                          <BubbleMenuButton tone="chrome" label={t('chat.actions.more')} open={showActions} onOpen={(el) => toggleActions(m.id, el)} />
                         </div>
                       ) : m.kind === 'photo' && m.mediaId && m.mediaKey ? (
                         <div className="flex flex-col items-start gap-1" data-chat-menu {...pressMenu(m.id)}>
-                          <DecryptedImage mediaId={m.mediaId} mediaKey={m.mediaKey} apiBase={groupMediaBase} />
+                          <div className="relative">
+                            <DecryptedImage mediaId={m.mediaId} mediaKey={m.mediaKey} apiBase={groupMediaBase} />
+                            <BubbleMenuButton tone="over" label={t('chat.actions.more')} open={showActions} onOpen={(el) => toggleActions(m.id, el)} />
+                          </div>
                           {m.text && (
                             <div className="rounded-lg px-3 py-2 text-sm bg-bubble-other" onClick={(e) => toggleActions(m.id, e.currentTarget, e)}>
                               <EmoticonText text={m.text} emoticonSize={18} mention={mentionCtx} link={{ enabled: linksAllowed }} />
@@ -3040,13 +3059,16 @@ export function Chat() {
                         </div>
                       ) : m.kind === 'video' && m.mediaId && m.mediaKey ? (
                         <div className="flex flex-col items-start gap-1" data-chat-menu {...pressMenu(m.id)}>
-                          <DecryptedVideo
-                            mediaId={m.mediaId}
-                            mediaKey={m.mediaKey}
-                            thumbnailB64={m.thumbnailB64}
-                            durationSec={m.durationSec}
-                            apiBase={groupMediaBase}
-                          />
+                          <div className="relative">
+                            <DecryptedVideo
+                              mediaId={m.mediaId}
+                              mediaKey={m.mediaKey}
+                              thumbnailB64={m.thumbnailB64}
+                              durationSec={m.durationSec}
+                              apiBase={groupMediaBase}
+                            />
+                            <BubbleMenuButton tone="over" label={t('chat.actions.more')} open={showActions} onOpen={(el) => toggleActions(m.id, el)} />
+                          </div>
                           {m.text && (
                             <div className="rounded-lg px-3 py-2 text-sm bg-bubble-other" onClick={(e) => toggleActions(m.id, e.currentTarget, e)}>
                               <EmoticonText text={m.text} emoticonSize={18} mention={mentionCtx} link={{ enabled: linksAllowed }} />
@@ -3073,14 +3095,16 @@ export function Chat() {
                           )}
                         </div>
                       ) : m.kind === 'other' ? (
-                        <div data-chat-menu {...pressMenu(m.id)}>
+                        <div className="relative" data-chat-menu {...pressMenu(m.id)}>
                           <MediaPlaceholder mediaKind={m.mediaKind} />
+                          <BubbleMenuButton tone="chrome" label={t('chat.actions.more')} open={showActions} onOpen={(el) => toggleActions(m.id, el)} />
                         </div>
                       ) : invite != null && linksAllowed ? (
                         // Links-off rooms drop to the plain-text bubble below:
                         // a join card is the most clickable link there is.
-                        <div data-chat-menu {...pressMenu(m.id)}>
-                          <GroupJoinCard groupId={invite.id} host={invite.host} />
+                        <div className="relative" data-chat-menu {...pressMenu(m.id)}>
+                          <GroupJoinCard groupId={invite.id} host={invite.host} menuSpace />
+                          <BubbleMenuButton tone="chrome" label={t('chat.actions.more')} open={showActions} onOpen={(el) => toggleActions(m.id, el)} />
                         </div>
                       ) : (
                         <button
@@ -3244,9 +3268,18 @@ export function Chat() {
                 // A group-invite link I shared — show the join card
                 // (not a raw URL bubble) with the delivery state below.
                 return (
-                  <li key={row.id} id={`msg-${row.id}`} className={`group flex justify-end rounded-lg transition-colors duration-500 ${item.cont ? '-mt-1' : ''} ${highlightId === row.id ? 'bg-accent/15' : ''}`}>
-                    <div className="relative max-w-[80%] flex flex-col items-end gap-1">
-                      <GroupJoinCard groupId={outInvite.id} host={outInvite.host} />
+                  <li key={row.id} id={`msg-${row.id}`} className={`group flex justify-end rounded-lg transition-colors duration-500 ${item.cont ? '-mt-1' : ''} ${highlightId === row.id ? 'bg-accent/15' : ''} ${actionsForRowId === row.id || reactionForRowId === row.id ? 'relative z-[20]' : ''}`}>
+                    <div className="relative max-w-[80%] flex flex-col items-end gap-1" {...outgoingPressMenu(row)}>
+                      {/* An invite I sent had no menu on any gesture at all:
+                          the card swallowed the tap into Join and the row
+                          carried nothing else. Retracting your own invite is
+                          the whole point of having one here. */}
+                      <div className="relative">
+                        <GroupJoinCard groupId={outInvite.id} host={outInvite.host} menuSpace />
+                        {outgoingMenuButton(row, 'chrome')}
+                      </div>
+                      {renderReactions(row.id, 'end')}
+                      {outgoingMediaOverlays(row)}
                       <div className="flex items-center justify-end gap-1 text-[0.625rem] font-mono text-fg-dim">
                         {new Date(row.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         {row.state === 'sending' && <ClockMark />}
@@ -3272,7 +3305,10 @@ export function Chat() {
                 return (
                   <li key={row.id} id={`msg-${row.id}`} className={`group flex justify-end rounded-lg transition-colors duration-500 ${item.cont ? '-mt-1' : ''} ${highlightId === row.id ? 'bg-accent/15' : ''} ${actionsForRowId === row.id || reactionForRowId === row.id ? 'relative z-[20]' : ''}`}>
                     <div className="relative max-w-[80%] flex flex-col items-end gap-1" {...outgoingPressMenu(row)}>
-                      <DecryptedImage mediaId={row.mediaId} mediaKey={row.mediaKey} apiBase={groupMediaBase} />
+                      <div className="relative">
+                        <DecryptedImage mediaId={row.mediaId} mediaKey={row.mediaKey} apiBase={groupMediaBase} />
+                        {outgoingMenuButton(row, 'over')}
+                      </div>
                       {row.text && (
                         <div className="rounded-lg px-3 py-2 text-sm bg-bubble-self" onClick={vouchedOut(row) ? (e) => toggleActions(row.id, e.currentTarget, e) : undefined}>
                           <EmoticonText text={row.text} emoticonSize={18} mention={mentionCtxSelf} link={{ enabled: linksAllowed }} />
@@ -3312,13 +3348,16 @@ export function Chat() {
                 return (
                   <li key={row.id} id={`msg-${row.id}`} className={`group flex justify-end rounded-lg transition-colors duration-500 ${item.cont ? '-mt-1' : ''} ${highlightId === row.id ? 'bg-accent/15' : ''} ${actionsForRowId === row.id || reactionForRowId === row.id ? 'relative z-[20]' : ''}`}>
                     <div className="relative max-w-[80%] flex flex-col items-end gap-1" {...outgoingPressMenu(row)}>
-                      <DecryptedVideo
-                        mediaId={row.mediaId}
-                        mediaKey={row.mediaKey}
-                        thumbnailB64={row.thumbnailB64}
-                        durationSec={row.durationSec}
-                        apiBase={groupMediaBase}
-                      />
+                      <div className="relative">
+                        <DecryptedVideo
+                          mediaId={row.mediaId}
+                          mediaKey={row.mediaKey}
+                          thumbnailB64={row.thumbnailB64}
+                          durationSec={row.durationSec}
+                          apiBase={groupMediaBase}
+                        />
+                        {outgoingMenuButton(row, 'over')}
+                      </div>
                       {row.text && (
                         <div className="rounded-lg px-3 py-2 text-sm bg-bubble-self" onClick={vouchedOut(row) ? (e) => toggleActions(row.id, e.currentTarget, e) : undefined}>
                           <EmoticonText text={row.text} emoticonSize={18} mention={mentionCtxSelf} link={{ enabled: linksAllowed }} />
@@ -3388,9 +3427,14 @@ export function Chat() {
                 // author watches the same tallies everyone else does — one
                 // component, one source of truth (/polls/{id}).
                 return (
-                  <li key={row.id} id={`msg-${row.id}`} className={`group flex justify-end rounded-lg transition-colors duration-500 ${item.cont ? '-mt-1' : ''} ${highlightId === row.id ? 'bg-accent/15' : ''}`}>
-                    <div className="relative max-w-[80%] flex flex-col items-end gap-1">
-                      <PollBubble poll={row.poll} mine />
+                  <li key={row.id} id={`msg-${row.id}`} className={`group flex justify-end rounded-lg transition-colors duration-500 ${item.cont ? '-mt-1' : ''} ${highlightId === row.id ? 'bg-accent/15' : ''} ${actionsForRowId === row.id || reactionForRowId === row.id ? 'relative z-[20]' : ''}`}>
+                    <div className="relative max-w-[80%] flex flex-col items-end gap-1" {...outgoingPressMenu(row)}>
+                      <div className="relative">
+                        <PollBubble poll={row.poll} mine />
+                        {outgoingMenuButton(row, 'chrome')}
+                      </div>
+                      {renderReactions(row.id, 'end')}
+                      {outgoingMediaOverlays(row)}
                       <div className="flex items-center justify-end gap-1 text-[0.625rem] font-mono text-fg-dim">
                         {new Date(row.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         {row.state === 'sending' && <ClockMark />}
@@ -3421,9 +3465,14 @@ export function Chat() {
                 // A still-unsupported media (voice/location) the user sent from
                 // another device, echoed here via a carbon.
                 return (
-                  <li key={row.id} id={`msg-${row.id}`} className={`group flex justify-end rounded-lg transition-colors duration-500 ${item.cont ? '-mt-1' : ''} ${highlightId === row.id ? 'bg-accent/15' : ''}`}>
-                    <div className="relative max-w-[80%] flex flex-col items-end gap-1">
-                      <MediaPlaceholder mediaKind={row.mediaKind} />
+                  <li key={row.id} id={`msg-${row.id}`} className={`group flex justify-end rounded-lg transition-colors duration-500 ${item.cont ? '-mt-1' : ''} ${highlightId === row.id ? 'bg-accent/15' : ''} ${actionsForRowId === row.id || reactionForRowId === row.id ? 'relative z-[20]' : ''}`}>
+                    <div className="relative max-w-[80%] flex flex-col items-end gap-1" {...outgoingPressMenu(row)}>
+                      <div className="relative">
+                        <MediaPlaceholder mediaKind={row.mediaKind} />
+                        {outgoingMenuButton(row, 'chrome')}
+                      </div>
+                      {renderReactions(row.id, 'end')}
+                      {outgoingMediaOverlays(row)}
                       <div className="flex items-center justify-end gap-1 text-[0.625rem] font-mono text-fg-dim">
                         {new Date(row.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         <span className="text-accent">✓</span>
@@ -4315,6 +4364,85 @@ function ActionMenu({ align, up, max, children }: { align: 'start' | 'end'; up: 
   )
 }
 
+/// The handle that opens a bubble's menu when the bubble's own tap is already
+/// spoken for.
+///
+/// A photo opens, a video plays, a poll takes a vote, an invite card joins. All
+/// of that is right, and all of it left the menu reachable only by right-click
+/// or long-press, which is a gesture you either already know about or never
+/// find: "непонятно как взаимодействовать с контентом (фото итд), я жму на него
+/// и оно просто открывается, где же контекстное меню?" (founder, 21.08). The
+/// press gestures are untouched; this is the same menu with something to aim at.
+///
+/// Two tones, because there are two kinds of thing underneath. `chrome` sits on
+/// one of our own surfaces (a poll, a join card) and is a bare glyph: no fill,
+/// no ring, nothing but the grey the rest of the secondary UI is drawn in. Note
+/// `fg-secondary` and not `fg-dim`, which is the quieter of the two and what a
+/// timestamp uses: against a light incoming bubble that one lands near 2:1,
+/// and a handle whose entire job is to be noticed cannot be the faintest thing
+/// on the bubble.
+/// `over` sits on somebody's photograph, where a bare glyph is a coin toss
+/// between a white sky and a night shot, so it gets a neutral dark disc and a
+/// white mark. The contrast then comes from the button itself and depends on
+/// neither the picture nor the theme. Literal black/white on purpose, not the
+/// `ink-black` token: that one flips to near-white in the dark theme, which is
+/// right for type and wrong for a scrim (a white mark on a white disc).
+function BubbleMenuButton({
+  tone,
+  label,
+  open,
+  onOpen,
+}: {
+  tone: 'over' | 'chrome'
+  label: string
+  /// The menu for this row is up: hold the handle visible, or it vanishes the
+  /// moment the pointer leaves the bubble for the menu it just opened.
+  open: boolean
+  onOpen: (anchor: HTMLElement) => void
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      data-open={open ? 'true' : undefined}
+      // The bubble underneath is timing a long press. A press on THIS is
+      // already the menu gesture, so it must not arm that timer as well and
+      // toggle the menu straight back shut 450ms later.
+      onTouchStart={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        // Without this the click carries on into the photo and the lightbox
+        // comes up underneath the menu.
+        e.stopPropagation()
+        e.preventDefault()
+        const el = e.currentTarget
+        // Anchor on the bubble, not on this 28px disc: placeMenu measures the
+        // room BELOW its anchor, and the disc sits at the top of a picture that
+        // can be sixteen rem tall. Measured from here, a menu that does not fit
+        // would still be told to open downwards.
+        onOpen((el.closest('[data-chat-menu]') as HTMLElement | null) ?? el)
+      }}
+      className={`rcq-bubble-menu absolute top-1.5 right-1.5 z-10 h-7 w-7 rounded-full flex items-center justify-center ${
+        tone === 'over'
+          ? 'bg-black/55 text-white hover:bg-black/75'
+          : 'text-fg-secondary hover:text-fg-primary'
+      }`}
+    >
+      <MoreIcon />
+    </button>
+  )
+}
+
+function MoreIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <circle cx="5" cy="12" r="1.9" />
+      <circle cx="12" cy="12" r="1.9" />
+      <circle cx="19" cy="12" r="1.9" />
+    </svg>
+  )
+}
+
 function SendIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -4438,8 +4566,10 @@ function MediaPlaceholder({ mediaKind }: { mediaKind?: string }) {
     mediaKind === 'voice' ? '🎤' :
     mediaKind === 'location' ? '📍' : '📎'
   const label = mediaKind ? t(`chat.media.kind.${mediaKind}`) : t('chat.media.kind.file')
+  // `pr-9` leaves the top-right corner to the ⋯ handle: this bubble is sized to
+  // a two-word label, so without the gap the handle would sit on top of it.
   return (
-    <div className="rounded-lg px-3 py-2 bg-bubble-other">
+    <div className="rounded-lg py-2 pl-3 pr-9 bg-bubble-other">
       <div className="text-sm">{icon} {label}</div>
       <div className="text-[0.625rem] text-fg-dim">{t('chat.media.in_app_only')}</div>
     </div>
@@ -4651,8 +4781,10 @@ function PollBubble({ poll, mine = false }: { poll: PollRow; mine?: boolean }) {
   }
   return (
     <div className={`rounded-lg px-3 py-2 w-[18rem] max-w-full text-left ${mine ? 'bg-bubble-self' : 'bg-bubble-other'}`}>
-      <div className="text-sm font-semibold">{poll.question}</div>
-      <div className="text-[0.625rem] text-fg-dim mb-2">
+      {/* `pr-7` on the two header lines only: the ⋯ handle lives in that
+          corner, and the option bars below it start well clear of it. */}
+      <div className="text-sm font-semibold pr-7">{poll.question}</div>
+      <div className="text-[0.625rem] text-fg-dim mb-2 pr-7">
         {poll.single ? t('poll.single') : t('poll.multi')}
         {poll.anon ? ` · ${t('poll.anon')}` : ''}
       </div>

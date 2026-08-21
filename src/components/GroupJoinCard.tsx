@@ -55,9 +55,13 @@ interface Props {
   /// this shape there. The whole row is the action: open it if you are in it,
   /// join it if you are not.
   compact?: boolean
+  /// Keep the card's top-right corner clear: in a chat thread the bubble's
+  /// ⋯ handle is pinned there, and the group name is `truncate`, so without
+  /// the gap the handle would land on the tail of the name.
+  menuSpace?: boolean
 }
 
-export function GroupJoinCard({ groupId, host, compact = false }: Props) {
+export function GroupJoinCard({ groupId, host, compact = false, menuSpace = false }: Props) {
   const { identity } = useIdentity()
   const { t } = useI18n()
   const navigate = useNavigate()
@@ -159,7 +163,7 @@ export function GroupJoinCard({ groupId, host, compact = false }: Props) {
       <div className="w-64 max-w-full rounded-xl bg-surface p-3">
         <div className="flex items-center gap-3">
           <GroupAvatar size={40} />
-          <div className="min-w-0 flex-1">
+          <div className={`min-w-0 flex-1${menuSpace ? ' pr-7' : ''}`}>
             <div className="truncate text-sm font-medium">{t('group_join.island_title')}</div>
             <div className="truncate font-mono text-[0.6875rem] text-fg-dim">{foreignHost}</div>
           </div>
@@ -226,7 +230,7 @@ export function GroupJoinCard({ groupId, host, compact = false }: Props) {
     <div className="w-64 max-w-full rounded-xl bg-surface p-3">
       <div className="flex items-center gap-3">
         <GroupAvatar size={40} mediaId={preview.avatar_media_id} mediaKey={preview.avatar_media_key} />
-        <div className="min-w-0 flex-1">
+        <div className={`min-w-0 flex-1${menuSpace ? ' pr-7' : ''}`}>
           <div className="truncate text-sm font-medium">{preview.name}</div>
           <div className="truncate text-[0.6875rem] text-fg-dim">
             {t('section.groups.members', { n: preview.member_count })}

@@ -186,6 +186,7 @@ export const en: Record<string, string> = {
   'chat.actions.copy_link': 'copy link',
   'chat.actions.download': 'download',
   'chat.actions.report': 'report',
+  'chat.actions.more': 'more',
   'chat.links_off.notice': 'Links are disabled in this group.',
   'chat.files_off.notice': 'Files are disabled in this group.',
   'chat.files_off.chip': 'Files are disabled in this group',

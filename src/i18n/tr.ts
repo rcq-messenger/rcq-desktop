@@ -160,6 +160,7 @@ export const tr: Record<string, string> = {
   'chat.actions.copy_link': 'bağlantıyı kopyala',
   'chat.actions.download': 'indir',
   'chat.actions.report': 'şikayet et',
+  'chat.actions.more': 'daha fazla',
   'chat.links_off.notice': 'Bu grupta bağlantılar kapalı.',
   'chat.files_off.notice': 'Bu grupta dosyalar kapalı.',
   'chat.files_off.chip': 'Bu grupta dosyalar kapalı',

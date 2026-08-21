@@ -160,6 +160,7 @@ export const zh: Record<string, string> = {
   'chat.actions.copy_link': '复制链接',
   'chat.actions.download': '下载',
   'chat.actions.report': '举报',
+  'chat.actions.more': '更多',
   'chat.links_off.notice': '本群已禁用链接。',
   'chat.files_off.notice': '本群已禁用文件。',
   'chat.files_off.chip': '本群已禁用文件',

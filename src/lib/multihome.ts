@@ -29,6 +29,7 @@ import { suggestNickname, persistIdentity } from './auth'
 import { verifyHomeIslandRecord, type IslandHome } from './federation'
 import { verifySigned } from './signing-keys'
 import { scopedKey } from './account-scope'
+import { isFrontHost } from './front'
 
 // ⚠⚠ SCOPED, and it was not until now. A flat key is readable by every account
 // in this browser, and this one carried a BEARER TOKEN per backup island: sign
@@ -218,7 +219,10 @@ export async function addBackupIsland(
 ): Promise<BackupHome> {
   const host = normalizeIslandHost(hostInput)
   if (!host) throw new Error('invalid host')
-  if (host === hostOfApiBase(identity.apiBase)) throw new Error('primary island')
+  // The front is the flagship by another road: "adding" it registers a second
+  // mailbox on the island this account already lives on. Same refusal as the
+  // primary, because that is what it is.
+  if (host === hostOfApiBase(identity.apiBase) || isFrontHost(host)) throw new Error('primary island')
   const existing = listBackupHomes()
   if (existing.some((h) => h.host === host)) throw new Error('already added')
 
@@ -327,7 +331,7 @@ export async function autoPickBackupIsland(identity: WebIdentity): Promise<strin
   const existing = new Set(listBackupHomes().map((h) => h.host))
   const candidates = (await fetchSignedAutoIslands())
     .map((u) => normalizeIslandHost(u))
-    .filter((h): h is string => !!h && h !== own && !existing.has(h))
+    .filter((h): h is string => !!h && h !== own && !existing.has(h) && !isFrontHost(h))
   const health = await Promise.all(candidates.map(islandHealthy))
   const picked = candidates.find((_, i) => health[i])
   if (!picked) throw new Error('no island')
@@ -398,7 +402,10 @@ export async function adoptHomesFromOwnRecord(identity: WebIdentity): Promise<Ba
     const known = new Set(listBackupHomes().map((h) => h.host))
     const adopted: BackupHome[] = []
     for (const home of v.record.homes) {
-      if (home.host === ownHost || known.has(home.host)) continue
+      // A front in our own record is the phantom this bug was: old builds
+      // stamped the road (cdn.rcq.app) instead of the island, and adopting it
+      // here is what turned one client's mistake into every client's "backup".
+      if (home.host === ownHost || known.has(home.host) || isFrontHost(home.host)) continue
       try {
         const cred = await recoverOnIsland(home.host, identity)
         // null = the record names an island this identity is not on (a home
@@ -427,6 +434,22 @@ export async function adoptHomesFromOwnRecord(identity: WebIdentity): Promise<Ba
 /// republishes the record so senders stop depositing there.
 export function removeBackupIsland(host: string): void {
   saveBackupHomes(listBackupHomes().filter((h) => h.host !== host))
+}
+
+/// Drop every stored backup home that is a front alias or the primary island
+/// itself — phantoms adopted before `isFrontHost` guarded the paths above.
+/// Returns true when anything was removed, so the caller knows to republish
+/// the record (the publish assembles from this store, so the phantom home
+/// disappears from what senders are told). ⚠ Run BEFORE `adoptHomesFromOwnRecord`
+/// on boot: adoption now refuses fronts, but scrubbing first also ends the
+/// phantom's queue drain in this very session instead of the next one.
+export function scrubFrontAliasHomes(identity: WebIdentity): boolean {
+  const own = hostOfApiBase(identity.apiBase)
+  const all = listBackupHomes()
+  const clean = all.filter((h) => h.host !== own && !isFrontHost(h.host))
+  if (clean.length === all.length) return false
+  saveBackupHomes(clean)
+  return true
 }
 
 /// Promote a backup island to PRIMARY — the one-tap disaster-recovery path for
@@ -474,11 +497,17 @@ function updateStoredJwt(host: string, cred: IslandCredentials): void {
 // -----------------------------------------------------------
 
 /// Every home this account lives on, primary first (preference order per
-/// federation-protocol.md §2.2).
+/// federation-protocol.md §2.2). Fronts and duplicates of the primary are
+/// filtered even if the store still carries one: the island now REJECTS a
+/// record naming its own front, and one phantom row must not cost the whole
+/// publish (which also carries the legitimate homes).
 export function assembleHomes(identity: WebIdentity): IslandHome[] {
+  const own = hostOfApiBase(identity.apiBase)
   return [
-    { host: hostOfApiBase(identity.apiBase), uin: identity.uin },
-    ...listBackupHomes().map((h) => ({ host: h.host, uin: h.uin })),
+    { host: own, uin: identity.uin },
+    ...listBackupHomes()
+      .filter((h) => h.host !== own && !isFrontHost(h.host))
+      .map((h) => ({ host: h.host, uin: h.uin })),
   ]
 }
 
@@ -488,6 +517,7 @@ export function assembleHomes(identity: WebIdentity): IslandHome[] {
 /// record is already there — fine, ignore.
 export async function publishRecordToBackups(identity: WebIdentity, record: unknown): Promise<void> {
   for (const home of listBackupHomes()) {
+    if (isFrontHost(home.host)) continue // a phantom row PUTs to our own island
     try {
       const put = (jwt: string) =>
         fetch(`https://${home.host}/federation/island-record`, {
@@ -531,6 +561,12 @@ export async function drainBackupQueues(
   handle: (row: QueueRow, host: string) => Promise<void>,
 ): Promise<void> {
   for (const home of listBackupHomes()) {
+    // ⚠ A phantom front home is OUR OWN island: draining it hits the real
+    // queue with an unnamed recover token, i.e. the "primary" device cursor —
+    // the one a legacy-linked desktop session lives on — and this legacy GET
+    // advances that cursor with no ack. Rows it fetched never wait for the
+    // main drain's durable-before-ack persist. Never drain through a front.
+    if (isFrontHost(home.host)) continue
     try {
       const get = (jwt: string) =>
         fetch(`https://${home.host}/messages/queue`, {
@@ -726,7 +762,12 @@ export async function depositToExtraHomes(
   try {
     if (!peer.signingKey) return 0 // nothing to anchor the record against
     const ownHost = hostOfApiBase(identity.apiBase)
-    const extra = (await resolvePeerHomesCached(identity, peer)).filter((h) => h.host !== ownHost)
+    // A front in a PEER's record (25 flagship accounts carried one) is our own
+    // island by another road: depositing "extra" copies there just doubles the
+    // rows in the queue the primary send already reached.
+    const extra = (await resolvePeerHomesCached(identity, peer)).filter(
+      (h) => h.host !== ownHost && !isFrontHost(h.host),
+    )
     if (extra.length === 0) return 0
 
     const sealed = encryptV1(envelope, identity, peer)

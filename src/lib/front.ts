@@ -61,6 +61,23 @@ export function setFrontHost(url: string | null | undefined) {
   frontHttps = url.replace(/\/+$/, '')
 }
 
+/// True when `host` names a known CDN front of the flagship — a ROAD to the
+/// island, never an island. Covers the compiled-in name and whatever the
+/// signed config moved the front to. Multihoming must ask this everywhere it
+/// meets a host: a front registered as a "backup home" is the flagship's own
+/// mailbox by another name, so the redundancy it promises is fiction — and
+/// its drain rides the same "primary" queue cursor as a legacy session,
+/// advancing it fetch-by-fetch with no ack (founder's #911 carried exactly
+/// this phantom, along with 24 other accounts).
+export function isFrontHost(host: string | null | undefined): boolean {
+  if (!host) return false
+  const h = host.trim().toLowerCase()
+  return (
+    h === frontHttps.replace(/^https:\/\//, '').toLowerCase() ||
+    h === DEFAULT_FRONT.replace(/^https:\/\//, '').toLowerCase()
+  )
+}
+
 function rewrite(url: string): string {
   if (!engaged) return url
   if (url.startsWith(FLAGSHIP_HTTPS)) {

@@ -261,10 +261,18 @@ async function promptAndInstall(
     cancelLabel: t('desktop.update.later'),
   })
   if (!go) return
-  await haltBypassForInstall()
-  await update.downloadAndInstall()
-  const { relaunch } = await import('@tauri-apps/plugin-process')
-  await relaunch()
+  announceInstalling(true)
+  try {
+    await haltBypassForInstall()
+    await update.downloadAndInstall()
+    const { relaunch } = await import('@tauri-apps/plugin-process')
+    await relaunch()
+  } catch (e) {
+    // On success the process is replaced and the flag dies with it; only a
+    // failure needs to hand the badge back.
+    announceInstalling(false)
+    throw e
+  }
 }
 
 // ── pending update, as a fact the UI can watch ──────────────────────────
@@ -312,6 +320,23 @@ function announceUpdate(next: PendingUpdate | null) {
   if (changed) updateListeners.forEach((cb) => cb())
 }
 
+/// True while a download-and-install is running, WHOEVER started it. The
+/// header badge and the OS dialog are two doors into the same install; the
+/// badge used to watch only its own door, so an install accepted in the dialog
+/// left the badge sitting there active (founder, 21.08). One flag, announced
+/// over the same listeners the badge already subscribes to.
+let installingUpdate = false
+
+export function isInstallingUpdate(): boolean {
+  return installingUpdate
+}
+
+function announceInstalling(v: boolean) {
+  if (installingUpdate === v) return
+  installingUpdate = v
+  updateListeners.forEach((cb) => cb())
+}
+
 /// Ask the endpoint, remember what it said, and tell nobody loudly.
 ///
 /// ⚠ The `Update` handle is a Rust-side resource with an rid; it is closed
@@ -340,10 +365,14 @@ export async function pollForUpdates(force = false): Promise<void> {
 /// Download the pending update and restart into it. Used by the badge.
 export async function installPendingUpdate(): Promise<UpdateCheck> {
   if (!isTauri()) return { kind: 'unsupported' }
+  // Before the re-check's network round trip, not after: the click must show
+  // as working immediately, and the flag is what the badge renders from.
+  announceInstalling(true)
   try {
     const { check } = await import('@tauri-apps/plugin-updater')
     const update = await check()
     if (!update) {
+      announceInstalling(false)
       announceUpdate(null)
       return { kind: 'current' }
     }
@@ -353,6 +382,7 @@ export async function installPendingUpdate(): Promise<UpdateCheck> {
     await relaunch()
     return { kind: 'found' }
   } catch (e) {
+    announceInstalling(false)
     console.error('[updater] install failed', e)
     return { kind: 'install_failed', reason: reasonOf(e) }
   }

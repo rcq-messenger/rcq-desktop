@@ -18,16 +18,21 @@
      black type and makes every neighbouring grey look blue. A couple of points
      of warmth reads as paper instead, and nothing else in the palette has to
      move. The greys below are shifted the same way so they stay in the same
-     family (a neutral grey next to a warm white looks faintly blue). */
-  --c-surface: 253 252 250;
-  --c-surface-dim: 249 247 244;
-  --c-line: 231 228 223;
+     family (a neutral grey next to a warm white looks faintly blue).
+
+     Dropped a further 3-6 points across the board on 21.08 — the founder's
+     "прям перебор": even the warm white peaked bright enough to glare on a
+     full-screen window. The family and the spacing between the greys are
+     unchanged, only the ceiling is lower, so nothing else had to move. */
+  --c-surface: 250 248 244;
+  --c-surface-dim: 244 241 236;
+  --c-line: 226 222 215;
   --c-fg-primary: 10 10 10;
   --c-fg-secondary: 75 85 99;
-  --c-fg-dim: 156 163 175;
-  --c-bubble-self: 220 252 231;
-  --c-bubble-other: 244 242 238;
-  --c-field: 243 241 237;
+  --c-fg-dim: 148 155 167;
+  --c-bubble-self: 214 246 226;
+  --c-bubble-other: 240 237 231;
+  --c-field: 239 236 230;
 }
 
 html.dark {
@@ -284,15 +289,18 @@ html.dark .rcq-header a[aria-label]:hover {
 html.desktop {
   -webkit-user-select: none;
   user-select: none;
-  /* A trackpad swipe sideways slid the whole app a few pixels and let it
-     spring back. Harmless, and it reads as a web page in a window rather than
-     an application — nothing here scrolls horizontally, so there is nothing to
-     rubber-band against. In a browser this stays on: overscroll there is the
-     browser's own gesture (back/forward), not ours to take away. */
-  overscroll-behavior-x: none;
+  /* A trackpad swipe slid the whole app a few pixels and let it spring back.
+     Harmless, and it reads as a web page in a window rather than an
+     application — the PAGE never scrolls in either axis (every list scrolls
+     inside its own pane), so there is nothing to rubber-band against. Both
+     axes: the sideways slide went first, and the founder then flagged the
+     vertical bounce for the same reason (21.08). Inner scrollers keep their
+     native feel — this only pins the page itself. In a browser this stays on:
+     overscroll there is the browser's own gesture, not ours to take away. */
+  overscroll-behavior: none;
 }
 html.desktop body {
-  overscroll-behavior-x: none;
+  overscroll-behavior: none;
 }
 html.desktop input,
 html.desktop textarea,

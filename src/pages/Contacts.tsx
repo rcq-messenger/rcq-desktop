@@ -389,9 +389,14 @@ export function Contacts() {
             >
               <MicIcon />
             </Link>
-            <NewsButton className="relative text-fg-secondary hover:text-fg-primary p-2 rounded-md" />
+            {/* A narrow window keeps only the doors the founder named (21.08):
+                lock, settings, rooms, requests, add — the update pill shrinks
+                to a square icon. News and the theme switch go first: the theme
+                also lives as a row in Settings, and both are the reads-later
+                kind of door, not the reach-for kind. */}
+            <NewsButton className="relative text-fg-secondary hover:text-fg-primary p-2 rounded-md max-[519px]:hidden" />
             <LockNowButton />
-            <ThemeToggle className="text-fg-secondary hover:text-fg-primary p-2 rounded-md hover:bg-surface-dim transition-colors" />
+            <ThemeToggle className="text-fg-secondary hover:text-fg-primary p-2 rounded-md hover:bg-surface-dim transition-colors max-[519px]:hidden" />
             <Link
               to="/settings"
               className="text-fg-secondary hover:text-fg-primary p-2 rounded-md hover:bg-surface-dim"

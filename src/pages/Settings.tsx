@@ -614,9 +614,14 @@ export function Settings() {
 
         <BackupSection />
 
+        {/* These link-cards hover to `field`, not to `surface-dim`: in the
+            true-black dark theme surface-dim IS the page, so the old hover
+            sank the card into the background instead of lifting it — a block
+            that goes black under the cursor reads as disappearing, not as
+            responding (founder, 21.08). Same fix on every card below. */}
         <Link
           to="/market"
-          className="block bg-surface rounded-lg p-4 hover:bg-surface-dim transition-colors"
+          className="block bg-surface rounded-lg p-4 hover:bg-field transition-colors"
         >
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
@@ -839,7 +844,7 @@ export function Settings() {
             See pages/Privacy.tsx for the actual surface. */}
         <Link
           to="/privacy"
-          className="block bg-surface rounded-lg p-4 hover:bg-surface-dim transition-colors"
+          className="block bg-surface rounded-lg p-4 hover:bg-field transition-colors"
         >
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
@@ -859,7 +864,7 @@ export function Settings() {
             screen is long gone. */}
         <Link
           to="/how"
-          className="block bg-surface rounded-lg p-4 hover:bg-surface-dim transition-colors"
+          className="block bg-surface rounded-lg p-4 hover:bg-field transition-colors"
         >
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
@@ -881,7 +886,7 @@ export function Settings() {
             measured live, with the switch that removes it. */}
         <Link
           to="/storage"
-          className="block bg-surface rounded-lg p-4 hover:bg-surface-dim transition-colors"
+          className="block bg-surface rounded-lg p-4 hover:bg-field transition-colors"
         >
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
@@ -1124,7 +1129,7 @@ export function Settings() {
             reporter has after sending is "did anyone answer". */}
         <Link
           to="/reports"
-          className="block bg-surface rounded-lg p-4 hover:bg-surface-dim transition-colors"
+          className="block bg-surface rounded-lg p-4 hover:bg-field transition-colors"
         >
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">

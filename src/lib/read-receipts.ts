@@ -19,6 +19,7 @@ import { scopedKey } from './account-scope'
 import { Api, peerBundleFrom } from './api'
 import { encryptV1, type Envelope, type WebIdentity } from './crypto'
 import { sendV2 } from './signal-device'
+import { incomingHydrated } from './incoming-store'
 
 /// Ids remembered per thread. Old ids fall off the front; the age gate below
 /// keeps that from ever re-receipting them.
@@ -54,6 +55,11 @@ function saveSent(peer: number, ids: string[]): void {
 // One send at a time per peer: the effect that calls this fires on every
 // incoming-rows change, and two overlapping runs would receipt the same ids.
 const inFlight = new Set<number>()
+// A rows-change that arrived DURING a flight, remembered so the flight can
+// pick it up on the way out. Without this, a message landing mid-flight waits
+// for the next arrival, visibility flip or thread reopen to be receipted —
+// i.e. the peer watches their last message stay unread while it is being read.
+const rerunFor = new Map<number, ReadonlyArray<{ id: string; at: number }>>()
 
 /// The thread is on screen: receipt whatever the peer sent that has not been
 /// receipted yet. `rows` is the thread's incoming half (all authored by the
@@ -64,6 +70,13 @@ export function noteThreadViewed(
   rows: ReadonlyArray<{ id: string; at: number }>,
 ): void {
   if (peer === identity.uin) return // Saved Messages read themselves
+  // ⚠⚠ Never before the history is off the disk. `rows` is EMPTY until
+  // hydration lands — which, on a reload straight onto a chat URL, is long
+  // after this effect first runs — and seeding an empty memory then means the
+  // whole thread counts as unreceipted the moment it appears: a burst of read
+  // receipts for two weeks of messages, which is the exact storm the seed
+  // exists to prevent.
+  if (!incomingHydrated(identity.uin)) return
   const stored = loadSent(peer)
   if (stored == null) {
     // First run here: everything already in the thread predates read
@@ -74,7 +87,12 @@ export function noteThreadViewed(
   const sent = new Set(stored)
   const now = Date.now()
   const fresh = rows.filter((r) => !sent.has(r.id) && now - r.at < MAX_AGE_MS).map((r) => r.id)
-  if (fresh.length === 0 || inFlight.has(peer)) return
+  if (fresh.length === 0) return
+  if (inFlight.has(peer)) {
+    // Park the rows; the flight in progress runs one more pass with them.
+    rerunFor.set(peer, rows)
+    return
+  }
   inFlight.add(peer)
   // Marked BEFORE the wire: a receipt that fails to send is a tick the peer
   // does not get — same contract as the delivered receipt, and it keeps a
@@ -87,6 +105,11 @@ export function noteThreadViewed(
       }
     } finally {
       inFlight.delete(peer)
+    }
+    const again = rerunFor.get(peer)
+    if (again) {
+      rerunFor.delete(peer)
+      noteThreadViewed(identity, peer, again)
     }
   })()
 }

@@ -260,7 +260,11 @@ async function cmdExport(): Promise<void> {
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2)
-  const cmd = argv[0]
+  // An EMPTY first argument is not a command (`rcq "$CMD"` with CMD unset is
+  // an ordinary shell shape). Normalised here so the keep-alive check at the
+  // bottom of this file, which reads process.argv directly, cannot disagree
+  // with this one about whether interactive mode was entered.
+  const cmd = argv[0] === '' ? undefined : argv[0]
   if (cmd === '--help' || cmd === '-h' || cmd === 'help') {
     process.stdout.write(USAGE)
     process.exit(0)
@@ -303,7 +307,7 @@ main().then(
   () => {
     // `watch` and the no-arg interactive mode stay alive on their socket;
     // every other command is done when its promise settles.
-    const cmd = process.argv[2]
+    const cmd = process.argv[2] || undefined
     if (cmd !== undefined && cmd !== 'watch') process.exit(0)
   },
   (e) => die(e instanceof Error ? e.message : String(e)),

@@ -126,7 +126,11 @@ export function NewsButton({ className }: { className?: string }) {
       const items = [...res.items].sort(
         (a, b) => Date.parse(b.published_at) - Date.parse(a.published_at) || b.id - a.id,
       )
-      seedIfUnset(res.latest_id ?? items[0]?.id ?? null)
+      // Seed from the island's own latest_id, or the highest id we can see —
+      // items[0] is the newest by TIME, which is not the same thing.
+      seedIfUnset(
+        res.latest_id ?? (items.length ? items.reduce((m, p) => (p.id > m ? p.id : m), items[0].id) : null),
+      )
       const seen = readSeen()
       setPosts(items)
       setUnread(items.filter((p) => p.id > seen).length)
@@ -166,7 +170,12 @@ export function NewsButton({ className }: { className?: string }) {
     const next = !open
     setOpen(next)
     if (next && posts && posts.length > 0) {
-      markSeen(posts[0].id)
+      // The MAX id, not the first row. The feed is ordered by publish time
+      // now, so the newest post is no longer necessarily the highest id — a
+      // translation backdated to sit under its original outranks it. Marking
+      // the first row seen left every id above it unread forever, and the dot
+      // came straight back.
+      markSeen(posts.reduce((max, p) => (p.id > max ? p.id : max), posts[0].id))
       setUnread(0)
     }
   }

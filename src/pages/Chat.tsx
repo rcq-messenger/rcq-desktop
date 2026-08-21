@@ -126,6 +126,18 @@ function buildSnippet(text: string): string {
 const _peerCache = new Map<number, Contact>()
 const _groupCache = new Map<number, RCQGroup>()
 
+/// How far along the delivery ladder each outgoing state sits. Receipts and
+/// send-completions both write through this so a row only ever climbs:
+/// sending -> sent -> delivered -> read. 'failed' shares the floor with
+/// 'sending' — neither has been vouched for by anyone.
+const DELIVERY_RANK: Record<OutgoingRow['state'], number> = {
+  sending: 0,
+  failed: 0,
+  sent: 1,
+  delivered: 2,
+  read: 3,
+}
+
 export function Chat() {
   const { identity } = useIdentity()
   const { t } = useI18n()
@@ -793,12 +805,13 @@ export function Chat() {
     )
     setReceiptSink((ids, state) => {
       const idSet = new Set(ids)
+      // Rank, not a hand-written pair of cases. A receipt can arrive while the
+      // row still says 'sending': the peer got the copy over their live socket
+      // and answered before our own POST resolved. Comparing ranks lets that
+      // one land (and attemptSendRow's later 'sent' is itself rank-guarded, so
+      // it cannot walk the row back down).
       setOutgoing((rows) =>
-        rows.map((r) =>
-          idSet.has(r.id) && (r.state === 'sent' || (r.state === 'delivered' && state === 'read'))
-            ? { ...r, state }
-            : r,
-        ),
+        rows.map((r) => (idSet.has(r.id) && DELIVERY_RANK[state] > DELIVERY_RANK[r.state] ? { ...r, state } : r)),
       )
     })
     return () => {
@@ -812,7 +825,16 @@ export function Chat() {
   // only in v1 (the receipt path is same-island API + sessions), and never
   // for Saved Messages. Re-runs on new arrivals and on the tab coming back.
   useEffect(() => {
-    if (!identity || isGroup || isSelf || peerUIN == null || peer?.host) return
+    if (!identity || isGroup || isSelf || peerUIN == null) return
+    // ⚠ Local island only in v1 (the receipt path is same-island API +
+    // sessions) — and the cross-island test has to hold BEFORE the contacts
+    // fetch answers. `peer` is null on a cold load, so gating on peer?.host
+    // alone treated a foreign thread as local for that window and shipped
+    // receipts to whoever holds that bare number on OUR island — a real
+    // account, since numbers collide across islands. `islandHost` comes off
+    // the route synchronously; `peer` is required too, so nothing is
+    // announced until we actually know who this thread belongs to.
+    if (islandHost || !peer || peer.host) return
     const announce = () => {
       if (document.visibilityState !== 'visible') return
       noteThreadViewed(identity, peerUIN, peerIncoming)
@@ -820,7 +842,7 @@ export function Chat() {
     announce()
     document.addEventListener('visibilitychange', announce)
     return () => document.removeEventListener('visibilitychange', announce)
-  }, [identity, isGroup, isSelf, peerUIN, peer?.host, peerIncoming])
+  }, [identity, isGroup, isSelf, peerUIN, peer, islandHost, peerIncoming])
 
   // Auto-clear the transient notice (forward toast) after a moment
   // so it doesn't linger on the screen.
@@ -877,6 +899,10 @@ export function Chat() {
             : isSelf
               ? 'carbon'
               : 'message'
+    // Set when the send reaches no one on the wire because the group's roster
+    // is confirmed to be just us — the carbon below then carries the message
+    // alone (see the solo branch).
+    let soloDelivery = false
     try {
       if (isGroup && group && gctx) {
         // A roster with just US in it is not an error to post to: everyone
@@ -890,15 +916,35 @@ export function Chat() {
         // UNLOADED roster (see forwardTo), and skipping the wire on one would
         // fake-send into a group that does have people.
         const me = gctx.ident.uin
-        const soloGroup = group.members.some((m) => m.uin === me) && !group.members.some((m) => m.uin !== me)
+        const isSolo = (g: { members: Array<{ uin: number }> }) =>
+          g.members.some((m) => m.uin === me) && !g.members.some((m) => m.uin !== me)
+        // ⚠⚠ And CONFIRM it against the island before acting on it. This
+        // roster is read once when the chat opens and then cached for the
+        // whole tab: a member who joins by invite link while the chat sits
+        // open is invisible here. Believing a stale "solo" would skip the
+        // wire and mark the message sent — the silent loss this allowance
+        // must not become. One extra request, only ever in the solo case.
+        // If the island cannot be reached we do NOT take the shortcut: the
+        // ordinary path then fails loudly, which is the honest answer when
+        // we could not check.
+        let roster = group
+        let soloGroup = false
+        if (isSolo(group)) {
+          const fresh = await Api.groupInfo(gctx.ident, gctx.gid).catch(() => null)
+          if (fresh) {
+            roster = { ...group, members: fresh.members }
+            soloGroup = isSolo(fresh)
+          }
+        }
         // Sender-keys dual-send (only for a LOCAL group — cross-island groups
         // keep the legacy per-member path in v1; their capability lookup +
         // broadcast endpoint live on the foreign island we have no token for).
-        const anyCapable = !group.host && group.members.some((m) => m.sender_keys && m.uin !== gctx.ident.uin)
+        const anyCapable = !roster.host && roster.members.some((m) => m.sender_keys && m.uin !== gctx.ident.uin)
         if (soloGroup) {
-          /* nothing on the group wire — fall through to the carbon */
+          // Nothing on the group wire — the carbon below is the delivery.
+          soloDelivery = true
         } else if (anyCapable) {
-          const ds = buildGroupDualSend(envelope, gctx.ident, gctx.gid, group.members)
+          const ds = buildGroupDualSend(envelope, gctx.ident, gctx.gid, roster.members)
           if (!ds.broadcastPayload && ds.legacyPayloads.length === 0) {
             throw new Error(
               ds.skipped.length > 0 ? t('chat.error.group_no_valid_members') : t('chat.error.group_empty'),
@@ -921,7 +967,7 @@ export function Chat() {
         } else {
           // Foreign group, or a group where nobody is capable yet: original
           // per-member fan-out unchanged.
-          const { payloads, skipped } = encryptGroupEnvelope(envelope, gctx.ident, group.members)
+          const { payloads, skipped } = encryptGroupEnvelope(envelope, gctx.ident, roster.members)
           if (payloads.length === 0) {
             throw new Error(
               skipped.length > 0 ? t('chat.error.group_no_valid_members') : t('chat.error.group_empty'),
@@ -973,8 +1019,15 @@ export function Chat() {
       } else {
         throw new Error('no target')
       }
-      // Mirror this message to the user's other devices (best-effort).
-      void sendMessageCarbon(envelope)
+      // Mirror this message to the user's other devices (best-effort) — except
+      // when nothing went on the wire at all. In a solo group the carbon is not
+      // a mirror, it IS the delivery: fire-and-forgetting it there would report
+      // a message sent that exists nowhere but this browser's log.
+      if (soloDelivery) {
+        await sendMessageCarbon(envelope)
+      } else {
+        void sendMessageCarbon(envelope)
+      }
       return { ok: true }
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : t('chat.error.send_failed') }
@@ -1074,7 +1127,15 @@ export function Chat() {
     const res = await shipEnvelopeToCurrentThread(env)
     if (res.ok) {
       setOutgoing((rows) =>
-        rows.map((r) => (r.id === row.id ? { ...r, state: 'sent', error: undefined } : r)),
+        // 'sent' only if the row has not already climbed past it: a receipt
+        // can beat our own POST's response home (see the receipt sink).
+        rows.map((r) =>
+          r.id === row.id && DELIVERY_RANK[r.state] < DELIVERY_RANK.sent
+            ? { ...r, state: 'sent', error: undefined }
+            : r.id === row.id
+              ? { ...r, error: undefined }
+              : r,
+        ),
       )
       if (isSentSoundEnabled()) playSound('message_sent')
     } else {

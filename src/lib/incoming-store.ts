@@ -330,6 +330,14 @@ function emitUnread() {
 
 // Persistence (IndexedDB), scoped per account. Set by hydrateIncoming() on mount.
 let _activeUin: number | null = null
+/// Whose history has finished loading from IndexedDB. Read receipts hang on
+/// this: a thread's rows are EMPTY until hydration lands, and "the peer has
+/// written nothing" and "we have not read the disk yet" must not look alike
+/// to the code that decides what has already been receipted.
+let _hydratedFor: number | null = null
+export function incomingHydrated(uin: number): boolean {
+  return _hydratedFor === uin
+}
 const histKey = (uin: number) => `incoming:${uin}`
 const unreadKey = (uin: number) => `rcq.web.unread.${uin}`
 
@@ -606,6 +614,10 @@ export async function hydrateIncoming(uin: number): Promise<void> {
   // gone — the history stays as it is rather than being replaced with garbage.
   const stored = await idbGet<unknown>(histKey(uin)).catch(() => undefined)
   const saved = await openValue<Persisted>(stored).catch(() => undefined)
+  // Hydrated either way: "nothing on disk" is an answer too, and callers that
+  // wait for this flag (read receipts) would otherwise wait forever on a
+  // fresh install.
+  _hydratedFor = uin
   if (!saved) return
   for (const [k, rows] of Object.entries(saved.peers ?? {})) {
     byPeer.set(Number(k), rows)

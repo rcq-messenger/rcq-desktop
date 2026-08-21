@@ -19,6 +19,7 @@ import { out } from './style'
 
 const HELP = `  /to <uin>   talk to this contact (replies auto-pick whoever writes first)
   /add <uin>  send a contact request
+  /nick NAME  rename this account
   /contacts   list contacts
   /help       this text
   /quit       leave (Ctrl+C and Ctrl+D work too)
@@ -168,6 +169,16 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
         return
       }
       switchTo(uin)
+      return
+    }
+    if (line === '/nick' || line.startsWith('/nick ')) {
+      const name = line.slice(5).trim()
+      if (!name) {
+        printAbove('usage: /nick NAME')
+        return
+      }
+      await Api.updateProfile(identity, { nickname: name })
+      printAbove(out.dim(`you are now "${name}"`))
       return
     }
     if (line === '/add' || line.startsWith('/add ')) {

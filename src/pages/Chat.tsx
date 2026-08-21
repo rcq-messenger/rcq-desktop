@@ -899,10 +899,6 @@ export function Chat() {
             : isSelf
               ? 'carbon'
               : 'message'
-    // Set when the send reaches no one on the wire because the group's roster
-    // is confirmed to be just us — the carbon below then carries the message
-    // alone (see the solo branch).
-    let soloDelivery = false
     try {
       if (isGroup && group && gctx) {
         // A roster with just US in it is not an error to post to: everyone
@@ -941,8 +937,8 @@ export function Chat() {
         // broadcast endpoint live on the foreign island we have no token for).
         const anyCapable = !roster.host && roster.members.some((m) => m.sender_keys && m.uin !== gctx.ident.uin)
         if (soloGroup) {
-          // Nothing on the group wire — the carbon below is the delivery.
-          soloDelivery = true
+          /* No other member to seal to: nothing goes on the group wire, and
+             the row in this thread's log is the whole of it. */
         } else if (anyCapable) {
           const ds = buildGroupDualSend(envelope, gctx.ident, gctx.gid, roster.members)
           if (!ds.broadcastPayload && ds.legacyPayloads.length === 0) {
@@ -1019,15 +1015,19 @@ export function Chat() {
       } else {
         throw new Error('no target')
       }
-      // Mirror this message to the user's other devices (best-effort) — except
-      // when nothing went on the wire at all. In a solo group the carbon is not
-      // a mirror, it IS the delivery: fire-and-forgetting it there would report
-      // a message sent that exists nowhere but this browser's log.
-      if (soloDelivery) {
-        await sendMessageCarbon(envelope)
-      } else {
-        void sendMessageCarbon(envelope)
-      }
+      // Mirror this message to the user's other devices. Best-effort, and that
+      // includes the solo-group case.
+      //
+      // ⚠ It was briefly awaited there, on the idea that in a group of one the
+      // carbon IS the delivery. It is not: a group with no other members has
+      // no recipient at all, so nothing is in flight to lose. The carbon is
+      // the same courtesy copy it is everywhere else — and awaiting it read as
+      // a guarantee it cannot give, since it swallows its own errors, skips
+      // the kinds outside CARBON_KINDS (video, poll) and skips foreign groups
+      // entirely. The row in this thread's log is the artifact, exactly as on
+      // the phone, where a solo group posts an empty fan-out and files the
+      // message locally.
+      void sendMessageCarbon(envelope)
       return { ok: true }
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : t('chat.error.send_failed') }
@@ -1139,8 +1139,21 @@ export function Chat() {
       )
       if (isSentSoundEnabled()) playSound('message_sent')
     } else {
+      // ⚠ Rank-guarded like the success branch. Under fan-out a peer device can
+      // receipt the copy it got while the POST to their SECOND device is still
+      // failing: the row is already 'delivered' (or 'read'), and stamping
+      // 'failed' over it would throw away a receipt the peer never repeats,
+      // show a red cross on a message they have read, and invite a retry that
+      // sends them a duplicate. A row that has been vouched for keeps its
+      // state; the error text still lands so the failure is not silent.
       setOutgoing((rows) =>
-        rows.map((r) => (r.id === row.id ? { ...r, state: 'failed', error: res.error } : r)),
+        rows.map((r) =>
+          r.id !== row.id
+            ? r
+            : DELIVERY_RANK[r.state] > DELIVERY_RANK.sent
+              ? { ...r, error: res.error }
+              : { ...r, state: 'failed', error: res.error },
+        ),
       )
     }
   }

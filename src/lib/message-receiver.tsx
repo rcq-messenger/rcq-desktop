@@ -10,7 +10,7 @@ import { currentDeviceId, decryptIncoming, getDevice, myDeviceId, noteInboundFro
 import { addIncoming, addGroupIncoming, hydrateIncoming, beginCatchUp, endCatchUp, flushHistory } from './incoming-store'
 import { fileOutgoingCarbon } from './outgoing-store'
 import { publishHomeIslandRecord } from './federation-publish'
-import { adoptHomesFromOwnRecord, applyPushedRecord, drainBackupQueues, listBackupHomes } from './multihome'
+import { adoptHomesFromOwnRecord, applyPushedRecord, drainBackupQueues, listBackupHomes, scrubFrontAliasHomes } from './multihome'
 import { aliasFor, drainVisitedQueues, listVisitedIslands } from './visited-islands'
 import { getCrossIsland } from './crossisland-store'
 import { ensureRequestsLoaded, holdRequestMessage, isBlocked } from './crossisland-requests'
@@ -427,6 +427,11 @@ export function MessageReceiver() {
       // In its own task, not awaited: adoption is two round trips per unknown
       // home and the queue drain below must not wait behind it.
       void (async () => {
+        // Scrub first: a phantom front home adopted by an older build must
+        // stop draining and stop being republished in THIS session, not the
+        // next one. adoptHomesFromOwnRecord refuses fronts now, so the scrub
+        // is not undone by the read that follows it.
+        scrubFrontAliasHomes(identity)
         await adoptHomesFromOwnRecord(identity)
         void publishHomeIslandRecord(identity)
       })()

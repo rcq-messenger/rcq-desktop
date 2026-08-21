@@ -59,6 +59,7 @@ import {
   listBackupHomes,
   removeBackupIsland,
   promoteBackupToPrimary,
+  scrubFrontAliasHomes,
   type BackupHome,
 } from '../lib/multihome'
 import { publishHomeIslandRecord } from '../lib/federation-publish'
@@ -185,6 +186,10 @@ export function Settings() {
   useEffect(() => {
     if (!identity) return
     let alive = true
+    // Same order as boot: scrub phantom front homes first, so the screen
+    // cannot show cdn.rcq.app as a "backup island" (it is the flagship's own
+    // front — the very screenshot this fix exists because of).
+    scrubFrontAliasHomes(identity)
     void adoptHomesFromOwnRecord(identity).then(() => {
       if (!alive) return
       setBackups(listBackupHomes())

@@ -4,6 +4,7 @@
 
 import { Api, type RCQGroup } from './api'
 import { b64ToBytes, encryptV1, type Envelope, type WebIdentity } from './crypto'
+import { holdGmsg, takeHeldForKid } from './held-gmsg'
 import { openGmsg, type GmsgWire } from './sender-keys'
 import {
   acceptSkdm,
@@ -53,7 +54,15 @@ export async function handleGmsg(
 
   const key = deriveInbound(identity.uin, wire.kid, wire.e, wire.i)
   if (!key) {
-    if (!knowsKid(identity.uin, wire.kid)) void sendNack(identity, gid, wire.kid)
+    if (!knowsKid(identity.uin, wire.kid)) {
+      // Unknown kid: live delivery is unordered, so the SKDM may simply not
+      // have arrived yet. Hold the raw packet for replay when it does, and
+      // fire ONE recovery request. Holding adds no NACK of its own: this
+      // branch stays the only NACK site, and the per-kid debounce above
+      // already collapses the burst a missed SKDM produces.
+      holdGmsg(identity.uin, { kid: wire.kid, gid, payloadB64, e: wire.e, i: wire.i })
+      void sendNack(identity, gid, wire.kid)
+    }
     return null // replay / epoch mismatch / too-far-ahead — silently dropped
   }
   let opened
@@ -71,14 +80,39 @@ export async function handleGmsg(
 
 /// Store an inbound chain handed to us via an SKDM (bound to the
 /// authenticated sender from the seal). Called from the receive router.
+/// Returns true when the chain was stored (or refreshed), i.e. when a
+/// replay of gmsgs held for this kid is worth firing.
 export function handleSkdm(
   ownUin: number,
   senderUIN: number,
   senderSigningKey: string | undefined,
   env: { gid: number; kid: string; e: number; i: number; ck: string },
-): void {
-  if (!senderSigningKey) return // unauthenticated — never trust an unbound chain
-  acceptSkdm(ownUin, env.kid, env.gid, senderUIN, senderSigningKey, env.e, env.i, env.ck)
+): boolean {
+  if (!senderSigningKey) return false // unauthenticated: never trust an unbound chain
+  return acceptSkdm(ownUin, env.kid, env.gid, senderUIN, senderSigningKey, env.e, env.i, env.ck)
+}
+
+export interface ReplayedGmsg extends RoutedGmsg {
+  gid: number
+}
+
+/// Replay the broadcasts held for `kid` once its SKDM was accepted: each raw
+/// packet goes back through `handleGmsg`, the normal decrypt path, in arrival
+/// order. Returns what decrypted, for the caller to route. Dedup against a
+/// copy the queue drain ALSO delivered is downstream and twofold: the chain
+/// refuses a position it already ratcheted past, and the incoming store
+/// dedups by envelope id. A packet that still cannot decrypt (say the SKDM
+/// was for a newer epoch) is dropped or re-held by `handleGmsg` itself, and
+/// cannot NACK-storm: the key is known now, and the not-known case sits
+/// behind the same per-kid debounce as ever.
+export async function replayHeldGmsg(identity: WebIdentity, kid: string): Promise<ReplayedGmsg[]> {
+  const held = takeHeldForKid(identity.uin, kid)
+  const out: ReplayedGmsg[] = []
+  for (const h of held) {
+    const got = await handleGmsg(identity, h.payloadB64, h.gid)
+    if (got) out.push({ ...got, gid: h.gid })
+  }
+  return out
 }
 
 /// Answer a recovery request: if I own this group's chain, re-seal a current

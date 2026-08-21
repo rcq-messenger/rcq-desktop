@@ -19,7 +19,7 @@ import { handleContactReq } from './crossisland-contactreq'
 import { CALL_OFFER_TTL_SEC, fileMissedCrossIslandOffer } from './crossisland-call'
 import { deliverCrossIslandCallSignal } from './call'
 import { handleProfile, pushProfileTo } from './crossisland-profile'
-import { handleGmsg, handleSkdm, handleSknack } from './sender-key-receive'
+import { handleGmsg, handleSkdm, handleSknack, replayHeldGmsg } from './sender-key-receive'
 import { Api, peerBundleFrom } from './api'
 import { encryptV1 } from './crypto'
 import type { CallEnvelope, ContactReqEnvelope, Envelope, ProfileEnvelope, WebIdentity } from './crypto'
@@ -130,7 +130,20 @@ function route(
     // No identity means no account to file the chain under, and a chain filed
     // under the wrong one is exactly the bug this key shape exists to stop.
     if (identity) {
-      handleSkdm(identity.uin, senderUIN, senderSigningKey, envelope as unknown as { gid: number; kid: string; e: number; i: number; ck: string })
+      const skdm = envelope as unknown as { gid: number; kid: string; e: number; i: number; ck: string }
+      const accepted = handleSkdm(identity.uin, senderUIN, senderSigningKey, skdm)
+      // A live gmsg can outrun its own SKDM (a drain cannot: skdm rows are
+      // served first) and used to be lost for good. Replay whatever was held
+      // for this kid through the normal decrypt path, in arrival order; a
+      // copy the queue drain also delivers is absorbed by the chain position
+      // and the envelope-id dedup downstream of route().
+      if (accepted && typeof skdm.kid === 'string') {
+        void replayHeldGmsg(identity, skdm.kid)
+          .then((msgs) => {
+            for (const m of msgs) route(m.senderUIN, undefined, m.envelope, m.gid, myUin, ownHost, undefined, identity)
+          })
+          .catch(() => {})
+      }
     }
     return
   }

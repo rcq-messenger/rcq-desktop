@@ -11,6 +11,7 @@ import { Api, type UserInfo } from '../lib/api'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
 import { alwaysRelay, setAlwaysRelay } from '../lib/call-privacy'
+import { strangerQuarantineEnabled, setStrangerQuarantine } from '../lib/stranger-requests'
 
 type Scope = 'everyone' | 'contacts' | 'nobody'
 
@@ -21,6 +22,7 @@ export function Privacy() {
   const [info, setInfo] = useState<UserInfo | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [relayCalls, setRelayCalls] = useState(alwaysRelay())
+  const [strangers, setStrangers] = useState(() => strangerQuarantineEnabled())
 
   useEffect(() => {
     if (!identity) return
@@ -140,6 +142,24 @@ export function Privacy() {
                 />
               </div>
               <p className="text-xs text-fg-dim">{t('settings.privacy.relay_calls_desc')}</p>
+            </div>
+            {/* Same-island stranger quarantine — device-local like the relay
+                switch: the mailbox itself stays open (sealed sender), this
+                decides where THIS browser puts a stranger's first message. */}
+            <div className="pt-3 space-y-1.5">
+              <div className="flex items-center justify-between gap-3">
+                <label className="text-sm flex-1 min-w-0">{t('settings.privacy.strangers')}</label>
+                <input
+                  type="checkbox"
+                  className="accent-accent w-5 h-5 flex-none"
+                  checked={strangers}
+                  onChange={(e) => {
+                    setStrangers(e.target.checked)
+                    setStrangerQuarantine(e.target.checked)
+                  }}
+                />
+              </div>
+              <p className="text-xs text-fg-dim">{t('settings.privacy.strangers_desc')}</p>
             </div>
           </section>
         )}

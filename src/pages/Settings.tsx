@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { currentRecoveryPhrase, forgetRecoverySeed, revokedAccounts } from '../lib/auth'
-import { myAccountDevices, myDeviceId } from '../lib/signal-device'
+import { myAccountDevices, myDeviceId, splitToOwnSlot } from '../lib/signal-device'
 import { exportBackup, importBackup } from '../lib/backup-data'
 import { Dropdown, type DropdownOption } from '../components/Dropdown'
 import { LanguagePicker } from '../components/LanguagePicker'
@@ -83,6 +83,10 @@ export function Settings() {
   // loading; [] when the island could not answer.
   const [accountDevices, setAccountDevices] = useState<Array<{ device_id: number; label: string | null }> | null>(null)
   const [ownDeviceId, setOwnDeviceId] = useState<number | null>(null)
+  /// Slot the revoke confirm is armed for (пункт 13), and the one in flight.
+  const [revokeArmed, setRevokeArmed] = useState<number | null>(null)
+  const [revokingSlot, setRevokingSlot] = useState<number | null>(null)
+  const [splitArmed, setSplitArmed] = useState(false)
   useEffect(() => {
     if (!identity) return
     let alive = true
@@ -94,6 +98,28 @@ export function Settings() {
       .catch(() => {})
     return () => { alive = false }
   }, [identity])
+
+  /// Retire a key slot. Two-tap confirm in place, no modal; a cooldown 403
+  /// from the island turns into the human sentence it means.
+  async function revokeSlot(deviceId: number) {
+    if (!identity || revokingSlot != null) return
+    setRevokeArmed(null)
+    setRevokingSlot(deviceId)
+    try {
+      await Api.revokeDeviceSlot(identity, deviceId)
+      setAccountDevices((list) => list?.filter((d) => d.device_id !== deviceId) ?? list)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : ''
+      if (/revoke_cooldown/.test(msg)) {
+        const h = Math.max(1, Math.ceil(Number(/"wait_seconds"\s*:\s*(\d+)/.exec(msg)?.[1] ?? 86400) / 3600))
+        toast(t('settings.devices.revoke_cooldown', { h: String(h) }), 'error')
+      } else {
+        toast(t('settings.devices.revoke_failed'), 'error')
+      }
+    } finally {
+      setRevokingSlot(null)
+    }
+  }
   const navigate = useNavigate()
   const [confirming, setConfirming] = useState(false)
   const [burnTyped, setBurnTyped] = useState('')
@@ -701,9 +727,48 @@ export function Settings() {
                   {ownDeviceId != null && d.device_id === ownDeviceId && (
                     <span className="text-xs text-accent flex-none">{t('settings.devices.this')}</span>
                   )}
+                  {/* Пункт 13: a slot that is neither the primary nor OUR OWN
+                      can be retired. Two taps: arm, then the red confirm. */}
+                  {d.device_id !== 1 && d.device_id !== ownDeviceId && (
+                    <button
+                      onClick={() => (revokeArmed === d.device_id ? void revokeSlot(d.device_id) : setRevokeArmed(d.device_id))}
+                      disabled={revokingSlot != null}
+                      className={`ml-auto flex-none text-xs rounded px-2 py-0.5 transition-colors ${
+                        revokeArmed === d.device_id
+                          ? 'bg-red-500/15 text-red-500 font-semibold'
+                          : 'text-fg-dim hover:text-red-500'
+                      }`}
+                    >
+                      {revokingSlot === d.device_id
+                        ? '…'
+                        : revokeArmed === d.device_id
+                          ? t('settings.devices.revoke_confirm')
+                          : t('settings.devices.revoke')}
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
+          )}
+          {/* Пункт 13, вторая половина: a legacy session (linked before
+              per-device slots — no recovery phrase of its own) riding the
+              phone's slot 1 can split into a slot of its own. */}
+          {ownDeviceId === 1 && currentRecoveryPhrase() == null && (
+            <div className="pt-1 space-y-1.5">
+              <p className="text-xs text-fg-dim">{t('settings.devices.split.hint')}</p>
+              <button
+                onClick={() => {
+                  if (!identity) return
+                  if (!splitArmed) return setSplitArmed(true)
+                  splitToOwnSlot(identity)
+                }}
+                className={`text-xs rounded px-2 py-1 transition-colors ${
+                  splitArmed ? 'bg-accent text-white font-semibold' : 'text-accent hover:underline'
+                }`}
+              >
+                {splitArmed ? t('settings.devices.split.confirm') : t('settings.devices.split')}
+              </button>
+            </div>
           )}
         </section>
 

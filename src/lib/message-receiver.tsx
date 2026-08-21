@@ -14,6 +14,7 @@ import { adoptHomesFromOwnRecord, applyPushedRecord, drainBackupQueues, listBack
 import { aliasFor, drainVisitedQueues, listVisitedIslands } from './visited-islands'
 import { getCrossIsland } from './crossisland-store'
 import { ensureRequestsLoaded, holdRequestMessage, isBlocked } from './crossisland-requests'
+import { shouldQuarantineStranger } from './stranger-requests'
 import { handleContactReq } from './crossisland-contactreq'
 import { CALL_OFFER_TTL_SEC, fileMissedCrossIslandOffer } from './crossisland-call'
 import { deliverCrossIslandCallSignal } from './call'
@@ -204,6 +205,17 @@ function route(
   if (senderHost && senderHost !== ownHost && senderUIN !== myUin) {
     if (!getCrossIsland(senderUIN, senderHost)) {
       holdRequestMessage(senderUIN, senderHost, envelope)
+      return
+    }
+  }
+  // The same consent gate for the OWN island, opt-in (Privacy → strangers to
+  // requests). host '' marks a same-island row in the shared store. Returning
+  // here also skips the delivery receipt below on purpose: a held message
+  // must not confirm to a stranger that it landed in front of a human.
+  if ((!senderHost || senderHost === ownHost) && senderUIN !== myUin) {
+    const kind = (envelope as { kind?: string }).kind ?? ''
+    if (shouldQuarantineStranger(myUin, senderUIN, kind)) {
+      holdRequestMessage(senderUIN, '', envelope)
       return
     }
   }

@@ -343,6 +343,9 @@ pub fn start(app: &AppHandle) -> Option<u16> {
 
 pub fn stop() {
     PORT.store(0, Ordering::Relaxed);
+    // The TURN tunnel bridges into this core; a listener that outlived it
+    // would hand WebRTC a road to nowhere.
+    crate::turn_tunnel::reset();
     if let Some(child) = CORE.lock().unwrap().take() {
         let _ = child.kill();
     }
@@ -357,9 +360,16 @@ pub fn proxy_for_fetch() -> Option<String> {
 }
 
 fn proxy_url() -> Option<String> {
+    socks_port().map(|port| format!("socks5h://127.0.0.1:{port}"))
+}
+
+/// The SOCKS inbound the core listens on this session, for anything else that
+/// has to travel the same road. The TURN tunnel reads it per call rather than
+/// caching it, so the answer follows stop() and start() around.
+pub fn socks_port() -> Option<u16> {
     match PORT.load(Ordering::Relaxed) {
         0 => None,
-        port => Some(format!("socks5h://127.0.0.1:{port}")),
+        port => Some(port),
     }
 }
 
@@ -607,6 +617,10 @@ pub fn rebuild(app: &AppHandle) -> bool {
         stop();
         return false;
     }
+    // The relay pool changed under the same port, so the TURN tunnel's leg
+    // verdict (and any listener bridging the old road) is stale. Forget it;
+    // the next call re-proves the leg through the new pool.
+    crate::turn_tunnel::reset();
     log::info!("bypass rebuilt on 127.0.0.1:{port}");
     true
 }

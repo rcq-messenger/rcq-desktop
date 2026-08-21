@@ -53,7 +53,8 @@ start here:
   rcq restore "<24 words>" [--island URL]     restore an account from its phrase
 
 for scripts and one-shots (stdout is data, status goes to stderr):
-  rcq whoami                                  print uin, island, device id
+  rcq whoami                                  print uin, nickname, island, device id
+  rcq nick "NAME"                             rename this account
   rcq contacts                                list contacts (uin, nickname, status)
   rcq add <uin>                               send a contact request
   rcq send <uin> "text"                       one-shot: drain, send, wait for the receipt, exit
@@ -165,7 +166,24 @@ async function cmdWhoami(): Promise<void> {
   // Read the persisted device blob directly — whoami must work offline, and
   // getDevice() would try to provision.
   const blob = await idbGet<{ deviceId: number }>(`signal-device:${id.uin}`)
-  process.stdout.write(`uin: ${id.uin}\nisland: ${id.apiBase}\ndevice: ${blob ? blob.deviceId : '-'}\n`)
+  // The nickname lives on the island, not in the identity — fetched
+  // best-effort with the token already on disk, skipped cleanly offline
+  // (whoami must never mint or hang; 'rcq nick' is where renames happen).
+  let nick: string | null = null
+  if (id.jwt) nick = await Api.myInfo(id).then((m) => m.nickname ?? null).catch(() => null)
+  process.stdout.write(
+    `uin: ${id.uin}\n${nick ? `nickname: ${nick}\n` : ''}island: ${id.apiBase}\ndevice: ${blob ? blob.deviceId : '-'}\n`,
+  )
+}
+
+/// Rename this account on the island. One field, not a profile editor — the
+/// rest of the profile belongs to the visual clients.
+async function cmdNick(pos: string[]): Promise<void> {
+  const name = pos[0]?.trim()
+  if (!name) usageDie('nick needs the new name in quotes')
+  const id = await withToken(requireIdentity())
+  await Api.updateProfile(id, { nickname: name })
+  process.stderr.write(`you are now "${name}"\n`)
 }
 
 async function cmdContacts(): Promise<void> {
@@ -332,6 +350,8 @@ async function main(): Promise<void> {
       return cmdRestore(pos, opts)
     case 'whoami':
       return cmdWhoami()
+    case 'nick':
+      return cmdNick(pos)
     case 'contacts':
       return cmdContacts()
     case 'add':

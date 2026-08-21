@@ -144,6 +144,12 @@ export interface IngestResult {
   /// whether the backlog just interleaved with its one job — that is the
   /// moment to point at the interactive mode.
   contentCount?: number
+  /// Group messages banked to HISTORY without printing, counted per group.
+  /// "ввёл rcq и вижу сообщения группы - а если групп будет десятки?"
+  /// (founder, 21.08): the console is a 1:1 surface, groups live in the real
+  /// clients — so their content never hits the screen (RCQ_VERBOSE shows it),
+  /// and the drain prints one summary line per group instead.
+  groupNew?: Map<number, number>
 }
 
 interface Decrypted {
@@ -213,8 +219,20 @@ export async function ingestDecrypted(
     gid: groupId ?? undefined,
     envelope: env,
   })
-  const gtag = typeof groupId === 'number' ? `${groupLabel(identity, groupId)} ` : ''
-  emit(`${out.dim(`[${stamp()}]`)} ${gtag}${peer(got.senderUIN, `#${got.senderUIN}`)}: ${describeEnvelope(env)}\n`)
+  if (typeof groupId === 'number') {
+    // Banked, not printed (see IngestResult.groupNew) — and a group member
+    // must never become the interactive auto-reply target: the founder's
+    // first run auto-picked a random RCQ Beta poster as "replying to".
+    if (process.env.RCQ_VERBOSE) {
+      emit(`${out.dim(`[${stamp()}]`)} ${groupLabel(identity, groupId)} ${peer(got.senderUIN, `#${got.senderUIN}`)}: ${describeEnvelope(env)}\n`)
+    }
+    if (got.senderUIN !== identity.uin) {
+      const m = (result.groupNew ??= new Map<number, number>())
+      m.set(groupId, (m.get(groupId) ?? 0) + 1)
+    }
+    return
+  }
+  emit(`${out.dim(`[${stamp()}]`)} ${peer(got.senderUIN, `#${got.senderUIN}`)}: ${describeEnvelope(env)}\n`)
   result.contentCount = (result.contentCount ?? 0) + 1
   if (got.senderUIN !== identity.uin) result.lastPeerFrom = got.senderUIN
   // Tell the sender it ARRIVED (moves their second tick). 1:1 content from a
@@ -313,6 +331,14 @@ export async function drainQueue(identity: WebIdentity): Promise<IngestResult | 
       ;(typeof r.group_id === 'number' ? groupIds : directIds).push(r.id)
     } catch {
       /* transient failure — leave unacked for redelivery */
+    }
+  }
+  // One line per group instead of its whole feed (see IngestResult.groupNew):
+  // the content is on disk in the history file, and the screen stays a 1:1
+  // surface. RCQ_VERBOSE prints the full lines instead.
+  if (result.groupNew?.size && !process.env.RCQ_VERBOSE) {
+    for (const [gid, n] of result.groupNew) {
+      emit(`${out.dim(`[${stamp()}]`)} ${groupLabel(identity, gid)} ${out.dim(`+${n} (history only; groups live in the apps)`)}\n`)
     }
   }
   if (directIds.length || groupIds.length) {

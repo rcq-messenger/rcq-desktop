@@ -341,6 +341,14 @@ pub fn run() {
             )
             .plugin(tauri_plugin_process::init())
             .plugin(tauri_plugin_dialog::init())
+            // Writes the bytes a save dialog just picked a destination for
+            // (#642: saving a received file must ASK where — WebView2 never
+            // surfaced its own download UI for our blob anchors, and the
+            // mac/Linux on_download fallback saved silently into Downloads,
+            // which reads as "nothing happened" too). The dialog plugin
+            // extends the fs scope with whatever path the person picked, so
+            // no static scope is opened here.
+            .plugin(tauri_plugin_fs::init())
             .plugin(tauri_plugin_shell::init())
             .invoke_handler(tauri::generate_handler![
                 bypass_status,

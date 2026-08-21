@@ -12,6 +12,7 @@
 // `combined` minus the leading nonce. No AAD (iOS seals without AAD).
 
 import { b64ToBytes, bytesToB64 } from './crypto'
+import { saveBufferDesktop } from './desktop'
 import { openBuffer, sealBuffer } from './pin-seal'
 import { idbDel, idbGet, idbSet } from './signal-persist'
 
@@ -394,9 +395,15 @@ export async function loadEncryptedVideo(
   return URL.createObjectURL(new Blob([buf], { type: sniffVideoType(new Uint8Array(buf)) }))
 }
 
-/// Fetch + decrypt any media and trigger a browser download with the given
-/// file name + MIME. Returns false on failure so the caller can toast. The
-/// object URL is revoked shortly after the click fires.
+/// Fetch + decrypt any media and save it. Returns false on failure so the
+/// caller can toast.
+///
+/// On the DESKTOP this asks where with the native save dialog (#642 — the
+/// hidden `<a download>` click below did nothing at all on Windows, and on
+/// mac/Linux dropped the file into Downloads without a word). In a browser
+/// the anchor click stays: the browser owns the download UX there, and it is
+/// the right one. A cancelled dialog reports success — the person changed
+/// their mind, nothing failed.
 export async function downloadEncryptedFile(
   apiBase: string,
   mediaId: string,
@@ -406,6 +413,8 @@ export async function downloadEncryptedFile(
 ): Promise<boolean> {
   const buf = await fetchDecryptToBuffer(apiBase, mediaId, keyB64)
   if (!buf) return false
+  const desktop = await saveBufferDesktop(buf, fileName)
+  if (desktop !== null) return desktop !== 'failed'
   const url = URL.createObjectURL(new Blob([buf], { type: mime || 'application/octet-stream' }))
   const a = document.createElement('a')
   a.href = url

@@ -41,6 +41,37 @@ export async function notifyDesktop(title: string, body: string): Promise<void> 
   }
 }
 
+/// Save a decrypted buffer where the PERSON says, via the native save dialog.
+///
+/// #642 (the #634 → #640 → #642 saga): a received file was "saved" by clicking
+/// a hidden `<a download>` on a blob URL. WebView2 never surfaced any download
+/// UI for it — on Windows a click did nothing at all — and the mac/Linux
+/// `on_download` fallback dropped the file silently into Downloads, which
+/// reads as nothing happening too. A file save has one honest shape on a
+/// desktop: a dialog that asks where.
+///
+/// Answers null in a browser (caller falls back to the `<a download>` path,
+/// which browsers handle properly), 'cancelled' when the person closed the
+/// dialog (a decision, not a failure). The fs scope is extended by the dialog
+/// itself with exactly the picked path — nothing else on the disk opens up.
+export async function saveBufferDesktop(
+  buf: ArrayBuffer,
+  fileName: string,
+): Promise<'saved' | 'cancelled' | 'failed' | null> {
+  if (!isTauri()) return null
+  try {
+    const { save } = await import('@tauri-apps/plugin-dialog')
+    const path = await save({ defaultPath: fileName || 'file' })
+    if (!path) return 'cancelled'
+    const { writeFile } = await import('@tauri-apps/plugin-fs')
+    await writeFile(path, new Uint8Array(buf))
+    return 'saved'
+  } catch (e) {
+    console.error('[desktop] save failed', e)
+    return 'failed'
+  }
+}
+
 /// Set the app (dock / taskbar) badge to the unread count; 0 clears it.
 /// App-wide, not per-window. No-op off desktop.
 export async function setDesktopBadge(count: number): Promise<void> {

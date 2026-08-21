@@ -6,7 +6,7 @@
 import { useEffect } from 'react'
 import { useIdentity } from './identity-context'
 import { useWS } from './ws'
-import { currentDeviceId, decryptIncoming, getDevice, myDeviceId, noteInboundFrom, sendV2 } from './signal-device'
+import { currentDeviceId, decryptIncoming, getDevice, myDeviceId, noteInboundFrom, resetSilenceProbes, sendV2 } from './signal-device'
 import { addIncoming, addGroupIncoming, hydrateIncoming, beginCatchUp, endCatchUp, flushHistory } from './incoming-store'
 import { fileOutgoingCarbon } from './outgoing-store'
 import { publishHomeIslandRecord } from './federation-publish'
@@ -435,6 +435,10 @@ export function MessageReceiver() {
       void Api.advertiseCapabilities(identity, true).catch(() => {})
       await drainPrimaryQueue(identity, true)
     })()
+    // The socket is back: forget how long peers have been "quiet". What we
+    // measured while it was down was our own outage, and their answers may be
+    // in the backlog the drain above is fetching right now.
+    resetSilenceProbes()
   }, [identity, connected])
 
   // The socket is the fast road, not the only road. While it is down, this

@@ -559,6 +559,9 @@ function usable(t: PeerTarget | undefined): PeerTarget | undefined {
 // nothing about their linked browser whose session is dead — a per-account
 // timer was cleared by the living sibling's receipts and the dead device never
 // healed (live-tested 2026-08-20). Keys are "uin:deviceId".
+/// Envelope kinds whose delivery a peer answers (with a receipt), and so the
+/// only ones whose silence means anything. Mirrors Android's isCarbonable.
+const PROBE_ARMING_KINDS = new Set(['text', 'photo', 'video', 'voice', 'file', 'location', 'poll'])
 const PEER_SILENCE_MS = 2 * 60_000
 const SILENCE_PROBE_MIN_INTERVAL_MS = 30 * 60_000
 const _awaitingReplySince = new Map<string, number>()
@@ -572,6 +575,16 @@ const _lastSilenceProbeAt = new Map<string, number>()
 /// exactly the confusion that kept a dead device unhealed.
 export function noteInboundFrom(uin: number, deviceId?: number): void {
   if (typeof deviceId === 'number') _awaitingReplySince.delete(`${uin}:${deviceId}`)
+}
+
+/// Forget how long every peer device has been quiet. Called when the socket
+/// comes back: the probe measures a PEER's silence, and a stretch when THIS
+/// side had no connection measures nothing — their replies may be sitting in
+/// the queue this reconnect is about to drain. Counting our own outage as
+/// their silence is how the first send after coming back would re-key against
+/// a backlog that is still sealed to the session we hold.
+export function resetSilenceProbes(): void {
+  _awaitingReplySince.clear()
 }
 
 async function resolveTargets(
@@ -591,11 +604,10 @@ async function resolveTargets(
     // one-time prekeys, a pool that only refills while their client runs. A
     // peer who lost their own store re-keys this side with the prekey message
     // their next send carries, which replaces the session under this address.
-    // A rebuild trusts nothing this side holds — not the cached target, not
-    // the session, not even the recorded identity key (it may itself have been
-    // read only after the peer's install was replaced, in which case it
-    // compares clean against a bundle whose session is dead). Straight to a
-    // fresh bundle and a fresh X3DH.
+    // A rebuild trusts nothing CACHED — not the target, not the outer key —
+    // and goes to the island for a fresh bundle. What it does with that bundle
+    // is decided below: the published identity is the evidence, and an
+    // unchanged one means the session stands.
     const rebuild = rebuildDevices.has(d.device_id)
     const cached = rebuild ? undefined : (usable(byId.get(d.device_id)) ?? sessionTarget(dev, peerUin, d.device_id))
     if (cached) {
@@ -616,7 +628,18 @@ async function resolveTargets(
     // identity key rebuilds the session here.
     const held = dev.knownTarget(bundle.uin, bundle.device_id)
     const sameIdentity = held?.ik !== undefined && held.ik === bundle.signal_identity_key
-    if (!rebuild && sameIdentity && (await dev.hasSession(bundle.uin, bundle.device_id))) {
+    // ⚠ A silence-probe rebuild is NOT exempt from this test. Silence is
+    // evidence that something MIGHT be wrong, and re-reading the bundle is how
+    // we find out; the bundle answering with the SAME identity is the answer
+    // that nothing is — the peer is merely offline, asleep, or replying over
+    // v=1, which names no device and so can never clear the probe. Handing
+    // that peer a fresh handshake anyway spends one of their one-time prekeys
+    // and restarts this conversation's ratchet every half hour, forever, for
+    // no fault. (The narrow case this gives up — a dead session behind an
+    // unchanged identity — is logged below, and their next message re-keys us
+    // through its own prekey material.)
+    if (sameIdentity && (await dev.hasSession(bundle.uin, bundle.device_id))) {
+      if (rebuild) console.warn(`silence probe: ${bundle.uin}:${bundle.device_id} unchanged; session kept`)
       dev.noteTarget(bundle.uin, bundle.device_id, outerPub, bundle.signal_identity_key)
     } else if (!rebuild && held?.ik === undefined && (await dev.hasSession(bundle.uin, bundle.device_id))) {
       // First read since this cache learned to record identities: nothing to
@@ -742,8 +765,16 @@ export async function sendV2(identity: WebIdentity, peerUin: number, env: Envelo
   // Arm the silence probe per DEVICE a copy actually reached, on the first
   // send that device has not answered yet. A v=2 envelope from it clears the
   // timer (noteInboundFrom).
+  //
+  // ⚠ Only for an envelope that EARNS an answer — a stored message, which the
+  // recipient receipts back. A receipt, a reaction or an edit owes nothing in
+  // return, and since every message we RECEIVE makes us send a receipt of our
+  // own, arming on those made "armed and never cleared" the steady state of
+  // every conversation: a probe that fires on healthy sessions is a probe that
+  // spends other people's prekeys for nothing.
+  const earnsAnswer = PROBE_ARMING_KINDS.has(env.kind)
   for (const t of targets.devices) {
-    if (missed.has(t.deviceId)) continue
+    if (!earnsAnswer || missed.has(t.deviceId)) continue
     const key = `${peerUin}:${t.deviceId}`
     if (!_awaitingReplySince.has(key)) {
       _awaitingReplySince.set(key, Date.now())

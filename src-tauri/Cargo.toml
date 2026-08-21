@@ -56,6 +56,7 @@ tauri-plugin-updater = "2"
 tauri-plugin-window-state = "2"
 tauri-plugin-process = "2"
 tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
 tauri-plugin-shell = "2"
 # Already in the tree through tauri; named here because `open_external` parses
 # a URL the page handed it and must reject anything that is not http/https.

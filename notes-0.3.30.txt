@@ -1,0 +1,33 @@
+Полученный файл теперь сохраняется через обычный диалог «куда сохранить». Раньше на Windows нажатие на файл не делало ничего, а на macOS и Linux файл молча падал в «Загрузки».
+
+Разблокировка по PIN стала плавной: вместо мгновенной смены экрана аккуратный индикатор.
+
+Контекстное меню сообщения перерисовано нормальными иконками вместо эмодзи, в одном стиле с меню контактов.
+
+Светлая тема стала мягче и больше не слепит во весь экран. В тёмной теме блоки настроек при наведении больше не гаснут до цвета фона.
+
+В узком окне шапка больше не ломается: остаются замок, настройки, аудиокомнаты, заявки и добавление, а кнопка обновления сжимается в квадратную иконку.
+
+Кнопка «Обновить» согласована с системным диалогом обновления: установка, начатая из диалога, гасит и кнопку. Вместо троеточия во время установки маленький индикатор.
+
+Окно перестало пружинить при прокрутке за край, как страница в браузере.
+
+Резервный остров больше не может оказаться дорогой к вашему же острову: фантомная запись cdn.rcq.app вычищается автоматически, и заново она не появится.
+
+---
+
+A received file is now saved through an ordinary "save as" dialog. On Windows clicking a file used to do nothing at all; on macOS and Linux it silently landed in Downloads.
+
+Unlocking with a PIN is smooth now: a small centered loader instead of an instant screen swap.
+
+The message context menu got proper icons instead of emoji, in the same style as the contact menu.
+
+The light theme is softer and no longer glares across a full-screen window. In the dark theme, hovering the settings cards no longer sinks them into the background.
+
+A narrow window keeps a working header: lock, settings, audio rooms, requests and add stay, and the update pill shrinks to a square icon.
+
+The update button is now in sync with the system update dialog: an install started from the dialog disables the button too, and a small spinner replaces the ellipsis while it runs.
+
+The window no longer rubber-bands past its edge like a web page.
+
+A backup island can no longer turn out to be a road to your own island: the phantom cdn.rcq.app entry cleans itself up and cannot come back.

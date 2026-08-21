@@ -952,6 +952,14 @@ export function Chat() {
     if (!SHIPPABLE_KINDS.has(envelope.kind)) {
       return { ok: false, error: `unsupported envelope kind: ${envelope.kind}` }
     }
+    // Let the optimistic paint land before the sealing starts. An async
+    // function runs synchronously up to its first real await, and in a large
+    // group the per-member fan-out is hundreds of envelopes sealed on the
+    // main thread — a reaction tapped in RCQ Beta sat invisible until the
+    // whole batch finished ("реакция ставится лагающе"). One macrotask of
+    // yield gives React + the compositor the frame; the seal then runs at
+    // the same speed it always did.
+    await new Promise((r) => setTimeout(r, 0))
     // ⚠ Saved Messages ("Заметки") used to stop here, never touching the wire:
     // the note lived in this browser's localStorage and nowhere else. That is
     // why a note written on the desktop never appeared on the phone, while the

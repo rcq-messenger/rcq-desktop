@@ -50,9 +50,9 @@ export const en: Record<string, string> = {
   'settings.recovery.forgotten': 'The phrase is no longer stored here.',
   'login.link.scan_body':
     "Open the RCQ app on your phone and scan this code with your camera to sign in here as your phone's account.",
-  'login.link.security_more': 'Why is it weaker?',
+  'login.link.security_more': 'What changes?',
   'login.link.security_note':
-    'While your phone and this browser are both connected, your direct messages use a simpler encryption so both can receive them (group chats are unaffected). Disconnect the browser anytime in the app under Settings → Linked devices for maximum security again.',
+    'Linking hands this browser your account keys, so link only on a computer you trust and disconnect it when you are done (in the app: Settings → Linked devices). The encryption itself is unaffected: every device holds its own keys and receives its own copy of each message.',
   'login.link.waiting': 'Waiting for your phone… the code is valid for 2 minutes.',
   'login.link.enlarge': 'Tap to enlarge the code',
   'login.link.expired': 'Code expired.',
@@ -293,7 +293,7 @@ export const en: Record<string, string> = {
   'settings.recovery.body.desktop':
     'Your 24-word phrase restores this account on a phone or another device. Keep it private.',
   'login.link.security_note.desktop':
-    'While your phone and this device are both connected, your direct messages use a simpler encryption so both can receive them (group chats are unaffected). Disconnect this device anytime in the phone app under Settings → Linked devices for maximum security again.',
+    'Linking hands this computer your account keys, so link only on a machine you trust and disconnect it when you are done (in the phone app: Settings → Linked devices). The encryption itself is unaffected: every device holds its own keys and receives its own copy of each message.',
   'login.create.body.desktop':
     'Creates a fresh RCQ account that lives on this computer, with its own UIN and keys.',
   'login.create.note.desktop':

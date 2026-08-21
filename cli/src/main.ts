@@ -29,6 +29,8 @@ import { RcqSocket } from './socket'
 import { acquireStateLock } from './state'
 import { decryptIncoming, noteInboundFrom } from '../../src/lib/signal-device'
 import { err, out } from './style'
+import { noteUpdateIfAny } from './update-check'
+import { CLI_VERSION } from './version'
 
 // ★ Before anything can provision: a CLI on a server must never steal the
 // account's primary slot from the phone (docs/console-client-design.md; the
@@ -45,7 +47,7 @@ setTokenRefresher(async (id) => (await mintSessionToken(id)).token)
 // pipes and cron. The first printed usage led with a wall of subcommands, and
 // the founder's own first session went send → watch → confusion before
 // discovering the bare command ("другие команды вводят в заблуждение", 21.08).
-const USAGE = `rcq — RCQ console client
+const USAGE = `rcq — RCQ console client v${CLI_VERSION}
 
 start here:
   rcq                                         the conversation: live incoming + a prompt that sends
@@ -60,6 +62,7 @@ for scripts and one-shots (stdout is data, status goes to stderr):
   rcq send <uin> "text"                       one-shot: drain, send, wait for the receipt, exit
   rcq watch                                   read-only stream of incoming messages
   rcq export                                  print the history file path and line count
+  rcq --version                               version + update check
   rcq --help                                  this text
 
 state lives in $RCQ_CLI_HOME (default ~/.config/rcq), chmod 0600/0700.
@@ -285,6 +288,7 @@ async function cmdWatch(): Promise<void> {
     if (!sock.isOpen) void drainQueue(identity)
   }, 30_000)
   process.stderr.write(`watching as #${identity.uin} (Ctrl+C to stop)\n`)
+  void noteUpdateIfAny()
   const bye = (): void => {
     clearInterval(poll)
     sock.stop()
@@ -331,12 +335,23 @@ async function main(): Promise<void> {
     process.stdout.write(USAGE)
     process.exit(0)
   }
+  if (cmd === '--version' || cmd === '-V' || cmd === 'version') {
+    // Version on stdout (the machine contract), update notice on stderr.
+    // Forced: someone asking for the version explicitly wants the answer
+    // fresh, cache or no cache.
+    process.stdout.write(`rcq v${CLI_VERSION}\n`)
+    await noteUpdateIfAny(true)
+    process.exit(0)
+  }
   // No command on a TTY is the interactive mode (the founder's daily spell);
   // no command on a PIPE is still an error — a script that forgot its verb
   // must not hang on a hidden prompt.
   if (!cmd) {
     if (!process.stdin.isTTY || !process.stdout.isTTY) usageDie('no command')
     acquireStateLock()
+    // Fire-and-forget: the daily driver is where an update notice earns its
+    // keep, and it must never delay the prompt.
+    void noteUpdateIfAny()
     return runInteractive(await withToken(requireIdentity()))
   }
   // One process per state dir for anything that can touch the ratchet store —

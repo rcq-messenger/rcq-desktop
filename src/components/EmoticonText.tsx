@@ -33,6 +33,12 @@ export interface MentionContext {
   tone?: 'self' | 'other'
 }
 
+export interface LinkContext {
+  /// False when the group's owner turned links off — the URL then stays
+  /// literal text, exactly as if this renderer never learned about links.
+  enabled: boolean
+}
+
 interface Props {
   text: string
   /// Size of inline emoticon GIFs, written the way the call sites think
@@ -46,6 +52,34 @@ interface Props {
   className?: string
   /// Present in a real message bubble; absent in snippets and previews.
   mention?: MentionContext
+  /// Present in a real message bubble; absent in snippets and previews.
+  /// A detected URL renders as an accent span carrying `data-msg-link`,
+  /// with NO click handler of its own: the click bubbles up to the bubble
+  /// (a <button> that opens the actions menu), which reads the attribute
+  /// and adds "open link / copy link" rows. Routing through the menu — not
+  /// an <a> — is the point: a tap must never navigate by itself.
+  link?: LinkContext
+}
+
+const URL_RE = /https?:\/\/[^\s]+/gi
+
+/// Split one text run into literal and URL parts. Trailing sentence
+/// punctuation stays with the sentence — "смотри https://x.y/z." must not
+/// produce a link ending in a dot.
+function splitLinks(text: string): { url: boolean; text: string }[] {
+  const out: { url: boolean; text: string }[] = []
+  let last = 0
+  URL_RE.lastIndex = 0
+  let m: RegExpExecArray | null
+  while ((m = URL_RE.exec(text)) !== null) {
+    const url = m[0].replace(/[.,!?;:)\]}»›>"']+$/, '')
+    if (!url) continue
+    if (m.index > last) out.push({ url: false, text: text.slice(last, m.index) })
+    out.push({ url: true, text: url })
+    last = m.index + url.length
+  }
+  if (last < text.length) out.push({ url: false, text: text.slice(last) })
+  return out
 }
 
 /// Split one plain-text run into nodes, turning `@nick` and `#uin` into
@@ -126,15 +160,46 @@ function withMentions(text: string, ctx: MentionContext, keyBase: string): React
   return out
 }
 
-export function EmoticonText({ text, emoticonSize = 18, className = '', mention }: Props) {
+export function EmoticonText({ text, emoticonSize = 18, className = '', mention, link }: Props) {
   const side = `${emoticonSize / 16}rem`
   const tokens = tokenize(text)
+  const plainRun = (run: string, key: string) => {
+    if (mention) return <span key={key}>{withMentions(run, mention, `${key}-`)}</span>
+    return <span key={key}>{run}</span>
+  }
   return (
     <span className={`whitespace-pre-wrap break-words ${className}`}>
       {tokens.map((tok, i) => {
         if (tok.kind === 'text') {
-          if (mention) return <span key={i}>{withMentions(tok.text, mention, `${i}-`)}</span>
-          return <span key={i}>{tok.text}</span>
+          // Links disabled (or a snippet/preview): the URL stays literal
+          // text, so nothing here needs splitting at all.
+          if (!link?.enabled) return plainRun(tok.text, `${i}`)
+          return (
+            <span key={i}>
+              {splitLinks(tok.text).map((part, j) => {
+                if (!part.url) return plainRun(part.text, `${i}-${j}`)
+                return (
+                  <span
+                    key={`${i}-${j}`}
+                    data-msg-link={part.text}
+                    role="link"
+                    tabIndex={0}
+                    // No handler: the click bubbles to the bubble <button>,
+                    // which opens the menu with the link rows. Enter only
+                    // re-dispatches as that same click.
+                    onKeyDown={(e) => {
+                      if (e.key !== 'Enter' && e.key !== ' ') return
+                      e.preventDefault()
+                      e.currentTarget.click()
+                    }}
+                    className="text-accent hover:underline break-all cursor-pointer"
+                  >
+                    {part.text}
+                  </span>
+                )
+              })}
+            </span>
+          )
         }
         return (
           <img

@@ -7,8 +7,8 @@ import { useEffect } from 'react'
 import { useIdentity } from './identity-context'
 import { useWS } from './ws'
 import { currentDeviceId, decryptIncoming, getDevice, myDeviceId, noteInboundFrom, resetSilenceProbes, sendV2 } from './signal-device'
-import { addIncoming, addGroupIncoming, hydrateIncoming, beginCatchUp, endCatchUp, flushHistory } from './incoming-store'
-import { fileOutgoingCarbon } from './outgoing-store'
+import { addIncoming, addGroupIncoming, hydrateIncoming, beginCatchUp, endCatchUp, flushHistory, markDeleted } from './incoming-store'
+import { applyEditToOutgoing, carbonThreadKey, fileOutgoingCarbon } from './outgoing-store'
 import { publishHomeIslandRecord } from './federation-publish'
 import { adoptHomesFromOwnRecord, applyPushedRecord, drainBackupQueues, listBackupHomes, scrubFrontAliasHomes } from './multihome'
 import { aliasFor, drainVisitedQueues, listVisitedIslands } from './visited-islands'
@@ -106,7 +106,20 @@ function route(
   identity?: WebIdentity,
 ): void {
   if (envelope.kind === 'carbon') {
-    if (senderUIN === myUin) fileOutgoingCarbon(envelope)
+    if (senderUIN === myUin) {
+      // Control carbons first: an edit/delete made on another of our devices
+      // targets a row we already have — filing it as a NEW row (the content
+      // path below) would be wrong twice over.
+      const inner = envelope.env as { kind?: string; targetID?: string; text?: string } | undefined
+      if (inner?.kind === 'edit' && inner.targetID != null) {
+        const key = carbonThreadKey(envelope)
+        if (key) applyEditToOutgoing(key, inner.targetID, inner.text ?? '')
+      } else if (inner?.kind === 'delete' && inner.targetID != null) {
+        markDeleted(inner.targetID, { fromSelf: true })
+      } else {
+        fileOutgoingCarbon(envelope)
+      }
+    }
     return
   }
   // Sender-keys distribution / recovery (never rendered). SKDM stores the

@@ -15,8 +15,10 @@ import { decryptIncoming, getDevice, myDeviceId, noteInboundFrom } from '../../s
 import { drainQueue, ingestDecrypted, setEmitter, stamp, type IngestResult } from './receive'
 import { sendText } from './send'
 import { RcqSocket } from './socket'
+import { out } from './style'
 
 const HELP = `  /to <uin>   talk to this contact (replies auto-pick whoever writes first)
+  /add <uin>  send a contact request
   /contacts   list contacts
   /help       this text
   /quit       leave (Ctrl+C and Ctrl+D work too)
@@ -75,9 +77,9 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
 
   /// Fold one ingest result into the UI: delivered notes for our own sends,
   /// and the auto-pick of the first peer who writes when nobody is active.
-  const absorb = (out: IngestResult | null): void => {
-    if (!out) return
-    for (const id of out.receiptTargets.splice(0)) {
+  const absorb = (res: IngestResult | null): void => {
+    if (!res) return
+    for (const id of res.receiptTargets.splice(0)) {
       const uin = pendingSent.get(id)
       if (uin === undefined) {
         if (earlyReceipts.size > 500) earlyReceipts.clear() // cosmetic notes only
@@ -85,14 +87,14 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
         continue
       }
       pendingSent.delete(id)
-      printAbove(`[${stamp()}] ✓ delivered to #${uin}`)
+      printAbove(`${out.dim(`[${stamp()}]`)} ${out.green(`✓ delivered to #${uin}`)}`)
     }
-    if (out.lastPeerFrom !== undefined) {
+    if (res.lastPeerFrom !== undefined) {
       if (active === null) {
-        switchTo(out.lastPeerFrom)
-        printAbove(`(replying to #${out.lastPeerFrom} — /to <uin> switches)`)
+        switchTo(res.lastPeerFrom)
+        printAbove(out.dim(`(replying to #${res.lastPeerFrom} — /to <uin> switches)`))
       }
-      out.lastPeerFrom = undefined // the live result object is long-lived
+      res.lastPeerFrom = undefined // the live result object is long-lived
     }
   }
 
@@ -168,8 +170,25 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
       switchTo(uin)
       return
     }
+    if (line === '/add' || line.startsWith('/add ')) {
+      const uin = Number(line.slice(4).trim())
+      if (!Number.isInteger(uin) || uin <= 0) {
+        printAbove('usage: /add <uin>')
+        return
+      }
+      await Api.sendContactRequest(identity, uin)
+      printAbove(out.dim(`contact request sent to #${uin}`))
+      return
+    }
     if (line.startsWith('/')) {
       printAbove(`unknown command ${line.split(' ')[0]} — /help lists them`)
+      return
+    }
+    // Muscle memory from the one-shot commands: `rcq send 911 hi` typed INTO
+    // rcq would go out as literal text starting with the word "rcq". Catch it
+    // — the founder typed exactly this into watch on day one.
+    if (/^rcq(\s|$)/.test(line)) {
+      printAbove(out.dim("you are already inside rcq — just type the message (or /to <uin> to switch)"))
       return
     }
     if (active === null) {
@@ -178,10 +197,10 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
     }
     const to = active
     const { id, mode } = await sendText(identity, to, line)
-    printAbove(`[${stamp()}] me -> #${to}: ${line}${process.env.RCQ_VERBOSE ? ` (${mode})` : ''}`)
+    printAbove(`${out.dim(`[${stamp()}]`)} ${out.green(`me -> #${to}`)}: ${line}${process.env.RCQ_VERBOSE ? out.dim(` (${mode})`) : ''}`)
     if (earlyReceipts.delete(id)) {
       // The receipt outran us (see earlyReceipts) — settle it now.
-      printAbove(`[${stamp()}] ✓ delivered to #${to}`)
+      printAbove(`${out.dim(`[${stamp()}]`)} ${out.green(`✓ delivered to #${to}`)}`)
     } else {
       pendingSent.set(id, to)
     }

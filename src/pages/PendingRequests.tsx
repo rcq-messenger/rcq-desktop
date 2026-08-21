@@ -22,6 +22,7 @@ import { sendContactAccept, sendContactDecline } from '../lib/crossisland-contac
 import { pushProfileTo } from '../lib/crossisland-profile'
 import { fetchPeerKeyCard } from '../lib/federation-send'
 import { addIncoming, beginCatchUp, endCatchUp } from '../lib/incoming-store'
+import { allowStranger } from '../lib/stranger-requests'
 
 /// [embedded] drops the page chrome so the same body can live inside a modal.
 export function PendingRequests({ embedded = false }: { embedded?: boolean } = {}) {
@@ -40,6 +41,22 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
 
   async function acceptCI(r: CrossIslandRequest) {
     const tag = `${r.uin}@${r.host}`
+    // A SAME-ISLAND stranger (host '' — the opt-in Privacy quarantine): no
+    // key card to pin, no §5f dance. Accepting means "let this person talk":
+    // remember the allowance, release what they already wrote, open the chat.
+    if (r.host === '') {
+      allowStranger(r.uin)
+      const held = clearRequest(r.uin, '')
+      beginCatchUp()
+      try {
+        held?.msgs.forEach((m) => addIncoming(r.uin, m))
+      } finally {
+        endCatchUp()
+      }
+      setCi(listRequests())
+      navigate(`/chat/${r.uin}`)
+      return
+    }
     setCiActing(tag)
     try {
       const card = await fetchPeerKeyCard(r.host, r.uin)
@@ -100,6 +117,13 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
     setCiActing(tag)
     clearRequest(r.uin, r.host)
     setCi(listRequests())
+    // Same-island quarantined rows have no §5f request to answer — dropping
+    // the row is the whole of it (and telling a stranger their message was
+    // seen is exactly what the quarantine avoids).
+    if (r.host === '') {
+      setCiActing(null)
+      return
+    }
     try {
       await sendContactDecline(identity!, r.host, r.uin)
     } finally {
@@ -191,7 +215,9 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
             </div>
             <ul className="bg-surface rounded-lg">
               {ci.map((r) => {
-                const tag = `${r.uin}@${r.host}`
+                // host '' = a same-island stranger from the Privacy quarantine:
+                // render a plain #uin, not a dangling "@".
+                const tag = r.host === '' ? `#${r.uin}` : `${r.uin}@${r.host}`
                 const firstText = r.msgs.find((m) => m.kind === 'text') as { text?: string } | undefined
                 // A §5f contact request says what it wants and who is asking;
                 // a quarantined message row keeps showing its first message.

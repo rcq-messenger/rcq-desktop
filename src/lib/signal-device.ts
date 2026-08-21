@@ -38,6 +38,9 @@ import { clientLabel } from './client-name'
 
 const _devices = new Map<number, Promise<WebSignalDevice>>()
 const blobKey = (uin: number) => `signal-device:${uin}`
+/// One-shot marker for [splitToOwnSlot]: survives the reload that carries the
+/// migration, cleared only once the secondary registration lands.
+const splitKey = (uin: number) => `rcq.web.signal-split.${uin}`
 /// A device whose registration POST is in flight, or whose response never came
 /// back. See registerSecondary.
 const claimKey = (uin: number) => `signal-device-claim:${uin}`
@@ -239,6 +242,17 @@ async function adoptFlatDeviceState(uin: number): Promise<DeviceBlob | undefined
 /// test showed what a surprise re-claim does to peers' sessions
 /// (docs/console-client-design.md). Default 'auto' keeps web behaviour
 /// byte-identical.
+/// Пункт 13: a legacy session sharing the phone's slot 1 splits into a slot
+/// of its own. One-shot and reload-carried: the flag survives the reload,
+/// provision() sees it first and registers this install as a SECONDARY with
+/// fresh keys (the shared blob is kept as the previous-device fallback, so
+/// in-flight rows to the old identity still open). Peers pick the new slot
+/// up on their next roster fetch; the phone keeps slot 1 to itself.
+export function splitToOwnSlot(identity: WebIdentity): void {
+  localStorage.setItem(splitKey(identity.uin), '1')
+  location.reload()
+}
+
 export type ProvisionPolicy = 'auto' | 'secondary'
 let _provisionPolicy: ProvisionPolicy = 'auto'
 export function setProvisionPolicy(p: ProvisionPolicy): void {
@@ -251,6 +265,21 @@ export function setProvisionPolicy(p: ProvisionPolicy): void {
 // failure below falls back to the persisted device, and only an install that
 // has none can fail outright.
 async function provision(identity: WebIdentity): Promise<WebSignalDevice> {
+  // Пункт 13: a legacy session that rode the phone's slot 1 asked to split
+  // into its own slot. Register as a SECONDARY with fresh keys, before any
+  // restore below can resurrect the shared-slot blob — which is handed over
+  // as `prev`, so queue rows still addressed to the old shared identity keep
+  // decrypting. The flag clears only on success, so an offline boot retries
+  // instead of half-migrating.
+  if (localStorage.getItem(splitKey(identity.uin)) === '1') {
+    const shared = await idbGet<DeviceBlob>(blobKey(identity.uin))
+    const dev = await becomeSecondary(
+      identity,
+      shared && shared.deviceId === PRIMARY_DEVICE_ID ? shared : undefined,
+    )
+    localStorage.removeItem(splitKey(identity.uin))
+    return dev
+  }
   // Restore the SAME device across reloads (stable identity → peers' sessions
   // stay valid + prior conversations decrypt).
   let saved = await idbGet<DeviceBlob>(blobKey(identity.uin))

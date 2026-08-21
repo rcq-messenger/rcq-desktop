@@ -566,6 +566,15 @@ export const Api = {
     return request<RCQGroup>(id, 'PATCH', `/groups/${groupId}`, body)
   },
 
+  /// Retire one of MY key slots (пункт 13): senders stop fanning out to it,
+  /// its one-time prekeys are gone. Slot 1 is refused server-side (that is
+  /// the primary bundle — rotating it is /auth/reissue's job). A young linked
+  /// session gets 403 {code:"revoke_cooldown", wait_seconds} for anything
+  /// older than itself.
+  revokeDeviceSlot(id: WebIdentity, deviceId: number): Promise<void> {
+    return request<void>(id, 'POST', `/keys/devices/${deviceId}/revoke`)
+  },
+
   /// Grant / revoke a member's moderator capabilities. Owner only, server-side
   /// too. Returns the whole group, roster included.
   setMemberPermissions(

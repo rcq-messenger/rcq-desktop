@@ -1,0 +1,37 @@
+В настройках группы появились правила комнаты: владелец может отключить ссылки, отключить файлы и включить медленный режим (пауза 5 секунд - 1 минута между сообщениями). Владелец и админы под правила не попадают.
+
+Ссылка в сообщении больше не открывается сама по клику: появляется меню с пунктами «перейти по ссылке» и «скопировать ссылку» рядом с обычными действиями. Файл так же: нажатие открывает меню, скачивание внутри него.
+
+Пожаловаться теперь можно на любое сообщение, включая фото, видео и файлы: пункт «пожаловаться» в меню, у медиа меню открывается правым кликом или долгим нажатием.
+
+Правки и удаления сообщений наконец доходят до ваших других устройств: сообщение, исправленное на десктопе, обновится и на телефоне, и наоборот.
+
+Владелец и админы группы могут удалять чужие сообщения у всех.
+
+Чат открывается там, где вы остановились читать, а не в случайном месте. Разделитель непрочитанных главнее.
+
+Зависший звонок больше не тикает вечно: если связь мертва 45 секунд подряд, звонок завершается сам.
+
+Смена аккаунта, восстановление и регистрация проходят с плавной вуалью вместо резкого перескока.
+
+Починена отправка геопозиции: она молча не уходила. Второй аккаунт в том же браузере больше не глохнет в общих группах.
+
+---
+
+Group settings grew room rules: the owner can disable links, disable files, and turn on slow mode (a 5 second - 1 minute pause between messages). The owner and admins are exempt.
+
+A link in a message no longer opens by itself: clicking it opens the menu with "open link" and "copy link" next to the usual actions. Files work the same way: a press opens the menu, download lives inside it.
+
+Any message can be reported now, including photos, videos and files: a "report" item in the menu, with right-click or long-press opening it on media.
+
+Edits and deletions finally reach your other devices: a message edited on the desktop updates on the phone too, and the other way around.
+
+The group's owner and admins can delete anyone's message for everyone.
+
+A chat opens where you stopped reading instead of a random place. The unread divider takes priority.
+
+A dead call no longer ticks forever: if the connection stays down for 45 seconds straight, the call ends itself.
+
+Switching accounts, restoring and registering go through a smooth veil instead of an abrupt jump.
+
+Sending a location works now (it used to fail silently). A second account in the same browser no longer goes deaf in shared groups.

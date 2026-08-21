@@ -64,6 +64,9 @@ url = "2"
 base64 = "0.22"
 ed25519-dalek = "2"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls", "socks"] }
+# The TURN tunnel (src/turn_tunnel.rs) runs on tauri's own tokio runtime;
+# these features only widen what that runtime already links.
+tokio = { version = "1", features = ["net", "io-util", "time", "sync"] }
 # The PIN vault (src/vault.rs): Argon2id over the PIN, AES-256-GCM over the
 # account material. Both are the reference Rust implementations; nothing here
 # is hand-rolled.

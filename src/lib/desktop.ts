@@ -222,6 +222,24 @@ export async function networkDiagnostics(host: string): Promise<NetworkDiagnosti
   }
 }
 
+/// The loopback `turn:` URL the shell's TURN tunnel answers on, or null to
+/// leave the island's relay URLs alone. Null is the common case: a plain
+/// browser, the bypass off, or a tunnel leg that carries no TURN. When it
+/// does answer, WebRTC dials loopback and the shell forwards every byte
+/// through sing-box to the real relay - the same bridge Android's TurnTunnel
+/// builds, for the same reason: WebRTC opens its own sockets and no webview
+/// proxy covers them. Can take seconds the FIRST time a tunnel meets a relay
+/// host: the shell proves the leg with a STUN round trip before arming.
+export async function turnTunnelUrl(turnHost: string): Promise<string | null> {
+  if (!isTauri()) return null
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    return await invoke<string | null>('turn_tunnel_url', { turnHost })
+  } catch {
+    return null
+  }
+}
+
 /// 'macos' | 'windows' | 'linux', or null in a browser. Used so the app names
 /// itself correctly rather than calling itself the web client.
 export async function desktopPlatform(): Promise<string | null> {

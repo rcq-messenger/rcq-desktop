@@ -8,6 +8,7 @@
 mod user_relay;
 mod broker;
 mod bypass;
+mod turn_tunnel;
 #[cfg(desktop)]
 mod relay;
 mod dns_txt;
@@ -186,6 +187,19 @@ async fn network_diagnostics(app: tauri::AppHandle, host: String) -> bypass::Dia
         .unwrap_or_default()
 }
 
+/// The loopback `turn:` URL WebRTC should dial INSTEAD of the island's relay,
+/// or null to leave the island's URLs alone. Null is the common case and the
+/// right default: with no tunnel in the way, going straight to the relay is
+/// faster and cheaper for everyone. Asked per call, so the answer follows the
+/// bypass around rather than freezing its state at startup. Can block for one
+/// leg probe the first time a tunnel meets a relay host; async, so the probe
+/// waits on the runtime and not on the page.
+#[cfg(desktop)]
+#[tauri::command]
+async fn turn_tunnel_url(turn_host: String) -> Option<String> {
+    turn_tunnel::ensure(&turn_host).await
+}
+
 /// Which desktop this is, so the app can name itself correctly instead of
 /// calling itself the web client.
 #[cfg(desktop)]
@@ -360,6 +374,7 @@ pub fn run() {
                 relay_key_set,
                 relay_key_status,
                 network_diagnostics,
+                turn_tunnel_url,
                 desktop_platform,
                 open_external,
                 vault_state,

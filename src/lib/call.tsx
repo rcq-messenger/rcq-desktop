@@ -46,7 +46,7 @@ import { alwaysRelay } from './call-privacy'
 import { dropCrossIslandIce, sendCrossIslandSignal } from './crossisland-call'
 import { getCrossIsland } from './crossisland-store'
 import { logCall } from './outgoing-store'
-import { notifyDesktop, raiseDesktopWindow } from './desktop'
+import { notifyDesktop, raiseDesktopWindow, turnTunnelUrl } from './desktop'
 import { useI18n } from './i18n-context'
 import { useIdentity } from './identity-context'
 import { useWS } from './ws'
@@ -137,6 +137,14 @@ const STUN_URLS = [
   'stun:stun1.l.google.com:19302',
   'stun:stun2.l.google.com:19302',
 ]
+
+/// Bare hostname out of a `turn:host:port?transport=x` URI, for the desktop
+/// TURN tunnel. Textual on purpose: TURN URIs are not something `new URL`
+/// parses reliably in every webview we ship in.
+function turnHostOf(url: string): string | null {
+  const m = /^turns?:\[?([^\]:?]+)/.exec(url)
+  return m && m[1] ? m[1] : null
+}
 
 interface CallCtx {
   phase: CallPhase
@@ -501,7 +509,17 @@ export function CallProvider({ children }: { children: ReactNode }) {
       try {
         const creds = await Api.turnCredentials(identity)
         if (creds.urls.length) {
-          servers.push({ urls: creds.urls, username: creds.username, credential: creds.credential })
+          // Desktop with the bypass up: swap the island's relay for the
+          // shell's loopback TURN tunnel, KEEPING the island's credentials -
+          // TURN auth happens inside the tunnel, same as Android. Everywhere
+          // else turnTunnelUrl answers null and the URLs pass through as is.
+          const host = creds.urls.map(turnHostOf).find((h) => h !== null) ?? null
+          const tunnel = host ? await turnTunnelUrl(host) : null
+          servers.push({
+            urls: tunnel ? [tunnel] : creds.urls,
+            username: creds.username,
+            credential: creds.credential,
+          })
         } else {
           console.warn('[call] island returned no TURN servers — STUN-only call')
         }

@@ -18,6 +18,7 @@ import { decryptIncoming, myDeviceId, noteInboundFrom, sendV2 } from '../../src/
 import { Api, peerBundleFrom } from '../../src/lib/api'
 import { encryptV1, type CarbonEnvelope, type Envelope, type WebIdentity } from '../../src/lib/crypto'
 import { statePath } from './state'
+import { err, out, peer } from './style'
 
 /// Envelope kinds that are a MESSAGE (rendered, receipted, kept in history).
 /// Everything else is control traffic: receipts, reactions, edits, sender-key
@@ -69,6 +70,32 @@ export function stamp(): string {
   return new Date().toTimeString().slice(0, 8)
 }
 
+// ── group names ──────────────────────────────────────────────────────────────
+//
+// A drained group message used to print exactly like a 1:1 line, so a `send`
+// that drained the backlog first looked as if the GROUP had answered the
+// person being written to ("я отправил сообщение на 911 и получил сообщения
+// из группы", 21.08). Every group line now carries the group's name — fetched
+// once per process, lazily, on the first group row; before the fetch lands
+// (or if it never does) the raw id stands in, which is still a label.
+const groupNames = new Map<number, string>()
+let groupNamesRequested = false
+
+function groupLabel(identity: WebIdentity, gid: number): string {
+  if (!groupNamesRequested) {
+    groupNamesRequested = true
+    void Api.groups(identity, false)
+      .then((gs) => {
+        for (const g of gs) groupNames.set(g.id, g.name)
+      })
+      .catch(() => {
+        /* names stay numeric — the label still marks the line as a group's */
+      })
+  }
+  const name = groupNames.get(gid)
+  return out.dim(`[${name ?? `group ${gid}`}]`)
+}
+
 /// One printable line per envelope. Files/media never dump bytes — kind and
 /// size only, per the design doc (the CLI sends/receives originals in v1.5).
 function describeEnvelope(env: Envelope): string {
@@ -97,6 +124,8 @@ interface HistoryRecord {
   host?: string
   /// Set on a carbon's inner envelope: where WE sent it from another device.
   to?: number
+  /// The group the row was fanned out for; absent on 1:1 traffic.
+  gid?: number
   envelope: Envelope
 }
 
@@ -111,6 +140,10 @@ export interface IngestResult {
   /// UIN of the last PEER whose content message was ingested — interactive
   /// mode's auto-reply target when nobody was picked with /to yet.
   lastPeerFrom?: number
+  /// How many content lines were printed. The send command uses it to decide
+  /// whether the backlog just interleaved with its one job — that is the
+  /// moment to point at the interactive mode.
+  contentCount?: number
 }
 
 interface Decrypted {
@@ -127,7 +160,7 @@ export async function ingestDecrypted(
   identity: WebIdentity,
   got: Decrypted,
   groupId: number | null | undefined,
-  out: IngestResult,
+  result: IngestResult,
 ): Promise<void> {
   ensureSeen(identity.uin)
   const env = got.envelope
@@ -144,12 +177,12 @@ export async function ingestDecrypted(
     }
     const dest = c.to != null ? `#${c.to}` : c.gid != null ? `group ${c.gid}` : '?'
     appendHistory(identity.uin, { at: new Date().toISOString(), from: identity.uin, to: c.to ?? undefined, envelope: inner })
-    emit(`[${stamp()}] me -> ${dest}: ${describeEnvelope(inner)}\n`)
+    emit(`${out.dim(`[${stamp()}]`)} ${out.green(`me -> ${dest}`)}: ${describeEnvelope(inner)}\n`)
     return
   }
   if (env.kind === 'read' || env.kind === 'delivered') {
     const ids = Array.isArray(env.targetIDs) ? env.targetIDs.filter((t) => typeof t === 'string') : []
-    out.receiptTargets.push(...ids)
+    result.receiptTargets.push(...ids)
     // Receipt-by-receipt noise is for debugging; the send command already says
     // "delivered" in its one summary line.
     if (process.env.RCQ_VERBOSE) {
@@ -158,7 +191,13 @@ export async function ingestDecrypted(
     return
   }
   if (!CONTENT_KINDS.has(env.kind)) {
-    process.stderr.write(`[${stamp()}] ${env.kind} from #${got.senderUIN} (ignored in v1)\n`)
+    // Reactions, edits, typing and the rest of the control traffic the CLI
+    // cannot apply yet. A line per skipped envelope read as a malfunction
+    // ("и почему v1?", 21.08) — it is debugging detail, so it now lives with
+    // the rest of the debugging detail.
+    if (process.env.RCQ_VERBOSE) {
+      process.stderr.write(err.dim(`[${stamp()}] ${env.kind} from #${got.senderUIN} (not supported by the CLI yet)`) + '\n')
+    }
     return
   }
   const id = (env as { id?: string }).id
@@ -171,10 +210,13 @@ export async function ingestDecrypted(
     from: got.senderUIN,
     dev: got.senderDeviceId,
     host: got.senderHost,
+    gid: groupId ?? undefined,
     envelope: env,
   })
-  emit(`[${stamp()}] #${got.senderUIN}: ${describeEnvelope(env)}\n`)
-  if (got.senderUIN !== identity.uin) out.lastPeerFrom = got.senderUIN
+  const gtag = typeof groupId === 'number' ? `${groupLabel(identity, groupId)} ` : ''
+  emit(`${out.dim(`[${stamp()}]`)} ${gtag}${peer(got.senderUIN, `#${got.senderUIN}`)}: ${describeEnvelope(env)}\n`)
+  result.contentCount = (result.contentCount ?? 0) + 1
+  if (got.senderUIN !== identity.uin) result.lastPeerFrom = got.senderUIN
   // Tell the sender it ARRIVED (moves their second tick). 1:1 content from a
   // peer only — a group message has as many recipients as members and one
   // tick cannot stand for all of them. The history append above already
@@ -221,7 +263,7 @@ function fetchWithTimeout(url: string, init: RequestInit, ms = 30_000): Promise<
 /// the drain could not run (no device id / island unreachable) — nothing was
 /// acked in that case, so the next drain redelivers.
 export async function drainQueue(identity: WebIdentity): Promise<IngestResult | null> {
-  const out: IngestResult = { receiptTargets: [] }
+  const result: IngestResult = { receiptTargets: [] }
   const myDev = await myDeviceId(identity)
   // ⚠ No id, no drain — never guess (see the warning on myDeviceId).
   if (myDev === null) {
@@ -255,14 +297,14 @@ export async function drainQueue(identity: WebIdentity): Promise<IngestResult | 
         // Sender-keys group broadcast — the CLI carries no group chains in
         // v1. Terminal for this device (the chain will never appear), so it
         // is acked rather than left to wedge the cursor forever.
-        process.stderr.write(`[${stamp()}] group ${r.group_id}: <gmsg, groups unsupported in v1>\n`)
+        process.stderr.write(err.dim(`[${stamp()}] group ${r.group_id}: <sender-keys broadcast — groups are not in the CLI yet>`) + '\n')
       } else {
         const got = await decryptIncoming(identity, r.payload)
         if (got) {
           // A decrypted envelope proves the sending DEVICE can talk to us —
           // its silence probe stands down (v=1 names no device).
           if (got.senderUIN !== identity.uin) noteInboundFrom(got.senderUIN, got.senderDeviceId)
-          await ingestDecrypted(identity, got, r.group_id, out)
+          await ingestDecrypted(identity, got, r.group_id, result)
         }
       }
       // Processed to its end — including "decrypted to nothing", which is
@@ -284,5 +326,5 @@ export async function drainQueue(identity: WebIdentity): Promise<IngestResult | 
       body: JSON.stringify({ direct_ids: directIds, group_ids: groupIds }),
     }).catch(() => {})
   }
-  return out
+  return result
 }

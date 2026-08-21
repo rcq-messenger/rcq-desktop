@@ -7,6 +7,7 @@
 
 import './bootstrap'
 import fs from 'node:fs'
+import readline from 'node:readline'
 import {
   createNewAccount,
   currentRecoveryPhrase,
@@ -27,6 +28,7 @@ import { sendText } from './send'
 import { RcqSocket } from './socket'
 import { acquireStateLock } from './state'
 import { decryptIncoming, noteInboundFrom } from '../../src/lib/signal-device'
+import { err, out } from './style'
 
 // ★ Before anything can provision: a CLI on a server must never steal the
 // account's primary slot from the phone (docs/console-client-design.md; the
@@ -38,21 +40,29 @@ setProvisionPolicy('secondary')
 // — the same path that keeps a 30-day-old web session alive.
 setTokenRefresher(async (id) => (await mintSessionToken(id)).token)
 
+// ⚠ The order below is the pitch. `rcq` with no arguments IS the client — the
+// live conversation — and everything under "for scripts" is plumbing for
+// pipes and cron. The first printed usage led with a wall of subcommands, and
+// the founder's own first session went send → watch → confusion before
+// discovering the bare command ("другие команды вводят в заблуждение", 21.08).
 const USAGE = `rcq — RCQ console client
 
-usage:
-  rcq                                         interactive: live incoming + a prompt that sends
+start here:
+  rcq                                         the conversation: live incoming + a prompt that sends
   rcq register [--nick NAME] [--island URL]   create an account, print UIN + recovery phrase
   rcq restore "<24 words>" [--island URL]     restore an account from its phrase
+
+for scripts and one-shots (stdout is data, status goes to stderr):
   rcq whoami                                  print uin, island, device id
   rcq contacts                                list contacts (uin, nickname, status)
   rcq add <uin>                               send a contact request
-  rcq send <uin> "text"                       drain, send one message, drain, exit
-  rcq watch                                   stay connected, print incoming messages
+  rcq send <uin> "text"                       one-shot: drain, send, wait for the receipt, exit
+  rcq watch                                   read-only stream of incoming messages
   rcq export                                  print the history file path and line count
   rcq --help                                  this text
 
 state lives in $RCQ_CLI_HOME (default ~/.config/rcq), chmod 0600/0700.
+RCQ_VERBOSE=1 shows protocol detail; NO_COLOR strips colour.
 `
 
 function die(msg: string, code = 1): never {
@@ -183,7 +193,16 @@ async function cmdSend(pos: string[]): Promise<void> {
     // v=1 still works without a libsignal device; say so rather than dying.
     process.stderr.write(`provision failed (${e instanceof Error ? e.message : e}) — v=1 only\n`)
   })
-  await drainQueue(identity)
+  // The island's mailbox is open by design (UIN culture: anyone can write
+  // first, the recipient decides what to do with strangers) — but writing to
+  // somebody you never added deserves a heads-up, because a typo'd uin
+  // otherwise sends a message to a random person in silence. Best-effort: an
+  // unreachable contacts list must not block the send.
+  const known = await Api.contacts(identity)
+    .then((l) => l.some((c) => c.uin === uin))
+    .catch(() => true)
+  if (!known) process.stderr.write(err.yellow(`note: #${uin} is not in your contacts\n`))
+  const backlog = await drainQueue(identity)
   let sent: { id: string; mode: string }
   try {
     sent = await sendText(identity, uin, text)
@@ -194,7 +213,17 @@ async function cmdSend(pos: string[]): Promise<void> {
   await new Promise((r) => setTimeout(r, 2000))
   const drained = await drainQueue(identity)
   const delivered = drained?.receiptTargets.includes(sent.id) ?? false
-  process.stdout.write(`sent ${sent.mode}${delivered ? ' delivered' : ''}\n`)
+  // `delivered` / `sent`, one word — the machine contract. The transport mode
+  // and device count are protocol detail ("ненормально что показывает скольким
+  // девайсам", 21.08): verbose-only, and on stderr where detail lives.
+  if (process.env.RCQ_VERBOSE) process.stderr.write(`mode: ${sent.mode}\n`)
+  const word = delivered ? 'delivered' : 'sent'
+  process.stdout.write(process.stdout.isTTY ? `${out.green('✓')} ${word}\n` : `${word}\n`)
+  // The backlog just interleaved with the one thing this command was asked to
+  // do — which is exactly the confusion the interactive mode does not have.
+  if (((backlog?.contentCount ?? 0) + (drained?.contentCount ?? 0)) > 0 && process.stdout.isTTY) {
+    process.stderr.write(err.dim("tip: plain 'rcq' is the live conversation — incoming above, a prompt below") + '\n')
+  }
 }
 
 async function cmdWatch(): Promise<void> {
@@ -238,12 +267,27 @@ async function cmdWatch(): Promise<void> {
     if (!sock.isOpen) void drainQueue(identity)
   }, 30_000)
   process.stderr.write(`watching as #${identity.uin} (Ctrl+C to stop)\n`)
-  process.on('SIGINT', () => {
+  const bye = (): void => {
     clearInterval(poll)
     sock.stop()
     process.stderr.write('\nbye\n')
     process.exit(0)
-  })
+  }
+  process.on('SIGINT', bye)
+  // A person at a TTY who types into watch is trying to ANSWER — the founder
+  // did exactly that ("rcq send 911 ... не работает в режиме ws"). watch stays
+  // read-only (it is the scriptable stream), but it now says where the
+  // conversation lives instead of eating the line. The readline also swallows
+  // Ctrl+C/Ctrl+D into events, so both are wired back to the same exit.
+  if (process.stdin.isTTY && process.stderr.isTTY) {
+    process.stderr.write(err.dim("(read-only — plain 'rcq' opens the conversation mode)") + '\n')
+    const rl = readline.createInterface({ input: process.stdin })
+    rl.on('line', (l) => {
+      if (l.trim()) process.stderr.write(err.dim("watch is read-only — Ctrl+C, then plain 'rcq' to talk") + '\n')
+    })
+    rl.on('SIGINT', bye)
+    rl.on('close', bye)
+  }
 }
 
 async function cmdExport(): Promise<void> {

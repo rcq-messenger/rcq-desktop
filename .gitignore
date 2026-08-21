@@ -16,3 +16,4 @@ crypto-wasm-spike/
 
 # Python bytecode from scripts/
 __pycache__/
+dl/

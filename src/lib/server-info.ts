@@ -19,7 +19,9 @@ import { useEffect, useState } from 'react'
 /// the surface visible, and so does a live island whose /server/info has not
 /// landed yet. Hiding first and asking later would blink a menu on every open.
 ///
-/// ⚠ `envelope_class` is the ONE exception and defaults to FALSE. It is not a
+/// ⚠ `envelope_class` defaults to FALSE, as `uin_shop` and `hall_of_fame` do
+/// below, though for a different reason: those two are surfaces that exist on
+/// the flagship and nowhere else, while this one is not a
 /// surface but a wire ability: the island understands `cls` and the `ring`
 /// flag on a sealed deposit (core-metadata plan, Stage 2). The flag was born
 /// together with `ring`, so an island that omits it is an island that does not

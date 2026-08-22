@@ -3,4 +3,15 @@
 // touching an island.
 
 export * from '../../src/lib/crypto-v2'
-export { bytesToB64, b64ToBytes } from '../../src/lib/crypto'
+export {
+  bytesToB64,
+  b64ToBytes,
+  // Stage 2 padding + class helpers, exercised by the round-trip test.
+  encryptV1,
+  decryptV1,
+  bucketFor,
+  padInnerBytes,
+  shouldPadKind,
+  messageClass,
+  BUCKETS,
+} from '../../src/lib/crypto'

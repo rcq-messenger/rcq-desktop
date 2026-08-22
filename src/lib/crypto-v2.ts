@@ -38,7 +38,7 @@ import { chacha20poly1305 } from '@noble/ciphers/chacha'
 import { hkdf } from '@noble/hashes/hkdf'
 import { sha256 } from '@noble/hashes/sha256'
 import { randomBytes } from '@noble/ciphers/webcrypto'
-import { bytesToB64, b64ToBytes, concat, encodeEnvelopeBytes, type Envelope } from './crypto'
+import { bytesToB64, b64ToBytes, concat, encodeEnvelopeBytes, padInnerBytes, shouldPadKind, type Envelope } from './crypto'
 
 const HKDF_INFO_V2 = new TextEncoder().encode('RCQ-1to1-v2')
 const WIRE_VERSION_V2 = 2
@@ -353,7 +353,14 @@ export class WebSignalDevice {
     this.markSession(peerUin, peerDeviceId)
     const inner: InnerV2 = { from: this.uin, kind: ct.message_type === 3 ? 'prekey' : 'signal', msg: bytesToB64(ct.body) }
     if (this.deviceId !== PRIMARY_DEVICE_ID) inner.dev = this.deviceId
-    return outerWrapV2(new TextEncoder().encode(JSON.stringify(inner)), peerOuterPub)
+    // Stage 2: pad the inner plaintext to a size bucket for content kinds (same
+    // scheme + buckets as v=1). The libsignal ct inside `msg` hides the message
+    // but not its LENGTH; `_pad` lands the sealed blob on a bucket. Transparent
+    // to old receivers, which read InnerV2 by named keys and ignore `_pad`.
+    const innerBytes = shouldPadKind(env.kind)
+      ? padInnerBytes(inner as unknown as Record<string, unknown>)
+      : new TextEncoder().encode(JSON.stringify(inner))
+    return outerWrapV2(innerBytes, peerOuterPub)
   }
 
   /// Decrypt an inbound v=2 payload addressed to THIS device. The sender's UIN

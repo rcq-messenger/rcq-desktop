@@ -370,6 +370,16 @@ function drainPrimaryQueue(identity: WebIdentity, catchUp: boolean): Promise<voi
         payload: string
         group_id: number | null
         to_device_id?: number | null
+        // Stage 2 (core-metadata plan): the island now labels each row with its
+        // retention/push class and a durable per-mailbox sequence. Read when
+        // present; both fall back to the legacy `envelope_type` / `id`.
+        //
+        // ⚠ The CURSOR stays on `id` (the ack below). `seq` is GAPPY per device
+        // (a sibling device of this account consumes numbers this device never
+        // sees), so a gap in `seq` is NOT a missing message and must never move
+        // the cursor.
+        cls?: number | null
+        seq?: number | null
       }>
       const directIds: number[] = []
       const groupIds: number[] = []

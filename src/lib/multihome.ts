@@ -24,7 +24,7 @@
 // Storage: localStorage, same phase-1 trade-off as the identity itself.
 
 import { ed25519 } from '@noble/curves/ed25519'
-import { b64ToBytes, bytesToB64, encryptV1, type Envelope, type PeerBundle, type WebIdentity } from './crypto'
+import { b64ToBytes, bytesToB64, encryptV1, messageClass, type Envelope, type PeerBundle, type WebIdentity } from './crypto'
 import { suggestNickname, persistIdentity } from './auth'
 import { verifyHomeIslandRecord, type IslandHome } from './federation'
 import { verifySigned } from './signing-keys'
@@ -547,6 +547,11 @@ export interface QueueRow {
   envelope_type: string
   payload: string
   group_id: number | null
+  // Stage 2 (core-metadata plan): retention/push class + durable per-mailbox
+  // sequence, read when present. Cursoring is unchanged (the legacy drain
+  // advances it server-side); `seq` is gappy per device and never a gap-detector.
+  cls?: number | null
+  seq?: number | null
 }
 
 /// Fetch + hand over every queued row from every backup home. Runs even when
@@ -777,7 +782,7 @@ export async function depositToExtraHomes(
         const res = await fetch(`https://${home.host}/messages/sealed`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ to_uin: home.uin, envelope_type: 'message', payload: sealed }),
+          body: JSON.stringify({ to_uin: home.uin, envelope_type: 'message', cls: messageClass('message'), payload: sealed }),
         })
         if (res.ok) delivered++
         void res.body?.cancel()

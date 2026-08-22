@@ -4,6 +4,7 @@
 // prefixes documented in `backend/app/routers/*.py`.
 
 import type { WebIdentity, PeerBundle } from './crypto'
+import { messageClass } from './crypto'
 
 export class ApiError extends Error {
   constructor(public status: number, public body: string) {
@@ -466,12 +467,27 @@ export const Api = {
 
   // Messages ------------------------------------------------
 
-  sendSealed(id: WebIdentity, toUIN: number, payload: string, envelopeType: string = 'message'): Promise<void> {
-    return request<void>(id, 'POST', '/messages/sealed', {
+  sendSealed(
+    id: WebIdentity,
+    toUIN: number,
+    payload: string,
+    envelopeType: string = 'message',
+    // Stage 2: `ring` deposits a message that must wake a closed app (a call
+    // wake, §5d) as `envelope_type "message"` while still ringing; the island
+    // honours it and keeps the quieter type. `cls` rides automatically below.
+    opts?: { ring?: boolean },
+  ): Promise<void> {
+    const body: Record<string, unknown> = {
       to_uin: toUIN,
       envelope_type: envelopeType,
+      // Stage 2: the retention / push class beside the legacy type. Equals the
+      // island's own derivation for every shipped type, so behaviour is
+      // unchanged; an old island simply ignores the unknown field.
+      cls: messageClass(envelopeType),
       payload,
-    })
+    }
+    if (opts?.ring) body.ring = true
+    return request<void>(id, 'POST', '/messages/sealed', body)
   },
 
   // Presence ------------------------------------------------
@@ -628,6 +644,7 @@ export const Api = {
     return request<unknown>(id, 'POST', '/messages/group-sealed', {
       group_id: groupId,
       envelope_type: envelopeType,
+      cls: messageClass(envelopeType), // Stage 2: mirror the island's derivation
       payloads,
     })
   },
@@ -645,6 +662,7 @@ export const Api = {
     return request<unknown>(id, 'POST', '/messages/group-broadcast', {
       group_id: groupId,
       envelope_type: envelopeType,
+      cls: messageClass(envelopeType), // Stage 2: mirror the island's derivation
       payload,
     })
   },

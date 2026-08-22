@@ -523,6 +523,75 @@ export function encodeEnvelopeBytes(env: Envelope): Uint8Array {
 }
 
 // -----------------------------------------------------------
+// Size-padding + message class (Stage 2 core-metadata plan).
+//
+// The one thing a sealed blob still leaks is its LENGTH: the outer wire is
+// fixed-width apart from the inner sealed-sender JSON, so `envelope_b64` grows
+// with the message. We hide that by padding the INNER plaintext (the bytes fed
+// to the AEAD seal) up to a coarse size bucket before sealing, via a `_pad`
+// filler field. The pad lives INSIDE the seal (a wire observer that parses the
+// outer JSON sees only the padded `ct`), and it is transparent to every shipped
+// decoder: the v=1 signature is over `ek || env_bytes` (not the inner JSON), and
+// every receiver reads the inner by named keys and ignores an unknown `_pad`. So
+// a new client can pad a message an old client still opens byte-for-byte.
+// Padding is a SENDER-ONLY policy: receivers never look at buckets, so clients
+// may pad differently (or not at all) with no interop risk.
+// -----------------------------------------------------------
+
+/// Size buckets (bytes) the inner plaintext is padded up to. Past the last fixed
+/// rung the ladder continues in multiples of 65536. Coarse on purpose: the
+/// observer learns only which rung a message fell on, and a text pads up to the
+/// same rung whether it was composed on the web or a phone.
+export const BUCKETS = [256, 1024, 4096, 16384, 65536] as const
+
+/// The smallest bucket that holds `n` bytes.
+export function bucketFor(n: number): number {
+  for (const b of BUCKETS) if (n <= b) return b
+  return Math.ceil(n / 65536) * 65536
+}
+
+/// The inner-JSON key the filler rides in. The filler is ASCII 'A', which JSON
+/// never escapes, so the padded byte length is exact.
+export const PAD_KEY = '_pad'
+/// Byte cost of an EMPTY pad field: `,"_pad":""` is exactly 10 ASCII bytes.
+const PAD_OVERHEAD = 10
+
+/// Kinds whose on-wire size tracks what the user wrote or attached, and so are
+/// worth padding. Receipts / reactions / signalling are omitted: they are tiny,
+/// frequent, and their size carries no content, so buying them uniformity is not
+/// worth the relay bytes. Padding is sender-only, so this set is a local policy
+/// choice and never part of the interop contract.
+const PAD_KINDS = new Set(['text', 'photo', 'video', 'file', 'location', 'edit', 'poll', 'carbon'])
+export function shouldPadKind(kind: string): boolean {
+  return PAD_KINDS.has(kind)
+}
+
+/// Serialize `innerObj` and pad it up to its size bucket by appending a `_pad`
+/// filler, returning the padded plaintext bytes to seal. `_pad` is added last,
+/// so JSON.stringify writes it as a trailing `,"_pad":"AAAA..."` and the total
+/// byte length lands exactly on the bucket.
+export function padInnerBytes(innerObj: Record<string, unknown>): Uint8Array {
+  const enc = new TextEncoder()
+  const unpadded = enc.encode(JSON.stringify(innerObj)).length
+  const target = bucketFor(unpadded + PAD_OVERHEAD)
+  const k = target - unpadded - PAD_OVERHEAD
+  return enc.encode(JSON.stringify({ ...innerObj, [PAD_KEY]: 'A'.repeat(k) }))
+}
+
+/// Mirror of the island's `_cls_for`: the retention / push class the server
+/// derives from this `envelope_type`. Sent beside `envelope_type` so a new or
+/// opaque type is classified by its sender rather than guessed by the island;
+/// for every type shipped today it equals what the island derives, so push and
+/// retention behaviour is unchanged. 0 = ephemeral, 1 = content, 2 = critical.
+const CLS_EPHEMERAL = new Set(['typing', 'read', 'visit', 'presence', 'nudge', 'bounce'])
+const CLS_CRITICAL = new Set(['skdm', 'sknack'])
+export function messageClass(envelopeType: string): 0 | 1 | 2 {
+  if (CLS_EPHEMERAL.has(envelopeType)) return 0
+  if (CLS_CRITICAL.has(envelopeType)) return 2
+  return 1
+}
+
+// -----------------------------------------------------------
 // Encrypt (v=1)
 // -----------------------------------------------------------
 
@@ -568,7 +637,13 @@ export function encryptV1(envelope: Envelope, sender: WebIdentity, recipient: Pe
     sig: bytesToB64(signature),
     env: bytesToB64(envBytes),
   }
-  const innerBytes = new TextEncoder().encode(JSON.stringify(innerObj))
+  // Stage 2: pad the inner plaintext up to a size bucket for content kinds, so
+  // the sealed blob's length no longer tracks the message. Transparent to every
+  // decoder: the sig is over ek||env, not the inner, and receivers ignore the
+  // extra `_pad` key (see the padding section above).
+  const innerBytes = shouldPadKind(envelope.kind)
+    ? padInnerBytes(innerObj)
+    : new TextEncoder().encode(JSON.stringify(innerObj))
 
   // 5. ChaCha20-Poly1305 seal. CryptoKit's `combined` representation
   //    is nonce(12) || ciphertext || tag(16); the noble lib returns

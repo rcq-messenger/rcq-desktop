@@ -12,8 +12,10 @@
 // Every signal now rides the same one-hop sealed deposit §5f uses: wrap it in a
 // `kind:"call"` envelope, v=1-seal it to the peer's identity key, and POST it
 // to their PRIMARY island. The island pushes it straight down their socket, or
-// — new on 2026-08-15 — rings their closed app, which is the only reason the
-// OUTER `envelope_type` is `"call"` rather than `"message"`.
+// (new on 2026-08-15) rings their closed app. Stage 2 (core-metadata plan)
+// asks for that ring with `ring:true` on an `envelope_type "message"` deposit
+// rather than the more telling type `"call"`: the island honours `ring` and
+// keeps the quieter type, so the mailbox learns less about what arrived.
 //
 // ⚠ The island the deposit lands on now learns that a call is arriving for this
 // user, at this instant. Founder decision, taken with that stated: a censor can
@@ -101,28 +103,25 @@ async function sealingKeys(
   return keys
 }
 
-/// §5d — which OUTER `envelope_type` a call deposit rides. THE INNER ENVELOPE IS
-/// THE SAME EITHER WAY; this only decides whether the recipient's island rings a
-/// device that holds no live socket.
+/// §5d: which call signals must wake a CLOSED app. THE INNER ENVELOPE IS THE
+/// SAME EITHER WAY; this only decides whether the recipient's island rings a
+/// device that holds no live socket (Stage 2: via `ring:true`, not a louder
+/// `envelope_type`).
 ///
-/// Only the two signals that must reach a CLOSED app ask for the ring: the
+/// Only the two signals that must reach a closed app ask for the ring: the
 /// OFFER, which IS the call, and the END, which takes the ring back down when
 /// the caller gives up before pickup — otherwise the callee's phone keeps
 /// ringing at someone who already left. `call_answer`, `call_ice` and the
 /// renegotiate/ice-restart pairs only mean anything to an app that is already
-/// awake holding this call, so they stay `"message"`.
+/// awake holding this call, so they never ring.
 ///
-/// ⚠ Marking everything `"call"` would ring the peer's phone on EVERY signal —
-/// with the 350 ms ICE debounce still several rings per call, and one more
-/// timing disclosure to their island for each. iOS (`CrossIslandSender.swift`,
+/// ⚠ Ringing on EVERY signal would wake the peer's phone repeatedly: with the
+/// 350 ms ICE debounce still several rings per call, and one more timing
+/// disclosure to their island for each. iOS (`CrossIslandSender.swift`,
 /// `wakingSignals`) and Android (`CrossIslandSender.kt`, `callEnvelopeType`)
 /// draw the line at exactly these two; all three must agree or a call wakes a
 /// killed phone on one platform and not the other.
 const WAKING_SIGNALS = new Set(['call_offer', 'call_end'])
-
-function outerTypeFor(sig: string): 'message' | 'call' {
-  return WAKING_SIGNALS.has(sig) ? 'call' : 'message'
-}
 
 async function deposit(
   identity: WebIdentity,
@@ -132,12 +131,12 @@ async function deposit(
 ): Promise<boolean> {
   const keys = await sealingKeys(host, uin)
   if (!keys) return false
-  // `"call"` routes and queues byte-identically to `"message"` — the ONLY
-  // difference is that an island finding no live socket rings the peer instead
-  // of posting a message banner. A pre-2026-08-15 island does not recognise the
-  // type, still routes and still queues it, and the call works exactly as it
-  // did before the wake existed.
-  return depositSealedWithKeys(identity, host, uin, env, keys, outerTypeFor(env.sig))
+  // Every call signal deposits as `envelope_type "message"`; a waking signal
+  // adds `ring:true` so an island finding no live socket rings the peer instead
+  // of posting a message banner. An island that honours `ring` (Stage 2 server)
+  // rings without learning the type is a call. One that does not still routes
+  // and queues the row, so the call degrades to no-wake rather than breaking.
+  return depositSealedWithKeys(identity, host, uin, env, keys, 'message', WAKING_SIGNALS.has(env.sig))
 }
 
 // ── ICE micro-batching ────────────────────────────────────────────────

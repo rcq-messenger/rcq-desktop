@@ -847,7 +847,12 @@ export const en: Record<string, string> = {
   // Brand
   'brand.name': 'RCQ',
 
-  // Random Chat
+  // Random Chat. Translated in every locale but unused here: the web client
+  // has never had a random-chat surface, and it is not getting one now. The
+  // feature stays alive on the phones as a secondary one, behind the island's
+  // `random_chat` admin flag, so the strings stay rather than being retyped
+  // later. `contacts.random` in particular is a main-screen label and the main
+  // screen is exactly where it must not appear.
   'contacts.random': 'Random chat',
   'random.title': 'Random Chat',
   'random.body': 'Get matched with a random stranger for a 5-minute conversation. Only the two of you can read what you write.',

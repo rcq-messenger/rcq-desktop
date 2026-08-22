@@ -226,13 +226,22 @@ export function foreignHost(identity: WebIdentity, senderHost?: string): string 
   return h === ownHost(identity) ? undefined : h
 }
 
-/// How a person is written on a line: `Ivan (#396)`, or the bare handle when
-/// the name is genuinely unknown. Cross-island keeps its host, because `#500`
-/// here and `#500` on is2.rcq.app are two different people and rendering them
-/// identically is how a reply reaches the wrong one.
+/// How a person is written on a line. The founder's rule: a CONTACT you know
+/// is written by NAME alone (`Boris`), because carrying `#203671965` beside a
+/// name you saved is noise; a bare number then means exactly one thing, "you do
+/// not know this person". Someone NOT in your contacts keeps the number, name
+/// and all (`Ivan (#396)` for a stranger who told us a name, `#396` for one who
+/// did not), so the number on the line is the mark of a non-contact.
+///
+/// ⚠ Cross-island always keeps `#uin@host`: `#500` here and `#500` on
+/// is2.rcq.app are two different people, so a bare name there is ambiguous and
+/// a reply could reach the wrong one. `/contacts` is where a contact's number
+/// is looked up; it stays a bare-number list on purpose.
 export function peerLabel(myUin: number, uin: number, host?: string): string {
-  const handle = host ? `#${uin}@${host}` : `#${uin}`
   const name = knownName(myUin, uin, host)
+  // Same-island contact: the name carries it, no number.
+  if (!host && name && isContact(myUin, uin)) return name
+  const handle = host ? `#${uin}@${host}` : `#${uin}`
   return name ? `${name} (${handle})` : handle
 }
 

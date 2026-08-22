@@ -60,7 +60,8 @@ import { isYes, strangerCheck } from './stranger'
 import { RcqSocket } from './socket'
 import { acquireStateLock } from './state'
 import { decryptIncoming, noteInboundFrom } from '../../src/lib/signal-device'
-import { currentLang, setLang, tr } from './i18n'
+import { canonical } from './aliases'
+import { currentLang, LANG_CODES, normalizeLang, setLang, tr } from './i18n'
 import { err, out } from './style'
 import { noteUpdateIfAny } from './update-check'
 import { CLI_VERSION } from './version'
@@ -82,7 +83,7 @@ setTokenRefresher(async (id) => (await mintSessionToken(id)).token)
 // subcommands, and the founder's own first session went send, then watch,
 // then confusion before discovering the bare command ("другие команды вводят
 // в заблуждение", 21.08). The text itself lives in i18n.ts, both languages.
-const usage = (): string => tr('usage', { version: CLI_VERSION })
+const usage = (): string => tr('usage', { version: CLI_VERSION, codes: LANG_CODES })
 
 function die(msg: string, code = 1): never {
   process.stderr.write(`rcq: ${msg}\n`)
@@ -352,7 +353,8 @@ async function cmdRemove(pos: string[], flags: Set<string>): Promise<void> {
 async function cmdGroups(): Promise<void> {
   const id = await withToken(requireIdentity())
   await primeDirectory(id)
-  for (const g of listGroups(id.uin)) {
+  const groups = listGroups(id.uin)
+  for (const g of groups) {
     const rules: string[] = []
     if (g.post_policy === 'owner_only') rules.push('owner_only')
     if ((g.slowmode_sec ?? 0) > 0) rules.push(`slowmode=${g.slowmode_sec}`)
@@ -360,6 +362,9 @@ async function cmdGroups(): Promise<void> {
     if (g.files_allowed === false) rules.push('no_files')
     process.stdout.write(`${g.id}\t${g.name}\t${groupSize(g)}\t${rules.join(',')}\n`)
   }
+  // A room can now be left from here (the founder called being unable to a
+  // trap). The list itself is machine data on stdout; the how-to is status.
+  if (groups.length > 0) process.stderr.write(err.dim(tr('groups.leaveHint')) + '\n')
 }
 
 /// Join an open group by id. A closed one refuses, and says so rather than
@@ -375,6 +380,63 @@ async function cmdJoin(pos: string[]): Promise<void> {
   await refreshDirectory(id).catch(() => null)
   process.stdout.write(`${group.id}\t${group.name}\n`)
   process.stderr.write(tr('join.done', { name: group.name }) + '\n')
+}
+
+/// Leave a room. The console could join and never leave, which the founder
+/// called a trap: leaving is removing yourself from the roster (the same call
+/// the web's group menu makes). A failure is said, not swallowed.
+async function cmdLeave(pos: string[]): Promise<void> {
+  const gid = Number((pos[0] ?? '').replace(/^g/i, ''))
+  if (!Number.isInteger(gid) || gid <= 0) usageDie(tr('leave.needsId'))
+  const id = await withToken(requireIdentity())
+  await primeDirectory(id)
+  const base = groupById(id.uin, gid)
+  if (!base) die(tr('group.notMember', { gid }))
+  try {
+    await Api.removeGroupMember(id, gid, id.uin)
+  } catch (e) {
+    die(tr('leave.failed', { err: describeGroupError(e) }))
+  }
+  await refreshDirectory(id).catch(() => null)
+  process.stdout.write(`${gid}\tleft\n`)
+  process.stderr.write(tr('leave.done', { name: base.name }) + '\n')
+}
+
+/// Make a room and, optionally, seed it with people by uin. Prints the new id
+/// on stdout so a script can pipe it straight into `rcq invite` or `rcq send`.
+async function cmdCreate(pos: string[]): Promise<void> {
+  const name = pos[0]?.trim()
+  if (!name) usageDie(tr('create.needsName'))
+  const members = pos.slice(1).map(Number).filter((n) => Number.isInteger(n) && n > 0)
+  const id = await withToken(requireIdentity())
+  let group
+  try {
+    group = await Api.createGroup(id, name, members)
+  } catch (e) {
+    die(tr('create.failed', { err: describeGroupError(e) }))
+  }
+  await refreshDirectory(id).catch(() => null)
+  process.stdout.write(`${group.id}\t${group.name}\n`)
+  process.stderr.write(tr('create.done', { name: group.name }) + '\n')
+}
+
+/// Add somebody to a room you are in.
+async function cmdInvite(pos: string[]): Promise<void> {
+  const gid = Number((pos[0] ?? '').replace(/^g/i, ''))
+  const uin = Number(pos[1])
+  if (!Number.isInteger(gid) || gid <= 0 || !Number.isInteger(uin) || uin <= 0) usageDie(tr('invite.needsArgs'))
+  const id = await withToken(requireIdentity())
+  await primeDirectory(id)
+  const base = groupById(id.uin, gid)
+  if (!base) die(tr('group.notMember', { gid }))
+  try {
+    await Api.addGroupMember(id, gid, uin)
+  } catch (e) {
+    die(tr('invite.failed', { who: peerLabel(id.uin, uin), err: describeGroupError(e) }))
+  }
+  await refreshDirectory(id).catch(() => null)
+  process.stdout.write(`${uin}\tadded\n`)
+  process.stderr.write(tr('invite.done', { who: peerLabel(id.uin, uin), name: base.name }) + '\n')
 }
 
 /// What was already said, back out of the history file. Offline, instant, and
@@ -588,13 +650,14 @@ async function cmdWatch(flags: Set<string>): Promise<void> {
 /// its usage; `rcq lang en|ru` remembers the choice in the state dir. Works
 /// with no account and no lock: it never touches the ratchet.
 function cmdLang(pos: string[]): void {
-  const pick = pos[0]
-  if (pick === undefined) {
+  const arg = pos[0]
+  if (arg === undefined) {
     process.stdout.write(`${currentLang()}\n`)
-    process.stderr.write(tr('lang.usage') + '\n')
+    process.stderr.write(tr('lang.usage', { codes: LANG_CODES }) + '\n')
     return
   }
-  if (pick !== 'en' && pick !== 'ru') usageDie(tr('lang.invalid', { arg: pick }))
+  const pick = normalizeLang(arg)
+  if (!pick) usageDie(tr('lang.invalid', { arg, codes: LANG_CODES }))
   setLang(pick)
   process.stderr.write(tr('lang.set', { lang: pick }) + '\n')
 }
@@ -618,7 +681,7 @@ async function main(): Promise<void> {
   // bottom of this file, which reads process.argv directly, cannot disagree
   // with this one about whether interactive mode was entered.
   const cmd = argv[0] === '' ? undefined : argv[0]
-  if (cmd === '--help' || cmd === '-h' || cmd === 'help') {
+  if (cmd === '--help' || cmd === '-h' || (cmd !== undefined && canonical(cmd) === 'help')) {
     process.stdout.write(usage())
     process.exit(0)
   }
@@ -641,12 +704,16 @@ async function main(): Promise<void> {
     void noteUpdateIfAny()
     return runInteractive(await withToken(requireIdentity()))
   }
+  // The short form and the full one are the same command (see aliases.ts), so
+  // resolve once and drive the lock check, the switch and the unknown-command
+  // line off the canonical verb.
+  const verb = canonical(cmd)
   // One process per state dir for anything that can touch the ratchet store —
   // see acquireStateLock. whoami/export/log are read-only peeks and lang only
   // writes its own one-word file (atomic rename): all four stay lock-free.
-  if (cmd !== 'whoami' && cmd !== 'export' && cmd !== 'lang' && cmd !== 'log') acquireStateLock()
+  if (verb !== 'whoami' && verb !== 'export' && verb !== 'lang' && verb !== 'log') acquireStateLock()
   const { pos, opts, flags } = parseArgs(argv.slice(1))
-  switch (cmd) {
+  switch (verb) {
     case 'register':
       return cmdRegister(opts)
     case 'restore':
@@ -681,6 +748,12 @@ async function main(): Promise<void> {
       return cmdGroups()
     case 'join':
       return cmdJoin(pos)
+    case 'leave':
+      return cmdLeave(pos)
+    case 'create':
+      return cmdCreate(pos)
+    case 'invite':
+      return cmdInvite(pos)
     case 'log':
       return cmdLog(pos)
     case 'send':
@@ -699,9 +772,11 @@ async function main(): Promise<void> {
 main().then(
   () => {
     // `watch` and the no-arg interactive mode stay alive on their socket;
-    // every other command is done when its promise settles.
-    const cmd = process.argv[2] || undefined
-    if (cmd !== undefined && cmd !== 'watch') process.exit(0)
+    // every other command is done when its promise settles. Resolve the alias
+    // first, or `rcq wt` would fall through this guard and kill its own socket.
+    const raw = process.argv[2]
+    const verb = raw ? canonical(raw) : undefined
+    if (verb !== undefined && verb !== 'watch') process.exit(0)
   },
   (e) => die(humanError(e)),
 )

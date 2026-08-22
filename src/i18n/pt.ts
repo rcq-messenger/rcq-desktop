@@ -85,7 +85,11 @@ export const pt: Record<string, string> = {
   'auth.error.register_failed': 'Não foi possível criar a conta: {detail}',
   // Contacts
   'contacts.title': 'Contatos',
-  'contacts.empty': 'Nenhum contato ainda. Adicione alguns no iOS e eles aparecem aqui.',
+  'contacts.empty': 'Ainda não tem ninguém aqui.',
+  'contacts.empty.hint': 'Adicione um número que você já conhece, ou mande seu link para alguém te adicionar.',
+  'contacts.invite': 'Convidar alguém',
+  'contacts.invite.copied': 'Link copiado.',
+  'contacts.invite.text': 'Me escreve no RCQ: {link}',
   'contacts.loading': 'Carregando…',
   'contacts.error': 'Não foi possível carregar os contatos.',
   'contacts.unlink': 'Desconectar',

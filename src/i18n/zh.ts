@@ -85,7 +85,11 @@ export const zh: Record<string, string> = {
   'auth.error.register_failed': '无法创建账号：{detail}',
   // Contacts
   'contacts.title': '联系人',
-  'contacts.empty': '还没有联系人。在 iOS 上添加，他们会出现在这里。',
+  'contacts.empty': '这里还没有人。',
+  'contacts.empty.hint': '添加一个你已经知道的号码，或者把你的链接发给别人，让对方添加你。',
+  'contacts.invite': '邀请朋友',
+  'contacts.invite.copied': '链接已复制。',
+  'contacts.invite.text': '在 RCQ 上找我：{link}',
   'contacts.loading': '加载中…',
   'contacts.error': '无法加载联系人。',
   'contacts.unlink': '解除连接',

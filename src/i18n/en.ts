@@ -96,8 +96,11 @@ export const en: Record<string, string> = {
 
   // Contacts
   'contacts.title': 'Contacts',
-  'contacts.empty':
-    'No contacts yet. Add some on iOS — they\'ll appear here.',
+  'contacts.empty': 'Nobody here yet.',
+  'contacts.empty.hint': 'Add a number you already know, or send someone your link so they can add you.',
+  'contacts.invite': 'Invite a friend',
+  'contacts.invite.copied': 'Link copied.',
+  'contacts.invite.text': 'Write to me on RCQ: {link}',
   'contacts.loading': 'Loading…',
   'contacts.error': 'Could not load contacts.',
   'contacts.unlink': 'Unlink',

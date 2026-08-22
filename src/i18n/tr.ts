@@ -85,7 +85,11 @@ export const tr: Record<string, string> = {
   'auth.error.register_failed': 'Hesap oluşturulamadı: {detail}',
   // Contacts
   'contacts.title': 'Kişiler',
-  'contacts.empty': 'Henüz kişi yok. iOS\'ta birkaç kişi ekle, burada görünürler.',
+  'contacts.empty': 'Burada henüz kimse yok.',
+  'contacts.empty.hint': 'Bildiğin bir numarayı ekle ya da bağlantını birine gönder de seni eklesin.',
+  'contacts.invite': 'Birini davet et',
+  'contacts.invite.copied': 'Bağlantı kopyalandı.',
+  'contacts.invite.text': 'Bana RCQ üzerinden yaz: {link}',
   'contacts.loading': 'Yükleniyor…',
   'contacts.error': 'Kişiler yüklenemedi.',
   'contacts.unlink': 'Bağlantıyı kes',

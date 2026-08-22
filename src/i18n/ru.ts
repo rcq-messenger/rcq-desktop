@@ -96,7 +96,11 @@ export const ru: Record<string, string> = {
 
   // Contacts
   'contacts.title': 'Контакты',
-  'contacts.empty': 'Пока никого. Добавьте контакты на iOS — они появятся здесь.',
+  'contacts.empty': 'Пока никого.',
+  'contacts.empty.hint': 'Добавьте человека по номеру или отправьте кому-нибудь свою ссылку, чтобы вас добавили.',
+  'contacts.invite': 'Позвать друга',
+  'contacts.invite.copied': 'Ссылка скопирована.',
+  'contacts.invite.text': 'Напиши мне в RCQ: {link}',
   'contacts.loading': 'Загружаем…',
   'contacts.error': 'Не удалось загрузить контакты.',
   'contacts.unlink': 'Отвязать',

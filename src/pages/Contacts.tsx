@@ -36,6 +36,8 @@ import { useI18n } from '../lib/i18n-context'
 import { lockNow } from '../lib/pin-gate'
 import { vaultState, vaultSupported } from '../lib/desktop-vault'
 import { useIdentity } from '../lib/identity-context'
+import { useToast } from '../lib/toast'
+import { buildContactLink } from '../lib/federation'
 import {
   useArchive,
   useArchiveGroups,
@@ -109,6 +111,31 @@ export function Contacts() {
   const { t } = useI18n()
   const ws = useWS()
   const navigate = useNavigate()
+  const { toast } = useToast()
+
+  /// Hand someone the link that adds you. The native share sheet where there
+  /// is one, because on a phone the next step is a messenger the person
+  /// already uses; the clipboard everywhere else.
+  async function shareMyLink() {
+    if (!identity) return
+    const link = buildContactLink({ uin: identity.uin, host: 'api.rcq.app' })
+    const text = t('contacts.invite.text', { link })
+    try {
+      if (navigator.share) {
+        await navigator.share({ text })
+        return
+      }
+    } catch {
+      // Cancelled or unavailable: fall through to the clipboard rather than
+      // leaving the tap with nothing to show for it.
+    }
+    try {
+      await navigator.clipboard.writeText(link)
+      toast(t('contacts.invite.copied'))
+    } catch {
+      toast(link, 'info')
+    }
+  }
 
   // Lazy-init from the module cache so RETURNING to the list paints the
   // last-known contacts on the FIRST render — no "Загружаем" spinner flash
@@ -421,15 +448,32 @@ export function Contacts() {
           </div>
         )}
 
+        {/* ⚠ The most-seen screen in the product, and until 22.08 it told a web
+            or desktop newcomer to "add contacts on iOS", copy left over from the
+            send-only phase. The numbers say what that costs: of 549 people who
+            registered in the last 30 days, 5.6% ever added a single contact and
+            61% never came back after day one. Somebody who arrives with nobody
+            to talk to has exactly two useful moves, and both are now here:
+            add a number they already know, or bring one person with them. */}
         {!loading && contacts.length === 0 && !error && (
           <div className="text-center text-sm text-fg-secondary py-12 space-y-2">
             <div>{t('contacts.empty')}</div>
-            <Link
-              to="/add"
-              className="inline-block mt-3 px-4 h-10 leading-10 rounded-md bg-accent hover:bg-accent-dim text-white text-sm font-semibold transition-colors"
-            >
-              {t('contacts.add')}
-            </Link>
+            <div className="text-xs text-fg-dim max-w-xs mx-auto">{t('contacts.empty.hint')}</div>
+            <div className="flex items-center justify-center gap-2 pt-3">
+              <Link
+                to="/add"
+                className="inline-block px-4 h-10 leading-10 rounded-md bg-accent hover:bg-accent-dim text-white text-sm font-semibold transition-colors"
+              >
+                {t('contacts.add')}
+              </Link>
+              <button
+                type="button"
+                onClick={() => void shareMyLink()}
+                className="inline-block px-4 h-10 leading-10 rounded-md border border-line hover:bg-field text-sm font-semibold transition-colors"
+              >
+                {t('contacts.invite')}
+              </button>
+            </div>
           </div>
         )}
 

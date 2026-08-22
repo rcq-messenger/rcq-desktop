@@ -85,7 +85,11 @@ export const uk: Record<string, string> = {
   'auth.error.register_failed': 'Не вдалося створити акаунт: {detail}',
   // Contacts
   'contacts.title': 'Контакти',
-  'contacts.empty': 'Контактів поки немає. Додай їх на iOS, і вони з\'являться тут.',
+  'contacts.empty': 'Поки нікого.',
+  'contacts.empty.hint': 'Додайте людину за номером або надішліть комусь своє посилання, щоб вас додали.',
+  'contacts.invite': 'Покликати друга',
+  'contacts.invite.copied': 'Посилання скопійовано.',
+  'contacts.invite.text': 'Напиши мені в RCQ: {link}',
   'contacts.loading': 'Завантаження…',
   'contacts.error': 'Не вдалося завантажити контакти.',
   'contacts.unlink': 'Відключити',

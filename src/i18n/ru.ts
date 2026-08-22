@@ -377,7 +377,7 @@ export const ru: Record<string, string> = {
   'settings.report.error': 'Не удалось отправить. Попробуйте ещё раз.',
   'settings.report.rate_limited': 'Слишком много сообщений. Попробуйте позже.',
 
-  'chat.unread_divider': 'Непрочитанные',
+  'chat.unread_divider': 'Непрочитанные сообщения',
 
   // Мои обращения — ответы на то, что вы отправили (#475).
   'myreports.title': 'Мои обращения',

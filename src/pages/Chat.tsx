@@ -2552,7 +2552,7 @@ export function Chat() {
     const out: Array<
       | ((typeof items)[number] & { cont?: boolean })
       | { kind: 'day'; at: number }
-      | { kind: 'unread'; at: number }
+      | { kind: 'unread'; at: number; count: number }
     > = []
     let lastDay = ''
     let lastAuthor: string | null = null
@@ -2569,7 +2569,7 @@ export function Chat() {
       // well, so the first unread message carries its own name and avatar
       // instead of reading as a continuation of the last one already seen.
       if (!dividerPlaced && unreadAnchorId && (it.kind === 'in' ? it.msg.id : it.row.id) === unreadAnchorId) {
-        out.push({ kind: 'unread', at: it.at })
+        out.push({ kind: 'unread', at: it.at, count: 0 })
         dividerPlaced = true
         lastAuthor = null
       }
@@ -2578,6 +2578,14 @@ export function Chat() {
       out.push({ ...it, cont })
       lastAuthor = author
       lastAt = it.at
+    }
+    // The number on the divider, so it reads "Unread messages (7)" the way the
+    // Android divider does (#701 asked for one look across the clients). Counted
+    // over what the divider actually divides: inbound items below it.
+    const div = out.find((x) => x.kind === 'unread')
+    if (div && 'count' in div) {
+      const from = out.indexOf(div)
+      div.count = out.slice(from + 1).filter((x) => x.kind === 'in').length
     }
     return out
   }, [outgoing, incoming, deletedVersion, unreadAnchorId, islandHost])
@@ -2985,6 +2993,7 @@ export function Chat() {
                     <span className="flex-1 h-px bg-accent/40" />
                     <span className="text-[0.6875rem] font-medium text-accent">
                       {t('chat.unread_divider')}
+                      {item.count > 0 ? ` (${item.count})` : ''}
                     </span>
                     <span className="flex-1 h-px bg-accent/40" />
                   </li>

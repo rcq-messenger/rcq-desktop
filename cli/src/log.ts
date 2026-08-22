@@ -12,6 +12,7 @@
 import fs from 'node:fs'
 import type { WebIdentity } from '../../src/lib/crypto'
 import { foreignHost, groupLabel, peerLabel } from './directory'
+import { chatLine, stripAnsi } from './format'
 import { describeEnvelope, historyPath, type HistoryRecord } from './receive'
 import { out } from './style'
 
@@ -90,20 +91,43 @@ export function logRowData(r: LogRow): string {
   return `${r.at}\t${r.from}\t${threadTag(r.thread)}\t${text}`
 }
 
-/// The same row for a person: dimmed, with the date only when it is not today.
+/// Who a row is from, written the way the live stream writes it: `me -> [Room]`
+/// for our own, `[Room] Ivan (#396)` for somebody else's.
 ///
 /// ⚠ The host goes through `foreignHost`. Every v=1 envelope carries one, our
 /// own island included, so the raw field would label half the file
 /// `#500@api.rcq.app`.
-export function logRowHuman(identity: WebIdentity, r: LogRow): string {
+function rowWho(identity: WebIdentity, r: LogRow): string {
   const myUin = identity.uin
-  const at = new Date(r.at)
-  const today = new Date().toDateString() === at.toDateString()
-  const when = today ? at.toTimeString().slice(0, 8) : `${at.toISOString().slice(0, 10)} ${at.toTimeString().slice(0, 5)}`
   const room = r.thread?.kind === 'group' ? `[${groupLabel(myUin, r.thread.gid)}]` : null
-  const who =
-    r.from === myUin
-      ? `me${room ? ` -> ${room}` : ''}`
-      : `${room ? `${room} ` : ''}${peerLabel(myUin, r.from, foreignHost(identity, r.host))}`
-  return out.dim(`[${when}] ${who}: ${describeEnvelope(r.envelope)}`)
+  // ⚠ Our own 1:1 rows name the recipient too. A bare `me:` is readable inside
+  // one thread and useless in `/log` with no thread picked, where consecutive
+  // rows belong to different people.
+  const dest = room ?? (typeof r.to === 'number' ? peerLabel(myUin, r.to) : null)
+  return r.from === myUin
+    ? `me${dest ? ` -> ${dest}` : ''}`
+    : `${room ? `${room} ` : ''}${peerLabel(myUin, r.from, foreignHost(identity, r.host))}`
+}
+
+/// The same row for a person: the live line's exact shape, dimmed whole so a
+/// replay of what was already said cannot be mistaken for something new.
+/// ⚠ The line is stripped before it is dimmed: `chatLine` dims its own
+/// timestamp, and a nested dim closes the attribute a third of the way in, so
+/// the rest of a "this is old" line came back bright.
+export function logRowHuman(identity: WebIdentity, r: LogRow): string {
+  return out.dim(stripAnsi(chatLine(r.at, rowWho(identity, r), describeEnvelope(r.envelope))))
+}
+
+/// The threads with the most recent traffic, newest first: one row each,
+/// carrying the last thing said in it.
+///
+/// A chat client opens on the list of conversations. This one opened on an
+/// empty prompt and a `/to <uin>` you had to remember the number for, while
+/// every thread it has ever had was sitting in the history file.
+export function recentThreads(myUin: number, limit: number): LogRow[] {
+  const last = new Map<string, LogRow>()
+  for (const r of readLog(myUin, null, 0)) {
+    if (r.thread) last.set(threadTag(r.thread), r)
+  }
+  return [...last.values()].sort((a, b) => Date.parse(b.at) - Date.parse(a.at)).slice(0, limit)
 }

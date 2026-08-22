@@ -292,6 +292,12 @@ RCQ_VERBOSE=1 показывает детали протокола; NO_COLOR у�
   'send.needsArgs': { en: 'send needs <uin> and "text"', ru: 'send ждёт <uin> и "текст"' },
   'send.failed': { en: 'send failed: {err}', ru: 'отправка не удалась: {err}' },
   'send.kept': { en: 'not sent, your text: {text}', ru: 'не отправлено, ваш текст: {text}' },
+  // The interactive loop echoes the line before it sends it, so the text is
+  // already on screen: what this adds is that it did NOT go, and that it is
+  // still here.
+  'send.failedTo': { en: '✗ not sent to {who}: {err}', ru: '✗ не отправлено {who}: {err}' },
+  'send.retryHint': { en: '  the text is kept - /retry sends it again', ru: '  текст сохранён, повторить: /retry' },
+  'retry.nothing': { en: 'nothing to retry', ru: 'повторять нечего' },
   'send.tip': {
     en: "tip: plain 'rcq' is the live conversation - incoming above, a prompt below",
     ru: "подсказка: просто 'rcq' открывает живой разговор, входящие сверху, строка ввода снизу",
@@ -307,6 +313,15 @@ RCQ_VERBOSE=1 показывает детали протокола; NO_COLOR у�
     en: 'provision failed ({err}) - v=1 receive only',
     ru: 'устройство не зарегистрировалось ({err}), приём только v=1',
   },
+
+  // The connection, said once each way. The close codes are RCQ_VERBOSE: two
+  // raw [ws] lines per redial used to run through the middle of a conversation
+  // for as long as the network was flapping.
+  'ws.down': {
+    en: 'offline - reconnecting, and the queue is read every 30s meanwhile',
+    ru: 'нет связи, переподключаемся; очередь читается каждые 30с',
+  },
+  'ws.up': { en: 'back online', ru: 'связь восстановлена' },
 
   'watch.hello': { en: 'watching as #{uin} (Ctrl+C to stop)', ru: 'слушаем как #{uin} (Ctrl+C, чтобы выйти)' },
   'watch.readonly': {
@@ -379,10 +394,18 @@ RCQ_VERBOSE=1 показывает детали протокола; NO_COLOR у�
     ru: "'{what}' это ни UIN, ни группа (g21)",
   },
 
+  // ⚠ This text is the only map of the loop anybody gets, so it lists every
+  // verb the loop has and nothing it does not. Sections because a flat block of
+  // twenty commands is a wall; the same order as the work: talk, then people,
+  // then the account.
   'interactive.help': {
-    en: `  /to <uin>        talk to this person (a non-contact is confirmed once, before the first message)
+    en: `talking
+  /to <uin>        talk to this person (a non-contact is confirmed once, before the first message)
   /g [id|name]     open a room, or list them; its messages then print here
+  /recent [n]      your latest conversations, newest first
   /log [n]         the last n lines of wherever you are (default 20)
+  /retry           send the last message the network refused, again
+people
   /who <uin>       who is this number: name, and whether you know them
   /find NAME       search the island for people by name
   /contacts        list contacts
@@ -392,13 +415,24 @@ RCQ_VERBOSE=1 показывает детали протокола; NO_COLOR у�
   /cancel <uin>    withdraw a request you sent
   /block <uin>     stop hearing from them   /unblock <uin>
   /remove <uin>    drop a contact on both sides
+this account
+  /whoami          uin, nickname, island, device
   /nick NAME       rename this account
+  /join <id>       join an open room and walk into it
+  /export          where the history file is
+  /lang [en|ru]    show or set the language
   /help            this text
-  /quit            leave (Ctrl+C and Ctrl+D work too)
-anything else you type goes to whoever the prompt names.`,
-    ru: `  /to <uin>        говорить с этим человеком (не-контакт подтверждается один раз, перед первым сообщением)
+  /quit            leave (Ctrl+D, or Ctrl+C on an empty line)
+Anything else you type goes to whoever the prompt names. Up-arrow walks back
+through the commands you have typed; Ctrl+C on a half-typed line drops the line
+and keeps the session.`,
+    ru: `разговор
+  /to <uin>        говорить с этим человеком (не-контакт подтверждается один раз, перед первым сообщением)
   /g [id|имя]      открыть комнату или показать список; её сообщения начнут печататься здесь
+  /recent [n]      последние разговоры, свежие сверху
   /log [n]         последние n строк там, где вы сейчас (по умолчанию 20)
+  /retry           отправить заново то, что сеть не приняла
+люди
   /who <uin>       чей это номер: имя и знакомы ли вы
   /find ИМЯ        искать людей на острове по имени
   /contacts        список контактов
@@ -408,10 +442,16 @@ anything else you type goes to whoever the prompt names.`,
   /cancel <uin>    отозвать свою заявку
   /block <uin>     перестать получать от них   /unblock <uin>
   /remove <uin>    удалить контакт у обоих
+этот аккаунт
+  /whoami          uin, ник, остров, устройство
   /nick ИМЯ        переименовать аккаунт
+  /join <id>       вступить в открытую комнату и сразу войти в неё
+  /export          где лежит файл истории
+  /lang [en|ru]    показать или сменить язык
   /help            этот текст
-  /quit            выйти (Ctrl+C и Ctrl+D тоже работают)
-всё остальное уходит тому, чьё имя в строке ввода.`,
+  /quit            выйти (Ctrl+D или Ctrl+C на пустой строке)
+Всё остальное уходит тому, чьё имя в строке ввода. Стрелка вверх листает
+набранные команды; Ctrl+C на недописанной строке стирает строку, а не сессию.`,
   },
   'interactive.hello': { en: 'you are #{uin} - /help for commands', ru: 'вы #{uin}, команды по /help' },
   'interactive.noContacts': {
@@ -428,7 +468,17 @@ anything else you type goes to whoever the prompt names.`,
     en: '{who} wrote to you - /to {uin} to answer them',
     ru: 'вам написал {who}, ответить: /to {uin}',
   },
-  'interactive.delivered': { en: '✓ delivered to {who}', ru: '✓ доставлено {who}' },
+  // The tick names the message as well as the peer: two lines to the same
+  // person produced two identical notes, and in a busy stream neither of them
+  // belonged to anything.
+  'interactive.delivered': { en: '✓ delivered to {who}: {text}', ru: '✓ доставлено {who}: {text}' },
+  'exit.finishing': { en: 'finishing the message that is still going out...', ru: 'дописываем сообщение, которое ещё уходит...' },
+  'export.at': { en: 'history file: {file}', ru: 'файл истории: {file}' },
+  'recent.none': {
+    en: '(no conversations yet - /to <uin> starts one, /find NAME looks somebody up)',
+    ru: '(разговоров пока нет: /to <uin> начинает, /find ИМЯ ищет человека)',
+  },
+  'recent.you': { en: 'you:', ru: 'вы:' },
   'interactive.usageTo': { en: 'usage: /to <uin>', ru: 'использование: /to <uin>' },
   'interactive.usageWho': { en: 'usage: /who <uin>', ru: 'использование: /who <uin>' },
   'interactive.usageNick': { en: 'usage: /nick NAME', ru: 'использование: /nick ИМЯ' },
@@ -452,8 +502,8 @@ anything else you type goes to whoever the prompt names.`,
     ru: 'вы уже внутри rcq, просто наберите сообщение (сменить контакт: /to <uin>)',
   },
   'interactive.noActive': {
-    en: 'no one to send to yet - /to <uin> picks a contact, /contacts lists them',
-    ru: 'пока некому писать: /to <uin> выбирает контакт, /contacts показывает список',
+    en: 'no one to send to yet - /to <uin> picks a person, /g a room, /recent lists the threads you have',
+    ru: 'пока некому писать: /to <uin> выбирает человека, /g комнату, /recent показывает начатые разговоры',
   },
 
   'update.available': { en: 'update: v{from} -> v{to}', ru: 'обновление: v{from} -> v{to}' },

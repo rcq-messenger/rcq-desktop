@@ -16,6 +16,7 @@ import {
   cachedContacts,
   cachedPending,
   findGroup,
+  foreignHost,
   groupById,
   groupLabel,
   isContact,
@@ -24,6 +25,7 @@ import {
   primeDirectory,
   refreshDirectory,
 } from './directory'
+import { chatLine, columns, displayRows, idColumn, noteLine, pad, snippet, stripAnsi, when } from './format'
 import {
   advertiseSenderKeys,
   describeGroup,
@@ -33,19 +35,21 @@ import {
   ruleRefusal,
   sendGroupText,
 } from './groups'
-import { tr } from './i18n'
-import { logRowHuman, readLog, type Thread } from './log'
+import { currentLang, setLang, tr } from './i18n'
+import { logRowHuman, readLog, recentThreads, threadTag, type Thread } from './log'
+import { loadPromptHistory, rememberCommand } from './prompt-history'
 import {
   announceGroupNews,
+  describeEnvelope,
   drainQueue,
   hasThreadWith,
   hasWrittenTo,
+  historyPath,
   ingestDecrypted,
   ingestGroupPacket,
   setEmitter,
   setInteractive,
   setOpenGroup,
-  stamp,
   unreadByGroup,
   unreadIn,
   type IngestResult,
@@ -67,6 +71,12 @@ const RECAP_LINES = 8
 /// Except when a room has been counting: then the recap covers what the badge
 /// promised, up to here. Past this, `/log 200` is the honest answer.
 const RECAP_CAP = 50
+/// Conversations on the opening screen, and the default for `/recent`.
+const RECENT_LINES = 6
+/// How long a sent message waits for its tick before the loop forgets it. The
+/// map used to be forever, so one stalled send leaked an entry for the life of
+/// the process and a receipt that came back an hour later still printed.
+const RECEIPT_WAIT_MS = 10 * 60 * 1000
 
 export async function runInteractive(identity: WebIdentity): Promise<void> {
   setInteractive(true)
@@ -81,26 +91,60 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
   // warning on advertiseSenderKeys).
   advertiseSenderKeys(identity)
 
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout, prompt: 'rcq> ' })
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    prompt: 'rcq> ',
+    // Up-arrow reaches past this session's start. Commands only: see
+    // prompt-history.ts for why a chat prompt must not write down everything
+    // typed at it.
+    history: loadPromptHistory(),
+    historySize: 200,
+    removeHistoryDuplicates: true,
+  })
 
   let active: Target | null = null
-  /// envelope id -> peer uin, for the one-time "delivered" note per message.
-  const pendingSent = new Map<string, number>()
+  /// A message that has gone out and is waiting for its tick: envelope id ->
+  /// who it went to and enough of it to name it, so two messages to the same
+  /// person do not produce two identical "delivered" lines.
+  const pendingSent = new Map<string, { uin: number; text: string; at: number }>()
   /// Receipts that arrived for ids nobody registered YET: an online peer's
   /// delivered receipt rides the live socket and can land while sendText is
   /// still awaiting its carbon POST — before handleLine ever learns the id.
   /// Checked when the send resolves; bounded, it only ever holds noise plus
   /// the race window.
   const earlyReceipts = new Set<string>()
+  /// The last line the network refused, kept whole for `/retry`. Nothing typed
+  /// should ever be lost to a dropped connection.
+  let lastFailed: { to: Target; text: string } | null = null
 
-  /// Print a line ABOVE the prompt: clear the input row, write, redraw the
+  /// Print lines ABOVE the prompt: wipe the input area, write, redraw the
   /// prompt together with whatever was mid-typing.
-  const printAbove = (line: string): void => {
-    readline.cursorTo(process.stdout, 0)
-    readline.clearLine(process.stdout, 0)
-    process.stdout.write(line.endsWith('\n') ? line : line + '\n')
+  ///
+  /// ⚠ The input area is not one row. A line long enough to wrap occupies
+  /// several, and clearing exactly one of them left the rest on screen with a
+  /// message printed through the middle of it. The cursor also sits wherever
+  /// the person is editing, which may be any of those rows, so it walks back to
+  /// the first one before the wipe.
+  ///
+  /// A block is cleared and redrawn ONCE: `/log 50` printed row by row is fifty
+  /// clears and fifty redraws, and it flickers like it.
+  const printBlock = (lines: string[]): void => {
+    if (lines.length === 0) return
+    const cols = process.stdout.columns ?? 0
+    if (cols > 0) {
+      const above = displayRows(stripAnsi(rl.getPrompt()) + rl.line.slice(0, rl.cursor), cols) - 1
+      if (above > 0) readline.moveCursor(process.stdout, 0, -above)
+      readline.cursorTo(process.stdout, 0)
+      readline.clearScreenDown(process.stdout)
+    } else {
+      readline.cursorTo(process.stdout, 0)
+      readline.clearLine(process.stdout, 0)
+    }
+    for (const line of lines) process.stdout.write(line.endsWith('\n') ? line : line + '\n')
     rl.prompt(true)
   }
+  const printAbove = (line: string): void => printBlock([line])
   setEmitter(printAbove)
 
   // Status lines ([ws] connected, drain failures) are stderr writes scattered
@@ -132,7 +176,43 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
   /// The last few lines of wherever we just walked in. A terminal keeps no
   /// scrollback across restarts and the file was always there (see log.ts).
   const recap = (thread: Thread, lines = RECAP_LINES): void => {
-    for (const r of readLog(identity.uin, thread, lines)) printAbove(logRowHuman(identity, r))
+    printBlock(readLog(identity.uin, thread, lines).map((r) => logRowHuman(identity, r)))
+  }
+
+  /// The conversations with the most recent traffic: the screen a chat client
+  /// opens on. This one opened on an empty prompt, so the first move of every
+  /// session was remembering a number.
+  const printRecent = (n = RECENT_LINES): void => {
+    const rows = recentThreads(identity.uin, n)
+    if (rows.length === 0) {
+      printAbove(out.dim(tr('recent.none')))
+      return
+    }
+    const unread = unreadByGroup()
+    const width = columns()
+    const tagW = idColumn(rows.map((r) => threadTag(r.thread)))
+    printBlock(
+      rows.map((r) => {
+        const t = r.thread as Exclude<Thread, null>
+        const here =
+          active !== null &&
+          (t.kind === 'peer' ? active.kind === 'peer' && active.uin === t.uin : active.kind === 'group' && active.gid === t.gid)
+        const held = t.kind === 'group' ? (unread.get(t.gid) ?? 0) : 0
+        // ⚠ The host rides along for a peer on another island. Without it the
+        // row is a bare `#500`, which is the local #500 as far as anyone
+        // reading can tell, and `/to 500` would reach exactly that person.
+        const name =
+          t.kind === 'peer' ? peerLabel(identity.uin, t.uin, foreignHost(identity, r.host)) : `[${groupLabel(identity.uin, t.gid)}]`
+        const stamp = when(r.at)
+        const badge = held > 0 ? `+${held} ` : ''
+        const said = `${r.from === identity.uin ? `${tr('recent.you')} ` : ''}${badge}${describeEnvelope(r.envelope)}`
+        // One row, whatever the terminal is: a list that wraps is not a list.
+        // A column of slack, because a row filling the width exactly still
+        // pushes the terminal onto the next one.
+        const room = Math.max(12, width - 1 - (2 + tagW + 1 + 22 + 1 + stamp.length + 2))
+        return `${here ? '* ' : '  '}${threadTag(t).padEnd(tagW)} ${pad(name, 22)} ${out.dim(stamp)}  ${held > 0 ? out.yellow(snippet(said, room)) : out.dim(snippet(said, room))}`
+      }),
+    )
   }
 
   const switchTo = (t: Target, withRecap = true): void => {
@@ -161,16 +241,19 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
   const absorb = (res: IngestResult | null): void => {
     if (!res) return
     for (const id of res.receiptTargets.splice(0)) {
-      const uin = pendingSent.get(id)
-      if (uin === undefined) {
+      const held = pendingSent.get(id)
+      if (held === undefined) {
         if (earlyReceipts.size > 500) earlyReceipts.clear() // cosmetic notes only
         earlyReceipts.add(id)
         continue
       }
       pendingSent.delete(id)
-      const who = peerLabel(identity.uin, uin)
-      printAbove(`${out.dim(`[${stamp()}]`)} ${out.green(tr('interactive.delivered', { who }))}`)
+      printAbove(noteLine(out.green(tr('interactive.delivered', { who: peerLabel(identity.uin, held.uin), text: snippet(held.text) }))))
     }
+    // A tick that never comes is a message the peer has not picked up yet, not
+    // an event: the entry is simply forgotten, and the peer keeps one tick.
+    const stale = Date.now() - RECEIPT_WAIT_MS
+    for (const [id, held] of pendingSent) if (held.at < stale) pendingSent.delete(id)
     announceGroupNews(identity.uin)
     if (res.lastPeerFrom !== undefined) {
       const from = res.lastPeerFrom
@@ -193,15 +276,31 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
   // shutdown before the timer below ever exists.
   let poll: ReturnType<typeof setInterval> | null = null
   let closing = false
+  /// Lines handed to the network and not yet answered for. Leaving in the
+  /// middle of one used to kill the process mid-POST: the message was neither
+  /// sent nor kept, and nothing said so.
+  let inFlight = 0
   const shutdown = (): void => {
     if (closing) return
     closing = true
     if (poll) clearInterval(poll)
     sock.stop()
-    process.stderr.write = rawStderr
-    rl.close()
-    rawStderr(tr('bye') + '\n')
-    process.exit(0)
+    void (async () => {
+      if (inFlight > 0) {
+        printAbove(out.dim(tr('exit.finishing')))
+        // Bounded: a send against a dead island can sit for the whole fetch
+        // timeout, and holding the terminal hostage is its own paper cut. A
+        // second Ctrl+C leaves immediately (see the SIGINT handler).
+        await Promise.race([chain.catch(() => {}), new Promise((r) => setTimeout(r, 5000))])
+      }
+      process.stderr.write = rawStderr
+      rl.close()
+      // The leading newline is the prompt's: closing readline leaves the cursor
+      // sitting after it, and the goodbye landed on the same row as the last
+      // thing typed.
+      rawStderr('\n' + tr('bye') + '\n')
+      process.exit(0)
+    })()
   }
 
   const liveOut: IngestResult = { receiptTargets: [] }
@@ -252,12 +351,19 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
       return
     }
     const unread = unreadByGroup()
-    for (const g of groups) {
-      const mark = active?.kind === 'group' && active.gid === g.id ? '* ' : '  '
-      const n = unread.get(g.id) ?? 0
-      const badge = n > 0 ? out.yellow(` +${n}`) : ''
-      printAbove(`${mark}g${g.id}  ${g.name}${badge}  ${out.dim(describeGroup(identity, g))}`)
-    }
+    const tagW = idColumn(groups.map((g) => `g${g.id}`))
+    const width = columns()
+    printBlock(
+      groups.map((g) => {
+        const mark = active?.kind === 'group' && active.gid === g.id ? '* ' : '  '
+        const n = unread.get(g.id) ?? 0
+        // Same columns as /recent and /contacts: three lists that line up read
+        // as one client, three that do not read as three.
+        const badge = n > 0 ? `+${n} ` : ''
+        const rest = snippet(`${badge}${describeGroup(identity, g)}`, Math.max(12, width - 1 - (2 + tagW + 1 + 22 + 1)))
+        return `${mark}${`g${g.id}`.padEnd(tagW)} ${pad(g.name, 22)} ${n > 0 ? out.yellow(rest) : out.dim(rest)}`
+      }),
+    )
   }
 
   /// Open a room, or list them when nothing was named.
@@ -281,6 +387,14 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
     void rosterFor(identity, g).catch(() => null)
   }
 
+  /// A line the network would not take. The text is on screen already (it is
+  /// echoed before the send) and now it is held for `/retry` as well: a dropped
+  /// connection must never cost what somebody typed.
+  const sendFailed = (to: Target, text: string, why: string): void => {
+    lastFailed = { to, text }
+    printBlock([noteLine(out.red(tr('send.failedTo', { who: label(to), err: why }))), out.dim(tr('send.retryHint'))])
+  }
+
   /// Post one line into the active room.
   async function sendToGroup(gid: number, text: string): Promise<void> {
     const base = groupById(identity.uin, gid)
@@ -297,24 +411,55 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
       printAbove(out.dim(tr('send.kept', { text })))
       return
     }
-    // The room's own rules, before the island answers with a status code.
+    // The room's own rules, before the island answers with a status code,
+    // and before the echo, so a refused line is never shown as one that went.
     const refusal = ruleRefusal(identity, group, text)
     if (refusal) {
       printAbove(out.yellow(refusal))
       printAbove(out.dim(tr('send.kept', { text })))
       return
     }
+    printAbove(chatLine(undefined, out.green(`me -> [${group.name}]`), text))
     let sent: { id: string; mode: string }
     try {
       sent = await sendGroupText(identity, group, text)
     } catch (e) {
-      printAbove(out.red(tr('send.failed', { err: describeGroupError(e) })))
-      printAbove(out.dim(tr('send.kept', { text })))
+      sendFailed({ kind: 'group', gid }, text, describeGroupError(e))
       return
     }
-    printAbove(
-      `${out.dim(`[${stamp()}]`)} ${out.green(`me -> [${group.name}]`)}: ${text}${process.env.RCQ_VERBOSE ? out.dim(` (${sent.mode})`) : ''}`,
-    )
+    // A room has as many recipients as members, so there is no tick to wait
+    // for. The mode (one broadcast, N seals) is protocol detail.
+    if (process.env.RCQ_VERBOSE) printAbove(out.dim(`(${sent.mode})`))
+  }
+
+  /// Send one line to a person.
+  ///
+  /// ⚠ The echo comes FIRST. The loop used to await the send and print
+  /// afterwards, so on a slow network the typed text left the input row and
+  /// nothing at all appeared for up to thirty seconds, and if the send threw,
+  /// the text was simply gone.
+  async function sendToPeer(to: number, text: string, gated = true): Promise<void> {
+    // The gate, at the one moment it means anything: the first message of a
+    // thread with somebody who is neither a contact nor anybody this account
+    // has ever exchanged a word with. Everything after that goes straight out.
+    // `/retry` does not ask again: the question was answered a moment ago.
+    if (gated && !(await confirmFirstMessage(to, text))) return
+    const who = peerLabel(identity.uin, to)
+    printAbove(chatLine(undefined, out.green(`me -> ${who}`), text))
+    let sent: { id: string; mode: string }
+    try {
+      sent = await sendText(identity, to, text)
+    } catch (e) {
+      sendFailed({ kind: 'peer', uin: to }, text, e instanceof Error ? e.message : String(e))
+      return
+    }
+    if (process.env.RCQ_VERBOSE) printAbove(out.dim(`(${sent.mode})`))
+    if (earlyReceipts.delete(sent.id)) {
+      // The receipt outran us (see earlyReceipts): settle it now.
+      printAbove(noteLine(out.green(tr('interactive.delivered', { who, text: snippet(text) }))))
+    } else {
+      pendingSent.set(sent.id, { uin: to, text, at: Date.now() })
+    }
   }
 
   async function printRequests(): Promise<void> {
@@ -329,13 +474,15 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
       printAbove(tr('req.none'))
       return
     }
-    for (const r of lists.incoming) {
-      printAbove(`  ${out.yellow('<-')} ${peerLabel(identity.uin, r.from_uin)}  ${out.dim(tr('req.answerHint', { uin: r.from_uin }))}`)
-    }
-    for (const r of lists.outgoing) {
-      const state = r.state === 'declined' ? tr('req.stateDeclined') : tr('req.statePending')
-      printAbove(`  ${out.dim('->')} ${peerLabel(identity.uin, r.to_uin)}  ${out.dim(state)}`)
-    }
+    printBlock([
+      ...lists.incoming.map(
+        (r) => `  ${out.yellow('<-')} ${peerLabel(identity.uin, r.from_uin)}  ${out.dim(tr('req.answerHint', { uin: r.from_uin }))}`,
+      ),
+      ...lists.outgoing.map(
+        (r) =>
+          `  ${out.dim('->')} ${peerLabel(identity.uin, r.to_uin)}  ${out.dim(r.state === 'declined' ? tr('req.stateDeclined') : tr('req.statePending'))}`,
+      ),
+    ])
   }
 
   async function answerRequest(arg: string, accept: boolean): Promise<void> {
@@ -380,29 +527,7 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
       return
     }
     if (active.kind === 'group') return sendToGroup(active.gid, line)
-    const to = active.uin
-    // The gate, at the one moment it means anything: the first message of a
-    // thread with somebody who is neither a contact nor anybody this account
-    // has ever exchanged a word with. Everything after that goes straight out.
-    if (!(await confirmFirstMessage(to, line))) return
-    const who = peerLabel(identity.uin, to)
-    let sent: { id: string; mode: string }
-    try {
-      sent = await sendText(identity, to, line)
-    } catch (e) {
-      // The text is gone from the input line, so it is printed back: a failed
-      // send must not also cost what was typed.
-      printAbove(out.red(tr('send.failed', { err: e instanceof Error ? e.message : String(e) })))
-      printAbove(out.dim(tr('send.kept', { text: line })))
-      return
-    }
-    printAbove(`${out.dim(`[${stamp()}]`)} ${out.green(`me -> ${who}`)}: ${line}${process.env.RCQ_VERBOSE ? out.dim(` (${sent.mode})`) : ''}`)
-    if (earlyReceipts.delete(sent.id)) {
-      // The receipt outran us (see earlyReceipts) — settle it now.
-      printAbove(`${out.dim(`[${stamp()}]`)} ${out.green(tr('interactive.delivered', { who }))}`)
-    } else {
-      pendingSent.set(sent.id, to)
-    }
+    return sendToPeer(active.uin, line)
   }
 
   /// Everything behind a slash. One switch rather than a chain of prefix
@@ -433,10 +558,13 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
           printAbove(tr('interactive.noContacts'))
           return
         }
-        for (const c of list) {
-          const mark = active?.kind === 'peer' && active.uin === c.uin ? '* ' : '  '
-          printAbove(`${mark}#${c.uin}  ${c.nickname}  ${c.status}${c.blocked ? `  ${out.yellow('blocked')}` : ''}`)
-        }
+        const tagW = idColumn(list.map((c) => `#${c.uin}`))
+        printBlock(
+          list.map((c) => {
+            const mark = active?.kind === 'peer' && active.uin === c.uin ? '* ' : '  '
+            return `${mark}${`#${c.uin}`.padEnd(tagW)} ${pad(c.nickname, 22)} ${out.dim(c.status)}${c.blocked ? `  ${out.yellow('blocked')}` : ''}`
+          }),
+        )
         return
       }
       case '/g':
@@ -454,8 +582,23 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
           printAbove(tr('log.empty'))
           return
         }
-        for (const r of rows) printAbove(logRowHuman(identity, r))
+        printBlock(rows.map((r) => logRowHuman(identity, r)))
         return
+      }
+      case '/recent':
+      case '/threads':
+        printRecent(Number(arg) > 0 ? Number(arg) : RECENT_LINES)
+        return
+      case '/retry': {
+        const held = lastFailed
+        if (!held) {
+          printAbove(out.dim(tr('retry.nothing')))
+          return
+        }
+        lastFailed = null
+        // Straight back out, no second stranger question: it was answered when
+        // the line was first typed, and the send is what failed.
+        return held.to.kind === 'peer' ? sendToPeer(held.to.uin, held.text, false) : sendToGroup(held.to.gid, held.text)
       }
       case '/requests':
         return printRequests()
@@ -494,7 +637,8 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
           printAbove(tr('find.none', { q: arg }))
           return
         }
-        for (const u of found) printAbove(`  #${u.uin}  ${u.nickname}  ${out.dim(u.status)}`)
+        const w = idColumn(found.map((u) => `#${u.uin}`))
+        printBlock(found.map((u) => `  ${`#${u.uin}`.padEnd(w)} ${pad(u.nickname, 22)} ${out.dim(u.status)}`))
         return
       }
       case '/who': {
@@ -619,6 +763,66 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
         await refreshDirectory(identity).catch(() => null)
         return
       }
+      // ⚠ The four below are not conveniences. One rcq holds the state lock for
+      // its dir (see state.ts), so while this prompt is open `rcq whoami` in
+      // another terminal REFUSES to run: a verb with no slash of its own is a
+      // verb nobody can reach without quitting the conversation first.
+      case '/whoami': {
+        const dev = await myDeviceId(identity).catch(() => null)
+        const nick = await Api.myInfo(identity)
+          .then((m) => m.nickname ?? null)
+          .catch(() => null)
+        printBlock([
+          `  ${tr('label.nickname')}: ${nick ?? '-'}  ${out.dim(`#${identity.uin}`)}`,
+          `  ${tr('label.island')}: ${identity.apiBase}`,
+          `  ${tr('label.device')}: ${dev ?? '-'}`,
+        ])
+        return
+      }
+      case '/join': {
+        const gid = Number(arg.replace(/^g/i, ''))
+        if (!Number.isInteger(gid) || gid <= 0) {
+          printAbove(tr('join.needsId'))
+          return
+        }
+        const preview = await Api.groupPreview(identity, gid).catch(() => null)
+        if (!preview) {
+          printAbove(out.yellow(tr('join.noSuchGroup', { gid })))
+          return
+        }
+        if (preview.is_closed) {
+          printAbove(out.yellow(tr('join.closed', { name: preview.name })))
+          return
+        }
+        let group: RCQGroup
+        try {
+          group = await Api.joinGroup(identity, gid)
+        } catch (e) {
+          printAbove(out.red(tr('join.failed', { err: describeGroupError(e) })))
+          return
+        }
+        await refreshDirectory(identity).catch(() => null)
+        printAbove(out.dim(tr('join.done', { name: group.name })))
+        // Straight in: joining a room and then having to type /g for it is one
+        // step nobody wants.
+        return openGroup(String(group.id))
+      }
+      case '/export':
+        printAbove(out.dim(tr('export.at', { file: historyPath(identity.uin) })))
+        return
+      case '/lang': {
+        if (!arg) {
+          printBlock([`  ${currentLang()}`, out.dim(tr('lang.usage'))])
+          return
+        }
+        if (arg !== 'en' && arg !== 'ru') {
+          printAbove(out.yellow(tr('lang.invalid', { arg })))
+          return
+        }
+        setLang(arg)
+        printAbove(out.dim(tr('lang.set', { lang: arg })))
+        return
+      }
       default:
         printAbove(tr('interactive.unknownSlash', { cmd }))
     }
@@ -643,17 +847,38 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
   // calls would race the in-memory ratchet advance for the same peer.
   let chain: Promise<void> = Promise.resolve()
   rl.on('line', (raw) => {
+    rememberCommand(raw)
+    inFlight++
     chain = chain
       .then(() => handleLine(raw))
       .catch((e) => printAbove(`rcq: ${e instanceof Error ? e.message : e}`))
+      .finally(() => {
+        inFlight--
+      })
   })
-  rl.on('SIGINT', shutdown) // readline swallows the signal into this event
+  // readline swallows the signal into this event. Ctrl+C on a line you are
+  // still typing throws the LINE away, which is what it does in every shell;
+  // it used to end the session, so an abandoned sentence cost the whole run.
+  // On an empty line it leaves, and a second one during the wind-down goes now.
+  rl.on('SIGINT', () => {
+    if (closing) process.exit(0)
+    if (rl.line.length > 0) {
+      rl.write(null, { ctrl: true, name: 'u' }) // kill to the start of the line
+      rl.write(null, { ctrl: true, name: 'k' }) // and the rest of it
+      return
+    }
+    shutdown()
+  })
   rl.on('close', shutdown) // Ctrl+D
 
   process.stderr.write(tr('interactive.hello', { uin: identity.uin }) + '\n')
   // Names before the backlog prints, not after: the drain is where the first
   // lines of the session come from (see directory.ts).
   await primeDirectory(identity)
+  // Where you left off, the way any chat client opens. Before the drain, so
+  // whatever arrived while this box was away prints UNDER the list of threads
+  // it belongs to rather than being buried by it.
+  printRecent()
   // Somebody is waiting on an answer from this account. Said at the door, not
   // discovered a week later.
   const pending = cachedPending(identity.uin)

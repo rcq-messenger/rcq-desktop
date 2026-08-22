@@ -116,6 +116,10 @@ export async function openGroupPacket(
 
 export interface ReplayedPacket extends RoutedGmsg {
   gid: number
+  /// When the packet first reached this box, ISO 8601. A broadcast can sit here
+  /// for days waiting on its chain, and printing it as if it had just been said
+  /// puts it in the wrong place in the conversation.
+  at: string
 }
 
 /// Retry every stored broadcast whose chain may have arrived since. Whatever
@@ -140,7 +144,7 @@ export async function replayStoredGroupPackets(identity: WebIdentity): Promise<R
       continue
     }
     const got = await handleGmsg(identity, h.payload, h.gid).catch(() => null)
-    if (got) out.push({ ...got, gid: h.gid })
+    if (got) out.push({ ...got, gid: h.gid, at: h.at })
     // Known kid and no message: the chain has ratcheted past this position, or
     // the packet is corrupt. Either way no future run can do better.
   }

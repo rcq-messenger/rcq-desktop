@@ -1,11 +1,9 @@
-# rcq — console client
+# rcq: the console client
 
 The distribution-proof RCQ client: one Node bundle, no app store, no native
-deps. Scriptable plumbing (design: `RCQ/docs/console-client-design.md`) —
-register/restore, contacts, contact requests both directions, 1:1 text both
-ways, groups both ways, delivered receipts, dev-scoped queue drain, history,
-`watch`, plus an interactive mode: run `rcq` with no arguments and you are in
-a live conversation.
+deps (design: `RCQ/docs/console-client-design.md`). Run `rcq` with no arguments
+and you are in a live conversation; everything else is plumbing for pipes and
+cron.
 
 ## Build
 
@@ -46,6 +44,70 @@ side). Data output for scripts never translates: uin numbers, history
 lines, whoami values and message bodies are byte-identical in either
 language.
 
+## Interactive mode
+
+`rcq` with no arguments, on a TTY (a pipe still gets usage + exit 2). Live
+receive exactly like `watch`, with a readline prompt on top. It opens on the
+threads with the most recent traffic (read out of the history file, so it is
+instant and works offline), and typed text goes to the active target: a person
+picked with `/to <uin>`, a room with `/g`, or whoever writes first (contacts
+and people you have written to only; rooms never auto-pick). The prompt is
+their name: `Ivan (#500)> `, `[Работа]> `.
+
+```
+  #396    Ivan (#396)            07:22:36  see you at ten
+  g21     [Работа]               06:41:36  you: will look tonight
+rcq> /to 396
+[2026-08-20 07:06] Ivan (#396): are you there?
+[07:22:36] Ivan (#396): see you at ten
+Ivan (#396)> on my way
+[07:31:02] me -> Ivan (#396): on my way
+[07:31:03] ✓ delivered to Ivan (#396): on my way
+```
+
+What living in it is like:
+
+* **Every line has the same shape**: `[when] who: what`, built in one place
+  (`cli/src/format.ts`) for live messages, your own echoes, history replays and
+  the delivery notes alike. The clock is the time the message HAPPENED, the
+  island's `received_at` for a queued one, with the date as well when that was
+  not today. Draining two days of backlog used to print all of it with today's
+  time, in arrival order, which is Android's #628 in another client.
+* **A typed line is echoed before it is sent**, not after. The send can take
+  thirty seconds on a bad network, and the loop used to show nothing at all in
+  the meantime, and if it threw, the text was simply gone. A refusal now prints
+  `✗ not sent to Ivan (#396): <why>` and keeps the text for `/retry`.
+* **The delivery tick names the message** (`✓ delivered to Ivan (#396): on my
+  way`), because two lines to the same person produced two identical notes.
+  Waiting entries are forgotten after ten minutes: no tick simply means the peer
+  has not picked it up.
+* **Incoming lines do not fight the prompt.** They are printed above it and the
+  half-typed line is redrawn under them, including when it has wrapped across
+  several rows (clearing exactly one row was why a long line came back
+  mangled). A list prints as one block: one clear, one redraw, no flicker.
+* **The connection says one line each way.** `offline - reconnecting, and the
+  queue is read every 30s meanwhile` when it drops, `back online` when it comes
+  back; the close codes are `RCQ_VERBOSE`-only. Two raw `[ws]` lines per redial
+  used to run through the conversation for as long as the network flapped.
+* **Up-arrow reaches past this session.** Commands are remembered in
+  `prompt-history`; message bodies deliberately are not (see below).
+* **Ctrl+C on a half-typed line drops the line, not the session.** On an empty
+  line it leaves, and a send still in flight is given a few seconds to land
+  first (a second Ctrl+C goes now). Ctrl+D leaves too.
+
+`/help` is the map and lists everything the loop has: `/to`, `/g`, `/recent`,
+`/log`, `/retry`, `/who`, `/find`, `/contacts`, `/add`, `/requests`, `/accept`,
+`/decline`, `/cancel`, `/block`, `/unblock`, `/remove`, `/whoami`, `/nick`,
+`/join`, `/export`, `/lang`, `/quit`.
+
+⚠ Every one-shot verb that makes sense at a prompt has a slash of its own, and
+that is not a convenience: one rcq holds the state lock for its dir, so while
+the prompt is open `rcq whoami` in another terminal refuses to run. A verb with
+no slash is a verb you have to quit the conversation to reach.
+
+Output discipline is relaxed here by design, because it is a UI and not a pipe;
+`send`/`watch` keep the strict contract.
+
 ## Names, and writing to a stranger
 
 Nothing in the stream is a bare number when a name is known. Contacts and
@@ -54,7 +116,8 @@ the same one the web paints from), refreshed at startup and persisted, so
 the FIRST line of a run is already named and an offline run still is.
 A sender in no list is resolved once through `/users/{uin}/info` and
 remembered. A cross-island peer keeps their host (`#500@is2.rcq.app`):
-`#500` here and `#500` there are two different people.
+`#500` here and `#500` there are two different people, in the message
+stream and in the `/recent` list alike.
 
 The mailbox stays open (anyone may write first), but the first message of
 a thread with somebody who is neither a contact nor anybody you have
@@ -80,7 +143,7 @@ does not hold it yet, the legacy per-member fan-out for the rest.
   tokens (`owner_only`, `slowmode=30`, `no_links`).
 * `/g` lists them at the prompt, `/g 21` or `/g Работа` opens one (a name
   works whole or as an unambiguous prefix). The prompt becomes `[Работа]>`
-  and typed lines go there.
+  and typed lines go there. `/join <id>` joins an open room and walks in.
 * Exactly ONE room is open at a time and only that one prints. Every other
   room keeps a count and says so at most once a minute: thirty rooms on one
   screen is not a conversation ("а если групп будет десятки?", founder). The
@@ -101,21 +164,6 @@ receive loop, and the capability is per ACCOUNT, not per device: advertising
 before the chains work makes every capable sender broadcast to an account
 that cannot open a broadcast.
 
-## Interactive mode
-
-`rcq` with no arguments (on a TTY; a pipe still gets usage + exit 2): live
-receive exactly like `watch`, with a readline prompt on top. Typed text goes
-to the active target: a person picked with `/to <uin>`, a room with `/g`, or
-whoever writes first (contacts and people you have written to only; rooms
-never auto-pick). The prompt is their name (`Ivan (#500)> `, `[Работа]> `).
-Walking into a thread replays its last lines from the history file, at least
-as many as the room's badge promised. Incoming messages print above the
-prompt; your 1:1 sends echo with a `✓ delivered` note when the receipt lands.
-`/help` lists the rest: `/log`, `/contacts`, `/who`, `/find`, `/requests`,
-`/accept`, `/decline`, `/cancel`, `/block`, `/unblock`, `/remove`, `/nick`,
-`/quit` (or Ctrl+C / Ctrl+D). Output discipline is relaxed by design here, because it
-is a UI, not a pipe; `send`/`watch` keep the strict contract.
-
 ## Contact requests
 
 `rcq add <uin>` sends one and now reports what actually happened: the island
@@ -130,19 +178,24 @@ so a request that lands while you are sitting at the prompt says so.
 
 `$RCQ_CLI_HOME` (default `~/.config/rcq`), dir 0700, files 0600:
 
-* `localstorage.json` — the identity, under the SAME keys the web uses, so
+* `localstorage.json`: the identity, under the SAME keys the web uses, so
   `src/lib/auth.ts` runs unchanged. Includes the recovery seed: same trust
   level as ssh keys; passphrase sealing is a v1.5 flag.
-* `signal-<uin>.json` — libsignal device state (the web's IndexedDB KV as a
+* `signal-<uin>.json`: libsignal device state (the web's IndexedDB KV as a
   file; Uint8Arrays as `{__u8: base64}`). Atomic writes: a torn ratchet is
   every peer session gone.
 * `history-<uin>.jsonl`: append-only received and sent messages. Rows are
   appended BEFORE the queue ack goes out (2026-08-20 rule: durable before
   ack). Also the memory behind the stranger gate (a peer with a row here is a
-  thread, not a stranger) and what `rcq log` / `/log` read back.
+  thread, not a stranger) and what `rcq log`, `/log` and `/recent` read back.
 * `gmsg-held-<uin>.json`: group broadcasts whose sender key has not arrived,
   plus one recovery-request stamp per chain so a cron'd CLI cannot NACK-storm
   a room. Aged out after 14 days, capped at 200.
+* `prompt-history`: the last 200 COMMANDS typed at the prompt, for up-arrow
+  across restarts. ⚠ Message bodies are deliberately never written here: what
+  is typed at a chat prompt is mostly what is said at it, and a second
+  plaintext copy of that in a file nobody mentioned is not a feature. Inside a
+  session readline still recalls everything.
 * `lang`: the chosen language (`en`/`ru`), written by `rcq lang`.
 
 Local stores inside `localstorage.json` are keyed per account
@@ -156,9 +209,9 @@ Reuses `src/lib` as-is via three esbuild swaps (see `cli/build.mjs`):
 the browser wasm glue -> the pkg-node build of the same crate, IndexedDB ->
 file KV, client label -> `Console · <os>`. The socket and the receive loop
 are thin plain-class rewrites of the React-wrapped ones (`ws.tsx`,
-`message-receiver.tsx`) — same wire, same ack protocol, same receipt rules.
+`message-receiver.tsx`): same wire, same ack protocol, same receipt rules.
 
-The ONE src/lib change: `setProvisionPolicy('secondary')` — the CLI never
+The ONE src/lib change is `setProvisionPolicy('secondary')`: the CLI never
 claims the account's primary slot, whoever holds it (see the comment in
 `signal-device.ts`; a headless box must not evict the phone).
 
@@ -199,9 +252,13 @@ apologise vaguely for one, it now says which.
   CLI reads rooms, posts to them, and joins an OPEN one by id. An invite
   LINK carrying a closed room's share token is not parsed.
 * **Polls** print the question with no options and no way to vote.
-* **Timestamps** are the moment this box read a message, not the island's
-  `received_at`: drain a two-day backlog and it prints with today's clock.
-  `rcq log` shows the same stamp, dated.
+* **Typing notifications** are dropped, and that one is deliberate: a prompt
+  has nowhere to draw "alice is typing" except the line being edited, and
+  SENDING them from a headless box would leak keystroke timing from the client
+  whose whole pitch is that it runs where nobody is watching.
+* **Threads are keyed by uin alone**, so a cross-island `#500` and a local
+  `#500` share one `/log` and one `/recent` row. The lines inside it are
+  labelled with the host they came from; the thread is not split.
 * `restore` onto a box meant to be the ONLY device still registers as
   secondary; the design doc's `--primary` flag is unimplemented.
 * No passphrase at rest; file permissions only.

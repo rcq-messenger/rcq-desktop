@@ -64,6 +64,7 @@ import { currentLang, setLang, tr } from './i18n'
 import { err, out } from './style'
 import { noteUpdateIfAny } from './update-check'
 import { CLI_VERSION } from './version'
+import { humanError } from './errors'
 
 // ★ Before anything can provision: a CLI on a server must never steal the
 // account's primary slot from the phone (docs/console-client-design.md; the
@@ -224,7 +225,7 @@ async function cmdContacts(): Promise<void> {
     // a few hours old beats a stack trace, and the note says which one this is
     // so nobody mistakes a cached row for a live one.
     list = cachedContacts(id.uin)
-    process.stderr.write(err.dim(tr('fail.contacts', { err: e instanceof Error ? e.message : String(e) })) + '\n')
+    process.stderr.write(err.dim(tr('fail.contacts', { err: humanError(e) })) + '\n')
   }
   for (const c of list) {
     process.stdout.write(`${c.uin}\t${c.nickname}\t${c.status}${c.blocked ? '\tblocked' : ''}\n`)
@@ -430,12 +431,12 @@ async function cmdSendGroup(gid: number, text: string): Promise<void> {
   // The POST itself is v=1 all the way (per-member seals and one broadcast, no
   // libsignal session), but the drain below needs this install's device id.
   await getDevice(identity).catch((e) => {
-    process.stderr.write(tr('provision.v1only', { err: e instanceof Error ? e.message : String(e) }) + '\n')
+    process.stderr.write(tr('provision.v1only', { err: humanError(e) }) + '\n')
   })
   await primeDirectory(identity)
   const base = groupById(identity.uin, gid)
   if (!base) die(tr('group.notMember', { gid }))
-  const group = await rosterFor(identity, base).catch((e: unknown) => die(e instanceof Error ? e.message : String(e)))
+  const group = await rosterFor(identity, base).catch((e: unknown) => die(humanError(e)))
   const refusal = ruleRefusal(identity, group, text)
   if (refusal) die(refusal)
   advertiseSenderKeys(identity)
@@ -462,7 +463,7 @@ async function cmdSend(pos: string[], flags: Set<string>): Promise<void> {
   const identity = await withToken(requireIdentity())
   await getDevice(identity).catch((e) => {
     // v=1 still works without a libsignal device; say so rather than dying.
-    process.stderr.write(tr('provision.v1only', { err: e instanceof Error ? e.message : String(e) }) + '\n')
+    process.stderr.write(tr('provision.v1only', { err: humanError(e) }) + '\n')
   })
   // The roster, for the gate below and for the names on every line the drain
   // is about to print. Replaces the contacts fetch this command already paid
@@ -479,7 +480,7 @@ async function cmdSend(pos: string[], flags: Set<string>): Promise<void> {
   try {
     sent = await sendText(identity, uin, text)
   } catch (e) {
-    die(tr('send.failed', { err: e instanceof Error ? e.message : String(e) }))
+    die(tr('send.failed', { err: humanError(e) }))
   }
   // One more drain to pick up an instant receipt from a peer that is online.
   await new Promise((r) => setTimeout(r, 2000))
@@ -505,7 +506,7 @@ async function cmdWatch(flags: Set<string>): Promise<void> {
   // and thirty rooms would bury it, same rule as the interactive badges.
   if (flags.has('--groups')) setOpenGroup('all')
   await getDevice(identity).catch((e) => {
-    process.stderr.write(tr('provision.v1receive', { err: e instanceof Error ? e.message : String(e) }) + '\n')
+    process.stderr.write(tr('provision.v1receive', { err: humanError(e) }) + '\n')
   })
   // Correct the live-frame device filter from the saved blob even when the
   // provision above failed: until then currentDeviceId() answers 1 (the
@@ -525,7 +526,7 @@ async function cmdWatch(flags: Set<string>): Promise<void> {
   // the reconnect drain delivers it. Said out loud all the same: a silent
   // catch here is a message that never appeared and never will be mentioned.
   const liveFailed = (e: unknown): void => {
-    process.stderr.write(err.dim(tr('fail.live', { err: e instanceof Error ? e.message : String(e) })) + '\n')
+    process.stderr.write(err.dim(tr('fail.live', { err: humanError(e) })) + '\n')
   }
   const sock = new RcqSocket(identity, {
     onSealed: (frame) => {
@@ -702,5 +703,5 @@ main().then(
     const cmd = process.argv[2] || undefined
     if (cmd !== undefined && cmd !== 'watch') process.exit(0)
   },
-  (e) => die(e instanceof Error ? e.message : String(e)),
+  (e) => die(humanError(e)),
 )

@@ -16,6 +16,7 @@ import { Api, ApiError, type OutgoingRequest, type PendingRequest } from '../../
 import type { WebIdentity } from '../../src/lib/crypto'
 import { noteName, peerLabel } from './directory'
 import { tr } from './i18n'
+import { humanError } from './errors'
 
 export interface RequestLists {
   incoming: PendingRequest[]
@@ -62,7 +63,7 @@ export async function respondTo(
   try {
     pending = await Api.pendingRequests(identity)
   } catch (e) {
-    return { ok: false, reason: e instanceof Error ? e.message : String(e) }
+    return { ok: false, reason: humanError(e) }
   }
   const row = pending.find((r) => r.from_uin === uin)
   if (!row) return { ok: false, reason: tr('req.noneFrom', { who: peerLabel(identity.uin, uin) }) }

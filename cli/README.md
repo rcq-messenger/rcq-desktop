@@ -37,6 +37,15 @@ node cli/dist/rcq.mjs lang [en|ru]
 For subcommands, stdout is data only (messages, the phrase, lists); status
 goes to stderr. Exit codes: 0 ok, 1 error, 2 usage.
 
+Environment: `RCQ_CLI_HOME` moves the state dir, `RCQ_VERBOSE=1` shows
+protocol detail, `NO_COLOR` strips colour, and `RCQ_TIMEOUT_MS` (default
+20000) is how long any one request may take before it is abandoned. Node's
+`fetch` has no timeout of its own and neither does `src/lib/api.ts`, so
+without a deadline a connection that is established and then goes silent
+hangs for as long as the kernel keeps the socket: measured against prod on
+2026-08-22, one send sat for 41 seconds and everything typed behind it
+waited with it. Raise it on a link slow enough that 20s is a real answer.
+
 Human-facing lines speak English or Russian: `rcq lang ru` persists the
 choice in the state dir; unset, a `ru*` LC_ALL/LANG answers Russian. The
 string table is `cli/src/i18n.ts` (a plain dict, both languages side by

@@ -21,6 +21,7 @@ import { cachedGroups, groupSize } from './directory'
 import { tr } from './i18n'
 import { appendHistory, markSent } from './receive'
 import { sendMessageCarbon } from './send'
+import { humanError } from './errors'
 
 /// Tell the island this account can read encrypt-once broadcasts.
 ///
@@ -98,7 +99,7 @@ export function ruleRefusal(identity: WebIdentity, group: RCQGroup, text: string
 /// can act on; anything else keeps its raw text rather than being flattened
 /// into a shrug.
 export function describeGroupError(e: unknown): string {
-  if (!(e instanceof ApiError)) return e instanceof Error ? e.message : String(e)
+  if (!(e instanceof ApiError)) return humanError(e)
   if (e.status === 429) {
     let wait = 0
     try {

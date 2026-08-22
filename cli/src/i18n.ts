@@ -279,6 +279,12 @@ RCQ_VERBOSE=1 показывает детали протокола; NO_COLOR у�
     en: 'delivery receipts are not going out, the sender keeps one tick',
     ru: 'квитанции о доставке не уходят, у отправителя останется одна галочка',
   },
+  // The transport, in words. See errors.ts: these replace Node's raw
+  // `fetch failed` wherever a failure reaches a person.
+  'net.unreachable': { en: 'the island did not answer', ru: 'остров не ответил' },
+  'net.timeout': { en: 'the island did not answer in time', ru: 'остров не ответил вовремя' },
+  'net.noHost': { en: 'no such island (the address did not resolve)', ru: 'такого острова нет (адрес не разрешился)' },
+
   'fail.live': {
     en: 'a live message could not be opened ({err}); the next queue read retries it',
     ru: 'живое сообщение не удалось открыть ({err}); повтор при следующем чтении очереди',
@@ -292,6 +298,10 @@ RCQ_VERBOSE=1 показывает детали протокола; NO_COLOR у�
   'send.needsArgs': { en: 'send needs <uin> and "text"', ru: 'send ждёт <uin> и "текст"' },
   'send.failed': { en: 'send failed: {err}', ru: 'отправка не удалась: {err}' },
   'send.kept': { en: 'not sent, your text: {text}', ru: 'не отправлено, ваш текст: {text}' },
+  // A line typed while the one before it is still on the wire. Sends are
+  // strictly one at a time, so without this the text simply vanished off the
+  // input row and nothing appeared until the one ahead of it finished.
+  'send.queued': { en: '… waiting for the line before it: {text}', ru: '… ждёт предыдущую строку: {text}' },
   // The interactive loop echoes the line before it sends it, so the text is
   // already on screen: what this adds is that it did NOT go, and that it is
   // still here.

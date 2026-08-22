@@ -30,6 +30,7 @@ import { getCrossIsland } from '../../src/lib/crossisland-store'
 import type { WebIdentity } from '../../src/lib/crypto'
 import { tr } from './i18n'
 import { err } from './style'
+import { humanError } from './errors'
 
 /// Names learned from /users/{uin}/info for people in no list of ours. Kept
 /// on disk beside the roster so a stranger who wrote yesterday still has a
@@ -131,7 +132,7 @@ export async function primeDirectory(identity: WebIdentity, waitMs = 4000): Prom
       if (refreshComplained) return
       refreshComplained = true
       process.stderr.write(
-        err.dim(tr('dir.stale', { err: e instanceof Error ? e.message : String(e) })) + '\n',
+        err.dim(tr('dir.stale', { err: humanError(e) })) + '\n',
       )
     },
   )

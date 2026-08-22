@@ -66,6 +66,28 @@ class FileStorage {
 
 ;(globalThis as { localStorage?: unknown }).localStorage = new FileStorage(statePath('localstorage.json'))
 
+// ⚠ Node's fetch has NO timeout, and neither does the shared api.ts request()
+// that every send, drain and lookup goes through. A connection that opens and
+// then goes quiet (a laptop that slept, a relay that died mid-request, the
+// flaky transport this whole project exists for) hangs the call for as long
+// as the kernel keeps the socket. Measured against prod on 2026-08-22: a
+// single send sat for 41 seconds and only returned when the WebSocket beside
+// it gave up with 1006.
+//
+// In the conversation loop that is worse than an error. Lines are handed to
+// the network strictly one at a time (the ratchet cannot be advanced twice at
+// once), so everything typed behind the stuck one waits with it, silently.
+// A deadline turns an indefinite hang into a sentence somebody can act on.
+//
+// Callers that already manage a signal keep theirs: receive.ts drains with a
+// longer one of its own, and overriding it here would shorten the queue read.
+const FETCH_DEADLINE_MS = Number(process.env.RCQ_TIMEOUT_MS) > 0 ? Number(process.env.RCQ_TIMEOUT_MS) : 20_000
+const bareFetch = globalThis.fetch
+globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) =>
+  init?.signal
+    ? bareFetch(input, init)
+    : bareFetch(input, { ...init, signal: AbortSignal.timeout(FETCH_DEADLINE_MS) })) as typeof fetch
+
 // Node 22+ ships a global navigator (userAgent included) with no `locks` —
 // withProvisionLock in signal-device.ts already falls back to running
 // unlocked, which is right for a single-process CLI. Only fill the gap on a

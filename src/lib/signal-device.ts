@@ -35,6 +35,8 @@ import { PRIMARY_DEVICE_ID, WebSignalDevice, type SignalBundle, type DeviceBlob 
 import { decryptV1, b64ToBytes, bytesToB64, messageClass, type Envelope, type WebIdentity } from './crypto'
 import { idbDel, idbGet, idbGetFlat, idbSet } from './signal-persist'
 import { clientLabel } from './client-name'
+import { fetchServerInfo } from './server-info'
+import * as depositAuth from './deposit-auth-store'
 
 const _devices = new Map<number, Promise<WebSignalDevice>>()
 const blobKey = (uin: number) => `signal-device:${uin}`
@@ -181,7 +183,7 @@ async function adoptRegisteredDevice(identity: WebIdentity, dev: WebSignalDevice
     .sort((a, b) => b.device_id - a.device_id)
     .slice(0, ADOPT_PROBE_LIMIT)
   for (const d of rows) {
-    const bundle = (await apiGet(identity, `/keys/${identity.uin}/devices/${d.device_id}/bundle`)) as SignalBundle
+    const bundle = await fetchKeyBundle(identity, `/keys/${identity.uin}/devices/${d.device_id}/bundle`)
     if (bundle.signal_identity_key === mine) {
       dev.setDeviceId(d.device_id)
       return true
@@ -536,16 +538,34 @@ interface PeerTarget {
 interface PeerTargets {
   /// When the device LIST was last read.
   at: number
+  /// How long this particular entry is trusted (base +/- jitter, fixed at read
+  /// time). Per entry so a room's worth of peers do not all expire on the same
+  /// tick and re-read their lists in one thundering herd.
+  ttl: number
   devices: PeerTarget[]
 }
 const _peerTargets = new Map<number, PeerTargets>()
 
-/// How long a peer's device list is trusted. A device the peer adds later has
-/// to become reachable without a reload, and a revoked one has to stop being
-/// addressed. Only the list is re-read — a target we already hold keeps its
-/// session, because re-running X3DH against it would burn one of the peer's
-/// one-time prekeys and restart the ratchet for nothing.
-const TARGETS_TTL_MS = 5 * 60_000
+/// How long a peer's device list is trusted, before a per-entry jitter. A
+/// device the peer adds later has to become reachable without a reload, and a
+/// revoked one has to stop being addressed; but the list is also invalidated
+/// the moment we learn it is stale (a send or a bundle fetch to one of its
+/// devices 404s, or an inbound v=2 names a device not on it), so the TTL is the
+/// slow backstop, not the fast path. Fifteen minutes, NOT a day: a peer's newly
+/// linked device would otherwise get no carbons for an hour, which was a real
+/// report on 2026-08-19. Only the list is re-read: a target we already hold
+/// keeps its session, because re-running X3DH against it would burn one of the
+/// peer's one-time prekeys and restart the ratchet for nothing.
+const TARGETS_TTL_BASE_MS = 15 * 60_000
+
+/// The +/- jitter on each entry's TTL, so entries read together still expire
+/// spread out.
+const TARGETS_TTL_JITTER_MS = 3 * 60_000
+
+/// A fresh TTL for one entry: 15 min +/- up to 3.
+function targetsTtl(): number {
+  return TARGETS_TTL_BASE_MS + Math.round((Math.random() * 2 - 1) * TARGETS_TTL_JITTER_MS)
+}
 
 /// How long a list that could NOT be read is left alone. Without it the failed
 /// read leaves `at` where it was and every following send tries again — a round
@@ -603,7 +623,18 @@ const _lastSilenceProbeAt = new Map<string, number>()
 /// and crediting the primary for a copy that may have come from a sibling is
 /// exactly the confusion that kept a dead device unhealed.
 export function noteInboundFrom(uin: number, deviceId?: number): void {
-  if (typeof deviceId === 'number') _awaitingReplySince.delete(`${uin}:${deviceId}`)
+  if (typeof deviceId !== 'number') return
+  _awaitingReplySince.delete(`${uin}:${deviceId}`)
+  // A v=2 message from a device that is NOT in the cached list means the list
+  // is stale: the peer linked a device since we last read it, and that device
+  // gets no carbons until we fan out to it. Drop the entry so the next send
+  // re-resolves and picks it up, rather than waiting out the TTL (an hour of
+  // missing carbons was the 2026-08-19 report).
+  const cached = _peerTargets.get(uin)
+  if (cached && !cached.devices.some((t) => t.deviceId === deviceId)) {
+    _peerTargets.delete(uin)
+    console.debug(`peer ${uin} device ${deviceId} not in cached roster; will re-resolve`)
+  }
 }
 
 /// Forget how long every peer device has been quiet. Called when the socket
@@ -658,7 +689,21 @@ async function resolveTargets(
       devices.push(cached)
       continue
     }
-    const bundle = (await apiGet(identity, `/keys/${peerUin}/devices/${d.device_id}/bundle`)) as SignalBundle
+    // A bundle 404 for a device the LIST just named is the list going stale
+    // under us: the device was revoked between the list read and this fetch.
+    // Drop it from the roster we build instead of failing the whole resolve, so
+    // the peer's other devices still get this send. The list is re-read on the
+    // next resolve; nothing here is cached as reachable.
+    let bundle: SignalBundle
+    try {
+      bundle = await fetchKeyBundle(identity, `/keys/${peerUin}/devices/${d.device_id}/bundle`)
+    } catch (e) {
+      if (e instanceof KeyLookupError && e.status === 404) {
+        console.warn(`bundle 404 for ${peerUin}:${d.device_id}; dropped from roster`)
+        continue
+      }
+      throw e
+    }
     const outerPub = b64ToBytes(bundle.sealed_sender_pub)
     // Re-reading a bundle for a device we already talk to is usually about the
     // outer key alone: the ratchet is fine, and rebuilding it would cost the
@@ -710,7 +755,7 @@ async function resolveTargets(
     }
     devices.push({ deviceId: bundle.device_id, outerPub, at: Date.now() })
   }
-  return { at: Date.now(), devices }
+  return { at: Date.now(), ttl: targetsTtl(), devices }
 }
 
 /// A peer device this install already holds both halves of a send for: the
@@ -759,7 +804,7 @@ export async function sendV2(identity: WebIdentity, peerUin: number, env: Envelo
   }
 
   let targets = _peerTargets.get(peerUin)
-  if (rebuildDevices.size || !targets || Date.now() - targets.at > TARGETS_TTL_MS) {
+  if (rebuildDevices.size || !targets || Date.now() - targets.at > targets.ttl) {
     try {
       targets = await resolveTargets(identity, dev, peerUin, targets?.devices ?? [], rebuildDevices)
     } catch (e) {
@@ -772,7 +817,7 @@ export async function sendV2(identity: WebIdentity, peerUin: number, env: Envelo
       // the very session the probe had just declared dead.
       console.warn('resolveTargets failed:', e instanceof Error ? e.message : e)
       if (!targets) throw e
-      targets = { ...targets, at: Date.now() - TARGETS_TTL_MS + TARGETS_RETRY_MS }
+      targets = { ...targets, at: Date.now() - targets.ttl + TARGETS_RETRY_MS }
     }
     // An empty list is never cached: the peer may publish a bundle at any time,
     // and until they do, every send has to ask again.
@@ -847,13 +892,88 @@ export async function sendV2(identity: WebIdentity, peerUin: number, env: Envelo
   return sent
 }
 
+/// Stage 3 of the core-metadata plan: whether this island serves the three key
+/// lookups without a session token AND issues the anonymous deposit tokens a
+/// bundle fetch pays with. Both must be true. A request that carries neither a
+/// session token nor a deposit token only gets a bundle stripped of its
+/// one-time prekey, so a half-anonymous request is never sent: an island short
+/// either flag stays on the authenticated path. A guest clone on a foreign
+/// island stays there too, as it does on Android.
+///
+/// The answer rides server-info's run-long cache, so this costs a network
+/// round trip once per island; a null answer (island down, older than the
+/// flags, or not fetched yet) reads false and keeps the legacy request.
+async function anonKeyMode(identity: WebIdentity): Promise<boolean> {
+  if (identity.guest) return false
+  const caps = (await fetchServerInfo(identity.apiBase))?.capabilities
+  return caps?.anon_keys === true && caps?.deposit_auth === true
+}
+
+/// A key GET that failed, carrying the status so a caller can tell a 404 (the
+/// device or bundle is gone: invalidate the cached list) from a transient
+/// error (keep what we have and retry).
+class KeyLookupError extends Error {
+  constructor(public status: number, path: string) {
+    super(`GET ${path} -> ${status}`)
+  }
+}
+
 // Timed out like every other call here: adoptRegisteredDevice runs these with
 // the cross-tab provisioning lock held, and a fetch that black-holes would keep
 // every other tab of this account from provisioning at all.
+//
+// A GET that consumes nothing: the device list, or the settings screen's own
+// list. On a Stage 3 island it carries no session token (reading a list takes
+// no prekey, so it needs none and the island never learns who asked);
+// authenticated everywhere else.
 async function apiGet(identity: WebIdentity, path: string): Promise<any> {
-  const res = await fetchWithTimeout(`${identity.apiBase}${path}`, { headers: { Authorization: `Bearer ${identity.jwt}` } })
-  if (!res.ok) throw new Error(`GET ${path} -> ${res.status}`)
+  const headers: Record<string, string> = {}
+  if (!(await anonKeyMode(identity))) headers.Authorization = `Bearer ${identity.jwt}`
+  const res = await fetchWithTimeout(`${identity.apiBase}${path}`, { headers })
+  if (!res.ok) throw new KeyLookupError(res.status, path)
   return res.json()
+}
+
+/// The always-authenticated key GET: the legacy path, and the fallback a
+/// Stage 3 bundle fetch takes when no deposit token can be spent.
+async function apiGetAuthed(identity: WebIdentity, path: string): Promise<any> {
+  const res = await fetchWithTimeout(`${identity.apiBase}${path}`, { headers: { Authorization: `Bearer ${identity.jwt}` } })
+  if (!res.ok) throw new KeyLookupError(res.status, path)
+  return res.json()
+}
+
+/// A bundle lookup the way the island wants it: anonymous with a single-use
+/// deposit token on a Stage 3 island, the session token otherwise. Mirrors
+/// Android's RcqApi.fetchBundle.
+///
+/// One token per fetch. The island answers 200 (token spent, one_time_prekey
+/// filled), 403 (a bad, spent or wrong-epoch token, or an island that stopped
+/// issuing: the epoch most likely rotated under the cached params), or 404 (no
+/// such bundle/device; the verifier never saw the token, so it goes back to the
+/// reserve). On 403 the cached params and reserve are dropped, a fresh token is
+/// minted and the fetch is tried once more; a second 403, or no token to be had
+/// at all, falls back to the session-token path for THIS fetch so a send is
+/// never blocked on the mint.
+async function fetchKeyBundle(identity: WebIdentity, path: string): Promise<SignalBundle> {
+  if (!(await anonKeyMode(identity))) return (await apiGetAuthed(identity, path)) as SignalBundle
+  let token = await depositAuth.takeToken(identity.apiBase)
+  let retried = false
+  while (token) {
+    const res = await fetchWithTimeout(`${identity.apiBase}${path}`, {
+      headers: { 'X-Deposit-Token': depositAuth.headerValue(token) },
+    })
+    if (res.ok) return (await res.json()) as SignalBundle
+    if (res.status === 403) {
+      depositAuth.forget(identity.apiBase)
+      if (retried) break
+      retried = true
+      token = await depositAuth.takeToken(identity.apiBase)
+      continue
+    }
+    if (res.status === 404) depositAuth.giveBack(identity.apiBase, token)
+    throw new KeyLookupError(res.status, path)
+  }
+  return (await apiGetAuthed(identity, path)) as SignalBundle
 }
 
 /// The key slots of OUR OWN account, for the settings screen (#643). This is

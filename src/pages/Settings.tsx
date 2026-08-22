@@ -64,7 +64,8 @@ import {
 } from '../lib/multihome'
 import { publishHomeIslandRecord } from '../lib/federation-publish'
 import { pushHomeRecordToContacts } from '../lib/federation-gossip'
-import { useServerInfo, DEFAULT_CAPABILITIES } from '../lib/server-info'
+import { DEFAULT_CAPABILITIES } from '../lib/server-info'
+import { useServerInfo } from '../lib/use-server-info'
 
 export function Settings() {
   const { identity, accounts, switchAccount, addAccount, signOutAccount, signOut } = useIdentity()

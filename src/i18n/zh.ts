@@ -229,13 +229,13 @@ export const zh: Record<string, string> = {
   'how.q3': '不能用了该怎么办？',
   'how.a3': '先弄清是不是被封锁了：设置 → 网络 → 连接诊断，在关闭 VPN 的情况下跑一次完整检查。\n它会给你一行结果。通过「报告问题」发给我们：这一行能准确告诉我们你的网络里被封的是什么，没有它我们只能猜。',
   'how.q4':
-    '当网络屏蔽 RCQ 时会怎样？',
+    '什么是 RCQ 中继？',
   'how.a4':
-    '应用会自己发现并绕过去。不用打开什么，也不需要另外的 VPN：它会向我们的一台中继开一条隧道，然后继续工作。\n在屏蔽方看来，这些流量就像一次普通网站的普通访问——和你的浏览器整天都在建立的加密连接一样。中继运送的是封好的信封，所以它同样读不到你的消息。',
+    '流量不是直接发往岛，而是走我们的中继：岛看不到你的地址，你和岛之间的网络也看不出你在用 RCQ。不需要另外的 VPN，应用会自己开一条到中继的隧道。\n从外面看，这就像一次普通网站的普通访问：和你的浏览器整天都在建立的加密连接一样。中继运送的是封好的信封，所以它同样读不到你的消息。\n在 RCQ 被封锁的地方，这还是唯一能通的路。',
   'how.q5':
     '有人能知道我在跟谁聊天吗？',
   'how.a5':
-    '你的岛知道有个信封寄给了某人，却不知道它出自你手：外面没有你的名字。\n隧道打开时，出口的路被分给两台中继。第一台看得见你，却不知道你要去哪个岛；第二台到得了岛，却不知道你是谁。把两半拼起来需要它们两个，而它们属于不同国家的不同人。\n藏不住的是：只要隧道没开，你在用 RCQ 这件事，掌管你网络的人就看得到。',
+    '你的岛知道有个信封寄给了某人，却不知道它出自你手：外面没有你的名字。\n打开 RCQ 中继时，出口的路被分给两台中继。第一台看得见你，却不知道你要去哪个岛；第二台到得了岛，却不知道你是谁。把两半拼起来需要它们两个，而它们属于不同国家的不同人。\n藏不住的是：只要你不走 RCQ 中继，你在用 RCQ 这件事，掌管你网络的人就看得到。',
   'how.more': '更多问题见 rcq.app/faq →',
   'storage.title': '这个浏览器里存了什么',
   'storage.footer.short': '密钥、聊天记录、列表，以及如何清除',
@@ -373,7 +373,7 @@ export const zh: Record<string, string> = {
   // Connection diagnostics, the phones' ConnectionDiagnostics.
   'diag.title': '连接诊断',
   'diag.route': '路由',
-  'diag.mode_tunnel': '中继（混淆）',
+  'diag.mode_tunnel': '走中继',
   'diag.mode_direct': '直连',
   'diag.island_direct': '岛，直连',
   'diag.island_route': '岛，当前路由',
@@ -391,11 +391,11 @@ export const zh: Record<string, string> = {
   'diag.run_again': '重新检测',
   'diag.footer': '如果岛直连被封锁，但通过当前线路可达，说明中继起了作用。如果两者都不通，说明你的网络把我们能触及的一切都封了。',
   // The header shield, shown only while a relay is carrying the app.
-  'bypass.shield.verified': '正在走中继，而且能通',
+  'bypass.shield.verified': '正在走中继，回应能收到',
   'bypass.shield.unverified': '正在走中继，但还没有收到回应',
-  'bypass.shield.off': '绕过封锁已关闭',
+  'bypass.shield.off': '直连',
   'bypass.auto_note': '已自动开启：岛没有直接响应。',
-  'bypass.needs_relaunch': '连接中断了，因此已开启绕过封锁。重启 RCQ 后它才会生效。',
+  'bypass.needs_relaunch': '连接中断了，因此已开启 RCQ 中继。重启 RCQ 后它们才会生效。',
   'settings.bypass.key_title': '私有池密钥',
   'settings.bypass.key_hint': '只有你在用的付费节点。密钥来自你在 rcq.app 上的后台。',
   'settings.bypass.key_placeholder': '访问密钥',
@@ -410,19 +410,25 @@ export const zh: Record<string, string> = {
   'settings.bypass.relay_remove': '移除',
   'settings.bypass.relay_bad': '这看起来不是可用的中继链接。',
   'settings.bypass.relay_note': '粘贴别人发给你的 rcq-relay:// 链接，或你自己的中继输出的链接。重启后生效。',
-  // Desktop build only — circumvention through the bundled sing-box.
-  'settings.section.bypass': '绕过封锁',
-  'settings.bypass.toggle': '让本应用走 RCQ 中继',
-  'settings.bypass.footer': '在 RCQ 被封锁的地方，应用的流量会走我们的中继，而不是直接出网。默认关闭：在畅通的网络里这只会更慢。',
+  // Desktop build only: the RCQ relays, carried by the bundled sing-box.
+  // Named for what it is (a privacy layer everyone can use), not for who
+  // needs it most. The old "getting through blocks" framing put the
+  // censored case in the headline and left everyone else with no reason
+  // to read the section at all. Keys stay `bypass.*` so the phones and
+  // this client keep matching.
+  'settings.section.bypass': 'RCQ 中继',
+  'settings.bypass.toggle': '让应用走 RCQ 中继',
+  'settings.bypass.footer': '流量不是直接发往岛，而是走我们的中继：岛看不到你的地址，你和岛之间的网络也看不出你在用 RCQ。代价是连接会慢一些。在 RCQ 被封锁的地方，这还是唯一能通的路。',
+  'settings.bypass.learn': '什么是中继？',
   'settings.bypass.restart_note': '重启应用后生效。',
   'settings.bypass.restart_now': '重启',
   'settings.bypass.failed': '连不上中继。重启后可以再试。',
-  'settings.bypass.running': '已开启，正在竞速 {count} 个中继',
+  'settings.bypass.running': '走中继 · {count} 个在竞速',
   'settings.bypass.list_version': '中继列表 v{version}',
   // Shown only by a build compiled without the `mac-bypass` feature. It used to
   // say "needs macOS 14 or newer", which read as an OS problem and was wrong on
   // every Mac that saw it — the released builds simply had the feature off.
-  'settings.bypass.unsupported': '此版本在编译时没有包含绕过封锁的支持。',
+  'settings.bypass.unsupported': '此版本在编译时没有包含 RCQ 中继支持。',
   // Desktop build only — the browser has nothing to update.
   'settings.about.version': '版本',
   'settings.about.update_check': '检查更新',

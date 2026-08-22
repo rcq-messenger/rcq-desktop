@@ -229,13 +229,13 @@ export const pt: Record<string, string> = {
   'how.q3': 'O que faço quando para de funcionar?',
   'how.a3': 'Primeiro descubra se você está sendo bloqueado: Configurações → Rede → Diagnóstico de conexão, e rode a verificação completa COM A VPN DESLIGADA.\nEla devolve uma linha. Mande para nós em Relatar um erro: essa linha diz exatamente o que está fechado na sua rede, e sem ela ficamos no chute.',
   'how.q4':
-    'O que acontece quando minha rede bloqueia o RCQ?',
+    'O que são os relays do RCQ?',
   'how.a4':
-    'O app percebe e contorna sozinho. Não há nada para ligar e não precisa de VPN à parte: ele abre um túnel até um dos nossos relays e continua funcionando.\nPara quem bloqueia, esse tráfego parece uma visita comum a um site comum — o mesmo tipo de conexão criptografada que seu navegador faz o dia inteiro. O relay carrega envelopes lacrados, então ele também não lê suas mensagens.',
+    'O tráfego não vai direto para a ilha, e sim pelos nossos relays: a ilha não vê o seu endereço, e a rede entre você e a ilha não vê que você usa o RCQ. Não precisa de VPN à parte, o app abre sozinho o túnel até um relay.\nDe fora parece uma visita comum a um site comum: o mesmo tipo de conexão criptografada que seu navegador faz o dia inteiro. O relay carrega envelopes lacrados, então ele também não lê suas mensagens.\nOnde o RCQ está bloqueado, isso é também o único caminho.',
   'how.q5':
     'Alguém consegue saber para quem eu escrevo?',
   'how.a5':
-    'Sua ilha sabe que um envelope é endereçado a alguém e não sabe que ele partiu de você: seu nome não está do lado de fora.\nCom o túnel ligado, o caminho de saída é dividido entre dois relays. O primeiro vê você e não sabe a que ilha você vai; o segundo chega à ilha e não sabe quem você é. Juntar as duas metades exige os dois, e eles pertencem a pessoas diferentes em países diferentes.\nO que não dá para esconder: que você usa RCQ é visível para quem controla a sua rede, enquanto o túnel estiver desligado.',
+    'Sua ilha sabe que um envelope é endereçado a alguém e não sabe que ele partiu de você: seu nome não está do lado de fora.\nCom os relays do RCQ ligados, o caminho de saída é dividido entre dois relays. O primeiro vê você e não sabe a que ilha você vai; o segundo chega à ilha e não sabe quem você é. Juntar as duas metades exige os dois, e eles pertencem a pessoas diferentes em países diferentes.\nO que não dá para esconder: que você usa RCQ é visível para quem controla a sua rede, enquanto você não for pelos relays do RCQ.',
   'how.more': 'Mais perguntas em rcq.app/faq →',
   'storage.title': 'O que está neste navegador',
   'storage.footer.short': 'Chaves, conversas, listas e como apagar tudo',
@@ -373,7 +373,7 @@ export const pt: Record<string, string> = {
   // Connection diagnostics, the phones' ConnectionDiagnostics.
   'diag.title': 'Diagnóstico da conexão',
   'diag.route': 'Rota',
-  'diag.mode_tunnel': 'Relay (ofuscado)',
+  'diag.mode_tunnel': 'Pelos relays',
   'diag.mode_direct': 'Direto',
   'diag.island_direct': 'Ilha, direto',
   'diag.island_route': 'Ilha, rota atual',
@@ -391,11 +391,11 @@ export const pt: Record<string, string> = {
   'diag.run_again': 'Verificar de novo',
   'diag.footer': 'Se a ilha está bloqueada no acesso direto mas responde pela rota atual, o relay está fazendo o trabalho dele. Se os dois falham, sua rede está bloqueando tudo que conseguimos alcançar.',
   // The header shield, shown only while a relay is carrying the app.
-  'bypass.shield.verified': 'Passando por um relay, e está passando',
-  'bypass.shield.unverified': 'Passando por um relay, mas nada voltou ainda',
-  'bypass.shield.off': 'Contorno de bloqueios desligado',
-  'bypass.auto_note': 'Ligado automaticamente: a ilha não respondeu no acesso direto.',
-  'bypass.needs_relaunch': 'A conexão parou de funcionar, então o contorno de bloqueios foi ligado. Reinicie o RCQ para começar a usar.',
+  'bypass.shield.verified': 'Pelos relays, e as respostas estão chegando',
+  'bypass.shield.unverified': 'Pelos relays, mas nada voltou ainda',
+  'bypass.shield.off': 'Direto',
+  'bypass.auto_note': 'Ligaram sozinhos: a ilha não respondeu no acesso direto.',
+  'bypass.needs_relaunch': 'A conexão parou de funcionar, então os relays do RCQ foram ligados. Reinicie o RCQ para começar a usá-los.',
   'settings.bypass.key_title': 'Chave do pool privado',
   'settings.bypass.key_hint': 'Endpoints pagos em que ninguém mais está. A chave vem do seu painel em rcq.app.',
   'settings.bypass.key_placeholder': 'chave de acesso',
@@ -410,19 +410,25 @@ export const pt: Record<string, string> = {
   'settings.bypass.relay_remove': 'remover',
   'settings.bypass.relay_bad': 'Isso não parece um link de relay utilizável.',
   'settings.bypass.relay_note': 'Cole um link rcq-relay:// que alguém te mandou, ou um que seu próprio relay imprimiu. Vale depois de reiniciar.',
-  // Desktop build only — circumvention through the bundled sing-box.
-  'settings.section.bypass': 'Passar por bloqueios',
-  'settings.bypass.toggle': 'Levar este app pelos relays do RCQ',
-  'settings.bypass.footer': 'Onde o RCQ está bloqueado, isto leva o tráfego do app pelos nossos relays em vez de sair direto. Vem desligado: numa rede aberta só deixa tudo mais lento.',
+  // Desktop build only: the RCQ relays, carried by the bundled sing-box.
+  // Named for what it is (a privacy layer everyone can use), not for who
+  // needs it most. The old "getting through blocks" framing put the
+  // censored case in the headline and left everyone else with no reason
+  // to read the section at all. Keys stay `bypass.*` so the phones and
+  // this client keep matching.
+  'settings.section.bypass': 'Relays do RCQ',
+  'settings.bypass.toggle': 'Levar o app pelos relays do RCQ',
+  'settings.bypass.footer': 'O tráfego não vai direto para a ilha, e sim pelos nossos relays: a ilha não vê o seu endereço, e a rede entre você e a ilha não vê que você usa o RCQ. Em troca, a conexão fica um pouco mais lenta. Onde o RCQ está bloqueado, isso é também o único caminho.',
+  'settings.bypass.learn': 'O que é um relay?',
   'settings.bypass.restart_note': 'Vale quando o app reiniciar.',
   'settings.bypass.restart_now': 'Reiniciar',
   'settings.bypass.failed': 'Não foi possível alcançar os relays. Reinicie para tentar de novo.',
-  'settings.bypass.running': 'Ligado, corrida entre {count} relays',
+  'settings.bypass.running': 'Pelos relays · {count} na corrida',
   'settings.bypass.list_version': 'lista de relays v{version}',
   // Shown only by a build compiled without the `mac-bypass` feature. It used to
   // say "needs macOS 14 or newer", which read as an OS problem and was wrong on
   // every Mac that saw it — the released builds simply had the feature off.
-  'settings.bypass.unsupported': 'Esta build foi compilada sem suporte a contorno de bloqueios.',
+  'settings.bypass.unsupported': 'Esta build foi compilada sem suporte aos relays do RCQ.',
   // Desktop build only — the browser has nothing to update.
   'settings.about.version': 'Versão',
   'settings.about.update_check': 'Procurar atualizações',

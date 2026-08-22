@@ -229,13 +229,13 @@ export const uk: Record<string, string> = {
   'how.q3': 'Що робити, коли перестало працювати?',
   'how.a3': 'Спершу зʼясуйте, чи справа в блокуванні: Налаштування → Мережа → Діагностика підключення, і повна перевірка З ВИМКНЕНИМ VPN.\nВона дає один рядок. Надішліть його через «Повідомити про помилку»: цей рядок каже нам, що саме закрито у вашій мережі, а без нього ми вгадуємо.',
   'how.q4':
-    'Що відбувається, коли мережа блокує RCQ?',
+    'Що таке релеї RCQ?',
   'how.a4':
-    'Застосунок помічає це й обходить блокування сам. Вмикати нічого не треба, окремий VPN не потрібен: він піднімає тунель до одного з наших релеїв і працює далі.\nДля того, хто блокує, цей трафік виглядає як звичайний захід на звичайний сайт — таке саме шифроване з’єднання, які ваш браузер робить цілий день. Релей несе запечатані конверти, тож і він ваших повідомлень не читає.',
+    'Трафік іде не прямо до острова, а через наші релеї: острів не бачить вашу адресу, а мережа між вами й островом не бачить, що ви користуєтеся RCQ. Окремий VPN для цього не потрібен, застосунок сам піднімає тунель до релея.\nЗзовні це виглядає як звичайний захід на звичайний сайт: таке саме шифроване з’єднання, які ваш браузер робить цілий день. Релей несе запечатані конверти, тож і він ваших повідомлень не читає.\nТам, де RCQ заблоковано, це до того ж єдиний шлях.',
   'how.q5':
     'Чи може хтось дізнатися, кому я пишу?',
   'how.a5':
-    'Ваш острів знає, що конверт комусь адресовано, і не знає, що він від вас: вашого імені зовні немає.\nКоли тунель увімкнено, шлях назовні поділено між двома релеями. Перший бачить вас і не знає, до якого острова ви йдете; другий доходить до острова і не знає, хто ви. Щоб скласти половинки, потрібні обидва, а вони належать різним людям у різних країнах.\nЧого приховати не можна: сам факт, що ви користуєтеся RCQ, видно тому, хто тримає вашу мережу, — доки тунель не ввімкнено.',
+    'Ваш острів знає, що конверт комусь адресовано, і не знає, що він від вас: вашого імені зовні немає.\nКоли увімкнено релеї RCQ, шлях назовні поділено між двома релеями. Перший бачить вас і не знає, до якого острова ви йдете; другий доходить до острова і не знає, хто ви. Щоб скласти половинки, потрібні обидва, а вони належать різним людям у різних країнах.\nЧого приховати не можна: сам факт, що ви користуєтеся RCQ, видно тому, хто тримає вашу мережу, доки ви не йдете через релеї RCQ.',
   'how.more': 'Більше питань на rcq.app/faq →',
   'storage.title': 'Що лежить у цьому браузері',
   'storage.footer.short': 'Ключі, листування, списки і чим це стерти',
@@ -373,7 +373,7 @@ export const uk: Record<string, string> = {
   // Connection diagnostics, the phones' ConnectionDiagnostics.
   'diag.title': 'Діагностика з\'єднання',
   'diag.route': 'Маршрут',
-  'diag.mode_tunnel': 'Через релей (обфускація)',
+  'diag.mode_tunnel': 'Через релеї',
   'diag.mode_direct': 'Напряму',
   'diag.island_direct': 'Острів, напряму',
   'diag.island_route': 'Острів, поточний маршрут',
@@ -391,11 +391,11 @@ export const uk: Record<string, string> = {
   'diag.run_again': 'Перевірити ще раз',
   'diag.footer': 'Якщо острів заблоковано напряму, але поточним маршрутом він доступний, релей робить свою справу. Якщо не працює ні те, ні те, твоя мережа блокує все, до чого ми можемо дістатися.',
   // The header shield, shown only while a relay is carrying the app.
-  'bypass.shield.verified': 'Ідемо через релей, і він пропускає',
-  'bypass.shield.unverified': 'Ідемо через релей, але відповіді ще не було',
-  'bypass.shield.off': 'Обхід вимкнено',
-  'bypass.auto_note': 'Увімкнено автоматично: острів не відповів напряму.',
-  'bypass.needs_relaunch': 'З\'єднання перестало працювати, тому увімкнено обхід. Перезапусти RCQ, щоб почати ним користуватися.',
+  'bypass.shield.verified': 'Через релеї, відповіді надходять',
+  'bypass.shield.unverified': 'Через релеї, але відповіді ще не було',
+  'bypass.shield.off': 'Напряму',
+  'bypass.auto_note': 'Увімкнулися автоматично: острів не відповів напряму.',
+  'bypass.needs_relaunch': 'З\'єднання перестало працювати, тому увімкнулися релеї RCQ. Перезапусти RCQ, щоб вони запрацювали.',
   'settings.bypass.key_title': 'Ключ приватного пулу',
   'settings.bypass.key_hint': 'Платні вузли, на яких більше нікого немає. Ключ береться з твого кабінету на rcq.app.',
   'settings.bypass.key_placeholder': 'ключ доступу',
@@ -410,19 +410,25 @@ export const uk: Record<string, string> = {
   'settings.bypass.relay_remove': 'прибрати',
   'settings.bypass.relay_bad': 'Це не схоже на придатне посилання релея.',
   'settings.bypass.relay_note': 'Встав посилання rcq-relay://, яке тобі надіслали або яке видав твій власний релей. Спрацює після перезапуску.',
-  // Desktop build only — circumvention through the bundled sing-box.
-  'settings.section.bypass': 'Обхід блокувань',
+  // Desktop build only: the RCQ relays, carried by the bundled sing-box.
+  // Named for what it is (a privacy layer everyone can use), not for who
+  // needs it most. The old "getting through blocks" framing put the
+  // censored case in the headline and left everyone else with no reason
+  // to read the section at all. Keys stay `bypass.*` so the phones and
+  // this client keep matching.
+  'settings.section.bypass': 'Релеї RCQ',
   'settings.bypass.toggle': 'Пускати застосунок через релеї RCQ',
-  'settings.bypass.footer': 'Там, де RCQ заблоковано, це веде трафік застосунку через наші релеї, а не навпростець. За замовчуванням вимкнено: у вільній мережі воно лише сповільнює.',
+  'settings.bypass.footer': 'Трафік іде не прямо до острова, а через наші релеї: острів не бачить твою адресу, а мережа між тобою й островом не бачить, що ти користуєшся RCQ. Натомість зв\'язок стає трохи повільнішим. Там, де RCQ заблоковано, це до того ж єдиний шлях.',
+  'settings.bypass.learn': 'Що таке релей?',
   'settings.bypass.restart_note': 'Спрацює після перезапуску застосунку.',
   'settings.bypass.restart_now': 'Перезапустити',
   'settings.bypass.failed': 'Не вдалося дістатися релеїв. Перезапусти, щоб спробувати ще раз.',
-  'settings.bypass.running': 'Увімкнено, змагаються {count} релеїв',
+  'settings.bypass.running': 'Через релеї · у гонці: {count}',
   'settings.bypass.list_version': 'список релеїв v{version}',
   // Shown only by a build compiled without the `mac-bypass` feature. It used to
   // say "needs macOS 14 or newer", which read as an OS problem and was wrong on
   // every Mac that saw it — the released builds simply had the feature off.
-  'settings.bypass.unsupported': 'Цю збірку зібрано без підтримки обходу.',
+  'settings.bypass.unsupported': 'Цю збірку зібрано без підтримки релеїв RCQ.',
   // Desktop build only — the browser has nothing to update.
   'settings.about.version': 'Версія',
   'settings.about.update_check': 'Перевірити оновлення',

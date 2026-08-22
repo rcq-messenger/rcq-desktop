@@ -1,5 +1,11 @@
-// Header shield for the desktop bypass, the same badge the phones carry — and
-// on desktop also the way in to turning it on.
+// Header shield for the RCQ relays on desktop, the same badge the phones
+// carry, and on desktop also the way in to turning them on.
+//
+// The feature is named "RCQ relays" in every string now, not "bypass" or
+// "circumvention": it is a privacy layer anyone can use, and being the only
+// road out of a censored network is a consequence of that, not the pitch. The
+// `bypass.*` / `settings.bypass.*` keys and this file's name are unchanged on
+// purpose so the four clients keep sharing one vocabulary of keys.
 //
 // It is deliberately honest about two things: solid only once the island has
 // answered THROUGH the relay, amber while the tunnel is up but has not been
@@ -133,6 +139,19 @@ export function BypassShield({ className = '' }: { className?: string }) {
             />
           </label>
 
+          {/* The switch says "relays" and this is the only screen some people
+              will ever meet the word on, so the way to look it up has to be
+              here and not only in Settings. target="_blank" is turned into the
+              system browser by the handler main.tsx installs. */}
+          <a
+            href="https://rcq.app/faq#relays"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-block text-xs text-accent underline-offset-2 hover:underline"
+          >
+            {t('settings.bypass.learn')}
+          </a>
+
           {!status.supported && (
             <p className="text-xs text-fg-dim">{t('settings.bypass.unsupported')}</p>
           )}
@@ -156,7 +175,7 @@ export function BypassShield({ className = '' }: { className?: string }) {
                 onClick={() => void relaunchApp()}
                 className="shrink-0 h-7 px-2 rounded-md bg-field text-xs font-medium hover:bg-line/50 transition-colors"
               >
-                {t('settings.bypass.restart')}
+                {t('settings.bypass.restart_now')}
               </button>
             </div>
           )}

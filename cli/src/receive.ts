@@ -19,6 +19,7 @@ import { Api, peerBundleFrom } from '../../src/lib/api'
 import { encryptV1, type CarbonEnvelope, type Envelope, type WebIdentity } from '../../src/lib/crypto'
 import { handleSkdm, handleSknack, replayHeldGmsg } from '../../src/lib/sender-key-receive'
 import { foreignHost, groupLabel, isContact, knownName, labelForLine, peerLabel } from './directory'
+import { chatLine, when } from './format'
 import { openGroupPacket, replayStoredGroupPackets } from './held-groups'
 import { tr } from './i18n'
 import { statePath } from './state'
@@ -116,10 +117,6 @@ export function hasWrittenTo(myUin: number, peerUin: number): boolean {
   return wroteTo.has(peerUin)
 }
 
-export function stamp(): string {
-  return new Date().toTimeString().slice(0, 8)
-}
-
 /// Status that must be said but not repeated: a receipt that cannot go out
 /// fails once per message on a dead network, and a line each would bury the
 /// conversation it is reporting on.
@@ -196,7 +193,7 @@ export function announceGroupNews(myUin: number): void {
     groupAnnounced.set(gid, now)
     const how = interactive ? tr('group.readInteractive', { gid }) : tr('group.readOneShot', { gid })
     const room = groupLabel(myUin, gid)
-    process.stderr.write(err.dim(`[${stamp()}] [${room}] ${tr('group.unread', { n, how })}`) + '\n')
+    process.stderr.write(err.dim(`[${when()}] [${room}] ${tr('group.unread', { n, how })}`) + '\n')
   }
 }
 
@@ -271,13 +268,20 @@ interface Decrypted {
 /// File + print one decrypted envelope, and queue the delivered receipt for a
 /// 1:1 content message from a peer. Shared by the queue drain and the live
 /// socket path so both behave identically.
+///
+/// `receivedAt` is when the ISLAND took the message, off the queue row. Absent
+/// for live traffic, which is happening now. It decides both the printed clock
+/// and the history row's stamp: without it a two-day backlog prints, and is
+/// filed, as if all of it had been said this second.
 export async function ingestDecrypted(
   identity: WebIdentity,
   got: Decrypted,
   groupId: number | null | undefined,
   result: IngestResult,
+  receivedAt?: Date,
 ): Promise<void> {
   ensureHistoryIndex(identity.uin)
+  const at = receivedAt ?? new Date()
   const env = got.envelope
   // Their island when it is not ours, undefined otherwise. Read it once here:
   // `got.senderHost` on its own is set for local v=1 senders too (see
@@ -304,13 +308,13 @@ export async function ingestDecrypted(
     // phone was filed as a 1:1 row addressed to nobody, so the room's own log
     // was missing our half of every conversation in it.
     appendHistory(identity.uin, {
-      at: new Date().toISOString(),
+      at: at.toISOString(),
       from: identity.uin,
       to: c.to ?? undefined,
       gid: c.gid ?? undefined,
       envelope: inner,
     })
-    emit(`${out.dim(`[${stamp()}]`)} ${out.green(`me -> ${dest}`)}: ${describeEnvelope(inner)}\n`)
+    emit(chatLine(at, out.green(`me -> ${dest}`), describeEnvelope(inner)) + '\n')
     return
   }
   if (env.kind === 'read' || env.kind === 'delivered') {
@@ -320,7 +324,7 @@ export async function ingestDecrypted(
     // "delivered" in its one summary line.
     if (process.env.RCQ_VERBOSE) {
       const from = peerLabel(identity.uin, got.senderUIN, host)
-      process.stderr.write(`[${stamp()}] ${env.kind} receipt from ${from}: ${ids.join(', ')}\n`)
+      process.stderr.write(`[${when(at)}] ${env.kind} receipt from ${from}: ${ids.join(', ')}\n`)
     }
     return
   }
@@ -336,6 +340,7 @@ export async function ingestDecrypted(
       // serves skdm rows first). Replay whatever was held for this kid through
       // the normal decrypt path, in arrival order.
       for (const m of await replayHeldGmsg(identity, skdm.kid).catch(() => [])) {
+        // Held in MEMORY, so it arrived seconds ago: now is the honest stamp.
         await ingestDecrypted(identity, { senderUIN: m.senderUIN, envelope: m.envelope }, m.gid, result)
       }
       // And the disk half: a broadcast this box could not open days ago, in
@@ -355,7 +360,7 @@ export async function ingestDecrypted(
     // the rest of the debugging detail.
     if (process.env.RCQ_VERBOSE) {
       const from = peerLabel(identity.uin, got.senderUIN, host)
-      process.stderr.write(err.dim(`[${stamp()}] ${env.kind} from ${from} (not supported by the CLI yet)`) + '\n')
+      process.stderr.write(err.dim(`[${when(at)}] ${env.kind} from ${from} (not supported by the CLI yet)`) + '\n')
     }
     return
   }
@@ -365,7 +370,7 @@ export async function ingestDecrypted(
     seen.add(id)
   }
   appendHistory(identity.uin, {
-    at: new Date().toISOString(),
+    at: at.toISOString(),
     from: got.senderUIN,
     dev: got.senderDeviceId,
     host: got.senderHost,
@@ -379,7 +384,7 @@ export async function ingestDecrypted(
     // auto-picked a random RCQ Beta poster as "replying to".
     if (openGroup === groupId || openGroup === 'all' || process.env.RCQ_VERBOSE) {
       const from = await labelForLine(identity, got.senderUIN, host)
-      emit(`${out.dim(`[${stamp()}]`)} ${groupTag(identity.uin, groupId)} ${peer(got.senderUIN, from)}: ${describeEnvelope(env)}\n`)
+      emit(chatLine(at, `${groupTag(identity.uin, groupId)} ${peer(got.senderUIN, from)}`, describeEnvelope(env)) + '\n')
       if (got.senderUIN !== identity.uin) result.contentCount = (result.contentCount ?? 0) + 1
       return
     }
@@ -389,7 +394,7 @@ export async function ingestDecrypted(
     return
   }
   const from = await labelForLine(identity, got.senderUIN, host)
-  emit(`${out.dim(`[${stamp()}]`)} ${peer(got.senderUIN, from)}: ${describeEnvelope(env)}\n`)
+  emit(chatLine(at, peer(got.senderUIN, from), describeEnvelope(env)) + '\n')
   result.contentCount = (result.contentCount ?? 0) + 1
   if (got.senderUIN !== identity.uin) result.lastPeerFrom = got.senderUIN
   // Somebody who is in no list of yours just reached you. Said once per peer,
@@ -458,7 +463,8 @@ async function sendDeliveredReceipt(identity: WebIdentity, peerUin: number, targ
 /// while this box was off) and the end of one that carried an SKDM.
 async function replayStored(identity: WebIdentity, result: IngestResult): Promise<void> {
   for (const m of await replayStoredGroupPackets(identity).catch(() => [])) {
-    await ingestDecrypted(identity, { senderUIN: m.senderUIN, envelope: m.envelope }, m.gid, result)
+    // A packet held on disk may be days old: it keeps the time it landed.
+    await ingestDecrypted(identity, { senderUIN: m.senderUIN, envelope: m.envelope }, m.gid, result, new Date(m.at))
   }
 }
 
@@ -480,6 +486,18 @@ interface QueueRow {
   payload: string
   group_id: number | null
   to_device_id?: number | null
+  /// When the ISLAND took the message (ISO 8601). The field has always been on
+  /// the row and the CLI never declared it, so a backlog printed and was filed
+  /// with the clock of the moment it was read.
+  received_at?: string
+}
+
+/// The island's stamp for a row, or undefined when it did not send one (an
+/// older island): the caller then falls back to now, as it always did.
+function rowTime(r: QueueRow): Date | undefined {
+  if (!r.received_at) return undefined
+  const d = new Date(/(?:Z|[+-]\d{2}:?\d{2})$/i.test(r.received_at) ? r.received_at : `${r.received_at}Z`)
+  return Number.isNaN(d.getTime()) ? undefined : d
 }
 
 function fetchWithTimeout(url: string, init: RequestInit, ms = 30_000): Promise<Response> {
@@ -520,6 +538,7 @@ export async function drainQueue(identity: WebIdentity): Promise<IngestResult | 
   const directIds: number[] = []
   const groupIds: number[] = []
   for (const r of rows) {
+    const at = rowTime(r)
     try {
       if (typeof r.to_device_id === 'number' && r.to_device_id !== myDev) {
         // A fan-out copy for a sibling device: encrypted against a ratchet
@@ -539,7 +558,7 @@ export async function drainQueue(identity: WebIdentity): Promise<IngestResult | 
           // case the raw packet is now on disk, so the ack below is honest.
           const got = await openGroupPacket(identity, r.payload, r.group_id)
           if (got) {
-            await ingestDecrypted(identity, { senderUIN: got.senderUIN, envelope: got.envelope }, r.group_id, result)
+            await ingestDecrypted(identity, { senderUIN: got.senderUIN, envelope: got.envelope }, r.group_id, result, at)
           }
         }
       } else {
@@ -548,7 +567,7 @@ export async function drainQueue(identity: WebIdentity): Promise<IngestResult | 
           // A decrypted envelope proves the sending DEVICE can talk to us —
           // its silence probe stands down (v=1 names no device).
           if (got.senderUIN !== identity.uin) noteInboundFrom(got.senderUIN, got.senderDeviceId)
-          await ingestDecrypted(identity, got, r.group_id, result)
+          await ingestDecrypted(identity, got, r.group_id, result, at)
         }
       }
       // Processed to its end — including "decrypted to nothing", which is

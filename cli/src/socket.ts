@@ -8,6 +8,8 @@
 
 import { currentDeviceId } from '../../src/lib/signal-device'
 import type { WebIdentity } from '../../src/lib/crypto'
+import { tr } from './i18n'
+import { err } from './style'
 
 /// Copied from message-receiver.tsx: every sealed 1:1 envelope_type a peer or
 /// our own other device can push. The server ships each frame with ws `type` =
@@ -69,6 +71,14 @@ export class RcqSocket {
   private backoff = 0
   private openedAt: number | null = null
   private stopped = false
+  /// Whether the person has already been told the connection is gone.
+  ///
+  /// A flapping network used to write two raw lines per redial (`[ws] closed
+  /// code=1006 …`, `[ws] connected`) straight into the middle of a
+  /// conversation, forever. The codes are debugging detail (RCQ_VERBOSE keeps
+  /// them); what a person needs is one line when the client goes offline and
+  /// one when it comes back.
+  private downSaid = false
 
   constructor(
     private identity: WebIdentity,
@@ -106,7 +116,11 @@ export class RcqSocket {
 
     ws.addEventListener('open', () => {
       this.openedAt = Date.now()
-      process.stderr.write('[ws] connected\n')
+      if (process.env.RCQ_VERBOSE) process.stderr.write('[ws] connected\n')
+      if (this.downSaid) {
+        this.downSaid = false
+        process.stderr.write(err.dim(tr('ws.up')) + '\n')
+      }
       if (this.pingTimer) clearInterval(this.pingTimer)
       this.pingTimer = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ping' }))
@@ -154,11 +168,17 @@ export class RcqSocket {
       if (this.stopped) return
       const { code, reason } = ev as { code: number; reason: string }
       const lived = this.openedAt ? Date.now() - this.openedAt : 0
-      process.stderr.write(`[ws] closed code=${code} reason=${reason || '-'} lived=${(lived / 1000).toFixed(1)}s\n`)
+      if (process.env.RCQ_VERBOSE) {
+        process.stderr.write(`[ws] closed code=${code} reason=${reason || '-'} lived=${(lived / 1000).toFixed(1)}s\n`)
+      }
       // 4401 / 4403 are auth-rejected — reconnecting cannot help.
       if (code === 4401 || code === 4403) {
         this.handlers.onAuthRejected?.()
         return
+      }
+      if (!this.downSaid) {
+        this.downSaid = true
+        process.stderr.write(err.dim(tr('ws.down')) + '\n')
       }
       if (lived >= STABLE_MS) this.backoff = 0
       this.openedAt = null

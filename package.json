@@ -12,7 +12,7 @@
     "desktop:dev": "tauri dev",
     "desktop:build": "tauri build",
     "cli:build": "node cli/build.mjs",
-    "cli:test": "node cli/build.mjs && node cli/test/roundtrip.mjs"
+    "cli:test": "node cli/build.mjs && node cli/test/roundtrip.mjs && node cli/test/group-roundtrip.mjs"
   },
   "dependencies": {
     "@noble/ciphers": "^1.0.0",

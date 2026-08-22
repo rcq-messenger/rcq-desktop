@@ -24,6 +24,9 @@ import type { WebIdentity } from '../../src/lib/crypto'
 import { idbGet } from '../shims/signal-persist'
 import {
   cachedContacts,
+  cachedPending,
+  groupById,
+  groupSize,
   initDirectory,
   isContact,
   knownName,
@@ -32,8 +35,26 @@ import {
   primeDirectory,
   refreshDirectory,
 } from './directory'
-import { drainQueue, hasThreadWith, historyPath, ingestDecrypted, type IngestResult } from './receive'
+import {
+  advertiseSenderKeys,
+  describeGroupError,
+  listGroups,
+  rosterFor,
+  ruleRefusal,
+  sendGroupText,
+} from './groups'
+import {
+  drainQueue,
+  hasThreadWith,
+  historyPath,
+  ingestDecrypted,
+  ingestGroupPacket,
+  setOpenGroup,
+  type IngestResult,
+} from './receive'
 import { runInteractive } from './interactive'
+import { logRowData, parseThread, readLog, type Thread } from './log'
+import { cancelRequest, describeRequestFrame, loadRequests, respondTo, sendRequest } from './requests'
 import { sendText } from './send'
 import { isYes, strangerCheck } from './stranger'
 import { RcqSocket } from './socket'
@@ -75,7 +96,7 @@ function usageDie(msg?: string): never {
 
 /// Flags that stand alone, with no value after them. Everything else is
 /// `--flag value`, and a value flag with nothing behind it stays a usage error.
-const BOOL_FLAGS = new Set(['--yes'])
+const BOOL_FLAGS = new Set(['--yes', '--groups'])
 
 /// Pull `--flag value` pairs out of argv; what remains are positionals.
 function parseArgs(argv: string[]): { pos: string[]; opts: Map<string, string>; flags: Set<string> } {
@@ -239,8 +260,139 @@ async function cmdAdd(pos: string[]): Promise<void> {
   // A request to a number nobody holds is a typo, and the island answers 404
   // to the request itself with nothing a person can read.
   if ((await lookupUser(id, uin)).state === 'missing') die(tr('stranger.missing', { uin }))
-  await Api.sendContactRequest(id, uin)
-  process.stderr.write(tr('add.sent', { who: peerLabel(id.uin, uin) }) + '\n')
+  const state = await sendRequest(id, uin)
+  const who = peerLabel(id.uin, uin)
+  // ⚠ The island auto-accepts when they had already asked for us, and answers
+  // `state: "accepted"`. The old command threw the body away and said "request
+  // sent", so the one case where adding WORKED read exactly like the case
+  // where somebody now has to answer.
+  process.stderr.write(
+    (state === 'accepted' ? tr('add.mutual', { who }) : state === 'already' ? tr('add.already', { who }) : tr('add.sent', { who })) + '\n',
+  )
+  // stdout is the machine contract: one word for what actually happened.
+  process.stdout.write(`${state}\n`)
+}
+
+/// Requests in both directions, one row each. `in`/`out` first so a script can
+/// grep a side without parsing the rest.
+async function cmdRequests(): Promise<void> {
+  const id = await withToken(requireIdentity())
+  const { incoming, outgoing } = await loadRequests(id)
+  for (const r of incoming) process.stdout.write(`in\t${r.from_uin}\t${r.nickname}\tpending\n`)
+  for (const r of outgoing) process.stdout.write(`out\t${r.to_uin}\t${r.nickname}\t${r.state}\n`)
+  if (incoming.length === 0 && outgoing.length === 0) process.stderr.write(tr('req.none') + '\n')
+}
+
+async function cmdRespond(pos: string[], accept: boolean): Promise<void> {
+  const uin = Number(pos[0])
+  if (!Number.isInteger(uin) || uin <= 0) usageDie(tr(accept ? 'accept.needsUin' : 'decline.needsUin'))
+  const id = await withToken(requireIdentity())
+  const res = await respondTo(id, uin, accept)
+  if (!res.ok) die(res.reason)
+  const who = peerLabel(id.uin, uin)
+  process.stderr.write((res.answer === 'accepted' ? tr('req.youAccepted', { who }) : tr('req.youDeclined', { who })) + '\n')
+  process.stdout.write(`${res.answer}\n`)
+}
+
+/// Withdraw a request we sent, or dismiss one that was declined.
+async function cmdCancel(pos: string[]): Promise<void> {
+  const uin = Number(pos[0])
+  if (!Number.isInteger(uin) || uin <= 0) usageDie(tr('cancel.needsUin'))
+  const id = await withToken(requireIdentity())
+  await cancelRequest(id, uin)
+  process.stderr.write(tr('req.cancelled', { who: peerLabel(id.uin, uin) }) + '\n')
+}
+
+/// Look somebody up by name. Same row shape as `contacts`, because it answers
+/// the same question one step earlier: you cannot write to a number you have
+/// no way of finding.
+async function cmdFind(pos: string[]): Promise<void> {
+  const q = pos[0]?.trim()
+  if (!q) usageDie(tr('find.needsQuery'))
+  const id = await withToken(requireIdentity())
+  const found = await Api.searchUsers(id, q)
+  for (const u of found) process.stdout.write(`${u.uin}\t${u.nickname}\t${u.status}\n`)
+  if (found.length === 0) process.stderr.write(tr('find.none', { q }) + '\n')
+}
+
+async function cmdBlock(pos: string[], on: boolean): Promise<void> {
+  const uin = Number(pos[0])
+  if (!Number.isInteger(uin) || uin <= 0) usageDie(tr('block.needsUin'))
+  const id = await withToken(requireIdentity())
+  await Api.blockContact(id, uin, on)
+  const who = peerLabel(id.uin, uin)
+  process.stderr.write((on ? tr('block.done', { who }) : tr('block.undone', { who })) + '\n')
+  await refreshDirectory(id).catch(() => null)
+}
+
+/// Drop a contact on both sides. Asks first on a TTY, wants `--yes` from a
+/// script: it is mutual and there is no undo except asking to be added back.
+async function cmdRemove(pos: string[], flags: Set<string>): Promise<void> {
+  const uin = Number(pos[0])
+  if (!Number.isInteger(uin) || uin <= 0) usageDie(tr('remove.needsUin'))
+  const id = await withToken(requireIdentity())
+  await primeDirectory(id)
+  const who = peerLabel(id.uin, uin)
+  if (!flags.has('--yes')) {
+    if (!process.stdin.isTTY || !process.stderr.isTTY) die(tr('remove.needsYes', { who }))
+    const rl = readline.createInterface({ input: process.stdin, output: process.stderr })
+    const answer = await new Promise<string>((r) => rl.question(tr('remove.confirm', { who }), r))
+    rl.close()
+    if (!isYes(answer)) die(tr('remove.cancelled'), 0)
+  }
+  await Api.removeContact(id, uin)
+  process.stderr.write(tr('remove.done', { who }) + '\n')
+  await refreshDirectory(id).catch(() => null)
+}
+
+/// The rooms this account is in. Rules ride along as raw tokens (`owner_only`,
+/// `slowmode=30`, `no_links`) so a script can act on them; the reading of them
+/// is the interactive `/g` list's job.
+async function cmdGroups(): Promise<void> {
+  const id = await withToken(requireIdentity())
+  await primeDirectory(id)
+  for (const g of listGroups(id.uin)) {
+    const rules: string[] = []
+    if (g.post_policy === 'owner_only') rules.push('owner_only')
+    if ((g.slowmode_sec ?? 0) > 0) rules.push(`slowmode=${g.slowmode_sec}`)
+    if (g.links_allowed === false) rules.push('no_links')
+    if (g.files_allowed === false) rules.push('no_files')
+    process.stdout.write(`${g.id}\t${g.name}\t${groupSize(g)}\t${rules.join(',')}\n`)
+  }
+}
+
+/// Join an open group by id. A closed one refuses, and says so rather than
+/// handing over a 403.
+async function cmdJoin(pos: string[]): Promise<void> {
+  const gid = Number((pos[0] ?? '').replace(/^g/i, ''))
+  if (!Number.isInteger(gid) || gid <= 0) usageDie(tr('join.needsId'))
+  const id = await withToken(requireIdentity())
+  const preview = await Api.groupPreview(id, gid).catch(() => null)
+  if (!preview) die(tr('join.noSuchGroup', { gid }))
+  if (preview.is_closed) die(tr('join.closed', { name: preview.name }))
+  const group = await Api.joinGroup(id, gid).catch((e: unknown) => die(tr('join.failed', { err: describeGroupError(e) })))
+  await refreshDirectory(id).catch(() => null)
+  process.stdout.write(`${group.id}\t${group.name}\n`)
+  process.stderr.write(tr('join.done', { name: group.name }) + '\n')
+}
+
+/// What was already said, back out of the history file. Offline, instant, and
+/// the only way to read a room the console kept a count for.
+async function cmdLog(pos: string[]): Promise<void> {
+  const id = requireIdentity()
+  // ⚠ The FIRST positional is always the thread, never a count. `rcq log 396`
+  // has to mean the conversation with #396: a bare number is a uin everywhere
+  // else in this CLI, and one command reading it as "the last 396 lines" is
+  // the kind of inconsistency that gets somebody the wrong file.
+  let thread: Thread = null
+  if (pos.length > 0) {
+    thread = parseThread(pos[0])
+    if (!thread) usageDie(tr('log.badThread', { what: pos[0] }))
+  }
+  const n = pos.length > 1 && Number(pos[1]) > 0 ? Number(pos[1]) : 20
+  const rows = readLog(id.uin, thread, n)
+  for (const r of rows) process.stdout.write(logRowData(r) + '\n')
+  if (rows.length === 0) process.stderr.write(tr('log.empty') + '\n')
 }
 
 /// The one-shot half of the stranger gate; the interactive loop runs the same
@@ -269,9 +421,43 @@ async function strangerGate(identity: WebIdentity, uin: number, assumeYes: boole
   return isYes(answer)
 }
 
+/// `rcq send g21 "text"`: one post into a room, for cron and pipes. No
+/// receipts to wait for (a room has as many recipients as members and one tick
+/// cannot stand for all of them), so this returns as soon as the fan-out is
+/// away.
+async function cmdSendGroup(gid: number, text: string): Promise<void> {
+  const identity = await withToken(requireIdentity())
+  // The POST itself is v=1 all the way (per-member seals and one broadcast, no
+  // libsignal session), but the drain below needs this install's device id.
+  await getDevice(identity).catch((e) => {
+    process.stderr.write(tr('provision.v1only', { err: e instanceof Error ? e.message : String(e) }) + '\n')
+  })
+  await primeDirectory(identity)
+  const base = groupById(identity.uin, gid)
+  if (!base) die(tr('group.notMember', { gid }))
+  const group = await rosterFor(identity, base).catch((e: unknown) => die(e instanceof Error ? e.message : String(e)))
+  const refusal = ruleRefusal(identity, group, text)
+  if (refusal) die(refusal)
+  advertiseSenderKeys(identity)
+  await drainQueue(identity)
+  let sent: { id: string; mode: string }
+  try {
+    sent = await sendGroupText(identity, group, text)
+  } catch (e) {
+    die(tr('send.failed', { err: describeGroupError(e) }))
+  }
+  if (process.env.RCQ_VERBOSE) process.stderr.write(`mode: ${sent.mode}\n`)
+  const word = tr('word.sent')
+  process.stdout.write(process.stdout.isTTY ? `${out.green('✓')} ${word}\n` : `${word}\n`)
+}
+
 async function cmdSend(pos: string[], flags: Set<string>): Promise<void> {
-  const uin = Number(pos[0])
+  const target = pos[0] ?? ''
   const text = pos[1]
+  // A room is `g<id>`; anything else is a uin. Unambiguous in both directions,
+  // and the same spelling `rcq log g21` uses.
+  if (/^g\d+$/i.test(target) && text) return cmdSendGroup(Number(target.slice(1)), text)
+  const uin = Number(target)
   if (!Number.isInteger(uin) || uin <= 0 || !text) usageDie(tr('send.needsArgs'))
   const identity = await withToken(requireIdentity())
   await getDevice(identity).catch((e) => {
@@ -282,6 +468,8 @@ async function cmdSend(pos: string[], flags: Set<string>): Promise<void> {
   // is about to print. Replaces the contacts fetch this command already paid
   // for, and persists it, so the next run starts warm.
   await primeDirectory(identity)
+  // The drain below opens group broadcasts, so the account may say so.
+  advertiseSenderKeys(identity)
   // The island's mailbox is open by design (UIN culture: anyone can write
   // first, the recipient decides what to do with strangers). What is not by
   // design is doing it by accident: a typo'd uin is one keystroke.
@@ -310,8 +498,12 @@ async function cmdSend(pos: string[], flags: Set<string>): Promise<void> {
   }
 }
 
-async function cmdWatch(): Promise<void> {
+async function cmdWatch(flags: Set<string>): Promise<void> {
   const identity = await withToken(requireIdentity())
+  // A stream feeding a log or a bridge wants the rooms too, and there is no
+  // prompt here to flood. Off by default: `watch` on a screen is a 1:1 surface
+  // and thirty rooms would bury it, same rule as the interactive badges.
+  if (flags.has('--groups')) setOpenGroup('all')
   await getDevice(identity).catch((e) => {
     process.stderr.write(tr('provision.v1receive', { err: e instanceof Error ? e.message : String(e) }) + '\n')
   })
@@ -321,43 +513,52 @@ async function cmdWatch(): Promise<void> {
   await myDeviceId(identity).catch(() => null)
   // Names before the first line, not after it (see directory.ts).
   await primeDirectory(identity)
+  // This stream opens group broadcasts, so the account may say so (see the
+  // warning on advertiseSenderKeys).
+  advertiseSenderKeys(identity)
   // The backlog first, socket second — and keep draining on a timer while no
   // socket is open. A connect-only drain delivers nothing, forever, on a
   // network that answers every HTTPS request and kills every WebSocket.
   await drainQueue(identity)
   const liveOut: IngestResult = { receiptTargets: [] }
-  const sock = new RcqSocket(
-    identity,
-    (frame) => {
+  // No device to open it with yet: the same envelope sits in the queue, and
+  // the reconnect drain delivers it. Said out loud all the same: a silent
+  // catch here is a message that never appeared and never will be mentioned.
+  const liveFailed = (e: unknown): void => {
+    process.stderr.write(err.dim(tr('fail.live', { err: e instanceof Error ? e.message : String(e) })) + '\n')
+  }
+  const sock = new RcqSocket(identity, {
+    onSealed: (frame) => {
       void (async () => {
         const got = await decryptIncoming(identity, frame.payload)
         if (!got) return
         if (got.senderUIN !== identity.uin) noteInboundFrom(got.senderUIN, got.senderDeviceId)
         await ingestDecrypted(identity, got, frame.group_id, liveOut)
-      })().catch((e: unknown) => {
-        // No device to open it with yet: the same envelope sits in the queue,
-        // and the reconnect drain delivers it. Said out loud all the same: a
-        // silent catch here is a message that never appeared and never will be
-        // mentioned.
-        process.stderr.write(
-          err.dim(tr('fail.live', { err: e instanceof Error ? e.message : String(e) })) + '\n',
-        )
-      })
+      })().catch(liveFailed)
     },
-    () => {
+    onGroup: (frame) => {
+      void ingestGroupPacket(identity, frame.payload, frame.group_id, liveOut).catch(liveFailed)
+    },
+    onControl: (frame) => {
+      const line = describeRequestFrame(identity, frame)
+      if (line) process.stderr.write(err.yellow(line) + '\n')
+    },
+    onOpen: () => {
       // Every (re)connect drains: whatever queued while the socket was down
       // is covered by nothing else. The id dedup absorbs the overlap.
       void drainQueue(identity)
     },
-    () => {
+    onAuthRejected: () => {
       die(tr('err.sessionRejected'))
     },
-  )
+  })
   sock.start()
   const poll = setInterval(() => {
     if (!sock.isOpen) void drainQueue(identity)
   }, 30_000)
   process.stderr.write(tr('watch.hello', { uin: identity.uin }) + '\n')
+  const waiting = cachedPending(identity.uin)
+  if (waiting.length > 0) process.stderr.write(err.yellow(tr('req.waiting', { n: waiting.length })) + '\n')
   void noteUpdateIfAny()
   const bye = (): void => {
     clearInterval(poll)
@@ -440,9 +641,9 @@ async function main(): Promise<void> {
     return runInteractive(await withToken(requireIdentity()))
   }
   // One process per state dir for anything that can touch the ratchet store —
-  // see acquireStateLock. whoami/export are read-only peeks and lang only
-  // writes its own one-word file (atomic rename): all three stay lock-free.
-  if (cmd !== 'whoami' && cmd !== 'export' && cmd !== 'lang') acquireStateLock()
+  // see acquireStateLock. whoami/export/log are read-only peeks and lang only
+  // writes its own one-word file (atomic rename): all four stay lock-free.
+  if (cmd !== 'whoami' && cmd !== 'export' && cmd !== 'lang' && cmd !== 'log') acquireStateLock()
   const { pos, opts, flags } = parseArgs(argv.slice(1))
   switch (cmd) {
     case 'register':
@@ -457,12 +658,34 @@ async function main(): Promise<void> {
       return cmdContacts()
     case 'who':
       return cmdWho(pos)
+    case 'find':
+      return cmdFind(pos)
     case 'add':
       return cmdAdd(pos)
+    case 'requests':
+      return cmdRequests()
+    case 'accept':
+      return cmdRespond(pos, true)
+    case 'decline':
+      return cmdRespond(pos, false)
+    case 'cancel':
+      return cmdCancel(pos)
+    case 'block':
+      return cmdBlock(pos, true)
+    case 'unblock':
+      return cmdBlock(pos, false)
+    case 'remove':
+      return cmdRemove(pos, flags)
+    case 'groups':
+      return cmdGroups()
+    case 'join':
+      return cmdJoin(pos)
+    case 'log':
+      return cmdLog(pos)
     case 'send':
       return cmdSend(pos, flags)
     case 'watch':
-      return cmdWatch()
+      return cmdWatch(flags)
     case 'export':
       return cmdExport()
     case 'lang':

@@ -18,11 +18,43 @@ export const SEALED_WS_TYPES = new Set([
   'visit', 'bounce', 'carbon', 'homerec', 'skdm', 'sknack', 'call',
 ])
 
+/// Island frames that are NOT envelopes: plain JSON the server writes itself.
+/// A contact request is the one that matters most: it is the only way to
+/// learn, without polling, that somebody is asking to be let in. Dropping
+/// these is why an interactive session could not tell you the answer to a
+/// request you had sent thirty seconds earlier.
+export const CONTROL_WS_TYPES = new Set([
+  'contact_request', 'contact_response', 'contact_request_cancelled',
+])
+
 export interface SealedFrame {
   type: string
   payload: string
   group_id?: number | null
   to_device_id?: number | null
+}
+
+/// A `gmsg` broadcast: one ciphertext for a whole room, opened with the
+/// sender-key chain rather than a session. It carries no `to_device_id` (the
+/// room is addressed, not a device), so it needs its own route.
+export interface GroupFrame {
+  payload: string
+  group_id: number
+}
+
+/// A control frame, verbatim. Shapes differ per type, so the reader picks the
+/// fields it knows and ignores the rest.
+export interface ControlFrame {
+  type: string
+  [k: string]: unknown
+}
+
+export interface SocketHandlers {
+  onSealed: (frame: SealedFrame) => void
+  onGroup?: (frame: GroupFrame) => void
+  onControl?: (frame: ControlFrame) => void
+  onOpen?: () => void
+  onAuthRejected?: () => void
 }
 
 /// How long a socket has to hold before its backoff is forgiven. Longer than
@@ -40,9 +72,7 @@ export class RcqSocket {
 
   constructor(
     private identity: WebIdentity,
-    private onSealed: (frame: SealedFrame) => void,
-    private onOpen?: () => void,
-    private onAuthRejected?: () => void,
+    private handlers: SocketHandlers,
   ) {}
 
   start(): void {
@@ -81,7 +111,7 @@ export class RcqSocket {
       this.pingTimer = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ping' }))
       }, PING_MS)
-      this.onOpen?.()
+      this.handlers.onOpen?.()
     })
 
     ws.addEventListener('message', (e) => {
@@ -92,13 +122,26 @@ export class RcqSocket {
         return // the island ships only JSON frames
       }
       const ev = data as SealedFrame
-      if (typeof ev.type !== 'string' || !SEALED_WS_TYPES.has(ev.type)) return
+      if (typeof ev.type !== 'string') return
+      if (CONTROL_WS_TYPES.has(ev.type)) {
+        this.handlers.onControl?.(data as ControlFrame)
+        return
+      }
+      if (ev.type === 'gmsg') {
+        // Fanned to every capable member of the room, not to a device.
+        const gid = (data as { group_id?: unknown }).group_id
+        if (typeof ev.payload === 'string' && ev.payload && typeof gid === 'number') {
+          this.handlers.onGroup?.({ payload: ev.payload, group_id: gid })
+        }
+        return
+      }
+      if (!SEALED_WS_TYPES.has(ev.type)) return
       if (typeof ev.payload !== 'string' || !ev.payload) return
       // Live delivery is NOT filtered by the island — every socket of the
       // account sees every copy of a fan-out — so a copy addressed to a
       // sibling device is dropped here. It is queued for that device, not us.
       if (typeof ev.to_device_id === 'number' && ev.to_device_id !== currentDeviceId()) return
-      this.onSealed(ev)
+      this.handlers.onSealed(ev)
     })
 
     ws.addEventListener('close', (ev) => {
@@ -114,7 +157,7 @@ export class RcqSocket {
       process.stderr.write(`[ws] closed code=${code} reason=${reason || '-'} lived=${(lived / 1000).toFixed(1)}s\n`)
       // 4401 / 4403 are auth-rejected — reconnecting cannot help.
       if (code === 4401 || code === 4403) {
-        this.onAuthRejected?.()
+        this.handlers.onAuthRejected?.()
         return
       }
       if (lived >= STABLE_MS) this.backoff = 0

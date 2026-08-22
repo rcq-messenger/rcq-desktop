@@ -17,7 +17,9 @@ import fs from 'node:fs'
 import { decryptIncoming, myDeviceId, noteInboundFrom, sendV2 } from '../../src/lib/signal-device'
 import { Api, peerBundleFrom } from '../../src/lib/api'
 import { encryptV1, type CarbonEnvelope, type Envelope, type WebIdentity } from '../../src/lib/crypto'
+import { handleSkdm, handleSknack, replayHeldGmsg } from '../../src/lib/sender-key-receive'
 import { foreignHost, groupLabel, isContact, knownName, labelForLine, peerLabel } from './directory'
+import { openGroupPacket, replayStoredGroupPackets } from './held-groups'
 import { tr } from './i18n'
 import { statePath } from './state'
 import { err, out, peer } from './style'
@@ -33,6 +35,15 @@ export const CONTENT_KINDS = new Set(['text', 'photo', 'video', 'file', 'locatio
 let emit: (line: string) => void = (line) => process.stdout.write(line)
 export function setEmitter(fn: (line: string) => void): void {
   emit = fn
+}
+
+/// Whether a prompt is listening. The only thing it changes is how a line
+/// tells you to go read a room: `/g 21` inside the loop, `rcq log g21` from a
+/// script. Pointing somebody at a command that does not exist where they are
+/// standing is worse than saying nothing.
+let interactive = false
+export function setInteractive(on: boolean): void {
+  interactive = on
 }
 
 export function historyPath(uin: number): string {
@@ -127,13 +138,75 @@ function groupTag(myUin: number, gid: number): string {
   return out.dim(`[${groupLabel(myUin, gid)}]`)
 }
 
+/// Rooms, and how much of one belongs on a terminal.
+///
+/// "ввёл rcq и вижу сообщения группы - а если групп будет десятки?" (founder,
+/// 21.08). Both halves of that are right: a room you are reading should print,
+/// and thirty rooms you are not should not. So exactly one room is OPEN at a
+/// time (`/g`), that one prints line by line like any conversation, and every
+/// other room keeps a count and says so at most once a minute. The content is
+/// on disk either way: `/log` and `rcq log g21` read it back.
+///
+/// `'all'` is `rcq watch --groups`: a stream feeding a log or a bridge wants
+/// every room, and nothing is reading it at a prompt to be flooded.
+let openGroup: number | 'all' | null = null
+/// gid -> messages that have arrived without being printed.
+const groupUnread = new Map<number, number>()
+/// gid -> when its badge was last shown.
+const groupAnnounced = new Map<number, number>()
+/// A busy room must not narrate itself. One line, then quiet.
+const ANNOUNCE_MS = 60_000
+
+/// Point the reader at a room. Its backlog stops being a badge and starts
+/// being a conversation.
+export function setOpenGroup(gid: number | 'all' | null): void {
+  openGroup = gid
+  if (typeof gid === 'number') {
+    groupUnread.delete(gid)
+    groupAnnounced.delete(gid)
+  }
+}
+
+/// How many messages a room has been holding, for the recap when it opens: a
+/// badge that said "+40 new" and then shows eight lines is a badge that lied.
+export function unreadIn(gid: number): number {
+  return groupUnread.get(gid) ?? 0
+}
+
+/// Unread counts per group, for the room list.
+export function unreadByGroup(): Map<number, number> {
+  return new Map(groupUnread)
+}
+
+/// Print the badge for every room holding unread traffic, subject to the
+/// once-a-minute rule. Called at the end of a drain and after live delivery,
+/// so the same line comes out of `rcq watch`, `rcq send` and the prompt.
+///
+/// ⚠ stderr, not `emit`. A badge is a count of things that did NOT print: it
+/// is status, and stdout is where `rcq watch | ...` reads messages. The old
+/// group summary went to stdout and put a line no parser could use in the
+/// middle of the data. Interactive mode still shows it: its stderr is routed
+/// through the same above-the-prompt printer.
+export function announceGroupNews(myUin: number): void {
+  const now = Date.now()
+  for (const [gid, n] of groupUnread) {
+    if (n <= 0) continue
+    const last = groupAnnounced.get(gid)
+    if (last !== undefined && now - last < ANNOUNCE_MS) continue
+    groupAnnounced.set(gid, now)
+    const how = interactive ? tr('group.readInteractive', { gid }) : tr('group.readOneShot', { gid })
+    const room = groupLabel(myUin, gid)
+    process.stderr.write(err.dim(`[${stamp()}] [${room}] ${tr('group.unread', { n, how })}`) + '\n')
+  }
+}
+
 /// One peer per process gets the "you do not know this person" line. Every
 /// line after that would only be noise: the label already says who they are.
 const strangerNoted = new Set<number>()
 
 /// One printable line per envelope. Files/media never dump bytes — kind and
 /// size only, per the design doc (the CLI sends/receives originals in v1.5).
-function describeEnvelope(env: Envelope): string {
+export function describeEnvelope(env: Envelope): string {
   switch (env.kind) {
     case 'text':
       return env.text
@@ -152,7 +225,7 @@ function describeEnvelope(env: Envelope): string {
   }
 }
 
-interface HistoryRecord {
+export interface HistoryRecord {
   at: string
   from: number
   dev?: number
@@ -182,18 +255,16 @@ export interface IngestResult {
   /// whether the backlog just interleaved with its one job — that is the
   /// moment to point at the interactive mode.
   contentCount?: number
-  /// Group messages banked to HISTORY without printing, counted per group.
-  /// "ввёл rcq и вижу сообщения группы - а если групп будет десятки?"
-  /// (founder, 21.08): the console is a 1:1 surface, groups live in the real
-  /// clients — so their content never hits the screen (RCQ_VERBOSE shows it),
-  /// and the drain prints one summary line per group instead.
-  groupNew?: Map<number, number>
 }
 
 interface Decrypted {
   senderUIN: number
   senderDeviceId?: number
   senderHost?: string
+  /// The Ed25519 key the seal authenticated. A sender-key chain is only worth
+  /// storing when it is BOUND to one, so a stranger cannot hand us a chain in
+  /// somebody else's name.
+  senderSigningKey?: string
   envelope: Envelope
 }
 
@@ -229,7 +300,16 @@ export async function ingestDecrypted(
         : c.gid != null
           ? `[${groupLabel(identity.uin, c.gid)}]`
           : '?'
-    appendHistory(identity.uin, { at: new Date().toISOString(), from: identity.uin, to: c.to ?? undefined, envelope: inner })
+    // ⚠ The gid rides along. Without it a message we posted to a room from the
+    // phone was filed as a 1:1 row addressed to nobody, so the room's own log
+    // was missing our half of every conversation in it.
+    appendHistory(identity.uin, {
+      at: new Date().toISOString(),
+      from: identity.uin,
+      to: c.to ?? undefined,
+      gid: c.gid ?? undefined,
+      envelope: inner,
+    })
     emit(`${out.dim(`[${stamp()}]`)} ${out.green(`me -> ${dest}`)}: ${describeEnvelope(inner)}\n`)
     return
   }
@@ -242,6 +322,30 @@ export async function ingestDecrypted(
       const from = peerLabel(identity.uin, got.senderUIN, host)
       process.stderr.write(`[${stamp()}] ${env.kind} receipt from ${from}: ${ids.join(', ')}\n`)
     }
+    return
+  }
+  // Sender-key plumbing: never rendered, and the reason group messages open at
+  // all. SKDM hands us the chain a broadcast is sealed under (bound to the
+  // authenticated sender); SKNACK asks us to re-hand ours to somebody who
+  // missed it. Both ride the ordinary per-member sealed path, which is why
+  // they arrive here rather than in the gmsg branch of the drain.
+  if (env.kind === 'skdm') {
+    const skdm = env as unknown as { gid: number; kid: string; e: number; i: number; ck: string }
+    if (handleSkdm(identity.uin, got.senderUIN, got.senderSigningKey, skdm) && typeof skdm.kid === 'string') {
+      // A live broadcast can outrun its own chain (a drain cannot: the island
+      // serves skdm rows first). Replay whatever was held for this kid through
+      // the normal decrypt path, in arrival order.
+      for (const m of await replayHeldGmsg(identity, skdm.kid).catch(() => [])) {
+        await ingestDecrypted(identity, { senderUIN: m.senderUIN, envelope: m.envelope }, m.gid, result)
+      }
+      // And the disk half: a broadcast this box could not open days ago, in
+      // another process, whose chain has just walked in.
+      await replayStored(identity, result)
+    }
+    return
+  }
+  if (env.kind === 'sknack') {
+    await handleSknack(identity, got.senderUIN, env as unknown as { gid: number; kid: string })
     return
   }
   if (!CONTENT_KINDS.has(env.kind)) {
@@ -269,16 +373,18 @@ export async function ingestDecrypted(
     envelope: env,
   })
   if (typeof groupId === 'number') {
-    // Banked, not printed (see IngestResult.groupNew) — and a group member
-    // must never become the interactive auto-reply target: the founder's
-    // first run auto-picked a random RCQ Beta poster as "replying to".
-    if (process.env.RCQ_VERBOSE) {
+    // The open room reads like any other conversation; every other room keeps
+    // a count (see the note above `openGroup`). Either way a group member must
+    // never become the interactive auto-reply target: the founder's first run
+    // auto-picked a random RCQ Beta poster as "replying to".
+    if (openGroup === groupId || openGroup === 'all' || process.env.RCQ_VERBOSE) {
       const from = await labelForLine(identity, got.senderUIN, host)
       emit(`${out.dim(`[${stamp()}]`)} ${groupTag(identity.uin, groupId)} ${peer(got.senderUIN, from)}: ${describeEnvelope(env)}\n`)
+      if (got.senderUIN !== identity.uin) result.contentCount = (result.contentCount ?? 0) + 1
+      return
     }
     if (got.senderUIN !== identity.uin) {
-      const m = (result.groupNew ??= new Map<number, number>())
-      m.set(groupId, (m.get(groupId) ?? 0) + 1)
+      groupUnread.set(groupId, (groupUnread.get(groupId) ?? 0) + 1)
     }
     return
   }
@@ -347,6 +453,27 @@ async function sendDeliveredReceipt(identity: WebIdentity, peerUin: number, targ
   }
 }
 
+/// Retry the broadcasts held on disk and file whatever opens. Shared by the
+/// two moments it can pay off: the start of a drain (a chain may have arrived
+/// while this box was off) and the end of one that carried an SKDM.
+async function replayStored(identity: WebIdentity, result: IngestResult): Promise<void> {
+  for (const m of await replayStoredGroupPackets(identity).catch(() => [])) {
+    await ingestDecrypted(identity, { senderUIN: m.senderUIN, envelope: m.envelope }, m.gid, result)
+  }
+}
+
+/// One live group broadcast off the socket. Same path as the drain's, so a
+/// room reads identically whether the message arrived now or last week.
+export async function ingestGroupPacket(
+  identity: WebIdentity,
+  payloadB64: string,
+  gid: number,
+  result: IngestResult,
+): Promise<void> {
+  const got = await openGroupPacket(identity, payloadB64, gid)
+  if (got) await ingestDecrypted(identity, { senderUIN: got.senderUIN, envelope: got.envelope }, gid, result)
+}
+
 interface QueueRow {
   id: number
   envelope_type: string
@@ -366,6 +493,10 @@ function fetchWithTimeout(url: string, init: RequestInit, ms = 30_000): Promise<
 /// acked in that case, so the next drain redelivers.
 export async function drainQueue(identity: WebIdentity): Promise<IngestResult | null> {
   const result: IngestResult = { receiptTargets: [] }
+  // Broadcasts still waiting on a chain that may have been handed to us since
+  // the last run (a chain that arrives DURING this pass is replayed by the
+  // skdm branch of ingestDecrypted, on both the drain and the live socket).
+  await replayStored(identity, result)
   const myDev = await myDeviceId(identity)
   // ⚠ No id, no drain — never guess (see the warning on myDeviceId).
   if (myDev === null) {
@@ -396,11 +527,21 @@ export async function drainQueue(identity: WebIdentity): Promise<IngestResult | 
         // that predates the `dev` filter hands out every copy, so this is not
         // dead code.
       } else if (r.envelope_type === 'gmsg') {
-        // Sender-keys group broadcast — the CLI carries no group chains in
-        // v1. Terminal for this device (the chain will never appear), so it
-        // is acked rather than left to wedge the cursor forever.
-        const g = typeof r.group_id === 'number' ? groupLabel(identity.uin, r.group_id) : '-'
-        process.stderr.write(err.dim(`[${stamp()}] ${tr('group.senderKeys', { group: g })}`) + '\n')
+        // Sender-keys group broadcast: ONE ciphertext for the whole room,
+        // opened with the chain its sender distributed. Not a sealed envelope,
+        // so it never goes near decryptIncoming.
+        //
+        // ⚠ A row with no group id cannot be routed to a room and is acked
+        // away below; the island has never sent one, and guessing would file
+        // the message under a room the sender did not choose.
+        if (typeof r.group_id === 'number') {
+          // Returns null when the chain has not reached us yet, and in that
+          // case the raw packet is now on disk, so the ack below is honest.
+          const got = await openGroupPacket(identity, r.payload, r.group_id)
+          if (got) {
+            await ingestDecrypted(identity, { senderUIN: got.senderUIN, envelope: got.envelope }, r.group_id, result)
+          }
+        }
       } else {
         const got = await decryptIncoming(identity, r.payload)
         if (got) {
@@ -423,14 +564,8 @@ export async function drainQueue(identity: WebIdentity): Promise<IngestResult | 
       )
     }
   }
-  // One line per group instead of its whole feed (see IngestResult.groupNew):
-  // the content is on disk in the history file, and the screen stays a 1:1
-  // surface. RCQ_VERBOSE prints the full lines instead.
-  if (result.groupNew?.size && !process.env.RCQ_VERBOSE) {
-    for (const [gid, n] of result.groupNew) {
-      emit(`${out.dim(`[${stamp()}]`)} ${groupTag(identity.uin, gid)} ${out.dim(tr('group.banked', { n }))}\n`)
-    }
-  }
+  // One badge per room instead of its whole feed (see the note on openGroup).
+  announceGroupNews(identity.uin)
   if (directIds.length || groupIds.length) {
     // History is already on disk (synchronous appends above) — the ack may
     // now tell the island to let go. Best-effort like Android: a lost ack

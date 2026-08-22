@@ -54,8 +54,17 @@ for scripts and one-shots (stdout is data, status goes to stderr):
   rcq nick "NAME"                             rename this account
   rcq contacts                                list contacts (uin, nickname, status)
   rcq who <uin>                               who is this number: name, and whether you know them
+  rcq find "NAME"                             search the island for people by name
   rcq add <uin>                               send a contact request
-  rcq send <uin> "text" [--yes]               one-shot: drain, send, wait for the receipt, exit
+  rcq requests                                incoming and outgoing contact requests
+  rcq accept <uin> | rcq decline <uin>        answer an incoming request
+  rcq cancel <uin>                            withdraw a request you sent
+  rcq block <uin> | rcq unblock <uin>         stop / resume hearing from someone
+  rcq remove <uin> [--yes]                    drop a contact on both sides
+  rcq groups                                  list your rooms (id, name, members, rules)
+  rcq join <id>                               join an open group
+  rcq log [<uin>|g<id>] [n]                   last n lines of a thread from the history file
+  rcq send <uin>|g<id> "text" [--yes]         one-shot: drain, send, wait for the receipt, exit
                                               (--yes agrees to write to a non-contact)
   rcq watch                                   read-only stream of incoming messages
   rcq export                                  print the history file path and line count
@@ -78,8 +87,17 @@ RCQ_VERBOSE=1 shows protocol detail; NO_COLOR strips colour.
   rcq nick "ИМЯ"                              переименовать аккаунт
   rcq contacts                                список контактов (uin, ник, статус)
   rcq who <uin>                               чей это номер: имя и знакомы ли вы
+  rcq find "ИМЯ"                              искать людей на острове по имени
   rcq add <uin>                               отправить заявку в контакты
-  rcq send <uin> "текст" [--yes]              разово: забрать очередь, отправить, дождаться квитанции, выйти
+  rcq requests                                входящие и исходящие заявки
+  rcq accept <uin> | rcq decline <uin>        ответить на входящую заявку
+  rcq cancel <uin>                            отозвать свою заявку
+  rcq block <uin> | rcq unblock <uin>         перестать / снова получать сообщения
+  rcq remove <uin> [--yes]                    удалить контакт у обоих
+  rcq groups                                  список ваших комнат (id, имя, участники, правила)
+  rcq join <id>                               вступить в открытую группу
+  rcq log [<uin>|g<id>] [n]                   последние n строк переписки из файла истории
+  rcq send <uin>|g<id> "текст" [--yes]        разово: забрать очередь, отправить, дождаться квитанции, выйти
                                               (--yes соглашается писать не-контакту)
   rcq watch                                   поток входящих, только чтение
   rcq export                                  напечатать путь к файлу истории и число строк
@@ -157,6 +175,52 @@ RCQ_VERBOSE=1 показывает детали протокола; NO_COLOR у�
 
   'add.needsUin': { en: 'add needs a numeric UIN', ru: 'add ждёт числовой UIN' },
   'add.sent': { en: 'contact request sent to {who}', ru: 'заявка в контакты отправлена {who}' },
+  // The island auto-accepts when they had already asked for us. Saying "sent"
+  // there hid the one case where adding simply worked.
+  'add.mutual': {
+    en: '{who} had already asked for you, so you are contacts now',
+    ru: '{who} уже отправлял вам заявку, теперь вы контакты',
+  },
+  'add.already': { en: '{who} is already in your contacts', ru: '{who} уже в ваших контактах' },
+
+  // Contact requests: the half the console could never answer.
+  'req.none': { en: 'no contact requests', ru: 'заявок в контакты нет' },
+  'req.noneFrom': { en: 'there is no request from {who}', ru: 'от {who} нет заявки' },
+  'req.waiting': {
+    en: '{n} contact request(s) waiting - see "rcq requests"',
+    ru: 'ждут ответа заявок: {n}, показать: "rcq requests"',
+  },
+  'req.answerHint': { en: 'wants to add you: /accept {uin} or /decline {uin}', ru: 'хочет добавить вас: /accept {uin} или /decline {uin}' },
+  'req.statePending': { en: 'waiting for their answer', ru: 'ждём их ответа' },
+  'req.stateDeclined': { en: 'declined', ru: 'отклонено' },
+  'req.incoming': { en: '{who} wants to add you: /accept {uin} or /decline {uin}', ru: '{who} хочет добавить вас: /accept {uin} или /decline {uin}' },
+  'req.accepted': { en: '{who} accepted your contact request', ru: '{who} принял вашу заявку' },
+  'req.declined': { en: '{who} declined your contact request', ru: '{who} отклонил вашу заявку' },
+  'req.withdrawn': { en: '{who} withdrew their contact request', ru: '{who} отозвал свою заявку' },
+  'req.youAccepted': { en: '{who} is now in your contacts', ru: '{who} теперь в ваших контактах' },
+  'req.youDeclined': { en: 'declined the request from {who}', ru: 'заявка от {who} отклонена' },
+  'req.cancelled': { en: 'your request to {who} is withdrawn', ru: 'ваша заявка к {who} отозвана' },
+  'accept.needsUin': { en: 'accept needs a numeric UIN', ru: 'accept ждёт числовой UIN' },
+  'decline.needsUin': { en: 'decline needs a numeric UIN', ru: 'decline ждёт числовой UIN' },
+  'cancel.needsUin': { en: 'cancel needs a numeric UIN', ru: 'cancel ждёт числовой UIN' },
+
+  'find.needsQuery': { en: 'find needs a name in quotes', ru: 'find ждёт имя в кавычках' },
+  'find.none': { en: 'nobody on this island matches "{q}"', ru: 'на этом острове никто не подходит под "{q}"' },
+
+  'block.needsUin': { en: 'block needs a numeric UIN', ru: 'block ждёт числовой UIN' },
+  'block.done': { en: '{who} is blocked', ru: '{who} заблокирован' },
+  'block.undone': { en: '{who} is unblocked', ru: '{who} разблокирован' },
+  'remove.needsUin': { en: 'remove needs a numeric UIN', ru: 'remove ждёт числовой UIN' },
+  'remove.confirm': {
+    en: 'remove {who} from your contacts, on both sides? [y/N] ',
+    ru: 'удалить {who} из контактов у обоих? [y/N] ',
+  },
+  'remove.needsYes': {
+    en: 'not removed: {who} would go from both contact lists. Add --yes to do it',
+    ru: 'не удалено: {who} исчезнет из списков у обоих. Добавьте --yes, чтобы удалить',
+  },
+  'remove.cancelled': { en: 'nothing removed', ru: 'ничего не удалено' },
+  'remove.done': { en: '{who} is no longer in your contacts', ru: '{who} больше не в ваших контактах' },
 
   // Names, and how much of a stranger somebody is. The label itself ("Ivan
   // (#396)") is DATA and never passes through here; these are the words around
@@ -270,33 +334,84 @@ RCQ_VERBOSE=1 показывает детали протокола; NO_COLOR у�
     ru: 'острову не удалось сообщить, что очередь прочитана: {err}',
   },
 
+  // Rooms. One is OPEN and prints; the rest keep a count and say so once a
+  // minute, because thirty rooms on one screen is not a conversation.
   'group.label': { en: 'group {gid}', ru: 'группа {gid}' },
-  'group.senderKeys': {
-    en: '{group}: <sender-keys broadcast - groups are not in the CLI yet>',
-    ru: '{group}: <рассылка sender-keys, групп в CLI пока нет>',
+  'group.unread': { en: '+{n} new, {how}', ru: 'новых: {n}, {how}' },
+  'group.readInteractive': { en: '/g {gid} to read', ru: 'читать: /g {gid}' },
+  'group.readOneShot': { en: 'rcq log g{gid} to read', ru: 'читать: rcq log g{gid}' },
+  'group.unknown': { en: 'no room called "{what}" - /g lists them', ru: 'комнаты "{what}" нет, список по /g' },
+  'group.notMember': {
+    en: 'you are not in a group with id {gid} - "rcq groups" lists yours',
+    ru: 'вы не состоите в группе с id {gid}, ваши покажет "rcq groups"',
   },
-  'group.banked': {
-    en: '+{n} (history only; groups live in the apps)',
-    ru: '+{n} (только в историю; группы живут в приложениях)',
+  'group.members': { en: '{n} members', ru: 'участников: {n}' },
+  'group.youOwn': { en: 'yours', ru: 'ваша' },
+  'group.ruleOwnerOnly': { en: 'owner posts only', ru: 'пишет только владелец' },
+  'group.ruleSlowmode': { en: 'slow mode {sec}s', ru: 'медленный режим {sec}с' },
+  'group.ruleNoLinks': { en: 'no links', ru: 'без ссылок' },
+  'group.ownerOnly': {
+    en: 'this room is read-only: only its owner posts',
+    ru: 'эта комната только для чтения: пишет только владелец',
+  },
+  'group.noLinks': { en: 'links are not allowed in this room', ru: 'в этой комнате нельзя ссылки' },
+  'group.slowmode': { en: 'slow mode: wait a little before the next message', ru: 'медленный режим: подождите перед следующим сообщением' },
+  'group.slowmodeWait': { en: 'slow mode: {sec}s to go', ru: 'медленный режим: осталось {sec}с' },
+  'group.gone': { en: 'this room is gone, or you are no longer in it', ru: 'этой комнаты нет, или вас в ней больше нет' },
+  'group.rosterFailed': {
+    en: 'nothing sent: who is in "{name}" could not be read, and a message has to be sealed to each of them ({err})',
+    ru: 'ничего не отправлено: не удалось узнать, кто в "{name}", а сообщение шифруется каждому из них ({err})',
+  },
+  'group.noRecipients': {
+    en: 'nobody in this room could be sealed to',
+    ru: 'в этой комнате некому зашифровать сообщение',
+  },
+
+  'join.needsId': { en: 'join needs a group id', ru: 'join ждёт id группы' },
+  'join.noSuchGroup': { en: 'there is no group {gid} on this island', ru: 'на этом острове нет группы {gid}' },
+  'join.closed': { en: '"{name}" is closed - somebody in it has to add you', ru: '"{name}" закрыта, вас должен добавить кто-то из участников' },
+  'join.failed': { en: 'could not join: {err}', ru: 'не удалось вступить: {err}' },
+  'join.done': { en: 'you are in "{name}"', ru: 'вы в "{name}"' },
+
+  'log.empty': { en: 'nothing in the history file for this', ru: 'в файле истории по этому ничего нет' },
+  'log.badThread': {
+    en: "'{what}' is neither a UIN nor a group (g21)",
+    ru: "'{what}' это ни UIN, ни группа (g21)",
   },
 
   'interactive.help': {
-    en: `  /to <uin>   talk to this person (a non-contact is confirmed once, before the first message)
-  /who <uin>  who is this number: name, and whether you know them
-  /add <uin>  send a contact request
-  /nick NAME  rename this account
-  /contacts   list contacts
-  /help       this text
-  /quit       leave (Ctrl+C and Ctrl+D work too)
-anything else you type goes to the active contact.`,
-    ru: `  /to <uin>   говорить с этим человеком (не-контакт подтверждается один раз, перед первым сообщением)
-  /who <uin>  чей это номер: имя и знакомы ли вы
-  /add <uin>  отправить заявку в контакты
-  /nick ИМЯ   переименовать аккаунт
-  /contacts   список контактов
-  /help       этот текст
-  /quit       выйти (Ctrl+C и Ctrl+D тоже работают)
-всё остальное уходит активному контакту.`,
+    en: `  /to <uin>        talk to this person (a non-contact is confirmed once, before the first message)
+  /g [id|name]     open a room, or list them; its messages then print here
+  /log [n]         the last n lines of wherever you are (default 20)
+  /who <uin>       who is this number: name, and whether you know them
+  /find NAME       search the island for people by name
+  /contacts        list contacts
+  /add <uin>       send a contact request
+  /requests        contact requests, both directions
+  /accept <uin>    let them in     /decline <uin>   turn them down
+  /cancel <uin>    withdraw a request you sent
+  /block <uin>     stop hearing from them   /unblock <uin>
+  /remove <uin>    drop a contact on both sides
+  /nick NAME       rename this account
+  /help            this text
+  /quit            leave (Ctrl+C and Ctrl+D work too)
+anything else you type goes to whoever the prompt names.`,
+    ru: `  /to <uin>        говорить с этим человеком (не-контакт подтверждается один раз, перед первым сообщением)
+  /g [id|имя]      открыть комнату или показать список; её сообщения начнут печататься здесь
+  /log [n]         последние n строк там, где вы сейчас (по умолчанию 20)
+  /who <uin>       чей это номер: имя и знакомы ли вы
+  /find ИМЯ        искать людей на острове по имени
+  /contacts        список контактов
+  /add <uin>       отправить заявку в контакты
+  /requests        заявки в контакты, в обе стороны
+  /accept <uin>    принять       /decline <uin>   отклонить
+  /cancel <uin>    отозвать свою заявку
+  /block <uin>     перестать получать от них   /unblock <uin>
+  /remove <uin>    удалить контакт у обоих
+  /nick ИМЯ        переименовать аккаунт
+  /help            этот текст
+  /quit            выйти (Ctrl+C и Ctrl+D тоже работают)
+всё остальное уходит тому, чьё имя в строке ввода.`,
   },
   'interactive.hello': { en: 'you are #{uin} - /help for commands', ru: 'вы #{uin}, команды по /help' },
   'interactive.noContacts': {
@@ -318,6 +433,16 @@ anything else you type goes to the active contact.`,
   'interactive.usageWho': { en: 'usage: /who <uin>', ru: 'использование: /who <uin>' },
   'interactive.usageNick': { en: 'usage: /nick NAME', ru: 'использование: /nick ИМЯ' },
   'interactive.usageAdd': { en: 'usage: /add <uin>', ru: 'использование: /add <uin>' },
+  'interactive.usageAccept': { en: 'usage: /accept <uin>', ru: 'использование: /accept <uin>' },
+  'interactive.usageDecline': { en: 'usage: /decline <uin>', ru: 'использование: /decline <uin>' },
+  'interactive.usageCancel': { en: 'usage: /cancel <uin>', ru: 'использование: /cancel <uin>' },
+  'interactive.usageFind': { en: 'usage: /find NAME', ru: 'использование: /find ИМЯ' },
+  'interactive.usageBlock': { en: 'usage: /block <uin> (and /unblock <uin>)', ru: 'использование: /block <uin> (и /unblock <uin>)' },
+  'interactive.usageRemove': { en: 'usage: /remove <uin>', ru: 'использование: /remove <uin>' },
+  'interactive.noGroups': {
+    en: '(no rooms yet - "rcq join <id>" joins an open one)',
+    ru: '(комнат пока нет, вступить в открытую: "rcq join <id>")',
+  },
   'interactive.unknownSlash': {
     en: 'unknown command {cmd} - /help lists them',
     ru: 'неизвестная команда {cmd}, список по /help',

@@ -9,6 +9,7 @@ import { PartialFanOutError, sendV2 } from '../../src/lib/signal-device'
 import { tr } from './i18n'
 import { appendHistory, markSent } from './receive'
 import { err } from './style'
+import { humanError } from './errors'
 
 /// Where a carbon says the message went: a 1:1 peer, or a group. Exactly one
 /// of the two, which is how every client reads the envelope.
@@ -33,7 +34,7 @@ export async function sendMessageCarbon(identity: WebIdentity, dest: CarbonDest,
     // reading his own chat there would see half a conversation with no hint
     // why.
     process.stderr.write(
-      err.dim(tr('fail.carbon', { err: e instanceof Error ? e.message : String(e) })) + '\n',
+      err.dim(tr('fail.carbon', { err: humanError(e) })) + '\n',
     )
   }
 }

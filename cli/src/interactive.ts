@@ -20,6 +20,7 @@ import {
   groupById,
   groupLabel,
   isContact,
+  knownName,
   lookupUser,
   peerLabel,
   primeDirectory,
@@ -59,6 +60,7 @@ import { sendText } from './send'
 import { RcqSocket } from './socket'
 import { isYes, strangerCheck } from './stranger'
 import { out } from './style'
+import { humanError } from './errors'
 
 /// Who the next typed line goes to. A room is a destination like a person is:
 /// the whole reason `/g` exists is that the prompt used to be able to point at
@@ -81,7 +83,7 @@ const RECEIPT_WAIT_MS = 10 * 60 * 1000
 export async function runInteractive(identity: WebIdentity): Promise<void> {
   setInteractive(true)
   await getDevice(identity).catch((e) => {
-    process.stderr.write(tr('provision.v1only', { err: e instanceof Error ? e.message : String(e) }) + '\n')
+    process.stderr.write(tr('provision.v1only', { err: humanError(e) }) + '\n')
   })
   // Correct the live-frame device filter from the saved blob even when the
   // provision above failed (same reason as watch: until then currentDeviceId
@@ -198,11 +200,21 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
           active !== null &&
           (t.kind === 'peer' ? active.kind === 'peer' && active.uin === t.uin : active.kind === 'group' && active.gid === t.gid)
         const held = t.kind === 'group' ? (unread.get(t.gid) ?? 0) : 0
-        // ⚠ The host rides along for a peer on another island. Without it the
-        // row is a bare `#500`, which is the local #500 as far as anyone
+        // The row already opens with `#396` in its own column, so the full
+        // `Vasya (#396)` label printed the number twice and spent a third of
+        // the name column doing it: with a 9-digit uin, a long nickname was
+        // truncated to make room for digits already on the line.
+        //
+        // ⚠ EXCEPT across islands. The host rides along there, because the tag
+        // column is a bare `#500`, which is the local #500 as far as anyone
         // reading can tell, and `/to 500` would reach exactly that person.
+        const host = t.kind === 'peer' ? foreignHost(identity, r.host) : undefined
         const name =
-          t.kind === 'peer' ? peerLabel(identity.uin, t.uin, foreignHost(identity, r.host)) : `[${groupLabel(identity.uin, t.gid)}]`
+          t.kind === 'peer'
+            ? host
+              ? peerLabel(identity.uin, t.uin, host)
+              : (knownName(identity.uin, t.uin) ?? `#${t.uin}`)
+            : `[${groupLabel(identity.uin, t.gid)}]`
         const stamp = when(r.at)
         const badge = held > 0 ? `+${held} ` : ''
         const said = `${r.from === identity.uin ? `${tr('recent.you')} ` : ''}${badge}${describeEnvelope(r.envelope)}`
@@ -309,7 +321,7 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
     // No device to open it with yet: the same envelope sits in the queue, and
     // the reconnect drain delivers it. Printed all the same: a message that
     // silently never appears is the worst thing a chat client can do.
-    printAbove(out.dim(tr('fail.live', { err: e instanceof Error ? e.message : String(e) })))
+    printAbove(out.dim(tr('fail.live', { err: humanError(e) })))
   }
   const sock = new RcqSocket(identity, {
     onSealed: (frame) => {
@@ -407,7 +419,7 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
       group = await rosterFor(identity, base)
     } catch (e) {
       // Already a whole sentence about the message, not about the fetch.
-      printAbove(out.red(e instanceof Error ? e.message : String(e)))
+      printAbove(out.red(humanError(e)))
       printAbove(out.dim(tr('send.kept', { text })))
       return
     }
@@ -450,7 +462,7 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
     try {
       sent = await sendText(identity, to, text)
     } catch (e) {
-      sendFailed({ kind: 'peer', uin: to }, text, e instanceof Error ? e.message : String(e))
+      sendFailed({ kind: 'peer', uin: to }, text, humanError(e))
       return
     }
     if (process.env.RCQ_VERBOSE) printAbove(out.dim(`(${sent.mode})`))
@@ -467,7 +479,7 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
     try {
       lists = await loadRequests(identity)
     } catch (e) {
-      printAbove(out.red(tr('fail.command', { cmd: '/requests', err: e instanceof Error ? e.message : String(e) })))
+      printAbove(out.red(tr('fail.command', { cmd: '/requests', err: humanError(e) })))
       return
     }
     if (lists.incoming.length === 0 && lists.outgoing.length === 0) {
@@ -495,7 +507,7 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
     try {
       res = await respondTo(identity, uin, accept)
     } catch (e) {
-      printAbove(out.red(tr('fail.command', { cmd: accept ? '/accept' : '/decline', err: e instanceof Error ? e.message : String(e) })))
+      printAbove(out.red(tr('fail.command', { cmd: accept ? '/accept' : '/decline', err: humanError(e) })))
       return
     }
     if (!res.ok) {
@@ -552,7 +564,7 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
           // Offline is not an error worth a stack trace: the roster from the last
           // run is on disk and is what the labels are using anyway.
           list = cachedContacts(identity.uin)
-          printAbove(out.dim(tr('fail.contacts', { err: e instanceof Error ? e.message : String(e) })))
+          printAbove(out.dim(tr('fail.contacts', { err: humanError(e) })))
         }
         if (list.length === 0) {
           printAbove(tr('interactive.noContacts'))
@@ -615,7 +627,7 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
         try {
           await cancelRequest(identity, uin)
         } catch (e) {
-          printAbove(out.red(tr('fail.command', { cmd: '/cancel', err: e instanceof Error ? e.message : String(e) })))
+          printAbove(out.red(tr('fail.command', { cmd: '/cancel', err: humanError(e) })))
           return
         }
         printAbove(out.dim(tr('req.cancelled', { who: peerLabel(identity.uin, uin) })))
@@ -630,7 +642,7 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
         try {
           found = await Api.searchUsers(identity, arg)
         } catch (e) {
-          printAbove(out.red(tr('fail.command', { cmd: '/find', err: e instanceof Error ? e.message : String(e) })))
+          printAbove(out.red(tr('fail.command', { cmd: '/find', err: humanError(e) })))
           return
         }
         if (found.length === 0) {
@@ -691,7 +703,7 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
         try {
           await Api.updateProfile(identity, { nickname: arg })
         } catch (e) {
-          printAbove(out.red(tr('fail.command', { cmd: '/nick', err: e instanceof Error ? e.message : String(e) })))
+          printAbove(out.red(tr('fail.command', { cmd: '/nick', err: humanError(e) })))
           return
         }
         printAbove(out.dim(tr('nick.done', { name: arg })))
@@ -711,7 +723,7 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
         try {
           state = await sendRequest(identity, uin)
         } catch (e) {
-          printAbove(out.red(tr('fail.command', { cmd: '/add', err: e instanceof Error ? e.message : String(e) })))
+          printAbove(out.red(tr('fail.command', { cmd: '/add', err: humanError(e) })))
           return
         }
         const who = peerLabel(identity.uin, uin)
@@ -736,7 +748,7 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
         try {
           await Api.blockContact(identity, uin, on)
         } catch (e) {
-          printAbove(out.red(tr('fail.command', { cmd, err: e instanceof Error ? e.message : String(e) })))
+          printAbove(out.red(tr('fail.command', { cmd, err: humanError(e) })))
           return
         }
         const who = peerLabel(identity.uin, uin)
@@ -756,7 +768,7 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
         try {
           await Api.removeContact(identity, uin)
         } catch (e) {
-          printAbove(out.red(tr('fail.command', { cmd: '/remove', err: e instanceof Error ? e.message : String(e) })))
+          printAbove(out.red(tr('fail.command', { cmd: '/remove', err: humanError(e) })))
           return
         }
         printAbove(out.dim(tr('remove.done', { who })))
@@ -848,12 +860,32 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
   let chain: Promise<void> = Promise.resolve()
   rl.on('line', (raw) => {
     rememberCommand(raw)
-    inFlight++
+    // Only a MESSAGE is "still going out". Counting every line counted the
+    // `/quit` that triggers the shutdown as well, so every clean exit claimed
+    // to be finishing a message nobody had sent.
+    const typed = raw.trim()
+    // Leaving does NOT queue. Every other line waits its turn because the
+    // ratchet cannot be advanced twice at once, but `/quit` behind three
+    // stalled sends meant forty-six seconds of a terminal that had accepted
+    // the word "quit" and gone blank. Ctrl+C never queued; typing the verb
+    // should not be the slower way out. shutdown() reports what is genuinely
+    // still in flight and gives it five seconds.
+    if (/^\/(q|quit|exit)$/i.test(typed)) {
+      shutdown()
+      return
+    }
+    const isMessage = typed.length > 0 && !typed.startsWith('/') && !/^rcq(\s|$)/.test(typed)
+    // A line typed while the one before it is still on the wire. readline has
+    // already taken it off the input row, and its echo cannot print until the
+    // chain reaches it, which on a dead connection was forty seconds of a
+    // prompt that looked idle and had in fact swallowed two sentences.
+    if (isMessage && inFlight > 0) printAbove(out.dim(tr('send.queued', { text: snippet(typed) })))
+    if (isMessage) inFlight++
     chain = chain
       .then(() => handleLine(raw))
-      .catch((e) => printAbove(`rcq: ${e instanceof Error ? e.message : e}`))
+      .catch((e) => printAbove(`rcq: ${humanError(e)}`))
       .finally(() => {
-        inFlight--
+        if (isMessage) inFlight--
       })
   })
   // readline swallows the signal into this event. Ctrl+C on a line you are

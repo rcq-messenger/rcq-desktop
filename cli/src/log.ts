@@ -45,6 +45,18 @@ function sameThread(a: Thread, b: Thread): boolean {
 /// `tail` themselves, and the alternative is an index to keep in step with it.
 /// A torn tail line is skipped in silence: the row it described was never
 /// vouched for (see the durable-before-ack note in receive.ts).
+///
+/// ⚠ Sorted by time, NOT left in the order the lines were appended, and the
+/// reason is that the file honestly holds two clocks. Our own sends and
+/// anything opened off the live socket are stamped from this machine; a
+/// message pulled out of the offline queue keeps the island's `received_at`,
+/// which is right (it is roughly when the sender actually sent it) but is not
+/// the same clock. On a box 16 seconds ahead of prod (measured, 2026-08-22)
+/// append order and timestamp order disagree, and a recap printed 07:44:39
+/// above 07:44:37 with the two lines the wrong way round. `slice(-limit)` made
+/// it worse than cosmetic: the "last 8 lines" could drop the newest message
+/// and keep an older one. Whatever the clocks do, what prints must agree with
+/// the times printed beside it.
 export function readLog(myUin: number, thread: Thread, limit: number): LogRow[] {
   let text: string
   try {
@@ -65,6 +77,10 @@ export function readLog(myUin: number, thread: Thread, limit: number): LogRow[] 
     if (thread && !sameThread(t, thread)) continue
     rows.push({ ...rec, thread: t })
   }
+  // Stable, so rows sharing a timestamp (or carrying an unreadable one, which
+  // parses to NaN and compares equal to everything) keep the order they were
+  // written in rather than being shuffled.
+  rows.sort((a, b) => (Date.parse(a.at) || 0) - (Date.parse(b.at) || 0))
   return limit > 0 ? rows.slice(-limit) : rows
 }
 

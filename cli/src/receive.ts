@@ -24,6 +24,7 @@ import { openGroupPacket, replayStoredGroupPackets } from './held-groups'
 import { tr } from './i18n'
 import { statePath } from './state'
 import { err, out, peer } from './style'
+import { humanError } from './errors'
 
 /// Envelope kinds that are a MESSAGE (rendered, receipted, kept in history).
 /// Everything else is control traffic: receipts, reactions, edits, sender-key
@@ -500,10 +501,16 @@ function rowTime(r: QueueRow): Date | undefined {
   return Number.isNaN(d.getTime()) ? undefined : d
 }
 
+/// The queue read gets a longer deadline than the global one in bootstrap.ts
+/// (a month of backlog is a big answer), and passing a signal is also what
+/// tells that wrapper to keep its hands off this call.
+///
+/// ⚠ AbortSignal.timeout, not a hand-rolled AbortController: an aborted
+/// controller rejects as `AbortError: This operation was aborted`, which is
+/// what "drain failed: This operation was aborted" used to be made of. The
+/// timeout signal rejects as a TimeoutError, which errors.ts can say out loud.
 function fetchWithTimeout(url: string, init: RequestInit, ms = 30_000): Promise<Response> {
-  const ctl = new AbortController()
-  const timer = setTimeout(() => ctl.abort(), ms)
-  return fetch(url, { ...init, signal: ctl.signal }).finally(() => clearTimeout(timer))
+  return fetch(url, { ...init, signal: AbortSignal.timeout(ms) })
 }
 
 /// One pass over the offline queue. Returns the receipts seen, or null when
@@ -532,7 +539,7 @@ export async function drainQueue(identity: WebIdentity): Promise<IngestResult | 
     }
     rows = (await res.json()) as QueueRow[]
   } catch (e) {
-    process.stderr.write(tr('drain.error', { err: e instanceof Error ? e.message : String(e) }) + '\n')
+    process.stderr.write(tr('drain.error', { err: humanError(e) }) + '\n')
     return null
   }
   const directIds: number[] = []
@@ -579,7 +586,7 @@ export async function drainQueue(identity: WebIdentity): Promise<IngestResult | 
       // keeps failing is a message nobody can read and nobody was told about:
       // one line, with the reason, per row.
       process.stderr.write(
-        err.dim(tr('drain.row', { id: r.id, err: e instanceof Error ? e.message : String(e) })) + '\n',
+        err.dim(tr('drain.row', { id: r.id, err: humanError(e) })) + '\n',
       )
     }
   }
@@ -598,7 +605,7 @@ export async function drainQueue(identity: WebIdentity): Promise<IngestResult | 
       // Harmless once (the island redelivers and the id dedup absorbs it) and
       // worth knowing when it is every time: an ack that never lands is a
       // backlog that never shrinks.
-      sayOnce('ack', tr('drain.ackFailed', { err: e instanceof Error ? e.message : String(e) }))
+      sayOnce('ack', tr('drain.ackFailed', { err: humanError(e) }))
     })
   }
   return result

@@ -4,8 +4,9 @@
 // supports the same WS for any number of devices per UIN, so
 // the web client just registers under the existing scheme and
 // receives the same events the phone does (`presence`,
-// `contact_request`, `contact_response`, `message`, `hood_*`,
-// `trade_*`, `call_*`, etc.).
+// `contact_request`, `contact_response`, `message`, `trade_*`,
+// `call_*`, etc.). `hood_*` was in this list until the hood was
+// deleted server-side; no island emits it any more.
 //
 // Event payloads are typed loosely (`unknown`) at the transport
 // layer — consumers cast/narrow at call sites where the

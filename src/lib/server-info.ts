@@ -18,14 +18,18 @@ import { useEffect, useState } from 'react'
 /// purpose and in two directions: an older island that predates a flag keeps
 /// the surface visible, and so does a live island whose /server/info has not
 /// landed yet. Hiding first and asking later would blink a menu on every open.
+///
+/// ⚠ `hood` and `stories` used to live here. Both surfaces were deleted from
+/// the server (routers, tables and flags), so no island answers with them any
+/// more and no client has anything left to gate. An unknown key in the
+/// capabilities object is ignored by `normalize` below, so an island that has
+/// not been updated yet is harmless: it sends two booleans nobody reads.
 export interface ServerCapabilities {
   uin_shop: boolean
   hall_of_fame: boolean
   registration_policy: string
   nearby: boolean
   random_chat: boolean
-  hood: boolean
-  stories: boolean
   reports: boolean
   max_accounts_per_device: number
 }
@@ -45,8 +49,6 @@ export const DEFAULT_CAPABILITIES: ServerCapabilities = {
   registration_policy: 'open',
   nearby: true,
   random_chat: true,
-  hood: true,
-  stories: true,
   reports: true,
   max_accounts_per_device: 5,
 }
@@ -63,8 +65,6 @@ type BoolCapability =
   | 'hall_of_fame'
   | 'nearby'
   | 'random_chat'
-  | 'hood'
-  | 'stories'
   | 'reports'
 
 function normalize(raw: unknown): ServerInfo | null {
@@ -85,8 +85,6 @@ function normalize(raw: unknown): ServerInfo | null {
           : DEFAULT_CAPABILITIES.registration_policy,
       nearby: bool('nearby'),
       random_chat: bool('random_chat'),
-      hood: bool('hood'),
-      stories: bool('stories'),
       reports: bool('reports'),
       max_accounts_per_device:
         typeof caps.max_accounts_per_device === 'number'

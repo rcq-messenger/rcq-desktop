@@ -10,13 +10,17 @@ import { tr } from './i18n'
 import { appendHistory, markSent } from './receive'
 import { err } from './style'
 
+/// Where a carbon says the message went: a 1:1 peer, or a group. Exactly one
+/// of the two, which is how every client reads the envelope.
+export type CarbonDest = { to: number; gid?: undefined } | { gid: number; to?: undefined }
+
 /// Deposit a self-carbon so the phone/desktop show this message as ours —
 /// mirrors Chat.tsx sendMessageCarbon: v=1 sealed to our OWN account key,
 /// outer type 'carbon' (non-pushable — our phone must not ring for a message
 /// we just typed). Best-effort: the message already went out.
-export async function sendMessageCarbon(identity: WebIdentity, peerUin: number, inner: Envelope): Promise<void> {
+export async function sendMessageCarbon(identity: WebIdentity, dest: CarbonDest, inner: Envelope): Promise<void> {
   try {
-    const carbon: CarbonEnvelope = { kind: 'carbon', to: peerUin, gid: null, env: inner }
+    const carbon: CarbonEnvelope = { kind: 'carbon', to: dest.to ?? null, gid: dest.gid ?? null, env: inner }
     const selfBundle = peerBundleFrom({
       uin: identity.uin,
       identity_key: bytesToB64(identity.identityPub),
@@ -63,7 +67,7 @@ export async function sendText(
   // the POST's own response — a mark placed after the await loses that race
   // and the typed line prints twice.
   markSent(env.id)
-  await sendMessageCarbon(identity, uin, env)
+  await sendMessageCarbon(identity, { to: uin }, env)
   // Our half of the conversation belongs in the history file too — and the
   // seed of `seen` on the NEXT process start comes from this very row, which
   // is what keeps a redelivered self-carbon from printing after a restart.

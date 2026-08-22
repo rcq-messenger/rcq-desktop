@@ -53,6 +53,7 @@ const common = {
 
 await build({ ...common, entryPoints: [path.join(cli, 'src', 'main.ts')], outfile: path.join(dist, 'rcq.mjs') })
 await build({ ...common, entryPoints: [path.join(cli, 'src', 'crypto-entry.ts')], outfile: path.join(dist, 'crypto-v2.mjs') })
+await build({ ...common, entryPoints: [path.join(cli, 'src', 'group-entry.ts')], outfile: path.join(dist, 'group-v1.mjs') })
 
 // The node glue + its .wasm, next to the bundles (see the header comment).
 fs.cpSync(path.join(root, 'crypto-wasm-spike', 'signal-wasm', 'pkg-node'), path.join(dist, 'pkg-node'), {

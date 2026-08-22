@@ -19,7 +19,7 @@
 // two accounts, which is the exact bug account-scope.ts was written to end.
 
 import { setAccountScope } from '../../src/lib/account-scope'
-import { Api, ApiError, type Contact, type UserInfo } from '../../src/lib/api'
+import { Api, ApiError, type Contact, type PendingRequest, type RCQGroup, type UserInfo } from '../../src/lib/api'
 import {
   contactsCache,
   lookupGroupName,
@@ -68,6 +68,13 @@ function learnName(myUin: number, uin: number, name: string): void {
   }
 }
 
+/// Remember a name somebody else has told us, for the lines that come after.
+/// A contact request carries its sender's nickname on the frame, and that is
+/// the one moment a stranger's name arrives without being asked for.
+export function noteName(myUin: number, uin: number, name: string): void {
+  if (name.trim()) learnName(myUin, uin, name.trim())
+}
+
 /// Scope this process to the account and warm the roster from disk. Called
 /// before anything reads a store, i.e. the moment an identity is loaded.
 export function initDirectory(uin: number): void {
@@ -79,11 +86,13 @@ let inflight: Promise<Contact[]> | null = null
 let refreshComplained = false
 
 async function fetchDirectory(identity: WebIdentity): Promise<Contact[]> {
-  // The group list without its rosters: names are all this needs, and the
-  // members are the expensive half of a group payload.
-  const [contacts, groups] = await Promise.all([
+  // The group list without its rosters: names, counts and the room rules are
+  // all a list row needs, and the members are the expensive half of a group
+  // payload (`ensureRoster` fetches one when a send actually needs it).
+  const [contacts, groups, pending] = await Promise.all([
     Api.contacts(identity),
     Api.groups(identity, false).catch(() => null),
+    Api.pendingRequests(identity).catch(() => null),
   ])
   const prev = contactsCache.get(identity.uin)
   persistSnapshot(identity.uin, {
@@ -91,7 +100,7 @@ async function fetchDirectory(identity: WebIdentity): Promise<Contact[]> {
     // A failed group fetch keeps the names we had; blanking them would put the
     // raw ids back on screen for the rest of the process.
     groups: groups ?? prev?.groups ?? [],
-    pending: prev?.pending ?? [],
+    pending: pending ?? prev?.pending ?? [],
     me: prev?.me ?? null,
   })
   return contacts
@@ -143,6 +152,46 @@ export function cachedContacts(myUin: number): Contact[] {
 
 export function isContact(myUin: number, uin: number): boolean {
   return cachedContacts(myUin).some((c) => c.uin === uin)
+}
+
+/// The account's groups as last seen. Same snapshot as the contacts, so a
+/// group list answers offline and before the first refresh lands.
+export function cachedGroups(myUin: number): RCQGroup[] {
+  return contactsCache.get(myUin)?.groups ?? []
+}
+
+/// Incoming contact requests as last seen. Refreshed with the roster.
+export function cachedPending(myUin: number): PendingRequest[] {
+  return contactsCache.get(myUin)?.pending ?? []
+}
+
+export function groupById(myUin: number, gid: number): RCQGroup | null {
+  return cachedGroups(myUin).find((g) => g.id === gid) ?? null
+}
+
+/// A group by its id (`21`) or by its name, whole or as a unique prefix.
+/// Nobody types `21` for the room they call "Работа", and a terminal is the
+/// one place where a name is easier to type than to click.
+export function findGroup(myUin: number, token: string): RCQGroup | null {
+  const groups = cachedGroups(myUin)
+  const asId = Number(token)
+  if (Number.isInteger(asId)) {
+    const byId = groupById(myUin, asId)
+    if (byId) return byId
+  }
+  const needle = token.trim().toLowerCase()
+  if (!needle) return null
+  const exact = groups.filter((g) => g.name.toLowerCase() === needle)
+  if (exact.length === 1) return exact[0]
+  const prefix = groups.filter((g) => g.name.toLowerCase().startsWith(needle))
+  // An ambiguous prefix is not a group: picking one of two rooms for somebody
+  // is how a message lands in the wrong one.
+  return prefix.length === 1 ? prefix[0] : null
+}
+
+/// How many people are in a group, whether or not the roster came with it.
+export function groupSize(g: RCQGroup): number {
+  return g.member_count && g.member_count > 0 ? g.member_count : g.members.length
 }
 
 /// The name we hold for a uin, or null when nobody has ever told us one.

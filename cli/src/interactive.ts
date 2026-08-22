@@ -36,7 +36,8 @@ import {
   ruleRefusal,
   sendGroupText,
 } from './groups'
-import { currentLang, setLang, tr } from './i18n'
+import { canonical } from './aliases'
+import { currentLang, LANG_CODES, normalizeLang, setLang, tr } from './i18n'
 import { logRowHuman, readLog, recentThreads, threadTag, type Thread } from './log'
 import { loadPromptHistory, rememberCommand } from './prompt-history'
 import {
@@ -523,9 +524,12 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
     const line = raw.trim()
     if (!line) return
     if (line.startsWith('/')) {
-      const cmd = line.split(/\s+/, 1)[0].toLowerCase()
-      const arg = line.slice(cmd.length).trim()
-      return runCommand(cmd, arg)
+      const word = line.split(/\s+/, 1)[0].toLowerCase()
+      const arg = line.slice(word.length).trim()
+      // The alias table resolves `/req` and `/requests` to the same verb, so
+      // the switch below cases on canonical names; `word` is kept for the
+      // "unknown command" line, which should echo what was actually typed.
+      return runCommand(canonical(word.slice(1)), arg, word)
     }
     // Muscle memory from the one-shot commands: `rcq send 911 hi` typed INTO
     // rcq would go out as literal text starting with the word "rcq". Catch it
@@ -542,21 +546,18 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
     return sendToPeer(active.uin, line)
   }
 
-  /// Everything behind a slash. One switch rather than a chain of prefix
-  /// tests: there are enough of these now that the chain was the hard part to
-  /// read, and a verb that takes no argument must not swallow one.
-  async function runCommand(cmd: string, arg: string): Promise<void> {
-    switch (cmd) {
-      case '/quit':
-      case '/q':
-      case '/exit':
+  /// Everything behind a slash, keyed on the CANONICAL verb (see aliases.ts):
+  /// the caller has already resolved `/req` and `/requests` to `requests`.
+  /// `typed` is the literal `/word` for the one line that echoes it back.
+  async function runCommand(verb: string, arg: string, typed: string): Promise<void> {
+    switch (verb) {
+      case 'quit':
         shutdown()
         return
-      case '/help':
-      case '/?':
+      case 'help':
         printAbove(tr('interactive.help'))
         return
-      case '/contacts': {
+      case 'contacts': {
         let list: Contact[]
         try {
           list = await refreshDirectory(identity)
@@ -579,10 +580,9 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
         )
         return
       }
-      case '/g':
-      case '/groups':
+      case 'groups':
         return openGroup(arg)
-      case '/log': {
+      case 'log': {
         const n = Number(arg) > 0 ? Number(arg) : 20
         const thread: Thread = active
           ? active.kind === 'peer'
@@ -597,11 +597,10 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
         printBlock(rows.map((r) => logRowHuman(identity, r)))
         return
       }
-      case '/recent':
-      case '/threads':
+      case 'recent':
         printRecent(Number(arg) > 0 ? Number(arg) : RECENT_LINES)
         return
-      case '/retry': {
+      case 'retry': {
         const held = lastFailed
         if (!held) {
           printAbove(out.dim(tr('retry.nothing')))
@@ -612,13 +611,13 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
         // the line was first typed, and the send is what failed.
         return held.to.kind === 'peer' ? sendToPeer(held.to.uin, held.text, false) : sendToGroup(held.to.gid, held.text)
       }
-      case '/requests':
+      case 'requests':
         return printRequests()
-      case '/accept':
+      case 'accept':
         return answerRequest(arg, true)
-      case '/decline':
+      case 'decline':
         return answerRequest(arg, false)
-      case '/cancel': {
+      case 'cancel': {
         const uin = Number(arg)
         if (!Number.isInteger(uin) || uin <= 0) {
           printAbove(tr('interactive.usageCancel'))
@@ -633,7 +632,7 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
         printAbove(out.dim(tr('req.cancelled', { who: peerLabel(identity.uin, uin) })))
         return
       }
-      case '/find': {
+      case 'find': {
         if (!arg) {
           printAbove(tr('interactive.usageFind'))
           return
@@ -653,7 +652,7 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
         printBlock(found.map((u) => `  ${`#${u.uin}`.padEnd(w)} ${pad(u.nickname, 22)} ${out.dim(u.status)}`))
         return
       }
-      case '/who': {
+      case 'who': {
         const uin = Number(arg)
         if (!Number.isInteger(uin) || uin <= 0) {
           printAbove(tr('interactive.usageWho'))
@@ -672,7 +671,7 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
         printAbove(`${peerLabel(identity.uin, uin)}  ${out.dim(notes.join('; '))}`)
         return
       }
-      case '/to': {
+      case 'to': {
         const uin = Number(arg)
         if (!Number.isInteger(uin) || uin <= 0) {
           printAbove(tr('interactive.usageTo'))
@@ -695,7 +694,7 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
         switchTo({ kind: 'peer', uin })
         return
       }
-      case '/nick': {
+      case 'nick': {
         if (!arg) {
           printAbove(tr('interactive.usageNick'))
           return
@@ -709,7 +708,7 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
         printAbove(out.dim(tr('nick.done', { name: arg })))
         return
       }
-      case '/add': {
+      case 'add': {
         const uin = Number(arg)
         if (!Number.isInteger(uin) || uin <= 0) {
           printAbove(tr('interactive.usageAdd'))
@@ -737,18 +736,18 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
         if (state !== 'pending') await refreshDirectory(identity).catch(() => null)
         return
       }
-      case '/block':
-      case '/unblock': {
+      case 'block':
+      case 'unblock': {
         const uin = Number(arg)
         if (!Number.isInteger(uin) || uin <= 0) {
           printAbove(tr('interactive.usageBlock'))
           return
         }
-        const on = cmd === '/block'
+        const on = verb === 'block'
         try {
           await Api.blockContact(identity, uin, on)
         } catch (e) {
-          printAbove(out.red(tr('fail.command', { cmd, err: humanError(e) })))
+          printAbove(out.red(tr('fail.command', { cmd: typed, err: humanError(e) })))
           return
         }
         const who = peerLabel(identity.uin, uin)
@@ -756,7 +755,7 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
         await refreshDirectory(identity).catch(() => null)
         return
       }
-      case '/remove': {
+      case 'remove': {
         const uin = Number(arg)
         if (!Number.isInteger(uin) || uin <= 0) {
           printAbove(tr('interactive.usageRemove'))
@@ -779,7 +778,7 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
       // its dir (see state.ts), so while this prompt is open `rcq whoami` in
       // another terminal REFUSES to run: a verb with no slash of its own is a
       // verb nobody can reach without quitting the conversation first.
-      case '/whoami': {
+      case 'whoami': {
         const dev = await myDeviceId(identity).catch(() => null)
         const nick = await Api.myInfo(identity)
           .then((m) => m.nickname ?? null)
@@ -791,7 +790,7 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
         ])
         return
       }
-      case '/join': {
+      case 'join': {
         const gid = Number(arg.replace(/^g/i, ''))
         if (!Number.isInteger(gid) || gid <= 0) {
           printAbove(tr('join.needsId'))
@@ -819,24 +818,100 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
         // step nobody wants.
         return openGroup(String(group.id))
       }
-      case '/export':
+      // Leaving used to be impossible from the console - the founder called it a
+      // trap. `/leave` steps out of the room you name, or the one you are in.
+      case 'leave': {
+        const g = arg ? findGroup(identity.uin, arg) : active?.kind === 'group' ? groupById(identity.uin, active.gid) : null
+        if (!g) {
+          printAbove(out.yellow(tr('leave.needsId')))
+          return
+        }
+        try {
+          await Api.removeGroupMember(identity, g.id, identity.uin)
+        } catch (e) {
+          // Not swallowed: the whole point of this verb is that leaving works or
+          // says why it did not.
+          printAbove(out.red(tr('leave.failed', { err: describeGroupError(e) })))
+          return
+        }
+        // Standing in the room we just left: step back to the bare prompt.
+        if (active?.kind === 'group' && active.gid === g.id) {
+          active = null
+          setOpenGroup(null)
+          rl.setPrompt('rcq> ')
+          rl.prompt(true)
+        }
+        await refreshDirectory(identity).catch(() => null)
+        printAbove(out.dim(tr('leave.done', { name: g.name })))
+        return
+      }
+      case 'create': {
+        if (!arg) {
+          printAbove(tr('interactive.usageCreate'))
+          return
+        }
+        let group: RCQGroup
+        try {
+          group = await Api.createGroup(identity, arg, [])
+        } catch (e) {
+          printAbove(out.red(tr('create.failed', { err: describeGroupError(e) })))
+          return
+        }
+        await refreshDirectory(identity).catch(() => null)
+        printAbove(out.dim(tr('create.done', { name: group.name })))
+        return openGroup(String(group.id))
+      }
+      case 'invite': {
+        // `/invite <uin>` into the active room, or `/invite g<id> <uin>` for any.
+        const parts = arg.split(/\s+/).filter(Boolean)
+        let gid: number | null = null
+        let uinTok: string | undefined
+        if (parts.length >= 2) {
+          gid = Number(parts[0].replace(/^g/i, ''))
+          uinTok = parts[1]
+        } else if (parts.length === 1 && active?.kind === 'group') {
+          gid = active.gid
+          uinTok = parts[0]
+        }
+        const uin = Number(uinTok)
+        if (!gid || !Number.isInteger(gid) || gid <= 0 || !Number.isInteger(uin) || uin <= 0) {
+          printAbove(tr('interactive.usageInvite'))
+          return
+        }
+        const base = groupById(identity.uin, gid)
+        if (!base) {
+          printAbove(out.yellow(tr('group.notMember', { gid })))
+          return
+        }
+        try {
+          await Api.addGroupMember(identity, gid, uin)
+        } catch (e) {
+          printAbove(out.red(tr('invite.failed', { who: peerLabel(identity.uin, uin), err: describeGroupError(e) })))
+          return
+        }
+        await refreshDirectory(identity).catch(() => null)
+        printAbove(out.dim(tr('invite.done', { who: peerLabel(identity.uin, uin), name: base.name })))
+        return
+      }
+      case 'export':
         printAbove(out.dim(tr('export.at', { file: historyPath(identity.uin) })))
         return
-      case '/lang': {
+      case 'lang': {
         if (!arg) {
-          printBlock([`  ${currentLang()}`, out.dim(tr('lang.usage'))])
+          printBlock([`  ${currentLang()}`, out.dim(tr('lang.usage', { codes: LANG_CODES }))])
           return
         }
-        if (arg !== 'en' && arg !== 'ru') {
-          printAbove(out.yellow(tr('lang.invalid', { arg })))
+        const pick = normalizeLang(arg)
+        if (!pick) {
+          printAbove(out.yellow(tr('lang.invalid', { arg, codes: LANG_CODES })))
           return
         }
-        setLang(arg)
-        printAbove(out.dim(tr('lang.set', { lang: arg })))
+        setLang(pick)
+        printAbove(out.dim(tr('lang.set', { lang: pick })))
         return
       }
       default:
-        printAbove(tr('interactive.unknownSlash', { cmd }))
+        printAbove(tr('interactive.unknownSlash', { cmd: typed }))
     }
   }
 
@@ -870,7 +945,7 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
     // the word "quit" and gone blank. Ctrl+C never queued; typing the verb
     // should not be the slower way out. shutdown() reports what is genuinely
     // still in flight and gives it five seconds.
-    if (/^\/(q|quit|exit)$/i.test(typed)) {
+    if (typed.startsWith('/') && canonical(typed.slice(1).split(/\s+/, 1)[0].toLowerCase()) === 'quit') {
       shutdown()
       return
     }

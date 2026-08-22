@@ -291,7 +291,18 @@ def main():
         if not path.exists():
             die(f"missing {path}")
 
+    # Removed on the way out unless --no-upload asked to keep it. It used to
+    # stay behind: ~430 MB per run, 21 of them found on 2026-08-22 (4.2 GB)
+    # when a release ran the Mac out of disk halfway through.
     work = Path(tempfile.mkdtemp(prefix="rcq-update-"))
+    try:
+        _run(args, work)
+    finally:
+        if not args.no_upload:
+            shutil.rmtree(work, ignore_errors=True)
+
+
+def _run(args, work: Path) -> None:
     # `names` is what gets an updater signature and a manifest entry. The dmg
     # is a plain download, so it is uploaded but neither signed nor listed.
     names = list(ASSETS) + ["RCQ-linux.AppImage.tar.gz", "RCQ.app.tar.gz"]

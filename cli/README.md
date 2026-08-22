@@ -262,6 +262,6 @@ apologise vaguely for one, it now says which.
 * `restore` onto a box meant to be the ONLY device still registers as
   secondary; the design doc's `--primary` flag is unimplemented.
 * No passphrase at rest; file permissions only.
-* No calls (a ring is invisible), no audio rooms, no stories, no nearby.
-  A terminal should not have those; the silent ring should still say
-  something, and does not.
+* No calls (a ring is invisible), no audio rooms, no nearby. A terminal
+  should not have those; the silent ring should still say something, and
+  does not.

@@ -33,8 +33,10 @@ export interface ResolvedPeer {
 /// minimal public-key card (no auth, no prekey consumed) the island serves for
 /// any of its residents. That openness is what makes cross-island resolution
 /// work: a sender on another island holds no token on the peer's island, so the
-/// anchor source must be unauthenticated. (The auth-gated `/keys/{uin}/bundle`
-/// is still used separately to start a v=2 session; it is not the anchor.)
+/// anchor source must be unauthenticated. (`/keys/{uin}/bundle` is still used
+/// separately to start a v=2 session; it is not the anchor. On a Stage 3 island
+/// that bundle is no longer session-token-gated either but spends an anonymous
+/// deposit token instead, so the island never learns whose keys were fetched.)
 export async function resolvePeerHomes(
   host: string,
   uin: number,

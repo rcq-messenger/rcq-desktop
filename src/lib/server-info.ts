@@ -11,8 +11,10 @@
 // the default host and that is exactly how the flagship's own name and rules
 // became unreachable (its BRANDING bug): the flagship is an island too, with
 // the same two fields in the same admin panel.
-
-import { useEffect, useState } from 'react'
+//
+// React-free on purpose: the key-lookup path (signal-device.ts) reads the
+// capabilities too, and that module is bundled into the CLI, which must not
+// drag React along. The hooks live in use-server-info.ts.
 
 /// Optional surfaces an island may switch off. Defaults are PERMISSIVE, on
 /// purpose and in two directions: an older island that predates a flag keeps
@@ -29,6 +31,15 @@ import { useEffect, useState } from 'react'
 /// on a closed phone. The call path (`crossisland-call.ts`) reads it to decide
 /// whether the quieter Stage 2 deposit will actually wake the peer.
 ///
+/// ⚠ `anon_keys` and `deposit_auth` default to FALSE for the same reason: they
+/// are wire abilities, not surfaces. `anon_keys` says the island serves the
+/// three key lookups (`/keys/{uin}/devices`, `/keys/{uin}/bundle`,
+/// `/keys/{uin}/devices/{id}/bundle`) without a session token (core-metadata
+/// plan, Stage 3); `deposit_auth` says it issues the anonymous deposit tokens a
+/// bundle fetch then pays with. Only when BOTH are true does the key-lookup
+/// path (signal-device.ts) stop naming itself; an island that lacks either
+/// still gets the legacy authenticated request, never a half-anonymous one.
+///
 /// ⚠ `hood` and `stories` used to live here. Both surfaces were deleted from
 /// the server (routers, tables and flags), so no island answers with them any
 /// more and no client has anything left to gate. An unknown key in the
@@ -43,6 +54,8 @@ export interface ServerCapabilities {
   reports: boolean
   max_accounts_per_device: number
   envelope_class: boolean
+  anon_keys: boolean
+  deposit_auth: boolean
 }
 
 export interface ServerInfo {
@@ -54,7 +67,8 @@ export interface ServerInfo {
 /// Mirrors Android's `ServerCapabilities` defaults (net/RcqApi.kt) field for
 /// field. uin_shop and hall_of_fame default OFF because a self-host island that
 /// says nothing runs neither; everything else defaults ON, except
-/// `envelope_class` (see the interface comment: absent means pre-Stage 2).
+/// `envelope_class`, `anon_keys` and `deposit_auth` (see the interface
+/// comment: absent means the island predates that stage).
 export const DEFAULT_CAPABILITIES: ServerCapabilities = {
   uin_shop: false,
   hall_of_fame: false,
@@ -64,6 +78,8 @@ export const DEFAULT_CAPABILITIES: ServerCapabilities = {
   reports: true,
   max_accounts_per_device: 5,
   envelope_class: false,
+  anon_keys: false,
+  deposit_auth: false,
 }
 
 /// One in-flight request per island, and one answer kept for the run. This is
@@ -80,6 +96,8 @@ type BoolCapability =
   | 'random_chat'
   | 'reports'
   | 'envelope_class'
+  | 'anon_keys'
+  | 'deposit_auth'
 
 function normalize(raw: unknown): ServerInfo | null {
   if (!raw || typeof raw !== 'object') return null
@@ -105,6 +123,8 @@ function normalize(raw: unknown): ServerInfo | null {
           ? caps.max_accounts_per_device
           : DEFAULT_CAPABILITIES.max_accounts_per_device,
       envelope_class: bool('envelope_class'),
+      anon_keys: bool('anon_keys'),
+      deposit_auth: bool('deposit_auth'),
     },
   }
 }
@@ -141,29 +161,4 @@ export function fetchServerInfo(apiBase: string): Promise<ServerInfo | null> {
     if (!info) cache.delete(apiBase)
   })
   return p
-}
-
-/// `null` while the answer is in flight or the island did not give one.
-export function useServerInfo(apiBase: string | undefined): ServerInfo | null {
-  const [info, setInfo] = useState<ServerInfo | null>(null)
-  useEffect(() => {
-    if (!apiBase) {
-      setInfo(null)
-      return
-    }
-    let live = true
-    void fetchServerInfo(apiBase).then((v) => {
-      if (live) setInfo(v)
-    })
-    return () => {
-      live = false
-    }
-  }, [apiBase])
-  return info
-}
-
-/// The capabilities with every gap filled, so a caller can write
-/// `caps.reports` without repeating the permissive-default reasoning.
-export function useServerCapabilities(apiBase: string | undefined): ServerCapabilities {
-  return useServerInfo(apiBase)?.capabilities ?? DEFAULT_CAPABILITIES
 }

@@ -229,13 +229,13 @@ export const tr: Record<string, string> = {
   'how.q3': 'Çalışmayı bırakınca ne yapmalıyım?',
   'how.a3': 'Önce engellenip engellenmediğinizi öğrenin: Ayarlar → Ağ → Bağlantı tanılama, ve tam denetimi VPN KAPALIYKEN çalıştırın.\nSize tek bir satır verir. Onu Hata bildir üzerinden gönderin: o satır ağınızda tam olarak neyin kapalı olduğunu söyler, onsuz tahmin yürütürüz.',
   'how.q4':
-    'Ağım RCQ’yu engellediğinde ne olur?',
+    'RCQ röleleri nedir?',
   'how.a4':
-    'Uygulama bunu fark eder ve kendisi dolanır. Açılacak bir şey yok, ayrı bir VPN de gerekmez: röylelerimizden birine tünel açar ve çalışmaya devam eder.\nEngelleyen taraf için bu trafik, sıradan bir siteye yapılan sıradan bir ziyaret gibi görünür — tarayıcınızın gün boyu kurduğu şifreli bağlantıların aynısı. Röle mühürlü zarflar taşır, yani mesajlarınızı o da okuyamaz.',
+    'Trafik adaya doğrudan değil, rölelerimiz üzerinden gider: ada adresinizi görmez, sizinle ada arasındaki ağ da RCQ kullandığınızı görmez. Ayrı bir VPN gerekmez, uygulama röleye giden tüneli kendisi açar.\nDışarıdan bakınca sıradan bir siteye yapılan sıradan bir ziyaret gibi görünür: tarayıcınızın gün boyu kurduğu şifreli bağlantıların aynısı. Röle mühürlü zarflar taşır, yani mesajlarınızı o da okuyamaz.\nRCQ\'nun engellendiği yerlerde bu ayrıca tek yoldur.',
   'how.q5':
     'Kime yazdığımı biri öğrenebilir mi?',
   'how.a5':
-    'Adanız bir zarfın birine gittiğini bilir, sizden çıktığını bilmez: adınız dışarıda yazmaz.\nTünel açıkken dışarı çıkan yol iki röle arasında bölünür. Birincisi sizi görür ama hangi adaya gittiğinizi bilmez; ikincisi adaya ulaşır ama kim olduğunuzu bilmez. İki yarıyı birleştirmek ikisini birden gerektirir, ve onlar farklı ülkelerde farklı kişilere aittir.\nGizlenemeyen şey: RCQ kullandığınız, ağınızı elinde tutan tarafa görünür — tünel kapalı olduğu sürece.',
+    'Adanız bir zarfın birine gittiğini bilir, sizden çıktığını bilmez: adınız dışarıda yazmaz.\nRCQ röleleri açıkken dışarı çıkan yol iki röle arasında bölünür. Birincisi sizi görür ama hangi adaya gittiğinizi bilmez; ikincisi adaya ulaşır ama kim olduğunuzu bilmez. İki yarıyı birleştirmek ikisini birden gerektirir, ve onlar farklı ülkelerde farklı kişilere aittir.\nGizlenemeyen şey: RCQ kullandığınız, RCQ rölelerinden geçmediğiniz sürece ağınızı elinde tutan tarafa görünür.',
   'how.more': 'Daha fazla soru: rcq.app/faq →',
   'storage.title': 'Bu tarayıcıda ne var',
   'storage.footer.short': 'Anahtarlar, yazışmalar, listeler ve bunları silme',
@@ -373,7 +373,7 @@ export const tr: Record<string, string> = {
   // Connection diagnostics, the phones' ConnectionDiagnostics.
   'diag.title': 'Bağlantı tanılaması',
   'diag.route': 'Rota',
-  'diag.mode_tunnel': 'Röle (gizlenmiş)',
+  'diag.mode_tunnel': 'Rölelerden',
   'diag.mode_direct': 'Doğrudan',
   'diag.island_direct': 'Ada, doğrudan',
   'diag.island_route': 'Ada, geçerli rota',
@@ -391,11 +391,11 @@ export const tr: Record<string, string> = {
   'diag.run_again': 'Tekrar çalıştır',
   'diag.footer': 'Ada doğrudan engelliyken geçerli rotadan erişilebiliyorsa röle işini yapıyor demektir. İkisi de olmuyorsa ağın erişebildiğimiz her şeyi engelliyor.',
   // The header shield, shown only while a relay is carrying the app.
-  'bypass.shield.verified': 'Röleden geçiyor ve geçebiliyor',
-  'bypass.shield.unverified': 'Röleden geçiyor ama henüz cevap gelmedi',
-  'bypass.shield.off': 'Engel aşma kapalı',
+  'bypass.shield.verified': 'Rölelerden geçiyor, cevaplar geliyor',
+  'bypass.shield.unverified': 'Rölelerden geçiyor ama henüz cevap gelmedi',
+  'bypass.shield.off': 'Doğrudan',
   'bypass.auto_note': 'Kendiliğinden açıldı: ada doğrudan cevap vermedi.',
-  'bypass.needs_relaunch': 'Bağlantı çalışmayı bıraktı, bu yüzden engel aşma açıldı. Kullanmaya başlamak için RCQ\'yu yeniden başlat.',
+  'bypass.needs_relaunch': 'Bağlantı çalışmayı bıraktı, bu yüzden RCQ röleleri açıldı. Kullanmaya başlamak için RCQ\'yu yeniden başlat.',
   'settings.bypass.key_title': 'Özel havuz anahtarı',
   'settings.bypass.key_hint': 'Başka kimsenin olmadığı ücretli uç noktalar. Anahtar rcq.app adresindeki panelinden gelir.',
   'settings.bypass.key_placeholder': 'erişim anahtarı',
@@ -410,19 +410,25 @@ export const tr: Record<string, string> = {
   'settings.bypass.relay_remove': 'kaldır',
   'settings.bypass.relay_bad': 'Bu, kullanılabilir bir röle bağlantısına benzemiyor.',
   'settings.bypass.relay_note': 'Birinin sana gönderdiği ya da kendi rölenin yazdırdığı bir rcq-relay:// bağlantısını yapıştır. Yeniden başlatınca geçerli olur.',
-  // Desktop build only — circumvention through the bundled sing-box.
-  'settings.section.bypass': 'Engelleri aşma',
-  'settings.bypass.toggle': 'Bu uygulamayı RCQ röleleri üzerinden geçir',
-  'settings.bypass.footer': 'RCQ\'nun engellendiği yerlerde uygulamanın trafiğini doğrudan çıkarmak yerine rölelerimizden taşır. Varsayılan olarak kapalı: açık bir ağda işleri sadece yavaşlatır.',
+  // Desktop build only: the RCQ relays, carried by the bundled sing-box.
+  // Named for what it is (a privacy layer everyone can use), not for who
+  // needs it most. The old "getting through blocks" framing put the
+  // censored case in the headline and left everyone else with no reason
+  // to read the section at all. Keys stay `bypass.*` so the phones and
+  // this client keep matching.
+  'settings.section.bypass': 'RCQ röleleri',
+  'settings.bypass.toggle': 'Uygulamayı RCQ röleleri üzerinden geçir',
+  'settings.bypass.footer': 'Trafik adaya doğrudan değil, rölelerimiz üzerinden gider: ada adresinizi görmez, sizinle ada arasındaki ağ da RCQ kullandığınızı görmez. Karşılığında bağlantı biraz yavaşlar. RCQ\'nun engellendiği yerlerde bu ayrıca tek yoldur.',
+  'settings.bypass.learn': 'Röle nedir?',
   'settings.bypass.restart_note': 'Uygulama yeniden başlayınca geçerli olur.',
   'settings.bypass.restart_now': 'Yeniden başlat',
   'settings.bypass.failed': 'Rölelere ulaşılamadı. Tekrar denemek için yeniden başlat.',
-  'settings.bypass.running': 'Açık, {count} röle yarışıyor',
+  'settings.bypass.running': 'Rölelerden · {count} röle yarışıyor',
   'settings.bypass.list_version': 'röle listesi v{version}',
   // Shown only by a build compiled without the `mac-bypass` feature. It used to
   // say "needs macOS 14 or newer", which read as an OS problem and was wrong on
   // every Mac that saw it — the released builds simply had the feature off.
-  'settings.bypass.unsupported': 'Bu sürüm engel aşma desteği olmadan derlendi.',
+  'settings.bypass.unsupported': 'Bu sürüm RCQ röleleri desteği olmadan derlendi.',
   // Desktop build only — the browser has nothing to update.
   'settings.about.version': 'Sürüm',
   'settings.about.update_check': 'Güncelleme denetle',

@@ -1233,6 +1233,18 @@ export function Settings() {
               />
             </label>
             <p className="text-xs text-fg-dim">{t('settings.bypass.footer')}</p>
+            {/* The explanation uses the word "relay" on purpose, so it has to
+                come with a way to find out what one is. Deep-links to the FAQ
+                answer; on desktop main.tsx turns target="_blank" into the
+                system browser, because wry has no window.open. */}
+            <a
+              href="https://rcq.app/faq#relays"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-block text-xs text-accent underline-offset-2 hover:underline"
+            >
+              {t('settings.bypass.learn')}
+            </a>
             {!bypass.supported && (
               <p className="text-xs text-fg-dim">{t('settings.bypass.unsupported')}</p>
             )}

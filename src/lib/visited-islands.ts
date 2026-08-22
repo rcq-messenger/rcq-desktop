@@ -196,6 +196,11 @@ export async function drainVisitedQueues(
         envelope_type: string
         payload: string
         group_id: number | null
+        // Stage 2 (core-metadata plan): retention/push class + durable per-mailbox
+        // sequence, read when present. Cursoring is unchanged; `seq` is gappy per
+        // device, so it is never used as a missing-message detector.
+        cls?: number | null
+        seq?: number | null
       }>
       for (const r of rows) await handle(r, v.host)
     } catch {

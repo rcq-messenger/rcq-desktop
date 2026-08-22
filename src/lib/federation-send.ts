@@ -15,7 +15,7 @@
 // from the open card, and v=1 is the 1:1 default anyway.
 
 import type { WebIdentity, Envelope } from './crypto'
-import { encryptV1 } from './crypto'
+import { encryptV1, messageClass } from './crypto'
 import { type ResolvedPeer } from './federation-resolve'
 import { resolveAndMirrorHomes } from './multihome'
 
@@ -62,12 +62,15 @@ export async function depositSealedToPrimary(
   // peer's island cannot serve a fresh card. Read-only here: sealing to a key
   // never writes one.
   localKeys?: { identityKey: string; signingKey: string },
-  // Outer deposit type. "message" (the default) makes the island push an
-  // ordinary message alert; "call" (§5d) makes it RING instead — same routing,
-  // same queue row, only the wake differs. Nothing else about the deposit
-  // changes, and the INNER envelope is untouched either way: the island sees an
-  // opaque sealed blob and learns only that a call is arriving for this user.
+  // Outer deposit type. Stage 2: a call wake rides `envelope_type "message"`
+  // with `ring:true` (see `ring` below) rather than the more telling type
+  // "call": same routing, same queue row, only the wake differs, and the island
+  // stores the quieter type. The INNER envelope is untouched either way: the
+  // island sees an opaque sealed blob and learns only that a call is arriving.
   envelopeType: 'message' | 'call' = 'message',
+  // Stage 2: ask the island to RING a closed app for this deposit while keeping
+  // `envelope_type "message"`. Old islands ignore the unknown field.
+  ring = false,
 ): Promise<boolean> {
   const card = await fetchPeerKeyCard(peerHost, peerUin)
   const identityKey = card?.identity_key || localKeys?.identityKey
@@ -80,6 +83,7 @@ export async function depositSealedToPrimary(
     envelope,
     { identityKey, signingKey },
     envelopeType,
+    ring,
   )
 }
 
@@ -97,6 +101,8 @@ export async function depositSealedWithKeys(
   envelope: Envelope,
   keys: { identityKey: string; signingKey: string },
   envelopeType: 'message' | 'call' = 'message',
+  // Stage 2: ring a closed app while keeping `envelope_type "message"` (§5d wake).
+  ring = false,
 ): Promise<boolean> {
   try {
     if (!keys.identityKey) return false
@@ -105,10 +111,17 @@ export async function depositSealedWithKeys(
       identityKey: keys.identityKey,
       signingKey: keys.signingKey,
     })
+    const body: Record<string, unknown> = {
+      to_uin: peerUin,
+      envelope_type: envelopeType,
+      cls: messageClass(envelopeType), // Stage 2: mirror the island's derivation
+      payload: sealed,
+    }
+    if (ring) body.ring = true
     const res = await fetch(`https://${peerHost}/messages/sealed`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ to_uin: peerUin, envelope_type: envelopeType, payload: sealed }),
+      body: JSON.stringify(body),
     })
     return res.ok
   } catch {
@@ -171,7 +184,8 @@ export async function deliverCrossIsland(
       const res = await fetch(`https://${home.host}/messages/sealed`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to_uin: home.uin, envelope_type: envelopeType, payload: sealed }),
+        // `cls` (Stage 2) mirrors the island's own derivation from the type.
+        body: JSON.stringify({ to_uin: home.uin, envelope_type: envelopeType, cls: messageClass(envelopeType), payload: sealed }),
       })
       if (res.ok) delivered++
     } catch {

@@ -32,7 +32,7 @@
 //   - sendV2(identity, peer, env): fan-out send to all of a peer's devices.
 
 import { PRIMARY_DEVICE_ID, WebSignalDevice, type SignalBundle, type DeviceBlob } from './crypto-v2'
-import { decryptV1, b64ToBytes, bytesToB64, type Envelope, type WebIdentity } from './crypto'
+import { decryptV1, b64ToBytes, bytesToB64, messageClass, type Envelope, type WebIdentity } from './crypto'
 import { idbDel, idbGet, idbGetFlat, idbSet } from './signal-persist'
 import { clientLabel } from './client-name'
 
@@ -791,8 +791,9 @@ export async function sendV2(identity: WebIdentity, peerUin: number, env: Envelo
         headers: { 'Content-Type': 'application/json' },
         // Which device this ciphertext is FOR: only that one holds the other half
         // of the ratchet, so the island hands the row to it alone. Omitted by
-        // pre-fan-out senders, and then every device drains it.
-        body: JSON.stringify({ to_uin: peerUin, envelope_type: envelopeType, payload, to_device_id: tgt.deviceId }),
+        // pre-fan-out senders, and then every device drains it. `cls` (Stage 2)
+        // mirrors the island's own derivation from `envelope_type`.
+        body: JSON.stringify({ to_uin: peerUin, envelope_type: envelopeType, cls: messageClass(envelopeType), payload, to_device_id: tgt.deviceId }),
       })
       if (res.ok) sent++
       else {

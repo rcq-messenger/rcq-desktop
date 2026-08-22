@@ -9,13 +9,30 @@
 // prompt. `rcq send`/`rcq watch` keep the strict stdout-is-data contract.
 
 import readline from 'node:readline'
-import { Api } from '../../src/lib/api'
+import { Api, type Contact } from '../../src/lib/api'
 import type { WebIdentity } from '../../src/lib/crypto'
 import { decryptIncoming, getDevice, myDeviceId, noteInboundFrom } from '../../src/lib/signal-device'
+import {
+  cachedContacts,
+  isContact,
+  lookupUser,
+  peerLabel,
+  primeDirectory,
+  refreshDirectory,
+} from './directory'
 import { tr } from './i18n'
-import { drainQueue, ingestDecrypted, setEmitter, stamp, type IngestResult } from './receive'
+import {
+  drainQueue,
+  hasThreadWith,
+  hasWrittenTo,
+  ingestDecrypted,
+  setEmitter,
+  stamp,
+  type IngestResult,
+} from './receive'
 import { sendText } from './send'
 import { RcqSocket } from './socket'
+import { isYes, strangerCheck } from './stranger'
 import { out } from './style'
 
 export async function runInteractive(identity: WebIdentity): Promise<void> {
@@ -63,9 +80,20 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
     return (rawStderr as (...a: unknown[]) => boolean)(chunk, ...rest)
   }) as typeof process.stderr.write
 
+  /// Ask a question on the prompt line. Incoming messages keep printing above
+  /// it while it waits: readline redraws whatever prompt is current, and during
+  /// a question that IS the question.
+  const ask = (q: string): Promise<string> => new Promise((res) => rl.question(q, res))
+
+  /// Peers whose "you do not know this person" block has already been shown.
+  /// The warning belongs before the first message, not before every one.
+  const warned = new Set<number>()
+
   const switchTo = (uin: number): void => {
     active = uin
-    rl.setPrompt(`#${uin}> `)
+    // The prompt carries the name for the same reason every line does: `#396>`
+    // is a number you have to remember the owner of.
+    rl.setPrompt(`${peerLabel(identity.uin, uin)}> `)
     rl.prompt(true)
   }
 
@@ -81,14 +109,23 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
         continue
       }
       pendingSent.delete(id)
-      printAbove(`${out.dim(`[${stamp()}]`)} ${out.green(tr('interactive.delivered', { uin }))}`)
+      const who = peerLabel(identity.uin, uin)
+      printAbove(`${out.dim(`[${stamp()}]`)} ${out.green(tr('interactive.delivered', { who }))}`)
     }
     if (res.lastPeerFrom !== undefined) {
-      if (active === null) {
-        switchTo(res.lastPeerFrom)
-        printAbove(out.dim(tr('interactive.replyingTo', { uin: res.lastPeerFrom })))
-      }
+      const from = res.lastPeerFrom
       res.lastPeerFrom = undefined // the live result object is long-lived
+      if (active !== null) return
+      const who = peerLabel(identity.uin, from)
+      // Auto-pick is a convenience for a conversation you are already in. It
+      // used to hand the next line typed to whoever wrote first, stranger
+      // included, which is one careless Enter away from answering a spammer.
+      if (isContact(identity.uin, from) || hasWrittenTo(identity.uin, from)) {
+        switchTo(from)
+        printAbove(out.dim(tr('interactive.replyingTo', { who })))
+      } else {
+        printAbove(out.dim(tr('interactive.notPicked', { who, uin: from })))
+      }
     }
   }
 
@@ -117,9 +154,11 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
         if (got.senderUIN !== identity.uin) noteInboundFrom(got.senderUIN, got.senderDeviceId)
         await ingestDecrypted(identity, got, frame.group_id, liveOut)
         absorb(liveOut)
-      })().catch(() => {
-        // No device to open it with yet — the same envelope sits in the
-        // queue, and the reconnect drain delivers it.
+      })().catch((e: unknown) => {
+        // No device to open it with yet: the same envelope sits in the queue,
+        // and the reconnect drain delivers it. Printed all the same: a message
+        // that silently never appears is the worst thing a chat client can do.
+        printAbove(out.dim(tr('fail.live', { err: e instanceof Error ? e.message : String(e) })))
       })
     },
     () => {
@@ -144,7 +183,15 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
       return
     }
     if (line === '/contacts') {
-      const list = await Api.contacts(identity)
+      let list: Contact[]
+      try {
+        list = await refreshDirectory(identity)
+      } catch (e) {
+        // Offline is not an error worth a stack trace: the roster from the last
+        // run is on disk and is what the labels are using anyway.
+        list = cachedContacts(identity.uin)
+        printAbove(out.dim(tr('fail.contacts', { err: e instanceof Error ? e.message : String(e) })))
+      }
       if (list.length === 0) {
         printAbove(tr('interactive.noContacts'))
         return
@@ -155,12 +202,45 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
       }
       return
     }
+    if (line === '/who' || line.startsWith('/who ')) {
+      const uin = Number(line.slice(4).trim())
+      if (!Number.isInteger(uin) || uin <= 0) {
+        printAbove(tr('interactive.usageWho'))
+        return
+      }
+      const got = await lookupUser(identity, uin)
+      if (got.state === 'missing') {
+        printAbove(out.yellow(tr('stranger.missing', { uin })))
+        return
+      }
+      const notes = [
+        isContact(identity.uin, uin) ? tr('who.contact') : tr('who.stranger'),
+        hasThreadWith(identity.uin, uin) ? tr('who.thread') : tr('who.noThread'),
+      ]
+      if (got.state === 'unknown') notes.push(tr('who.unreachable', { uin }))
+      printAbove(`${peerLabel(identity.uin, uin)}  ${out.dim(notes.join('; '))}`)
+      return
+    }
     if (line === '/to' || line.startsWith('/to ')) {
       const uin = Number(line.slice(3).trim())
       if (!Number.isInteger(uin) || uin <= 0) {
         printAbove(tr('interactive.usageTo'))
         return
       }
+      // Picking somebody is where the warning belongs: before a line is typed,
+      // not after it has been sent. Switching still costs nothing, so the
+      // question itself waits for the first message.
+      const check = await strangerCheck(identity, uin)
+      if (check) {
+        warned.add(uin)
+        for (const l of check.lines) printAbove(out.yellow(l))
+        // A prompt pointed at a uin nobody holds can only produce a failed
+        // send with an error about key bundles.
+        if (check.missing) return
+        printAbove(out.dim(tr('stranger.willAsk')))
+      }
+      // No "now talking to X" line: the prompt itself becomes their name, and
+      // saying it twice is one more line between you and the conversation.
       switchTo(uin)
       return
     }
@@ -170,7 +250,12 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
         printAbove(tr('interactive.usageNick'))
         return
       }
-      await Api.updateProfile(identity, { nickname: name })
+      try {
+        await Api.updateProfile(identity, { nickname: name })
+      } catch (e) {
+        printAbove(out.red(tr('fail.command', { cmd: '/nick', err: e instanceof Error ? e.message : String(e) })))
+        return
+      }
       printAbove(out.dim(tr('nick.done', { name })))
       return
     }
@@ -180,8 +265,17 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
         printAbove(tr('interactive.usageAdd'))
         return
       }
-      await Api.sendContactRequest(identity, uin)
-      printAbove(out.dim(tr('add.sent', { uin })))
+      if ((await lookupUser(identity, uin)).state === 'missing') {
+        printAbove(out.yellow(tr('stranger.missing', { uin })))
+        return
+      }
+      try {
+        await Api.sendContactRequest(identity, uin)
+      } catch (e) {
+        printAbove(out.red(tr('fail.command', { cmd: '/add', err: e instanceof Error ? e.message : String(e) })))
+        return
+      }
+      printAbove(out.dim(tr('add.sent', { who: peerLabel(identity.uin, uin) })))
       return
     }
     if (line.startsWith('/')) {
@@ -200,14 +294,43 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
       return
     }
     const to = active
-    const { id, mode } = await sendText(identity, to, line)
-    printAbove(`${out.dim(`[${stamp()}]`)} ${out.green(`me -> #${to}`)}: ${line}${process.env.RCQ_VERBOSE ? out.dim(` (${mode})`) : ''}`)
-    if (earlyReceipts.delete(id)) {
-      // The receipt outran us (see earlyReceipts) — settle it now.
-      printAbove(`${out.dim(`[${stamp()}]`)} ${out.green(tr('interactive.delivered', { uin: to }))}`)
-    } else {
-      pendingSent.set(id, to)
+    // The gate, at the one moment it means anything: the first message of a
+    // thread with somebody who is neither a contact nor anybody this account
+    // has ever exchanged a word with. Everything after that goes straight out.
+    if (!(await confirmFirstMessage(to, line))) return
+    const who = peerLabel(identity.uin, to)
+    let sent: { id: string; mode: string }
+    try {
+      sent = await sendText(identity, to, line)
+    } catch (e) {
+      // The text is gone from the input line, so it is printed back: a failed
+      // send must not also cost what was typed.
+      printAbove(out.red(tr('send.failed', { err: e instanceof Error ? e.message : String(e) })))
+      printAbove(out.dim(tr('send.kept', { text: line })))
+      return
     }
+    printAbove(`${out.dim(`[${stamp()}]`)} ${out.green(`me -> ${who}`)}: ${line}${process.env.RCQ_VERBOSE ? out.dim(` (${sent.mode})`) : ''}`)
+    if (earlyReceipts.delete(sent.id)) {
+      // The receipt outran us (see earlyReceipts) — settle it now.
+      printAbove(`${out.dim(`[${stamp()}]`)} ${out.green(tr('interactive.delivered', { who }))}`)
+    } else {
+      pendingSent.set(sent.id, to)
+    }
+  }
+
+  /// Warn, then ask, then remember the answer for the rest of the thread. A
+  /// refusal prints the text back rather than swallowing it.
+  async function confirmFirstMessage(to: number, text: string): Promise<boolean> {
+    const check = await strangerCheck(identity, to)
+    if (!check) return true
+    if (!warned.has(to)) {
+      warned.add(to)
+      for (const l of check.lines) printAbove(out.yellow(l))
+    }
+    if (check.missing) return false
+    if (isYes(await ask(tr('stranger.confirm', { who: check.label })))) return true
+    printAbove(out.dim(tr('send.kept', { text })))
+    return false
   }
 
   // Lines are handled strictly one after another: two concurrent sendText
@@ -222,6 +345,9 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
   rl.on('close', shutdown) // Ctrl+D
 
   process.stderr.write(tr('interactive.hello', { uin: identity.uin }) + '\n')
+  // Names before the backlog prints, not after: the drain is where the first
+  // lines of the session come from (see directory.ts).
+  await primeDirectory(identity)
   // The backlog first (its lines print above the still-empty prompt), socket
   // second, and keep draining on a timer while no socket is open — same
   // network reality as watch: HTTPS may answer while every WebSocket dies.

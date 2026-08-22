@@ -6,7 +6,9 @@
 import { Api, peerBundleFrom } from '../../src/lib/api'
 import { bytesToB64, encryptV1, type CarbonEnvelope, type Envelope, type TextEnvelope, type WebIdentity } from '../../src/lib/crypto'
 import { PartialFanOutError, sendV2 } from '../../src/lib/signal-device'
+import { tr } from './i18n'
 import { appendHistory, markSent } from './receive'
+import { err } from './style'
 
 /// Deposit a self-carbon so the phone/desktop show this message as ours —
 /// mirrors Chat.tsx sendMessageCarbon: v=1 sealed to our OWN account key,
@@ -21,8 +23,14 @@ export async function sendMessageCarbon(identity: WebIdentity, peerUin: number, 
       signing_key: bytesToB64(identity.signingPub),
     })
     await Api.sendSealed(identity, identity.uin, encryptV1(carbon, identity, selfBundle), 'carbon')
-  } catch {
-    /* best-effort multi-device echo */
+  } catch (e) {
+    // Best-effort for the MESSAGE, which is already gone, but not invisible:
+    // without the carbon this line never appears on the phone, and a founder
+    // reading his own chat there would see half a conversation with no hint
+    // why.
+    process.stderr.write(
+      err.dim(tr('fail.carbon', { err: e instanceof Error ? e.message : String(e) })) + '\n',
+    )
   }
 }
 

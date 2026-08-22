@@ -53,8 +53,10 @@ for scripts and one-shots (stdout is data, status goes to stderr):
   rcq whoami                                  print uin, nickname, island, device id
   rcq nick "NAME"                             rename this account
   rcq contacts                                list contacts (uin, nickname, status)
+  rcq who <uin>                               who is this number: name, and whether you know them
   rcq add <uin>                               send a contact request
-  rcq send <uin> "text"                       one-shot: drain, send, wait for the receipt, exit
+  rcq send <uin> "text" [--yes]               one-shot: drain, send, wait for the receipt, exit
+                                              (--yes agrees to write to a non-contact)
   rcq watch                                   read-only stream of incoming messages
   rcq export                                  print the history file path and line count
   rcq lang [en|ru]                            show or set the language
@@ -75,8 +77,10 @@ RCQ_VERBOSE=1 shows protocol detail; NO_COLOR strips colour.
   rcq whoami                                  напечатать uin, ник, остров, id устройства
   rcq nick "ИМЯ"                              переименовать аккаунт
   rcq contacts                                список контактов (uin, ник, статус)
+  rcq who <uin>                               чей это номер: имя и знакомы ли вы
   rcq add <uin>                               отправить заявку в контакты
-  rcq send <uin> "текст"                      разово: забрать очередь, отправить, дождаться квитанции, выйти
+  rcq send <uin> "текст" [--yes]              разово: забрать очередь, отправить, дождаться квитанции, выйти
+                                              (--yes соглашается писать не-контакту)
   rcq watch                                   поток входящих, только чтение
   rcq export                                  напечатать путь к файлу истории и число строк
   rcq lang [en|ru]                            показать или сменить язык
@@ -152,14 +156,78 @@ RCQ_VERBOSE=1 показывает детали протокола; NO_COLOR у�
   'nick.done': { en: 'you are now "{name}"', ru: 'теперь вы "{name}"' },
 
   'add.needsUin': { en: 'add needs a numeric UIN', ru: 'add ждёт числовой UIN' },
-  'add.sent': { en: 'contact request sent to #{uin}', ru: 'заявка в контакты отправлена #{uin}' },
+  'add.sent': { en: 'contact request sent to {who}', ru: 'заявка в контакты отправлена {who}' },
+
+  // Names, and how much of a stranger somebody is. The label itself ("Ivan
+  // (#396)") is DATA and never passes through here; these are the words around
+  // it.
+  'dir.stale': {
+    en: 'names may be out of date, the roster did not load: {err}',
+    ru: 'имена могут быть устаревшими, список не загрузился: {err}',
+  },
+
+  'who.needsUin': { en: 'who needs a numeric UIN', ru: 'who ждёт числовой UIN' },
+  'who.contact': { en: 'in your contacts', ru: 'в ваших контактах' },
+  'who.stranger': { en: 'not in your contacts', ru: 'не в ваших контактах' },
+  'who.thread': { en: 'you have exchanged messages before', ru: 'вы уже переписывались' },
+  'who.noThread': { en: 'you have never exchanged a message', ru: 'вы ещё ни разу не переписывались' },
+  'who.unreachable': {
+    en: 'could not ask the island who #{uin} is',
+    ru: 'не удалось спросить остров, кто такой #{uin}',
+  },
+
+  // The gate on the FIRST message of a thread. The mailbox stays open (anyone
+  // may write first); what ends here is doing it by accident.
+  'stranger.cold': {
+    en: '{who} is not in your contacts, and you have never written to them',
+    ru: '{who} не в ваших контактах, и вы им ещё не писали',
+  },
+  'stranger.missing': {
+    en: 'there is no account #{uin} on this island (a typo?)',
+    ru: 'на этом острове нет аккаунта #{uin} (опечатка?)',
+  },
+  'stranger.unverified': {
+    en: 'and the island did not answer who they are',
+    ru: 'и остров не ответил, кто это',
+  },
+  'stranger.reveals': {
+    en: 'a message tells them this account exists',
+    ru: 'сообщение скажет им, что этот аккаунт существует',
+  },
+  'stranger.confirm': { en: 'send to {who} anyway? [y/N] ', ru: 'всё равно отправить {who}? [y/N] ' },
+  'stranger.cancelled': { en: 'not sent', ru: 'не отправлено' },
+  'stranger.needsYes': {
+    en: 'not sent: {who} is not in your contacts. Add --yes to send anyway',
+    ru: 'не отправлено: {who} не в ваших контактах. Добавьте --yes, чтобы всё равно отправить',
+  },
+  'stranger.willAsk': {
+    en: 'nothing is sent yet: the first message asks first',
+    ru: 'пока ничего не отправлено: перед первым сообщением спросим',
+  },
+  'inbound.stranger': { en: '{who} is not in your contacts', ru: '{who} не в ваших контактах' },
+
+  // Things that used to fail without a word.
+  'fail.carbon': {
+    en: 'this message will not appear on your other devices: {err}',
+    ru: 'это сообщение не появится на других ваших устройствах: {err}',
+  },
+  'fail.receipt': {
+    en: 'delivery receipts are not going out, the sender keeps one tick',
+    ru: 'квитанции о доставке не уходят, у отправителя останется одна галочка',
+  },
+  'fail.live': {
+    en: 'a live message could not be opened ({err}); the next queue read retries it',
+    ru: 'живое сообщение не удалось открыть ({err}); повтор при следующем чтении очереди',
+  },
+  'fail.contacts': {
+    en: 'showing the last known list, the island did not answer: {err}',
+    ru: 'показан последний известный список, остров не ответил: {err}',
+  },
+  'fail.command': { en: '{cmd} failed: {err}', ru: '{cmd} не выполнено: {err}' },
 
   'send.needsArgs': { en: 'send needs <uin> and "text"', ru: 'send ждёт <uin> и "текст"' },
-  'send.notContact': {
-    en: 'note: #{uin} is not in your contacts',
-    ru: 'внимание: #{uin} не в ваших контактах',
-  },
   'send.failed': { en: 'send failed: {err}', ru: 'отправка не удалась: {err}' },
+  'send.kept': { en: 'not sent, your text: {text}', ru: 'не отправлено, ваш текст: {text}' },
   'send.tip': {
     en: "tip: plain 'rcq' is the live conversation - incoming above, a prompt below",
     ru: "подсказка: просто 'rcq' открывает живой разговор, входящие сверху, строка ввода снизу",
@@ -193,11 +261,19 @@ RCQ_VERBOSE=1 показывает детали протокола; NO_COLOR у�
   },
   'drain.http': { en: 'drain failed: HTTP {status}', ru: 'очередь не забрана: HTTP {status}' },
   'drain.error': { en: 'drain failed: {err}', ru: 'очередь не забрана: {err}' },
+  'drain.row': {
+    en: 'queued message {id} could not be read ({err}); the island will send it again',
+    ru: 'сообщение {id} из очереди не прочиталось ({err}); остров пришлёт его снова',
+  },
+  'drain.ackFailed': {
+    en: 'the island was not told the queue was read: {err}',
+    ru: 'острову не удалось сообщить, что очередь прочитана: {err}',
+  },
 
   'group.label': { en: 'group {gid}', ru: 'группа {gid}' },
   'group.senderKeys': {
-    en: 'group {gid}: <sender-keys broadcast - groups are not in the CLI yet>',
-    ru: 'группа {gid}: <рассылка sender-keys, групп в CLI пока нет>',
+    en: '{group}: <sender-keys broadcast - groups are not in the CLI yet>',
+    ru: '{group}: <рассылка sender-keys, групп в CLI пока нет>',
   },
   'group.banked': {
     en: '+{n} (history only; groups live in the apps)',
@@ -205,14 +281,16 @@ RCQ_VERBOSE=1 показывает детали протокола; NO_COLOR у�
   },
 
   'interactive.help': {
-    en: `  /to <uin>   talk to this contact (replies auto-pick whoever writes first)
+    en: `  /to <uin>   talk to this person (a non-contact is confirmed once, before the first message)
+  /who <uin>  who is this number: name, and whether you know them
   /add <uin>  send a contact request
   /nick NAME  rename this account
   /contacts   list contacts
   /help       this text
   /quit       leave (Ctrl+C and Ctrl+D work too)
 anything else you type goes to the active contact.`,
-    ru: `  /to <uin>   говорить с этим контактом (иначе выбирается тот, кто напишет первым)
+    ru: `  /to <uin>   говорить с этим человеком (не-контакт подтверждается один раз, перед первым сообщением)
+  /who <uin>  чей это номер: имя и знакомы ли вы
   /add <uin>  отправить заявку в контакты
   /nick ИМЯ   переименовать аккаунт
   /contacts   список контактов
@@ -226,11 +304,18 @@ anything else you type goes to the active contact.`,
     ru: "(контактов пока нет, заявку отправит 'rcq add <uin>')",
   },
   'interactive.replyingTo': {
-    en: '(replying to #{uin} - /to <uin> switches)',
-    ru: '(отвечаем #{uin}, сменить контакт: /to <uin>)',
+    en: '(replying to {who} - /to <uin> switches)',
+    ru: '(отвечаем {who}, сменить собеседника: /to <uin>)',
   },
-  'interactive.delivered': { en: '✓ delivered to #{uin}', ru: '✓ доставлено #{uin}' },
+  // Somebody you do not know wrote first. The old loop made them the default
+  // target of the next line typed, silently.
+  'interactive.notPicked': {
+    en: '{who} wrote to you - /to {uin} to answer them',
+    ru: 'вам написал {who}, ответить: /to {uin}',
+  },
+  'interactive.delivered': { en: '✓ delivered to {who}', ru: '✓ доставлено {who}' },
   'interactive.usageTo': { en: 'usage: /to <uin>', ru: 'использование: /to <uin>' },
+  'interactive.usageWho': { en: 'usage: /who <uin>', ru: 'использование: /who <uin>' },
   'interactive.usageNick': { en: 'usage: /nick NAME', ru: 'использование: /nick ИМЯ' },
   'interactive.usageAdd': { en: 'usage: /add <uin>', ru: 'использование: /add <uin>' },
   'interactive.unknownSlash': {

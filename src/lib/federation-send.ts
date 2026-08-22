@@ -68,8 +68,10 @@ export async function depositSealedToPrimary(
   // stores the quieter type. The INNER envelope is untouched either way: the
   // island sees an opaque sealed blob and learns only that a call is arriving.
   envelopeType: 'message' | 'call' = 'message',
-  // Stage 2: ask the island to RING a closed app for this deposit while keeping
-  // `envelope_type "message"`. Old islands ignore the unknown field.
+  // Stage 2: ask the island to RING a closed app for this deposit. Pairs with
+  // `envelope_type "message"` on an island that honours it; an older island
+  // ignores the unknown field and rings only for type "call", so the caller
+  // picks the type (see `honoursRing` in crossisland-call.ts).
   ring = false,
 ): Promise<boolean> {
   const card = await fetchPeerKeyCard(peerHost, peerUin)
@@ -101,7 +103,8 @@ export async function depositSealedWithKeys(
   envelope: Envelope,
   keys: { identityKey: string; signingKey: string },
   envelopeType: 'message' | 'call' = 'message',
-  // Stage 2: ring a closed app while keeping `envelope_type "message"` (§5d wake).
+  // Stage 2: ring a closed app (§5d wake). With `envelope_type "message"` on
+  // an island that honours it; the caller sends type "call" to one that does not.
   ring = false,
 ): Promise<boolean> {
   try {

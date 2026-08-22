@@ -43,7 +43,7 @@ import {
 } from 'react'
 import { Api } from './api'
 import { alwaysRelay } from './call-privacy'
-import { dropCrossIslandIce, sendCrossIslandSignal } from './crossisland-call'
+import { dropCrossIslandIce, sendCrossIslandSignal, warmCrossIslandRing } from './crossisland-call'
 import { getCrossIsland } from './crossisland-store'
 import { logCall } from './outgoing-store'
 import { notifyDesktop, raiseDesktopWindow, turnTunnelUrl } from './desktop'
@@ -712,6 +712,11 @@ export function CallProvider({ children }: { children: ReactNode }) {
       setDeviceError(null)
       setInfo(call)
       setPhase('outgoing')
+      // §5d: a cross-island offer first asks the peer's island whether it
+      // honours `ring` (crossisland-call.ts). Ask now, while the microphone
+      // prompt and the TURN fetch are still running, so the answer is already
+      // in hand when the offer deposits. Nothing waits on it.
+      if (call.peerHost) warmCrossIslandRing(call.peerHost)
 
       void (async () => {
         try {

@@ -19,6 +19,14 @@ import { useEffect, useState } from 'react'
 /// the surface visible, and so does a live island whose /server/info has not
 /// landed yet. Hiding first and asking later would blink a menu on every open.
 ///
+/// ⚠ `envelope_class` is the ONE exception and defaults to FALSE. It is not a
+/// surface but a wire ability: the island understands `cls` and the `ring`
+/// flag on a sealed deposit (core-metadata plan, Stage 2). The flag was born
+/// together with `ring`, so an island that omits it is an island that does not
+/// know `ring`, and assuming otherwise would leave a cross-island call silent
+/// on a closed phone. The call path (`crossisland-call.ts`) reads it to decide
+/// whether the quieter Stage 2 deposit will actually wake the peer.
+///
 /// ⚠ `hood` and `stories` used to live here. Both surfaces were deleted from
 /// the server (routers, tables and flags), so no island answers with them any
 /// more and no client has anything left to gate. An unknown key in the
@@ -32,6 +40,7 @@ export interface ServerCapabilities {
   random_chat: boolean
   reports: boolean
   max_accounts_per_device: number
+  envelope_class: boolean
 }
 
 export interface ServerInfo {
@@ -42,7 +51,8 @@ export interface ServerInfo {
 
 /// Mirrors Android's `ServerCapabilities` defaults (net/RcqApi.kt) field for
 /// field. uin_shop and hall_of_fame default OFF because a self-host island that
-/// says nothing runs neither; everything else defaults ON.
+/// says nothing runs neither; everything else defaults ON, except
+/// `envelope_class` (see the interface comment: absent means pre-Stage 2).
 export const DEFAULT_CAPABILITIES: ServerCapabilities = {
   uin_shop: false,
   hall_of_fame: false,
@@ -51,6 +61,7 @@ export const DEFAULT_CAPABILITIES: ServerCapabilities = {
   random_chat: true,
   reports: true,
   max_accounts_per_device: 5,
+  envelope_class: false,
 }
 
 /// One in-flight request per island, and one answer kept for the run. This is
@@ -66,6 +77,7 @@ type BoolCapability =
   | 'nearby'
   | 'random_chat'
   | 'reports'
+  | 'envelope_class'
 
 function normalize(raw: unknown): ServerInfo | null {
   if (!raw || typeof raw !== 'object') return null
@@ -90,7 +102,24 @@ function normalize(raw: unknown): ServerInfo | null {
         typeof caps.max_accounts_per_device === 'number'
           ? caps.max_accounts_per_device
           : DEFAULT_CAPABILITIES.max_accounts_per_device,
+      envelope_class: bool('envelope_class'),
     },
+  }
+}
+
+/// One uncached GET /server/info, the request `fetchServerInfo` wraps in its
+/// run-long cache. Exposed for callers that keep their own, shorter-lived
+/// memory of the answer (the cross-island call path, which must re-ask an
+/// island that said "no" a few minutes later in case it has been upgraded),
+/// so that the shape of the answer is parsed in exactly one place. `init` is
+/// for an abort signal; the GET itself stays unauthenticated plain `fetch`.
+export async function loadServerInfo(apiBase: string, init?: RequestInit): Promise<ServerInfo | null> {
+  try {
+    const res = await fetch(`${apiBase}/server/info`, init)
+    if (!res.ok) return null
+    return normalize(await res.json())
+  } catch {
+    return null
   }
 }
 
@@ -102,15 +131,7 @@ function normalize(raw: unknown): ServerInfo | null {
 export function fetchServerInfo(apiBase: string): Promise<ServerInfo | null> {
   const hit = cache.get(apiBase)
   if (hit) return hit
-  const p = (async () => {
-    try {
-      const res = await fetch(`${apiBase}/server/info`)
-      if (!res.ok) return null
-      return normalize(await res.json())
-    } catch {
-      return null
-    }
-  })()
+  const p = loadServerInfo(apiBase)
   cache.set(apiBase, p)
   // A failure is not worth remembering for the whole run — the island may be
   // one reconnect away — but a success is.

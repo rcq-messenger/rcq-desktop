@@ -181,6 +181,20 @@ export function Diagnostics() {
 
         <p className="text-xs text-fg-dim leading-relaxed">{t('diag.footer')}</p>
 
+        {/* The route row and the footer both name the relays, and this screen
+            is reachable without ever passing the shield or Settings, so the way
+            to look the word up has to be here too. Same FAQ anchor as every
+            other surface; on desktop main.tsx turns target="_blank" into the
+            system browser. */}
+        <a
+          href="https://rcq.app/faq#relays"
+          target="_blank"
+          rel="noreferrer"
+          className="inline-block text-xs text-accent underline-offset-2 hover:underline"
+        >
+          {t('settings.bypass.learn')}
+        </a>
+
         <button
           onClick={() => setAttempt((n) => n + 1)}
           disabled={running}

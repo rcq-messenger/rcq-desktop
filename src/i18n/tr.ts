@@ -418,7 +418,7 @@ export const tr: Record<string, string> = {
   // this client keep matching.
   'settings.section.bypass': 'RCQ röleleri',
   'settings.bypass.toggle': 'Uygulamayı RCQ röleleri üzerinden geçir',
-  'settings.bypass.footer': 'Trafik adaya doğrudan değil, rölelerimiz üzerinden gider: ada adresinizi görmez, sizinle ada arasındaki ağ da RCQ kullandığınızı görmez. Karşılığında bağlantı biraz yavaşlar. RCQ\'nun engellendiği yerlerde bu ayrıca tek yoldur.',
+  'settings.bypass.footer': 'Uygulamayı RCQ röleleri üzerinden geçirirsen trafik doğrudan adaya gitmeyi bırakır: ada adresini görmez, seninle ada arasındaki ağ da RCQ kullandığını görmez. Karşılığında bağlantı biraz yavaşlar, bu yüzden varsayılan olarak kapalıdır. RCQ\'nun engellendiği yerlerde röleler tek yoldur.',
   'settings.bypass.learn': 'Röle nedir?',
   'settings.bypass.restart_note': 'Uygulama yeniden başlayınca geçerli olur.',
   'settings.bypass.restart_now': 'Yeniden başlat',

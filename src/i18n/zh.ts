@@ -418,7 +418,7 @@ export const zh: Record<string, string> = {
   // this client keep matching.
   'settings.section.bypass': 'RCQ 中继',
   'settings.bypass.toggle': '让应用走 RCQ 中继',
-  'settings.bypass.footer': '流量不是直接发往岛，而是走我们的中继：岛看不到你的地址，你和岛之间的网络也看不出你在用 RCQ。代价是连接会慢一些。在 RCQ 被封锁的地方，这还是唯一能通的路。',
+  'settings.bypass.footer': '让应用走 RCQ 中继后，流量就不再直接发往岛：岛看不到你的地址，你与岛之间的网络也看不出你在用 RCQ。代价是连接会慢一些，所以默认关闭。在 RCQ 被封锁的地方，中继是唯一的路。',
   'settings.bypass.learn': '什么是中继？',
   'settings.bypass.restart_note': '重启应用后生效。',
   'settings.bypass.restart_now': '重启',

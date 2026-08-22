@@ -465,7 +465,7 @@ export const en: Record<string, string> = {
   'settings.section.bypass': 'RCQ relays',
   'settings.bypass.toggle': 'Route the app through RCQ relays',
   'settings.bypass.footer':
-    'Traffic goes through our relays instead of straight to the island: the island does not see your address, and the network between you and the island does not see that you are using RCQ. In exchange the connection is a little slower. Where RCQ is blocked, this is also the only way through.',
+    'Route the app through RCQ relays and traffic stops going straight to the island: the island does not see your address, and the network between you and the island does not see that you are using RCQ. In exchange the connection is a little slower, so this is off by default. Where RCQ is blocked, relays are the only way through.',
   'settings.bypass.learn': 'What is a relay?',
   'settings.bypass.restart_note': 'Applies when the app restarts.',
   'settings.bypass.restart_now': 'Restart',

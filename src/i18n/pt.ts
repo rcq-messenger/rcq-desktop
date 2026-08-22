@@ -418,7 +418,7 @@ export const pt: Record<string, string> = {
   // this client keep matching.
   'settings.section.bypass': 'Relays do RCQ',
   'settings.bypass.toggle': 'Levar o app pelos relays do RCQ',
-  'settings.bypass.footer': 'O tráfego não vai direto para a ilha, e sim pelos nossos relays: a ilha não vê o seu endereço, e a rede entre você e a ilha não vê que você usa o RCQ. Em troca, a conexão fica um pouco mais lenta. Onde o RCQ está bloqueado, isso é também o único caminho.',
+  'settings.bypass.footer': 'Se você levar o app pelos relays do RCQ, o tráfego deixa de ir direto para a ilha: a ilha não vê seu endereço e a rede entre você e a ilha não vê que você usa RCQ. Em troca a conexão fica um pouco mais lenta, então vem desligado. Onde o RCQ está bloqueado, os relays são o único caminho.',
   'settings.bypass.learn': 'O que é um relay?',
   'settings.bypass.restart_note': 'Vale quando o app reiniciar.',
   'settings.bypass.restart_now': 'Reiniciar',

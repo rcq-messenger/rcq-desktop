@@ -18,13 +18,24 @@ import {
   recoverFromPhrase,
   suggestNickname,
 } from '../../src/lib/auth'
-import { Api, setTokenRefresher } from '../../src/lib/api'
+import { Api, setTokenRefresher, type Contact } from '../../src/lib/api'
 import { getDevice, myDeviceId, setProvisionPolicy } from '../../src/lib/signal-device'
 import type { WebIdentity } from '../../src/lib/crypto'
 import { idbGet } from '../shims/signal-persist'
-import { drainQueue, historyPath, ingestDecrypted, type IngestResult } from './receive'
+import {
+  cachedContacts,
+  initDirectory,
+  isContact,
+  knownName,
+  lookupUser,
+  peerLabel,
+  primeDirectory,
+  refreshDirectory,
+} from './directory'
+import { drainQueue, hasThreadWith, historyPath, ingestDecrypted, type IngestResult } from './receive'
 import { runInteractive } from './interactive'
 import { sendText } from './send'
+import { isYes, strangerCheck } from './stranger'
 import { RcqSocket } from './socket'
 import { acquireStateLock } from './state'
 import { decryptIncoming, noteInboundFrom } from '../../src/lib/signal-device'
@@ -62,13 +73,22 @@ function usageDie(msg?: string): never {
   process.exit(2)
 }
 
+/// Flags that stand alone, with no value after them. Everything else is
+/// `--flag value`, and a value flag with nothing behind it stays a usage error.
+const BOOL_FLAGS = new Set(['--yes'])
+
 /// Pull `--flag value` pairs out of argv; what remains are positionals.
-function parseArgs(argv: string[]): { pos: string[]; opts: Map<string, string> } {
+function parseArgs(argv: string[]): { pos: string[]; opts: Map<string, string>; flags: Set<string> } {
   const pos: string[] = []
   const opts = new Map<string, string>()
+  const flags = new Set<string>()
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a.startsWith('--')) {
+      if (BOOL_FLAGS.has(a)) {
+        flags.add(a)
+        continue
+      }
       const v = argv[i + 1]
       if (v === undefined || v.startsWith('--')) usageDie(tr('args.flagNeedsValue', { flag: a }))
       opts.set(a, v)
@@ -77,12 +97,15 @@ function parseArgs(argv: string[]): { pos: string[]; opts: Map<string, string> }
       pos.push(a)
     }
   }
-  return { pos, opts }
+  return { pos, opts, flags }
 }
 
 function requireIdentity(): WebIdentity {
   const id = loadStoredIdentity()
   if (!id) die(tr('err.noAccount'))
+  // ⚠ Before any store is read: this scopes every local key to the account and
+  // warms the names off the last snapshot (see directory.ts).
+  initDirectory(id.uin)
   return id
 }
 
@@ -130,6 +153,7 @@ async function cmdRegister(opts: Map<string, string>): Promise<void> {
   const nick = opts.get('--nick') ?? suggestNickname()
   const island = (opts.get('--island') ?? DEFAULT_API_BASE).replace(/\/+$/, '')
   const identity = await createNewAccount(nick, island)
+  initDirectory(identity.uin)
   printPhraseBlock(identity.uin)
 }
 
@@ -138,6 +162,7 @@ async function cmdRestore(pos: string[], opts: Map<string, string>): Promise<voi
   if (!phrase) usageDie(tr('restore.needsPhrase'))
   const island = (opts.get('--island') ?? DEFAULT_API_BASE).replace(/\/+$/, '')
   const identity = await recoverFromPhrase(phrase, island)
+  initDirectory(identity.uin)
   process.stdout.write(`uin: ${identity.uin}\n`)
   process.stderr.write(tr('restore.done') + '\n')
 }
@@ -170,21 +195,81 @@ async function cmdNick(pos: string[]): Promise<void> {
 
 async function cmdContacts(): Promise<void> {
   const id = await withToken(requireIdentity())
-  const list = await Api.contacts(id)
+  let list: Contact[]
+  try {
+    list = await refreshDirectory(id)
+  } catch (e) {
+    // The roster is on disk from the last run that reached the island. A list
+    // a few hours old beats a stack trace, and the note says which one this is
+    // so nobody mistakes a cached row for a live one.
+    list = cachedContacts(id.uin)
+    process.stderr.write(err.dim(tr('fail.contacts', { err: e instanceof Error ? e.message : String(e) })) + '\n')
+  }
   for (const c of list) {
     process.stdout.write(`${c.uin}\t${c.nickname}\t${c.status}${c.blocked ? '\tblocked' : ''}\n`)
   }
+}
+
+/// "Who is #396?" is the question the CLI could not answer, which is what made
+/// warning about a stranger AFTER the message had gone useless. One row of
+/// data on stdout (same shape as `contacts`), the reading of it on stderr.
+async function cmdWho(pos: string[]): Promise<void> {
+  const uin = Number(pos[0])
+  if (!Number.isInteger(uin) || uin <= 0) usageDie(tr('who.needsUin'))
+  const id = await withToken(requireIdentity())
+  await primeDirectory(id)
+  const got = await lookupUser(id, uin)
+  if (got.state === 'missing') die(tr('stranger.missing', { uin }))
+  const contact = isContact(id.uin, uin)
+  const name = got.state === 'known' ? got.info.nickname : (knownName(id.uin, uin) ?? '')
+  const status = got.state === 'known' ? got.info.status : ''
+  process.stdout.write(`${uin}\t${name}\t${status}\t${contact ? 'contact' : 'stranger'}\n`)
+  const notes = [
+    contact ? tr('who.contact') : tr('who.stranger'),
+    hasThreadWith(id.uin, uin) ? tr('who.thread') : tr('who.noThread'),
+  ]
+  if (got.state === 'unknown') notes.push(tr('who.unreachable', { uin }))
+  process.stderr.write(err.dim(notes.join('; ')) + '\n')
 }
 
 async function cmdAdd(pos: string[]): Promise<void> {
   const uin = Number(pos[0])
   if (!Number.isInteger(uin) || uin <= 0) usageDie(tr('add.needsUin'))
   const id = await withToken(requireIdentity())
+  // A request to a number nobody holds is a typo, and the island answers 404
+  // to the request itself with nothing a person can read.
+  if ((await lookupUser(id, uin)).state === 'missing') die(tr('stranger.missing', { uin }))
   await Api.sendContactRequest(id, uin)
-  process.stderr.write(tr('add.sent', { uin }) + '\n')
+  process.stderr.write(tr('add.sent', { who: peerLabel(id.uin, uin) }) + '\n')
 }
 
-async function cmdSend(pos: string[]): Promise<void> {
+/// The one-shot half of the stranger gate; the interactive loop runs the same
+/// check at its own prompt. False means the message must not go out.
+///
+/// A script cannot be asked anything, so it must say `--yes` up front. That is
+/// deliberately a behaviour change for `rcq send <stranger>`: the old command
+/// sent first and noted "not in your contacts" afterwards, which is a receipt
+/// and not a decision.
+async function strangerGate(identity: WebIdentity, uin: number, assumeYes: boolean): Promise<boolean> {
+  const check = await strangerCheck(identity, uin)
+  if (!check) return true
+  for (const line of check.lines) process.stderr.write(err.yellow(line) + '\n')
+  // Nobody is there. Sending would fail a second later inside the key lookup,
+  // with an error about bundles that answers nothing.
+  if (check.missing) return false
+  if (assumeYes) return true
+  if (!process.stdin.isTTY || !process.stderr.isTTY) {
+    process.stderr.write(err.yellow(tr('stranger.needsYes', { who: check.label })) + '\n')
+    return false
+  }
+  // Output on stderr: the question is status, and stdout stays data even here.
+  const rl = readline.createInterface({ input: process.stdin, output: process.stderr })
+  const answer = await new Promise<string>((r) => rl.question(tr('stranger.confirm', { who: check.label }), r))
+  rl.close()
+  return isYes(answer)
+}
+
+async function cmdSend(pos: string[], flags: Set<string>): Promise<void> {
   const uin = Number(pos[0])
   const text = pos[1]
   if (!Number.isInteger(uin) || uin <= 0 || !text) usageDie(tr('send.needsArgs'))
@@ -193,15 +278,14 @@ async function cmdSend(pos: string[]): Promise<void> {
     // v=1 still works without a libsignal device; say so rather than dying.
     process.stderr.write(tr('provision.v1only', { err: e instanceof Error ? e.message : String(e) }) + '\n')
   })
+  // The roster, for the gate below and for the names on every line the drain
+  // is about to print. Replaces the contacts fetch this command already paid
+  // for, and persists it, so the next run starts warm.
+  await primeDirectory(identity)
   // The island's mailbox is open by design (UIN culture: anyone can write
-  // first, the recipient decides what to do with strangers) — but writing to
-  // somebody you never added deserves a heads-up, because a typo'd uin
-  // otherwise sends a message to a random person in silence. Best-effort: an
-  // unreachable contacts list must not block the send.
-  const known = await Api.contacts(identity)
-    .then((l) => l.some((c) => c.uin === uin))
-    .catch(() => true)
-  if (!known) process.stderr.write(err.yellow(tr('send.notContact', { uin }) + '\n'))
+  // first, the recipient decides what to do with strangers). What is not by
+  // design is doing it by accident: a typo'd uin is one keystroke.
+  if (!(await strangerGate(identity, uin, flags.has('--yes')))) die(tr('stranger.cancelled'))
   const backlog = await drainQueue(identity)
   let sent: { id: string; mode: string }
   try {
@@ -235,6 +319,8 @@ async function cmdWatch(): Promise<void> {
   // provision above failed: until then currentDeviceId() answers 1 (the
   // phone's id) and frames for OUR device would be dropped on the floor.
   await myDeviceId(identity).catch(() => null)
+  // Names before the first line, not after it (see directory.ts).
+  await primeDirectory(identity)
   // The backlog first, socket second — and keep draining on a timer while no
   // socket is open. A connect-only drain delivers nothing, forever, on a
   // network that answers every HTTPS request and kills every WebSocket.
@@ -248,9 +334,14 @@ async function cmdWatch(): Promise<void> {
         if (!got) return
         if (got.senderUIN !== identity.uin) noteInboundFrom(got.senderUIN, got.senderDeviceId)
         await ingestDecrypted(identity, got, frame.group_id, liveOut)
-      })().catch(() => {
-        // No device to open it with yet — the same envelope sits in the
-        // queue, and the reconnect drain delivers it.
+      })().catch((e: unknown) => {
+        // No device to open it with yet: the same envelope sits in the queue,
+        // and the reconnect drain delivers it. Said out loud all the same: a
+        // silent catch here is a message that never appeared and never will be
+        // mentioned.
+        process.stderr.write(
+          err.dim(tr('fail.live', { err: e instanceof Error ? e.message : String(e) })) + '\n',
+        )
       })
     },
     () => {
@@ -352,7 +443,7 @@ async function main(): Promise<void> {
   // see acquireStateLock. whoami/export are read-only peeks and lang only
   // writes its own one-word file (atomic rename): all three stay lock-free.
   if (cmd !== 'whoami' && cmd !== 'export' && cmd !== 'lang') acquireStateLock()
-  const { pos, opts } = parseArgs(argv.slice(1))
+  const { pos, opts, flags } = parseArgs(argv.slice(1))
   switch (cmd) {
     case 'register':
       return cmdRegister(opts)
@@ -364,10 +455,12 @@ async function main(): Promise<void> {
       return cmdNick(pos)
     case 'contacts':
       return cmdContacts()
+    case 'who':
+      return cmdWho(pos)
     case 'add':
       return cmdAdd(pos)
     case 'send':
-      return cmdSend(pos)
+      return cmdSend(pos, flags)
     case 'watch':
       return cmdWatch()
     case 'export':

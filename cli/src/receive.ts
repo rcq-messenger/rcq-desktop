@@ -17,6 +17,7 @@ import fs from 'node:fs'
 import { decryptIncoming, myDeviceId, noteInboundFrom, sendV2 } from '../../src/lib/signal-device'
 import { Api, peerBundleFrom } from '../../src/lib/api'
 import { encryptV1, type CarbonEnvelope, type Envelope, type WebIdentity } from '../../src/lib/crypto'
+import { foreignHost, groupLabel, isContact, knownName, labelForLine, peerLabel } from './directory'
 import { tr } from './i18n'
 import { statePath } from './state'
 import { err, out, peer } from './style'
@@ -38,10 +39,20 @@ export function historyPath(uin: number): string {
   return statePath(`history-${uin}.jsonl`)
 }
 
-// Dedup by envelope id, seeded from the history file once per process — the
-// island redelivers rows whose ack was lost, and the socket + drain overlap.
+// The one pass over the history file, which answers two questions: which
+// envelope ids this account has already handled (the island redelivers rows
+// whose ack was lost, and the socket + drain overlap), and which people it has
+// already exchanged a message with.
 const seen = new Set<string>()
-let seenLoadedFor: number | null = null
+/// Every uin with a 1:1 thread on this account. It is what makes the stranger
+/// gate a per-THREAD question rather than one asked forever: whoever you have
+/// written to, or heard from, is not somebody you can reach by accident.
+const peers = new Set<number>()
+/// The half of that we STARTED or answered. Auto-picking a reply target reads
+/// this one: hearing from somebody is not the same as having chosen them, and
+/// the loop used to point the next typed line at whoever wrote first.
+const wroteTo = new Set<number>()
+let indexLoadedFor: number | null = null
 
 /// Mark an id this process just SENT, so the post-send drain does not echo the
 /// self-carbon back onto stdout as if it were data from the peer.
@@ -49,15 +60,17 @@ export function markSent(id: string): void {
   seen.add(id)
 }
 
-function ensureSeen(uin: number): void {
-  if (seenLoadedFor === uin) return
-  seenLoadedFor = uin
+function ensureHistoryIndex(uin: number): void {
+  if (indexLoadedFor === uin) return
+  indexLoadedFor = uin
   try {
     for (const line of fs.readFileSync(historyPath(uin), 'utf8').split('\n')) {
       if (!line) continue
       try {
-        const id = (JSON.parse(line) as { envelope?: { id?: string } }).envelope?.id
+        const rec = JSON.parse(line) as HistoryRecord
+        const id = (rec.envelope as { id?: string } | undefined)?.id
         if (typeof id === 'string') seen.add(id)
+        notePeers(uin, rec)
       } catch {
         /* a torn tail line — the row it described was never vouched for */
       }
@@ -67,35 +80,56 @@ function ensureSeen(uin: number): void {
   }
 }
 
+/// A GROUP row is deliberately not a thread: sharing a room with somebody is
+/// not the same as having written to them, and the gate asks about the latter.
+function notePeers(uin: number, rec: HistoryRecord): void {
+  if (rec.gid != null) return
+  if (typeof rec.from === 'number' && rec.from !== uin) peers.add(rec.from)
+  if (typeof rec.to === 'number' && rec.to !== uin) {
+    peers.add(rec.to)
+    // `from === us` is what a sent row looks like, carbons from the phone
+    // included: those are our own words too.
+    if (rec.from === uin) wroteTo.add(rec.to)
+  }
+}
+
+/// Has this account and that uin ever exchanged a 1:1 message?
+export function hasThreadWith(myUin: number, peerUin: number): boolean {
+  ensureHistoryIndex(myUin)
+  return peers.has(peerUin)
+}
+
+/// Have WE ever written to them?
+export function hasWrittenTo(myUin: number, peerUin: number): boolean {
+  ensureHistoryIndex(myUin)
+  return wroteTo.has(peerUin)
+}
+
 export function stamp(): string {
   return new Date().toTimeString().slice(0, 8)
 }
 
-// ── group names ──────────────────────────────────────────────────────────────
-//
-// A drained group message used to print exactly like a 1:1 line, so a `send`
-// that drained the backlog first looked as if the GROUP had answered the
-// person being written to ("я отправил сообщение на 911 и получил сообщения
-// из группы", 21.08). Every group line now carries the group's name — fetched
-// once per process, lazily, on the first group row; before the fetch lands
-// (or if it never does) the raw id stands in, which is still a label.
-const groupNames = new Map<number, string>()
-let groupNamesRequested = false
-
-function groupLabel(identity: WebIdentity, gid: number): string {
-  if (!groupNamesRequested) {
-    groupNamesRequested = true
-    void Api.groups(identity, false)
-      .then((gs) => {
-        for (const g of gs) groupNames.set(g.id, g.name)
-      })
-      .catch(() => {
-        /* names stay numeric — the label still marks the line as a group's */
-      })
-  }
-  const name = groupNames.get(gid)
-  return out.dim(`[${name ?? tr('group.label', { gid })}]`)
+/// Status that must be said but not repeated: a receipt that cannot go out
+/// fails once per message on a dead network, and a line each would bury the
+/// conversation it is reporting on.
+const said = new Set<string>()
+function sayOnce(key: string, line: string): void {
+  if (said.has(key)) return
+  said.add(key)
+  process.stderr.write(err.dim(line) + '\n')
 }
+
+/// `[Работа]`, or `[group 21]` when this account has never listed its groups.
+/// The name comes from the warm snapshot (see directory.ts): the fetch that
+/// used to back this ran lazily and un-awaited, so the FIRST group line of
+/// every process printed the raw id by construction.
+function groupTag(myUin: number, gid: number): string {
+  return out.dim(`[${groupLabel(myUin, gid)}]`)
+}
+
+/// One peer per process gets the "you do not know this person" line. Every
+/// line after that would only be noise: the label already says who they are.
+const strangerNoted = new Set<number>()
 
 /// One printable line per envelope. Files/media never dump bytes — kind and
 /// size only, per the design doc (the CLI sends/receives originals in v1.5).
@@ -132,6 +166,9 @@ interface HistoryRecord {
 
 export function appendHistory(uin: number, rec: HistoryRecord): void {
   fs.appendFileSync(historyPath(uin), JSON.stringify(rec) + '\n', { mode: 0o600 })
+  // Keep the in-memory index level with the file: the message just written IS
+  // the thread, and the gate must not ask about this peer again.
+  if (indexLoadedFor === uin) notePeers(uin, rec)
 }
 
 export interface IngestResult {
@@ -169,8 +206,12 @@ export async function ingestDecrypted(
   groupId: number | null | undefined,
   result: IngestResult,
 ): Promise<void> {
-  ensureSeen(identity.uin)
+  ensureHistoryIndex(identity.uin)
   const env = got.envelope
+  // Their island when it is not ours, undefined otherwise. Read it once here:
+  // `got.senderHost` on its own is set for local v=1 senders too (see
+  // foreignHost), and every use below turns on the difference.
+  const host = foreignHost(identity, got.senderHost)
   if (env.kind === 'carbon') {
     // A message we sent from another device, echoed to our own uin. The
     // origin device re-receives its own carbon — dedup by the inner id.
@@ -182,7 +223,12 @@ export async function ingestDecrypted(
       if (seen.has(id)) return
       seen.add(id)
     }
-    const dest = c.to != null ? `#${c.to}` : c.gid != null ? `group ${c.gid}` : '?'
+    const dest =
+      c.to != null
+        ? await labelForLine(identity, c.to)
+        : c.gid != null
+          ? `[${groupLabel(identity.uin, c.gid)}]`
+          : '?'
     appendHistory(identity.uin, { at: new Date().toISOString(), from: identity.uin, to: c.to ?? undefined, envelope: inner })
     emit(`${out.dim(`[${stamp()}]`)} ${out.green(`me -> ${dest}`)}: ${describeEnvelope(inner)}\n`)
     return
@@ -193,7 +239,8 @@ export async function ingestDecrypted(
     // Receipt-by-receipt noise is for debugging; the send command already says
     // "delivered" in its one summary line.
     if (process.env.RCQ_VERBOSE) {
-      process.stderr.write(`[${stamp()}] ${env.kind} receipt from #${got.senderUIN}: ${ids.join(', ')}\n`)
+      const from = peerLabel(identity.uin, got.senderUIN, host)
+      process.stderr.write(`[${stamp()}] ${env.kind} receipt from ${from}: ${ids.join(', ')}\n`)
     }
     return
   }
@@ -203,7 +250,8 @@ export async function ingestDecrypted(
     // ("и почему v1?", 21.08) — it is debugging detail, so it now lives with
     // the rest of the debugging detail.
     if (process.env.RCQ_VERBOSE) {
-      process.stderr.write(err.dim(`[${stamp()}] ${env.kind} from #${got.senderUIN} (not supported by the CLI yet)`) + '\n')
+      const from = peerLabel(identity.uin, got.senderUIN, host)
+      process.stderr.write(err.dim(`[${stamp()}] ${env.kind} from ${from} (not supported by the CLI yet)`) + '\n')
     }
     return
   }
@@ -225,7 +273,8 @@ export async function ingestDecrypted(
     // must never become the interactive auto-reply target: the founder's
     // first run auto-picked a random RCQ Beta poster as "replying to".
     if (process.env.RCQ_VERBOSE) {
-      emit(`${out.dim(`[${stamp()}]`)} ${groupLabel(identity, groupId)} ${peer(got.senderUIN, `#${got.senderUIN}`)}: ${describeEnvelope(env)}\n`)
+      const from = await labelForLine(identity, got.senderUIN, host)
+      emit(`${out.dim(`[${stamp()}]`)} ${groupTag(identity.uin, groupId)} ${peer(got.senderUIN, from)}: ${describeEnvelope(env)}\n`)
     }
     if (got.senderUIN !== identity.uin) {
       const m = (result.groupNew ??= new Map<number, number>())
@@ -233,14 +282,40 @@ export async function ingestDecrypted(
     }
     return
   }
-  emit(`${out.dim(`[${stamp()}]`)} ${peer(got.senderUIN, `#${got.senderUIN}`)}: ${describeEnvelope(env)}\n`)
+  const from = await labelForLine(identity, got.senderUIN, host)
+  emit(`${out.dim(`[${stamp()}]`)} ${peer(got.senderUIN, from)}: ${describeEnvelope(env)}\n`)
   result.contentCount = (result.contentCount ?? 0) + 1
   if (got.senderUIN !== identity.uin) result.lastPeerFrom = got.senderUIN
+  // Somebody who is in no list of yours just reached you. Said once per peer,
+  // beside their name rather than instead of it: the open mailbox is the
+  // design, being unable to tell a contact from a stranger is not.
+  // A cross-island peer is never in the island's contacts table (there is no
+  // such row to have), so for them "known" is a saved cross-island contact.
+  const known = host
+    ? knownName(identity.uin, got.senderUIN, host) !== null
+    : isContact(identity.uin, got.senderUIN)
+  if (got.senderUIN !== identity.uin && !known) {
+    if (!strangerNoted.has(got.senderUIN)) {
+      strangerNoted.add(got.senderUIN)
+      process.stderr.write(err.dim(tr('inbound.stranger', { who: from })) + '\n')
+    }
+  }
   // Tell the sender it ARRIVED (moves their second tick). 1:1 content from a
   // peer only — a group message has as many recipients as members and one
   // tick cannot stand for all of them. The history append above already
   // landed, which is what makes the vouch honest.
-  if (got.senderUIN !== identity.uin && groupId == null && typeof id === 'string') {
+  //
+  // ⚠ Same-island only. A cross-island sender's uin belongs to THEIR island;
+  // posting a receipt for it here addresses whoever happens to hold that
+  // number on ours, which is a stranger being told something about a message
+  // they never sent. The right destination needs the federation send path the
+  // CLI does not have yet, so the tick simply stays where it is.
+  if (
+    got.senderUIN !== identity.uin &&
+    groupId == null &&
+    !host &&
+    typeof id === 'string'
+  ) {
     await sendDeliveredReceipt(identity, got.senderUIN, id)
   }
 }
@@ -256,11 +331,19 @@ async function sendDeliveredReceipt(identity: WebIdentity, peerUin: number, targ
     const reached = await sendV2(identity, peerUin, env, 'read').catch(() => 0)
     if (reached === 0) {
       const info = await Api.userInfo(identity, peerUin).catch(() => null)
-      if (!info?.identity_key || !info.signing_key) return
+      if (!info?.identity_key || !info.signing_key) {
+        // No keys to seal to, so there is no receipt to send. Same one line as
+        // a failure, because to the person waiting on a tick it is one.
+        sayOnce('receipt', tr('fail.receipt'))
+        return
+      }
       await Api.sendSealed(identity, peerUin, encryptV1(env, identity, peerBundleFrom(info)), 'read')
     }
   } catch {
-    /* the tick stays where it was */
+    // The peer keeps one tick on a message we are reading right now. Cheap to
+    // lose, but not a thing to hide: said once, then the network speaks for
+    // itself.
+    sayOnce('receipt', tr('fail.receipt'))
   }
 }
 
@@ -316,7 +399,8 @@ export async function drainQueue(identity: WebIdentity): Promise<IngestResult | 
         // Sender-keys group broadcast — the CLI carries no group chains in
         // v1. Terminal for this device (the chain will never appear), so it
         // is acked rather than left to wedge the cursor forever.
-        process.stderr.write(err.dim(`[${stamp()}] ${tr('group.senderKeys', { gid: r.group_id ?? '-' })}`) + '\n')
+        const g = typeof r.group_id === 'number' ? groupLabel(identity.uin, r.group_id) : '-'
+        process.stderr.write(err.dim(`[${stamp()}] ${tr('group.senderKeys', { group: g })}`) + '\n')
       } else {
         const got = await decryptIncoming(identity, r.payload)
         if (got) {
@@ -330,8 +414,13 @@ export async function drainQueue(identity: WebIdentity): Promise<IngestResult | 
       // terminal. Only a THROW leaves a row unacked; the cursor then stops in
       // front of it and the island redelivers from there next time.
       ;(typeof r.group_id === 'number' ? groupIds : directIds).push(r.id)
-    } catch {
-      /* transient failure — leave unacked for redelivery */
+    } catch (e) {
+      // Left UNACKED on purpose, so the island redelivers it. But a row that
+      // keeps failing is a message nobody can read and nobody was told about:
+      // one line, with the reason, per row.
+      process.stderr.write(
+        err.dim(tr('drain.row', { id: r.id, err: e instanceof Error ? e.message : String(e) })) + '\n',
+      )
     }
   }
   // One line per group instead of its whole feed (see IngestResult.groupNew):
@@ -339,7 +428,7 @@ export async function drainQueue(identity: WebIdentity): Promise<IngestResult | 
   // surface. RCQ_VERBOSE prints the full lines instead.
   if (result.groupNew?.size && !process.env.RCQ_VERBOSE) {
     for (const [gid, n] of result.groupNew) {
-      emit(`${out.dim(`[${stamp()}]`)} ${groupLabel(identity, gid)} ${out.dim(tr('group.banked', { n }))}\n`)
+      emit(`${out.dim(`[${stamp()}]`)} ${groupTag(identity.uin, gid)} ${out.dim(tr('group.banked', { n }))}\n`)
     }
   }
   if (directIds.length || groupIds.length) {
@@ -351,7 +440,12 @@ export async function drainQueue(identity: WebIdentity): Promise<IngestResult | 
       method: 'POST',
       headers: { Authorization: `Bearer ${identity.jwt}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ direct_ids: directIds, group_ids: groupIds }),
-    }).catch(() => {})
+    }).catch((e: unknown) => {
+      // Harmless once (the island redelivers and the id dedup absorbs it) and
+      // worth knowing when it is every time: an ack that never lands is a
+      // backlog that never shrinks.
+      sayOnce('ack', tr('drain.ackFailed', { err: e instanceof Error ? e.message : String(e) }))
+    })
   }
   return result
 }

@@ -21,6 +21,10 @@ export const out = {
   bold: wrap(OUT, '1', '22'),
   green: wrap(OUT, '32', '39'),
   red: wrap(OUT, '31', '39'),
+  // Interactive mode prints its warnings above the prompt, on the same stream
+  // as the conversation: a caution the person is meant to act on before typing
+  // the next line cannot be dim.
+  yellow: wrap(OUT, '33', '39'),
 }
 
 /// Styles for stderr (status lines).

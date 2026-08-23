@@ -255,15 +255,52 @@ export function verifyPow(challenge: string, nonce: string, difficultyBits: numb
 /// frame is 16 ms; this leaves the page most of each one.
 const POW_SLICE_MS = 6
 
+/// Hand the thread back for one turn of the event loop, through a channel the
+/// browser does NOT throttle in a hidden tab.
+///
+/// ⚠ Not setTimeout. Chrome aligns timers in a background tab to once a second
+/// and, for a chain nested this deep, to once a MINUTE after five minutes
+/// hidden; WebKit (the Tauri webview on macOS) aligns to a second. A mint is
+/// some forty slices, so a token minted behind a tab that had been in the
+/// background a while would have taken forty seconds to forty minutes, and the
+/// delivery receipt waiting on it (sent on arrival, whether or not the tab is
+/// visible) with it. scheduler.yield where the browser has it (it keeps the
+/// task's own priority), setImmediate under node, a MessageChannel message
+/// everywhere else: none of the three is timer-aligned. setTimeout stays as
+/// the last resort for a runtime that has none of them.
+function yieldSlice(): Promise<void> {
+  const g = globalThis as {
+    scheduler?: { yield?: () => Promise<void> }
+    setImmediate?: (cb: () => void) => unknown
+  }
+  if (typeof g.scheduler?.yield === 'function') return g.scheduler.yield()
+  if (typeof g.setImmediate === 'function') return new Promise<void>((resolve) => g.setImmediate!(resolve))
+  if (typeof MessageChannel === 'function') {
+    return new Promise<void>((resolve) => {
+      const ch = new MessageChannel()
+      ch.port1.onmessage = () => {
+        ch.port1.close()
+        resolve()
+      }
+      ch.port2.postMessage(0)
+    })
+  }
+  return new Promise<void>((resolve) => setTimeout(resolve, 0))
+}
+
 /// Solve the hashcash bound to `challenge` (= "{epoch_id}:{blinded_b64}"): the
 /// decimal counter the reference solver uses, so the nonce is a short ASCII
 /// string the island accepts as-is.
 ///
-/// Runs in slices of POW_SLICE_MS with a macrotask yield between them, so the
-/// browser repaints and handles input while 2^difficulty hashes go by. The
-/// hash state after the fixed prefix is computed once and cloned per nonce,
-/// which is the difference between a token costing a second and costing a
-/// fraction of one: the challenge spans several SHA-256 blocks, the nonce one.
+/// Runs in slices of POW_SLICE_MS with a yield between them (yieldSlice), so
+/// the browser repaints and handles input while 2^difficulty hashes go by, and
+/// keeps hashing at full speed when the tab is hidden. The hashing itself is
+/// the synchronous SHA-256 from @noble/hashes on every runtime, the CLI
+/// included: a WebCrypto digest is asynchronous per call, and 260k awaited
+/// digests would cost more in scheduling than in hashing. The hash state after
+/// the fixed prefix is computed once and cloned per nonce, which is the
+/// difference between a token costing a second and costing a fraction of one:
+/// the challenge spans several SHA-256 blocks, the nonce one.
 export async function solvePow(challenge: string, difficultyBits: number): Promise<string> {
   const enc = new TextEncoder()
   const base = sha256.create().update(enc.encode(`${challenge}:`))
@@ -277,6 +314,6 @@ export async function solvePow(challenge: string, difficultyBits: number): Promi
       // The clock is read once per few hundred hashes: it costs about as much
       // as a hash does.
     } while ((counter & 0x1ff) !== 0 || Date.now() < sliceEnd)
-    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    await yieldSlice()
   }
 }

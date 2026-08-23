@@ -82,6 +82,9 @@ export const DEFAULT_CAPABILITIES: ServerCapabilities = {
   deposit_auth: false,
 }
 
+/// How long one GET /server/info may take before it reads as no answer.
+const INFO_TIMEOUT_MS = 15_000
+
 /// One in-flight request per island, and one answer kept for the run. This is
 /// read by every settings render and it is a network call on a screen people
 /// scroll; without the cache, opening settings twice asks twice.
@@ -150,13 +153,24 @@ export async function loadServerInfo(apiBase: string, init?: RequestInit): Promi
 /// `request()` helper, whose 401 path ends the session. An island that is down,
 /// blocked or older than the endpoint simply answers `null` and every caller
 /// falls back to the permissive defaults.
+///
+/// Bounded: the key-lookup path (signal-device.ts) awaits this before every
+/// device-list and bundle read, some of them under the cross-tab provisioning
+/// lock, and an unbounded fetch whose response a middlebox swallowed would
+/// hold that lock, and every v=2 send, until the browser's own socket timeout.
+/// A plain AbortController, as everywhere else in this tree: AbortSignal
+/// .timeout is still missing from older webviews this page runs in. A timeout
+/// reads as `null`, the same as an island that did not answer, and is not
+/// cached.
 export function fetchServerInfo(apiBase: string): Promise<ServerInfo | null> {
   const hit = cache.get(apiBase)
   if (hit) return hit
-  const p = loadServerInfo(apiBase)
+  const ctl = new AbortController()
+  const timer = setTimeout(() => ctl.abort(), INFO_TIMEOUT_MS)
+  const p = loadServerInfo(apiBase, { signal: ctl.signal }).finally(() => clearTimeout(timer))
   cache.set(apiBase, p)
-  // A failure is not worth remembering for the whole run — the island may be
-  // one reconnect away — but a success is.
+  // A failure is not worth remembering for the whole run (the island may be
+  // one reconnect away), but a success is.
   void p.then((info) => {
     if (!info) cache.delete(apiBase)
   })

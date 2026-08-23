@@ -174,7 +174,11 @@ async function registerSecondary(identity: WebIdentity, dev: WebSignalDevice): P
 /// afford a bundle fetch per device (each consumes one of that device's OPKs).
 async function adoptRegisteredDevice(identity: WebIdentity, dev: WebSignalDevice): Promise<boolean> {
   const mine = dev.signalIdentityKeyB64()
-  const list = (await apiGet(identity, `/keys/${identity.uin}/devices`)) as { devices?: Array<{ device_id: number }> }
+  // The OWNER reading its OWN list and bundles: there is no pair to hide from
+  // the island here (A asking about A), so these stay on the session token
+  // even on a Stage 3 island. Spending deposit tokens on them would only put a
+  // proof-of-work per probed row under the provisioning lock.
+  const list = (await apiGetAuthed(identity, `/keys/${identity.uin}/devices`)) as { devices?: Array<{ device_id: number }> }
   // Newest first: the island hands out rising ids, so the row this install was
   // minted is the last one — and every sibling probed on the way to it pays an
   // OPK for the privilege, with the provisioning lock held.
@@ -183,7 +187,7 @@ async function adoptRegisteredDevice(identity: WebIdentity, dev: WebSignalDevice
     .sort((a, b) => b.device_id - a.device_id)
     .slice(0, ADOPT_PROBE_LIMIT)
   for (const d of rows) {
-    const bundle = await fetchKeyBundle(identity, `/keys/${identity.uin}/devices/${d.device_id}/bundle`)
+    const bundle = (await apiGetAuthed(identity, `/keys/${identity.uin}/devices/${d.device_id}/bundle`)) as SignalBundle
     if (bundle.signal_identity_key === mine) {
       dev.setDeviceId(d.device_id)
       return true
@@ -389,6 +393,13 @@ export function getDevice(identity: WebIdentity): Promise<WebSignalDevice> {
     p = withProvisionLock(identity.uin, () => provision(identity)).then(
       (dev) => {
         _myDeviceId = dev.deviceId
+        // The session is up: if this island takes deposit tokens, mint the
+        // first batch now, in the background, so the first bundle fetch of
+        // the run finds a token waiting instead of paying the proof-of-work
+        // in line with a send. Best-effort, like everything about tokens.
+        void anonKeyMode(identity).then((on) => {
+          if (on) depositAuth.prewarm(identity.apiBase)
+        })
         return dev
       },
       (e) => {
@@ -629,9 +640,11 @@ export function noteInboundFrom(uin: number, deviceId?: number): void {
   // is stale: the peer linked a device since we last read it, and that device
   // gets no carbons until we fan out to it. Drop the entry so the next send
   // re-resolves and picks it up, rather than waiting out the TTL (an hour of
-  // missing carbons was the 2026-08-19 report).
+  // missing carbons was the 2026-08-19 report). Only a NON-EMPTY list can be
+  // stale this way: an empty one means "no registry", not "out of date", and
+  // is not cached here anyway (sendV2), but the rule is spelled out.
   const cached = _peerTargets.get(uin)
-  if (cached && !cached.devices.some((t) => t.deviceId === deviceId)) {
+  if (cached && cached.devices.length > 0 && !cached.devices.some((t) => t.deviceId === deviceId)) {
     _peerTargets.delete(uin)
     console.debug(`peer ${uin} device ${deviceId} not in cached roster; will re-resolve`)
   }
@@ -892,6 +905,13 @@ export async function sendV2(identity: WebIdentity, peerUin: number, env: Envelo
   return sent
 }
 
+/// When an island's /server/info last failed to answer, per host.
+const _capsFailedAt = new Map<string, number>()
+
+/// How long a failed capability read is taken as "legacy island" before the
+/// question is asked again.
+const CAPS_RETRY_MS = 60_000
+
 /// Stage 3 of the core-metadata plan: whether this island serves the three key
 /// lookups without a session token AND issues the anonymous deposit tokens a
 /// bundle fetch pays with. Both must be true. A request that carries neither a
@@ -900,13 +920,23 @@ export async function sendV2(identity: WebIdentity, peerUin: number, env: Envelo
 /// either flag stays on the authenticated path. A guest clone on a foreign
 /// island stays there too, as it does on Android.
 ///
-/// The answer rides server-info's run-long cache, so this costs a network
-/// round trip once per island; a null answer (island down, older than the
-/// flags, or not fetched yet) reads false and keeps the legacy request.
+/// The answer rides server-info's run-long cache of SUCCESSFUL reads, bounded
+/// at 15 s like every other call here (this is awaited before every key GET,
+/// some of them under the provisioning lock), so it costs a network round
+/// trip once per island. A null answer (island down, timed out, older than
+/// /server/info) reads false, keeps the legacy request, and is not re-asked
+/// for CAPS_RETRY_MS: without that rest an old self-host island would pay one
+/// extra round trip on every device-list refresh and bundle fetch of the run.
 async function anonKeyMode(identity: WebIdentity): Promise<boolean> {
   if (identity.guest) return false
-  const caps = (await fetchServerInfo(identity.apiBase))?.capabilities
-  return caps?.anon_keys === true && caps?.deposit_auth === true
+  const host = identity.apiBase
+  if (Date.now() - (_capsFailedAt.get(host) ?? 0) < CAPS_RETRY_MS) return false
+  const caps = (await fetchServerInfo(host))?.capabilities
+  if (!caps) {
+    _capsFailedAt.set(host, Date.now())
+    return false
+  }
+  return caps.anon_keys && caps.deposit_auth
 }
 
 /// A key GET that failed, carrying the status so a caller can tell a 404 (the
@@ -922,10 +952,12 @@ class KeyLookupError extends Error {
 // the cross-tab provisioning lock held, and a fetch that black-holes would keep
 // every other tab of this account from provisioning at all.
 //
-// A GET that consumes nothing: the device list, or the settings screen's own
-// list. On a Stage 3 island it carries no session token (reading a list takes
-// no prekey, so it needs none and the island never learns who asked);
-// authenticated everywhere else.
+// A GET that consumes nothing: a PEER's device list. On a Stage 3 island it
+// carries no session token (reading a list takes no prekey, so it needs none
+// and the island never learns who asked); authenticated everywhere else. Not
+// for reads about our OWN account (apiGetAuthed): there is no pair to hide
+// there, and the island serves the slot labels to the authenticated owner
+// alone.
 async function apiGet(identity: WebIdentity, path: string): Promise<any> {
   const headers: Record<string, string> = {}
   if (!(await anonKeyMode(identity))) headers.Authorization = `Bearer ${identity.jwt}`
@@ -949,40 +981,62 @@ async function apiGetAuthed(identity: WebIdentity, path: string): Promise<any> {
 /// One token per fetch. The island answers 200 (token spent, one_time_prekey
 /// filled), 403 (a bad, spent or wrong-epoch token, or an island that stopped
 /// issuing: the epoch most likely rotated under the cached params), or 404 (no
-/// such bundle/device; the verifier never saw the token, so it goes back to the
-/// reserve). On 403 the cached params and reserve are dropped, a fresh token is
-/// minted and the fetch is tried once more; a second 403, or no token to be had
-/// at all, falls back to the session-token path for THIS fetch so a send is
-/// never blocked on the mint.
+/// such bundle/device; the verifier never saw the token). On 403 the cached
+/// params and reserve of that epoch are dropped, a fresh token is minted and
+/// the fetch is tried once more; a second 403 rests the mint for a while and,
+/// like having no token to be had at all, falls back to the session-token path
+/// for THIS fetch so a send is never blocked on the mint.
+///
+/// A token the island never VERIFIED goes back to the reserve: a 404 or a 429
+/// is answered before the verifier runs, and a transport failure (timeout, a
+/// dropped connection) never got there at all. The store keeps only a token
+/// whose epoch is still the current one.
 async function fetchKeyBundle(identity: WebIdentity, path: string): Promise<SignalBundle> {
   if (!(await anonKeyMode(identity))) return (await apiGetAuthed(identity, path)) as SignalBundle
-  let token = await depositAuth.takeToken(identity.apiBase)
+  const host = identity.apiBase
+  let token = await depositAuth.takeToken(host)
   let retried = false
   while (token) {
-    const res = await fetchWithTimeout(`${identity.apiBase}${path}`, {
-      headers: { 'X-Deposit-Token': depositAuth.headerValue(token) },
-    })
+    let res: Response
+    try {
+      res = await fetchWithTimeout(`${host}${path}`, {
+        headers: { 'X-Deposit-Token': depositAuth.headerValue(token) },
+      })
+    } catch (e) {
+      depositAuth.giveBack(host, token)
+      throw e
+    }
     if (res.ok) return (await res.json()) as SignalBundle
     if (res.status === 403) {
-      depositAuth.forget(identity.apiBase)
-      if (retried) break
+      depositAuth.forget(host, token)
+      if (retried) {
+        depositAuth.rest(host)
+        break
+      }
       retried = true
-      token = await depositAuth.takeToken(identity.apiBase)
+      token = await depositAuth.takeToken(host)
       continue
     }
-    if (res.status === 404) depositAuth.giveBack(identity.apiBase, token)
+    if (res.status === 404 || res.status === 429) depositAuth.giveBack(host, token)
     throw new KeyLookupError(res.status, path)
   }
   return (await apiGetAuthed(identity, path)) as SignalBundle
 }
 
 /// The key slots of OUR OWN account, for the settings screen (#643). This is
-/// the cryptographic device list — every install that can read v=2 holds a
+/// the cryptographic device list: every install that can read v=2 holds a
 /// slot here, which makes it the one list a phrase login cannot stay out of.
+///
+/// Always with the session token, Stage 3 island or not: this is the owner
+/// asking about its own account, so there is no pair for the island to learn,
+/// and since server 2026.08.23.5 the slot labels ("Web (Chrome)", "primary")
+/// are served to the authenticated owner ONLY; anonymously every row comes
+/// back as "", and the screen would show every slot as unnamed with no way to
+/// tell which one to revoke.
 export async function myAccountDevices(
   identity: WebIdentity,
 ): Promise<Array<{ device_id: number; label: string | null }>> {
-  const list = (await apiGet(identity, `/keys/${identity.uin}/devices`)) as {
+  const list = (await apiGetAuthed(identity, `/keys/${identity.uin}/devices`)) as {
     devices?: Array<{ device_id: number; label?: string | null }>
   }
   return (list.devices ?? []).map((d) => ({ device_id: d.device_id, label: d.label ?? null }))

@@ -102,10 +102,25 @@ export function listBackupHomes(): BackupHome[] {
 function saveBackupHomes(list: BackupHome[]): void {
   // Strip the token on the way out. This is the only writer, which is what
   // makes "no credential at rest" a property of the file rather than a habit.
-  const onDisk = list.map(({ jwt, ...rest }) => {
+  //
+  // ⚠ #717: and dedupe by host, first occurrence wins. Adoption runs on every
+  // socket reconnect AND on every Settings open; each run takes its picture of
+  // the known homes before two round trips per island, then finishes by
+  // appending what it found to the list as it stands by then. Two overlapping
+  // runs therefore appended the same island twice, and the backup-island list in
+  // Settings showed one island four times. This is the only writer, so deduping
+  // here also repairs a list that ALREADY carries duplicates on its next write,
+  // which is the only repair available for a browser we cannot reach into.
+  const seen = new Set<string>()
+  const onDisk: BackupHome[] = []
+  for (const { jwt, ...rest } of list) {
+    // Every row's token still lands in the map: a duplicate row is the same
+    // island, and updateStoredJwt refreshes by rewriting the whole list.
     if (jwt) tokens.set(rest.host, jwt)
-    return { ...rest, jwt: '' }
-  })
+    if (seen.has(rest.host)) continue
+    seen.add(rest.host)
+    onDisk.push({ ...rest, jwt: '' })
+  }
   localStorage.setItem(STORE_KEY(), JSON.stringify(onDisk))
 }
 
@@ -412,6 +427,9 @@ export async function adoptHomesFromOwnRecord(identity: WebIdentity): Promise<Ba
         // null = the record names an island this identity is not on (a home
         // that was burned there). Leave it alone rather than registering anew.
         if (!cred) continue
+        // A record that names the same island twice must not cost two more
+        // round trips, nor produce two rows.
+        known.add(home.host)
         adopted.push({
           host: home.host,
           uin: cred.uin,
@@ -423,8 +441,18 @@ export async function adoptHomesFromOwnRecord(identity: WebIdentity): Promise<Ba
         /* island unreachable — next boot retries */
       }
     }
-    if (adopted.length > 0) saveBackupHomes([...listBackupHomes(), ...adopted])
-    return adopted
+    if (adopted.length === 0) return adopted
+    // ⚠ #717: `known` above was read BEFORE two round trips per island, and this
+    // function runs both on every socket reconnect and on every Settings open.
+    // A concurrent run may have adopted the very same island while this one was
+    // waiting, so re-read the store HERE and append only what is still missing.
+    // Appending the whole batch to a fresh read was the duplicate: the list was
+    // current, the batch was not.
+    const current = listBackupHomes()
+    const have = new Set(current.map((h) => h.host))
+    const fresh = adopted.filter((h) => !have.has(h.host))
+    if (fresh.length > 0) saveBackupHomes([...current, ...fresh])
+    return fresh
   } catch {
     return []
   }
@@ -504,12 +532,18 @@ function updateStoredJwt(host: string, cred: IslandCredentials): void {
 /// publish (which also carries the legitimate homes).
 export function assembleHomes(identity: WebIdentity): IslandHome[] {
   const own = hostOfApiBase(identity.apiBase)
-  return [
-    { host: own, uin: identity.uin },
-    ...listBackupHomes()
-      .filter((h) => h.host !== own && !isFrontHost(h.host))
-      .map((h) => ({ host: h.host, uin: h.uin })),
-  ]
+  // ⚠ #717: seeded with the primary, so one pass drops both a stored row for
+  // our own island and a repeated backup. A record naming the same island twice
+  // is a record senders deposit into twice, and it is what a second client reads
+  // back and adopts, so the duplicate outlives the browser that made it.
+  const seen = new Set<string>([own])
+  const homes: IslandHome[] = [{ host: own, uin: identity.uin }]
+  for (const h of listBackupHomes()) {
+    if (seen.has(h.host) || isFrontHost(h.host)) continue
+    seen.add(h.host)
+    homes.push({ host: h.host, uin: h.uin })
+  }
+  return homes
 }
 
 /// PUT the signed record to every backup home (the primary PUT is done by the

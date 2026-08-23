@@ -11,6 +11,7 @@
 // event.
 
 import { useEffect, useState, useSyncExternalStore } from 'react'
+import { accountScope, scopedKey } from './account-scope'
 
 const KEYS = {
   favorites: 'rcq.web.favorites',
@@ -19,7 +20,6 @@ const KEYS = {
   archiveGroups: 'rcq.web.archive.groups',
   mutedPeers: 'rcq.web.muted.peers',
   mutedGroups: 'rcq.web.muted.groups',
-  collapsed: 'rcq.web.contacts.collapsed', // section ids the user collapsed
   aliases: 'rcq.web.contacts.aliases', // my own name for a contact, uin -> name
 }
 
@@ -179,6 +179,42 @@ export function useArchiveGroups() {
 // Section collapse state — single string set, not numbers.
 // -----------------------------------------------------------
 
+/// Section ids the user collapsed.
+///
+/// ⚠ SCOPED BY ACCOUNT, like `sections.v1` next door. The ids in it name THIS
+/// account's sections (the tree they come from is per account), so on a flat key
+/// two accounts in one browser folded each other's list: collapse a section on
+/// one and a section the other does not even have came back folded. Built on
+/// every call, never captured at module load, because the scope is installed
+/// during boot.
+const collapsedKey = () => scopedKey('contacts.collapsed')
+
+/// Where the set lived before it was scoped. Moved onto whichever account is
+/// open and then dropped, rather than discarded: the value says nothing about
+/// who collapsed what, so the account signed in when this update lands claims
+/// it, the same rule the outgoing logs follow in account-scope.ts. Throwing it
+/// away instead would unfold every section for everybody on upgrade.
+const FLAT_COLLAPSED_KEY = 'rcq.web.contacts.collapsed'
+let flatCollapsedMoved = false
+
+function migrateFlatCollapsed(): void {
+  // With no account scope yet `collapsedKey()` IS the flat key, and moving a key
+  // onto itself would delete it.
+  if (flatCollapsedMoved || accountScope() == null) return
+  flatCollapsedMoved = true
+  try {
+    const flat = localStorage.getItem(FLAT_COLLAPSED_KEY)
+    if (flat == null) return
+    const key = collapsedKey()
+    // Never overwrite: a scoped value is this account's own answer, newer than
+    // anything from the pre-scope world.
+    if (localStorage.getItem(key) == null) localStorage.setItem(key, flat)
+    localStorage.removeItem(FLAT_COLLAPSED_KEY)
+  } catch {
+    /* storage denied: a fold preference is not worth throwing over */
+  }
+}
+
 export function useCollapsedSections(): {
   has: (id: string) => boolean
   toggle: (id: string) => void
@@ -186,15 +222,16 @@ export function useCollapsedSections(): {
   const [, setTick] = useState(0)
   useEffect(() => {
     const handler = (e: StorageEvent) => {
-      if (e.key === KEYS.collapsed || e.key == null) setTick((t) => t + 1)
+      if (e.key === collapsedKey() || e.key == null) setTick((t) => t + 1)
     }
     window.addEventListener('storage', handler)
     return () => window.removeEventListener('storage', handler)
   }, [])
 
   const read = (): Set<string> => {
+    migrateFlatCollapsed()
     try {
-      const raw = localStorage.getItem(KEYS.collapsed)
+      const raw = localStorage.getItem(collapsedKey())
       if (!raw) return new Set()
       return new Set(JSON.parse(raw) as string[])
     } catch {
@@ -202,8 +239,8 @@ export function useCollapsedSections(): {
     }
   }
   const write = (s: Set<string>) => {
-    localStorage.setItem(KEYS.collapsed, JSON.stringify([...s]))
-    window.dispatchEvent(new StorageEvent('storage', { key: KEYS.collapsed }))
+    localStorage.setItem(collapsedKey(), JSON.stringify([...s]))
+    window.dispatchEvent(new StorageEvent('storage', { key: collapsedKey() }))
   }
 
   const cur = read()

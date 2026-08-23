@@ -3109,7 +3109,13 @@ export function Chat() {
                 return (
                   <li key="unread-divider" ref={unreadDividerRef} className="flex items-center gap-3 py-2">
                     <span className="flex-1 h-px bg-accent/40" />
-                    <span className="text-[0.6875rem] font-medium text-accent">
+                    {/* whitespace-nowrap keeps the label on one line: the rules
+                        are flex-basis 0, so a narrow column pushes all of the
+                        shrinking onto the label, whose auto min-width is its
+                        longest word - the Russian "Непрочитанные сообщения"
+                        then breaks in two. The rules collapse instead, and if
+                        even that is not enough the label ellipsizes. */}
+                    <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[0.6875rem] font-medium text-accent">
                       {t('chat.unread_divider')}
                       {item.count > 0 ? ` (${item.count})` : ''}
                     </span>

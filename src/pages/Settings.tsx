@@ -13,6 +13,8 @@ import { exportBackup, importBackup } from '../lib/backup-data'
 import { Dropdown, type DropdownOption } from '../components/Dropdown'
 import { LanguagePicker } from '../components/LanguagePicker'
 import { Logo } from '../components/Logo'
+import { IslandAvatar } from '../components/IslandAvatar'
+import { useIslandCard } from '../lib/use-server-info'
 import { MyQRCode } from '../components/MyQRCode'
 import { Api, REPORT_TAG, reportTextLimit } from '../lib/api'
 import {
@@ -595,13 +597,19 @@ export function Settings() {
                     />
                     <span className="min-w-0 flex-1">
                       <span className="block text-sm font-medium truncate">{name}</span>
-                      <span className="block font-mono text-xs text-fg-dim truncate">
-                        #{a.uin}
-                        {/* The island, but only when it is not the usual one: a
-                            host on every row is noise for the people who never
-                            leave the flagship, which is most of them. */}
-                        {a.apiBase !== DEFAULT_API_BASE && ` · ${a.apiBase.replace(/^https?:\/\//, '')}`}
-                      </span>
+                      <span className="block font-mono text-xs text-fg-dim truncate">#{a.uin}</span>
+                      {/* The island, but only when it is not the usual one: a
+                          host on every row is noise for the people who never
+                          leave the flagship, which is most of them. When it IS
+                          shown it is shown properly now: the island's own face
+                          and the name its operator typed, not a bare hostname.
+                          The row's OWN base, never the active account's. */}
+                      {a.apiBase !== DEFAULT_API_BASE && (
+                        <span className="flex items-center gap-1.5 min-w-0 mt-0.5">
+                          <IslandAvatar apiBase={a.apiBase} size={14} />
+                          <AccountIslandName apiBase={a.apiBase} />
+                        </span>
+                      )}
                       {/* Without this the row just bounced to login on every
                           tap, with nothing on screen saying the session had
                           been ended from the phone. */}
@@ -693,13 +701,19 @@ export function Settings() {
           <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
             {t('settings.section.island')}
           </div>
-          <div className="min-w-0">
-            <div className="text-sm font-medium truncate">{islandName ?? islandHost}</div>
-            {/* The host repeats under a name and nowhere else: two lines
-                saying the same host is one line of noise. */}
-            {islandName && (
-              <div className="font-mono text-xs text-fg-dim truncate">{islandHost}</div>
-            )}
+          {/* Picture and name together, which is the whole point: an island
+              that set a logo is drawn by it, and one that did not keeps the
+              lettered tile it always had. */}
+          <div className="flex items-center gap-3 min-w-0">
+            <IslandAvatar apiBase={identity?.apiBase} name={islandName ?? ''} size={40} />
+            <div className="min-w-0">
+              <div className="text-sm font-medium truncate">{islandName ?? islandHost}</div>
+              {/* The host repeats under a name and nowhere else: two lines
+                  saying the same host is one line of noise. */}
+              {islandName && (
+                <div className="font-mono text-xs text-fg-dim truncate">{islandHost}</div>
+              )}
+            </div>
           </div>
           {islandRules && (
             <>
@@ -1718,3 +1732,17 @@ function RecoveryPhraseSection() {
   )
 }
 
+
+/// The island's own name on an account row, falling back to the bare host.
+///
+/// A component of its own only because the name arrives from a hook, and a hook
+/// cannot be called inside the `accounts.map` that draws these rows. Same
+/// division `IslandAvatar` makes right next to it.
+function AccountIslandName({ apiBase }: { apiBase: string }) {
+  const { name } = useIslandCard(apiBase)
+  return (
+    <span className="block text-xs text-fg-dim truncate">
+      {name || apiBase.replace(/^https?:\/\//, '')}
+    </span>
+  )
+}

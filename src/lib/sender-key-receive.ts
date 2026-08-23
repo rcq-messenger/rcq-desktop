@@ -29,6 +29,18 @@ export interface RoutedGmsg {
   envelope: Envelope
 }
 
+/// What decoding one broadcast came to. `routed` is the inner envelope plus
+/// its real sender, or null when there is nothing to show; `held` says the
+/// null is the RECOVERABLE kind: the packet is in the hold buffer waiting on
+/// a chain this account has never been handed (a NACK went out). A caller
+/// that acks rows by position needs the difference: the web's hold is in
+/// memory, so a held live frame is not acked (the next drain re-serves it),
+/// while every other null is terminal.
+export interface DecodedGmsg {
+  routed: RoutedGmsg | null
+  held: boolean
+}
+
 /// Decode a `gmsg` broadcast payload (base64 of the gmsg wire JSON) for group
 /// `gid`. Returns the inner envelope + real sender to route, or null when the
 /// message is mine (carbon handles it), a replay, unverifiable, or pending an
@@ -38,19 +50,29 @@ export async function handleGmsg(
   payloadB64: string,
   gid: number,
 ): Promise<RoutedGmsg | null> {
+  return (await decodeGmsg(identity, payloadB64, gid)).routed
+}
+
+/// handleGmsg with the hold made visible (see DecodedGmsg).
+export async function decodeGmsg(
+  identity: WebIdentity,
+  payloadB64: string,
+  gid: number,
+): Promise<DecodedGmsg> {
+  const dropped: DecodedGmsg = { routed: null, held: false }
   let wire: GmsgWire
   try {
     wire = JSON.parse(new TextDecoder().decode(b64ToBytes(payloadB64))) as GmsgWire
   } catch {
-    return null
+    return dropped
   }
-  if (wire.v !== 1 || typeof wire.kid !== 'string') return null
+  if (wire.v !== 1 || typeof wire.kid !== 'string') return dropped
 
   // My own broadcast echoed back by the server (the server can't exclude an
   // anonymous sender). Own multi-device sync rides the carbon, so drop it.
   // Scoped to THIS account: the sibling account in the same browser owns its
   // kids under its own uin and must still read ours as ordinary inbound.
-  if (ownsKid(identity.uin, wire.kid)) return null
+  if (ownsKid(identity.uin, wire.kid)) return dropped
 
   const key = deriveInbound(identity.uin, wire.kid, wire.e, wire.i)
   if (!key) {
@@ -62,20 +84,21 @@ export async function handleGmsg(
       // already collapses the burst a missed SKDM produces.
       holdGmsg(identity.uin, { kid: wire.kid, gid, payloadB64, e: wire.e, i: wire.i })
       void sendNack(identity, gid, wire.kid)
+      return { routed: null, held: true }
     }
-    return null // replay / epoch mismatch / too-far-ahead — silently dropped
+    return dropped // replay / epoch mismatch / too-far-ahead, silently dropped
   }
   let opened
   try {
     opened = openGmsg(wire, gid, key.mk, key.spub)
   } catch {
-    return null // AEAD failure — wrong key / tampering
+    return dropped // AEAD failure: wrong key / tampering
   }
   if (!opened.verified) {
     console.warn('[sender-keys] gmsg signature did not verify; dropping', { gid, kid: wire.kid })
-    return null
+    return dropped
   }
-  return { senderUIN: key.senderUin, envelope: opened.envelope }
+  return { routed: { senderUIN: key.senderUin, envelope: opened.envelope }, held: false }
 }
 
 /// Store an inbound chain handed to us via an SKDM (bound to the

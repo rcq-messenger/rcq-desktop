@@ -16,7 +16,7 @@ export { handleGmsg, handleSkdm } from '../../src/lib/sender-key-receive'
 export { decryptV1, bytesToB64 } from '../../src/lib/crypto'
 export { knowsKid, ownsKid } from '../../src/lib/sender-key-store'
 export { heldGmsgCount } from '../../src/lib/held-gmsg'
-export { ackLiveGroupRow, drainGroupLog, forgetVouched, vouchedSeq } from '../../src/lib/group-log'
+export { ackLiveGroupRow, drainGroupLog, forgetVouched, MAX_STRIKES, vouchedSeq } from '../../src/lib/group-log'
 
 export function newTestIdentity(uin: number): WebIdentity & { identityKeyB64: string; signingKeyB64: string } {
   const identityPriv = crypto.getRandomValues(new Uint8Array(32))

@@ -25,6 +25,8 @@ import {
   islandHasGroupLog,
   type GroupLogRequest,
   type GroupLogRow,
+  type StrikeEntry,
+  type StrikeStore,
 } from '../../src/lib/group-log'
 import { foreignHost, groupLabel, isContact, knownName, labelForLine, peerLabel } from './directory'
 import { chatLine, when } from './format'
@@ -665,6 +667,32 @@ function logRequestFor(identity: WebIdentity): GroupLogRequest {
     })
 }
 
+/// The room-log strike ledger of one account, on disk (see drainRoomLog).
+function strikeFile(uin: number): StrikeStore {
+  const path = statePath(`group-log-strikes-${uin}.json`)
+  return {
+    read: () => {
+      try {
+        const raw = JSON.parse(fs.readFileSync(path, 'utf8')) as Record<string, Partial<StrikeEntry>>
+        const out: Record<string, StrikeEntry> = {}
+        for (const [k, v] of Object.entries(raw)) {
+          if (v && typeof v.sig === 'string' && typeof v.n === 'number') out[k] = { sig: v.sig, n: v.n }
+        }
+        return out
+      } catch {
+        return {}
+      }
+    },
+    write: (strikes) => {
+      try {
+        fs.writeFileSync(path, JSON.stringify(strikes), { mode: 0o600 })
+      } catch {
+        /* an unwritable state dir is already being shouted about elsewhere */
+      }
+    },
+  }
+}
+
 /// Stage 5 (core-metadata plan): on an island that keeps one log per room,
 /// drain the rooms from their logs, next to the legacy queue. The rows carry
 /// the same envelope types and payloads the legacy group rows carry, so they
@@ -672,26 +700,38 @@ function logRequestFor(identity: WebIdentity): GroupLogRequest {
 /// is appended synchronously above, a held broadcast is on disk, so the ack
 /// may go out, per room over the contiguous prefix of what was processed
 /// (see group-log.ts). An island without the capability is never asked: the
-/// first fetch is also what flips the account to "log reader" there.
+/// first fetch is also what marks this device a "log reader" there.
+///
+/// The strike ledger lives in a file: `rcq send` is a new process every time,
+/// and a row that failed the same way on three RUNS must count as three
+/// drains, or a v=2 row this box cannot open would pin the room on every
+/// cron tick forever.
 async function drainRoomLog(identity: WebIdentity, myDev: number, result: IngestResult): Promise<void> {
   if (!(await islandHasGroupLog(identity.apiBase))) return
   try {
-    await drainGroupLog(identity.apiBase, identity.uin, logRequestFor(identity), async (row: GroupLogRow) => {
-      try {
-        await ingestQueueRow(
-          identity,
-          myDev,
-          { envelope_type: row.envelope_type, payload: row.payload, group_id: row.gid, received_at: row.received_at },
-          result,
-        )
-      } catch (e) {
-        // Left unacked on purpose (the island re-serves it), and said out
-        // loud, the same as a queue row: a row that keeps failing is a
-        // message nobody can read and nobody was told about.
-        process.stderr.write(err.dim(tr('drain.row', { id: `g${row.gid}/${row.seq}`, err: humanError(e) })) + '\n')
-        throw e
-      }
-    })
+    await drainGroupLog(
+      identity.apiBase,
+      identity.uin,
+      logRequestFor(identity),
+      async (row: GroupLogRow) => {
+        try {
+          await ingestQueueRow(
+            identity,
+            myDev,
+            { envelope_type: row.envelope_type, payload: row.payload, group_id: row.gid, received_at: row.received_at },
+            result,
+          )
+        } catch (e) {
+          // Left unacked on purpose (the island re-serves it), and said out
+          // loud, the same as a queue row: a row that keeps failing is a
+          // message nobody can read and nobody was told about.
+          process.stderr.write(err.dim(tr('drain.row', { id: `g${row.gid}/${row.seq}`, err: humanError(e) })) + '\n')
+          throw e
+        }
+      },
+      undefined,
+      strikeFile(identity.uin),
+    )
   } catch (e) {
     // Nothing was acked for the page that failed; the next drain re-serves it.
     if (e instanceof GroupLogHttpError) process.stderr.write(tr('drain.logHttp', { status: e.status }) + '\n')

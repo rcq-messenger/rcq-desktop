@@ -19,6 +19,7 @@ import {
   persistIdentity,
   removeStoredIdentity,
   wipeLocalAccountData,
+  sessionDeviceId,
   withSessionToken,
 } from './auth'
 import { migrateFlatDataInto, setAccountScope } from './account-scope'
@@ -307,10 +308,23 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
         // Fire-and-forget: a sign-out must not be blocked, or refused, by a
         // network that happens to be down. The entry then outlives the session
         // exactly as it does today, and the phone can still revoke it by hand.
-        if (identity) void Api.unlinkSelf(identity).catch(() => {})
+        //
+        // ⚠ Through `withSessionToken`, like the account-switch path above,
+        // and not with `identity` as it stands. This browser keeps no token on
+        // disk, so `identity.jwt` is routinely empty or expired here; the call
+        // then 401'd, the retry asked for a fresh token, and by that time the
+        // sign-out had already cleared the keys it needed to mint one. The
+        // entry survived, and the phone went on listing a browser that was
+        // gone (#714). Mint FIRST, then clear.
+        const leaving = identity
+        // Resolved NOW, while the stores that hold it are still there.
+        const leavingDevice = leaving ? sessionDeviceId(leaving) : undefined
+        const done = leaving
+          ? withSessionToken(leaving, leavingDevice).then((id) => Api.unlinkSelf(id)).catch(() => {})
+          : Promise.resolve()
         clearIdentity()
         wipeLocalAccountData()
-        void Promise.allSettled([idbClearAll(), flushVaultWriter()]).then(() => {
+        void Promise.allSettled([done, idbClearAll(), flushVaultWriter()]).then(() => {
           window.location.assign('/')
         })
       },

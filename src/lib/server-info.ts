@@ -67,6 +67,11 @@ export interface ServerCapabilities {
   anon_keys: boolean
   deposit_auth: boolean
   group_log: boolean
+  /// The island serves PUT/GET/DELETE /vault/{slot} (core-metadata plan,
+  /// Stage 4): opaque, versioned, client-sealed slots per account. Defaults
+  /// to FALSE like the other stage flags: the contact list is kept on the
+  /// device and in the vault only where the island can hold it.
+  vault: boolean
 }
 
 export interface ServerInfo {
@@ -92,6 +97,7 @@ export const DEFAULT_CAPABILITIES: ServerCapabilities = {
   anon_keys: false,
   deposit_auth: false,
   group_log: false,
+  vault: false,
 }
 
 /// How long one GET /server/info may take before it reads as no answer.
@@ -114,6 +120,7 @@ type BoolCapability =
   | 'anon_keys'
   | 'deposit_auth'
   | 'group_log'
+  | 'vault'
 
 function normalize(raw: unknown): ServerInfo | null {
   if (!raw || typeof raw !== 'object') return null
@@ -142,6 +149,7 @@ function normalize(raw: unknown): ServerInfo | null {
       anon_keys: bool('anon_keys'),
       deposit_auth: bool('deposit_auth'),
       group_log: bool('group_log'),
+      vault: bool('vault'),
     },
   }
 }

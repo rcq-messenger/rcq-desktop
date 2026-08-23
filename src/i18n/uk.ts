@@ -1,4 +1,4 @@
-// uk — full translation of the client dictionary.
+// uk: full translation of the client dictionary.
 //
 // English stays the development language: anything missing here falls
 // back to en via translate() in i18n/index.ts. Brand names (RCQ, UIN,
@@ -19,7 +19,7 @@ export const uk: Record<string, string> = {
   'common.continue': 'Далі',
   'common.back': 'Назад',
   'common.done': 'Готово',
-  // Login — two-mode entry surface
+  // Login: two-mode entry surface
   'login.tagline': 'Та сама душа, сучасна криптографія.',
   'login.cancel_add': 'Скасувати, назад до {nick}',
   'login.mode.create': 'Новий акаунт',
@@ -43,7 +43,7 @@ export const uk: Record<string, string> = {
   'settings.recovery.body': 'Твоя фраза з 24 слів відновлює цей акаунт на телефоні чи в іншому браузері. Нікому її не показуй.',
   'settings.recovery.reveal': 'Показати фразу відновлення',
   'settings.recovery.forget': 'Забути фразу на цьому пристрої',
-  'settings.recovery.forget.warn': 'Робіть це, лише якщо слова записані десь іще. Браузер не вміє ховати їх ані від скрипта на цій сторінці, ані від того, кому дістався незаблокований комп’ютер, а фраза відновлює акаунт на будь-якому острові й назавжди. Акаунт і листування тут працюватимуть далі — ви просто більше не зможете прочитати ці слова з браузера.',
+  'settings.recovery.forget.warn': 'Робіть це, лише якщо слова записані десь іще. Браузер не вміє ховати їх ані від скрипта на цій сторінці, ані від того, кому дістався незаблокований комп’ютер, а фраза відновлює акаунт на будь-якому острові й назавжди. Акаунт і листування тут працюватимуть далі, просто прочитати ці слова з браузера буде вже не можна.',
   'settings.recovery.forget.confirm': 'Забути',
   'settings.recovery.forgotten': 'Фраза більше тут не зберігається.',
   'login.link.scan_body': 'Відкрий застосунок RCQ на телефоні й відскануй цей код камерою, щоб увійти тут під акаунтом з телефона.',
@@ -342,7 +342,7 @@ export const uk: Record<string, string> = {
   'settings.report.error': 'Не вдалося надіслати звернення. Спробуй ще раз.',
   'settings.report.rate_limited': 'Наразі забагато звернень. Спробуй пізніше.',
   'chat.unread_divider': 'Непрочитані повідомлення',
-  // My reports — the answers to what you sent (#475).
+  // My reports: the answers to what you sent (#475).
   'myreports.title': 'Мої звернення',
   'settings.myreports.footer.short': 'Твої звернення і відповіді на них.',
   'myreports.empty': 'Ти ще не надсилав звернень. Якщо надішлеш, відповідь з\'явиться тут.',
@@ -359,14 +359,14 @@ export const uk: Record<string, string> = {
   'myreports.status.dismissed': 'Відхилено',
   'myreports.status.duplicate': 'Дублікат',
   'myreports.copy': 'Копіювати',
-  'myreports.delete': 'Видалити',
-  'myreports.delete_confirm': 'Видалити це звернення? Відповідь зникне разом з ним.',
-  'myreports.delete_refused': 'Це звернення ще розглядають, тому видалити його поки не можна.',
-  'myreports.delete_error': 'Не вдалося видалити. Спробуй ще раз.',
+  'myreports.delete': 'Прибрати з мого списку',
+  'myreports.delete_confirm': 'Прибрати це звернення зі списку? Воно зникне з цього екрана. Нічого не стирається: в операторів лишається і звернення, і відповідь, і воно й далі враховується в залі слави.',
+  'myreports.delete_refused': 'Це звернення ще розглядають, тому воно лишиться у списку до рішення.',
+  'myreports.delete_error': 'Не вдалося прибрати. Спробуй ще раз.',
   'myreports.load_error': 'Не вдалося завантажити твої звернення. Спробуй ще раз.',
   'settings.section.about': 'Про застосунок',
   'settings.about.body': 'RCQ це анонімний месенджер з наскрізним шифруванням: без номера телефона, без пошти. Це вебклієнт, він тримає власний акаунт у цьому браузері.',
-  // Desktop builds name their own OS — this is not the web client.
+  // Desktop builds name their own OS. This is not the web client.
   'settings.about.body_macos': 'RCQ це анонімний месенджер з наскрізним шифруванням: без номера телефона, без пошти. Це застосунок для macOS, його акаунт живе на цьому Mac.',
   'settings.about.body_windows': 'RCQ це анонімний месенджер з наскрізним шифруванням: без номера телефона, без пошти. Це застосунок для Windows, його акаунт живе на цьому комп\'ютері.',
   'settings.about.body_linux': 'RCQ це анонімний месенджер з наскрізним шифруванням: без номера телефона, без пошти. Це застосунок для Linux, його акаунт живе на цьому комп\'ютері.',
@@ -427,9 +427,9 @@ export const uk: Record<string, string> = {
   'settings.bypass.list_version': 'список релеїв v{version}',
   // Shown only by a build compiled without the `mac-bypass` feature. It used to
   // say "needs macOS 14 or newer", which read as an OS problem and was wrong on
-  // every Mac that saw it — the released builds simply had the feature off.
+  // every Mac that saw it: the released builds simply had the feature off.
   'settings.bypass.unsupported': 'Цю збірку зібрано без підтримки релеїв RCQ.',
-  // Desktop build only — the browser has nothing to update.
+  // Desktop build only: the browser has nothing to update.
   'settings.about.version': 'Версія',
   'settings.about.update_check': 'Перевірити оновлення',
   'settings.about.update_checking': 'Перевірка…',
@@ -539,10 +539,10 @@ export const uk: Record<string, string> = {
   'toast.group': 'Група',
   'toast.photo': '📷 Фото',
   'toast.attachment': '📎 Вкладення',
-  // Settings — profile link
+  // Settings: profile link
   'settings.section.profile': 'Профіль',
   'settings.profile.cta': 'Переглянути й змінити профіль',
-  // Chat — emoticon picker
+  // Chat: emoticon picker
   'chat.emoticons': 'Смайли',
   'chat.picker.section.base': 'Kolobok',
   'chat.picker.empty.hint': 'Обери смайли для своєї панелі',
@@ -568,7 +568,7 @@ export const uk: Record<string, string> = {
   'pool.gems.title': 'Набір самоцвітів',
   'pool.gems.range': '{min}–{max} самоцвітів за випадіння',
   'profile.cta.propose_trade': 'Запропонувати обмін',
-  // Settings — privacy + sound
+  // Settings: privacy + sound
   'settings.section.privacy': 'Приватність',
   'settings.privacy.last_seen': 'Час у мережі бачать',
   'settings.privacy.last_seen_desc': 'Хто бачить, коли ти був у мережі востаннє.',
@@ -628,7 +628,7 @@ export const uk: Record<string, string> = {
   'section.groups.create': '+ Нова',
   'section.groups.empty': 'Груп поки немає: створи одну, щоб спілкуватися з кількома людьми одразу.',
   'section.groups.members': '{n} учасників',
-  // Audio rooms — the corridor and the room itself.
+  // Audio rooms: the corridor and the room itself.
   'rooms.title': 'Аудіокімнати',
   'rooms.joinKey': 'Ключ входу',
   'rooms.join': 'Увійти',
@@ -775,7 +775,7 @@ export const uk: Record<string, string> = {
   'group_join.error.blocked': 'Власник закрив тобі доступ до цієї групи.',
   // Group chat
   'chat.placeholder.group': 'Написати в {name}…',
-  // Settings — burn confirm typing
+  // Settings: burn confirm typing
   'settings.danger.type_uin': 'Для підтвердження введи нижче свій UIN ({uin}).',
   // Brand
   'brand.name': 'RCQ',

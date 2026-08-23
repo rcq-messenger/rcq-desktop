@@ -307,7 +307,7 @@ export function AddMemberSheet({ group, ident, gid, host, onAdded, onClose }: Pr
             <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md p-2 space-y-0.5">
               {failures.map((f) => (
                 <div key={f.key}>
-                  <span className="font-medium">{f.name}</span> — {f.reason}
+                  <span className="font-medium">{f.name}</span>: {f.reason}
                 </div>
               ))}
             </div>

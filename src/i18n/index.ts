@@ -50,7 +50,7 @@ const DICTS: Partial<Record<LangCode, Dict>> = {
 }
 
 /// Find the dict for a language code; fall back to English. Used by
-/// the i18n provider on every render. The fallback isn't per-key —
+/// the i18n provider on every render. The fallback is not per-key:
 /// once the active dict is picked, missing keys still resolve via
 /// the same `t()` lookup against `en`.
 export function dictFor(lang: LangCode): Dict {
@@ -59,7 +59,7 @@ export function dictFor(lang: LangCode): Dict {
 
 /// ⚠ Only what we actually ship. The picker listed every declared language
 /// while two dictionaries existed, so choosing one of the others changed the
-/// label and left the app in English — indistinguishable from a bug.
+/// label and left the app in English, indistinguishable from a bug.
 export const AVAILABLE_LANGUAGES = LANGUAGES.filter((l) => DICTS[l.code] != null)
 
 /// Translate a key with optional `{name}` interpolation. If the
@@ -78,7 +78,7 @@ export function translate(
   )
 }
 
-/// Pick a sensible default at first launch — match iOS behaviour:
+/// Pick a sensible default at first launch, matching iOS behaviour:
 /// honour the browser's preferred language if we ship it, else
 /// English.
 export function detectInitialLang(): LangCode {
@@ -95,7 +95,7 @@ export function detectInitialLang(): LangCode {
   }
   // ⚠ Neither pass above can match a Chinese browser: it sends `zh-CN`, plain
   // `zh` or `zh-Hans-CN`, and our code is `zh-Hans`. Map the family by hand.
-  // Traditional locales stay on English until a zh-Hant dict exists — serving
+  // Traditional locales stay on English until a zh-Hant dict exists: serving
   // Simplified to Taiwan or Hong Kong is worse than serving the source.
   if (primary === 'zh' && !/(hant|tw|hk|mo)/.test(navLang)) return 'zh-Hans'
   return 'en'

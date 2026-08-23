@@ -235,6 +235,13 @@ fn vault_unlock(
 /// The ordinary write while unlocked — no PIN, because the page does this
 /// every time a token is refreshed and asking again would train people to
 /// type their PIN at any prompt.
+/// Is this the PIN? No side effects beyond the failure counter. The section
+/// gate uses it; see `vault::verify` for why it is not `vault_unlock`.
+#[tauri::command]
+fn vault_verify(app: tauri::AppHandle, pin: String) -> Result<bool, String> {
+    vault::verify(&app, &pin)
+}
+
 #[tauri::command]
 fn vault_write(
     app: tauri::AppHandle,
@@ -380,6 +387,7 @@ pub fn run() {
                 vault_state,
                 vault_create,
                 vault_unlock,
+                vault_verify,
                 vault_read,
                 vault_write,
                 vault_lock,

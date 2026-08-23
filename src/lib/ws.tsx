@@ -25,6 +25,8 @@ import {
 } from 'react'
 import { useIdentity } from './identity-context'
 import { escalateForDeadSockets, refreshFrontRouting } from './front'
+import { handleVaultChanged, handleVaultReset, sweepVaultSlots } from './vault-sync'
+import type { VaultChangedFrame } from './vault'
 
 export type WsEvent = { type: string; [key: string]: unknown }
 type Listener = (ev: WsEvent) => void
@@ -243,6 +245,51 @@ export function WSProvider({ children }: { children: ReactNode }) {
       set.delete(handler)
     }
   }, [signOut])
+
+  // The vault's two slots, kept fresh. This is the first consumer of
+  // `vault_changed`: the island has fanned the frame out since the vault
+  // shipped and nobody was listening, so a contact list or a section made on
+  // another device only arrived on the next cold start.
+  //
+  // ⚠ The nudge alone is not enough and never was: it is pub/sub with no
+  // replay, so the device whose socket was down when the write happened hears
+  // nothing. The sweep below runs on EVERY (re)connect and compares versions.
+  useEffect(() => {
+    if (!identity) return
+    const set = listenersRef.current.get('vault_changed') ?? new Set<Listener>()
+    const handler: Listener = (ev) => {
+      void handleVaultChanged(identity, ev as unknown as VaultChangedFrame)
+    }
+    set.add(handler)
+    listenersRef.current.set('vault_changed', set)
+    return () => {
+      set.delete(handler)
+    }
+  }, [identity])
+
+  // `vault_reset`: another device called `/auth/reissue`, so the island threw
+  // the account's vault away and the identity every slot NAME and every slot
+  // KEY is derived from is retired. This browser still holds the old one, so
+  // the only correct move is to stop writing (see `handleVaultReset`) rather
+  // than to republish a list nothing will ever read again, sealed with the key
+  // the user has just declared compromised. The island has been sending this
+  // frame since the reissue path learned to announce itself and no client
+  // listened for it.
+  useEffect(() => {
+    if (!identity) return
+    const set = listenersRef.current.get('vault_reset') ?? new Set<Listener>()
+    const handler: Listener = () => handleVaultReset(identity)
+    set.add(handler)
+    listenersRef.current.set('vault_reset', set)
+    return () => {
+      set.delete(handler)
+    }
+  }, [identity])
+
+  useEffect(() => {
+    if (!connected || !identity) return
+    void sweepVaultSlots(identity)
+  }, [connected, identity])
 
   const on = useCallback<WsCtx['on']>((type, listener) => {
     const set = listenersRef.current.get(type) ?? new Set<Listener>()

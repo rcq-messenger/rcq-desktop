@@ -49,6 +49,18 @@ export async function vaultUnlock(pin: string): Promise<string> {
   return call<string>('vault_unlock', { pin })
 }
 
+/// Is this the PIN? True or false, and nothing else comes back: the vault
+/// stays locked and no key is stored. The section gate (sections design §5)
+/// asks with it.
+///
+/// ⚠ NOT `vaultUnlock` with the answer thrown away. That stores the key and
+/// resets the failure counter, which would make a wrong guess here free. The
+/// Rust side counts a failure exactly as the lock screen does, so the same
+/// cooldown applies, and it throws `locked_out:<seconds>` while one is owed.
+export async function vaultVerify(pin: string): Promise<boolean> {
+  return call<boolean>('vault_verify', { pin })
+}
+
 /// The contents, for a page that reloaded inside an already-unlocked session
 /// (switching accounts or islands does exactly that). Throws `locked` when
 /// this run has never been unlocked, which is when the PIN must be asked for.

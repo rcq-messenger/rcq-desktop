@@ -5,6 +5,21 @@
 // archive / block / remove). Live presence + contact-graph deltas
 // arrive via WS; favorites/archive/mute live entirely in
 // localStorage on this device.
+//
+// Since 23.08 the list also carries the user's OWN sections (founder item 1,
+// docs/sections-design-2026-08-23.md). They are not a seventh hardcoded bucket:
+// they live in the vault's "sections" slot, so the same list of sections, in
+// the same order, is on the phone. Three rules decide what renders where, and
+// all three are one line each in the bucketing loop below:
+//
+//   archive > user section > derived
+//
+// A chat filed into a user section leaves EVERY derived one (Favorites,
+// Cross-island, Groups, Online, Offline), exactly the way archiving already
+// takes it out of them. Favorite survives as a flag and still sorts the row to
+// the top inside its section. A membership whose chat this device cannot see
+// right now simply does not render: it is never pruned, because a roster fetch
+// that failed once would otherwise delete the account's sections.
 
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
@@ -31,11 +46,43 @@ import {
 import { contactsCache, persistSnapshot, restoreSnapshot } from '../lib/contacts-cache'
 import { mirrorContactsToVault } from '../lib/contacts-vault'
 import { memberCount } from '../lib/group-roster'
+import { compactCount } from '../lib/format-count'
 import { usePeerUnread, useGroupUnread, useTotalUnread, peerUnreadCount, groupUnreadCount } from '../lib/incoming-store'
 import { useHasMention } from '../lib/mentions'
 import { useI18n } from '../lib/i18n-context'
 import { lockNow } from '../lib/pin-gate'
-import { vaultState, vaultSupported } from '../lib/desktop-vault'
+import { vaultState, vaultSupported, vaultVerify } from '../lib/desktop-vault'
+import { SectionMenu, useSectionMenuTrigger, KeyIcon, type SectionMenuTarget } from '../components/SectionMenu'
+import { SectionPickerSheet, type SectionCandidate } from '../components/SectionPickerSheet'
+import { useSections } from '../lib/sections-store'
+import { mutateSections, sectionKeyForGroup, sectionsAvailable } from '../lib/sections-vault'
+import { sweepVaultSlots } from '../lib/vault-sync'
+import {
+  addMembers,
+  createSection,
+  deleteSection,
+  memberIndex,
+  membersOf,
+  ORDER_STEP,
+  orderOf,
+  orderedSections,
+  peerKey,
+  removeMemberFrom,
+  renameSection,
+  SectionsError,
+  setOrder,
+  setPinned,
+  SYS_ARCHIVE,
+  SYS_CI,
+  SYS_FAV,
+  SYS_GROUPS,
+  SYS_OFFLINE,
+  SYS_ONLINE,
+  SYS_SAVED,
+  userSections,
+  type SectionRecord,
+  type SectionsTree,
+} from '../lib/sections'
 import { useIdentity } from '../lib/identity-context'
 import { useToast } from '../lib/toast'
 import { buildContactLink } from '../lib/federation'
@@ -178,6 +225,86 @@ export function Contacts() {
   // section counts update when a message arrives. (Value itself unused here.)
   useTotalUnread()
 
+  // ── The user's own sections ───────────────────────────────────────────
+  //
+  // Gated on `capabilities.vault`: without a vault there is nowhere to keep
+  // them, and a local-only fallback would create state that syncs badly the
+  // day the island upgrades. On such an island there is no menu and no
+  // section, not a disabled one.
+  const tree = useSections()
+  /// null = not answered yet. ⚠⚠ THE THREE STATES MATTER. This was a plain
+  /// `false` until the review of 23.08, and `false` is "this island has no
+  /// vault, hide the whole feature": on every cold start, and for as long as
+  /// `/server/info` had not answered (15 s of timeout when the island is
+  /// unreachable, and the failure is not cached, so it re-fails), a PIN-gated
+  /// section's members were bucketed into Online / Offline / Cross-island and
+  /// drawn by name, with their unread badges, while the section's own header
+  /// was dropped from the list. No PIN asked for, no key glyph, on a screen
+  /// whose copy says "hides this section until you enter your PIN". Unknown
+  /// therefore keeps the cached filing: a chat can only BE filed if the island
+  /// had a vault when it was filed, so "not answered yet" is never a reason to
+  /// spill one.
+  const [sectionsOk, setSectionsOk] = useState<boolean | null>(null)
+  /// A real PIN this device can check against. Desktop only: in a browser tab
+  /// there is nowhere to put a secret the page itself cannot reach, so there
+  /// is no PIN to ask for and none is invented (sections design §5).
+  const [canPin, setCanPin] = useState(false)
+  const [menu, setMenu] = useState<{ at: { x: number; y: number }; target: SectionMenuTarget } | null>(null)
+  const [reordering, setReordering] = useState(false)
+  const [picker, setPicker] = useState<string | null>(null)
+  const [dragging, setDragging] = useState<string | null>(null)
+  /// Sections whose PIN has been answered, for THIS mount of this screen.
+  /// Never persisted, never in the collapse set: it resets when the section is
+  /// collapsed, when the window goes to the background, and on every cold
+  /// start. A gate that survives those is not a gate.
+  const [unlocked, setUnlocked] = useState<Set<string>>(() => new Set())
+
+  useEffect(() => {
+    if (!identity) return
+    let alive = true
+    void sectionsAvailable(identity).then((ok) => {
+      if (alive) setSectionsOk(ok)
+    })
+    // The socket sweep (ws.tsx) covers the app; this covers arriving at the
+    // list before the socket is up. It carries its own floor, so walking back
+    // and forth between the list and a chat is not a request each time.
+    void sweepVaultSlots(identity)
+    return () => {
+      alive = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [identity?.uin])
+
+  useEffect(() => {
+    if (!vaultSupported()) return
+    let alive = true
+    void vaultState().then((v) => {
+      if (alive) setCanPin(v.exists)
+    })
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') setUnlocked(new Set())
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => document.removeEventListener('visibilitychange', onVisibility)
+  }, [])
+
+  /// Every local edit goes through here: it patches the cached tree, repaints
+  /// immediately, and pushes to the island behind the paint. `defer` coalesces
+  /// a burst (dragging sections about) into one write.
+  function editSections(fn: (t: SectionsTree) => SectionsTree, opts?: { defer?: boolean }) {
+    try {
+      mutateSections(identity, fn, opts)
+    } catch (e) {
+      toast(e instanceof SectionsError ? t(`sections.err.${e.code}`) : t('contacts.error'), 'error')
+    }
+  }
+
   async function refresh(background = false) {
     if (!identity) return
     setError(null)
@@ -300,9 +427,36 @@ export function Contacts() {
     return null
   }
 
+  // Which user section, if any, holds a given chat. The merge guarantees one
+  // section per chat, so this is a lookup and not a search. A membership
+  // pointing at a section this build does not hold (deleted elsewhere, not
+  // synced yet) reads as "not filed" and the chat falls back to its derived
+  // section: rendering is where a stale membership is forgiven, never where it
+  // is deleted.
+  const memberOf = memberIndex(tree)
+  const userSecs = userSections(tree)
+  const userSecIds = new Set(userSecs.map((r) => r.id))
+  const sectionOf = (key: string | null): string | null => {
+    // ⚠ `!== false`: an unanswered capability keeps the filing (see the state
+    // above). Only an island that actually said "no vault" un-files anything.
+    if (!key || sectionsOk === false) return null
+    const id = memberOf.get(key)
+    return id && userSecIds.has(id) ? id : null
+  }
+  const filedContacts = new Map<string, Contact[]>()
+  const filedGroups = new Map<string, RCQGroup[]>()
+  const filedCross = new Map<string, CrossIslandContact[]>()
+  function file<T>(m: Map<string, T[]>, id: string, v: T) {
+    const cur = m.get(id)
+    if (cur) cur.push(v)
+    else m.set(id, [v])
+  }
+
   // Bucket contacts. A contact lives in exactly one bucket at a
-  // time; archive wins over favorite which wins over status. iOS
-  // does the same — sees the user's most-recent intent.
+  // time; archive wins over the user's own section, which wins over favorite,
+  // which wins over status. iOS does the same: it sees the user's most-recent
+  // intent. ⚠ The key carries the host: `1234` here and `1234@is2.rcq.app` are
+  // two different people.
   const archived: Contact[] = []
   const fav: Contact[] = []
   const online: Contact[] = []
@@ -312,7 +466,9 @@ export function Contacts() {
   // (invisible already reports as offline from the server.)
   const isAround = (s: UserStatus) => s === 'online' || s === 'away' || s === 'dnd'
   for (const c of contacts) {
+    const sid = sectionOf(peerKey(c.uin, c.host))
     if (archive.has(c.uin)) archived.push(c)
+    else if (sid) file(filedContacts, sid, c)
     else if (favorites.has(c.uin)) fav.push(c)
     else if (isAround(c.status)) online.push(c)
     else offline.push(c)
@@ -320,11 +476,15 @@ export function Contacts() {
   // Bucket groups the same way (separate fav/archive sets so a group id can't
   // collide with a contact UIN): archived groups leave the Groups list and join
   // the bottom Archive section; favorited groups float to the top Favorites.
+  // A group filed into a user section leaves the Groups section for the same
+  // reason a contact does.
   const favGroups: RCQGroup[] = []
   const archivedGroups: RCQGroup[] = []
   const normalGroups: RCQGroup[] = []
   for (const g of groups) {
+    const sid = sectionOf(sectionKeyForGroup(g))
     if (archiveGroups.has(g.id)) archivedGroups.push(g)
+    else if (sid) file(filedGroups, sid, g)
     else if (favoriteGroups.has(g.id)) favGroups.push(g)
     else normalGroups.push(g)
   }
@@ -349,6 +509,366 @@ export function Contacts() {
   // Federation (F2): cross-island contacts (peers on other islands, stored
   // locally) — recomputed on each remount (navigating back here re-reads them).
   const crossIsland = listCrossIsland()
+  const crossLoose: CrossIslandContact[] = []
+  for (const ci of crossIsland) {
+    const sid = sectionOf(peerKey(ci.uin, ci.host))
+    if (sid) file(filedCross, sid, ci)
+    else crossLoose.push(ci)
+  }
+  // Inside a user section: unread first, then favorite (which survives filing
+  // as a flag even though it has no section of its own to render into), then
+  // the sort this client already uses, which on the web is by name.
+  const filedContactOrder = (a: Contact, b: Contact) =>
+    (peerUnreadCount(b.uin) > 0 ? 1 : 0) - (peerUnreadCount(a.uin) > 0 ? 1 : 0) ||
+    (favorites.has(b.uin) ? 1 : 0) - (favorites.has(a.uin) ? 1 : 0) ||
+    sortByNick(a, b)
+  const filedGroupOrder = (a: RCQGroup, b: RCQGroup) =>
+    (groupUnreadCount(b.id) > 0 ? 1 : 0) - (groupUnreadCount(a.id) > 0 ? 1 : 0) ||
+    (favoriteGroups.has(b.id) ? 1 : 0) - (favoriteGroups.has(a.id) ? 1 : 0) ||
+    a.name.localeCompare(b.name)
+
+  // ── Which sections render, in which order ─────────────────────────────
+  //
+  // `o` ascending, ties by id: one total order every device agrees on. The
+  // built-ins are records in the same array as the user's own sections (that
+  // is how their order syncs), so this is one list, not two.
+  const ordered = orderedSections(tree)
+  const titleOf = (rec: SectionRecord): string => {
+    switch (rec.id) {
+      case SYS_FAV:
+        return t('section.favorites')
+      case SYS_CI:
+        return 'Cross-island'
+      case SYS_GROUPS:
+        return t('section.groups')
+      case SYS_ONLINE:
+        return t('section.online')
+      case SYS_OFFLINE:
+        return t('section.offline')
+      case SYS_ARCHIVE:
+        return t('section.archive')
+      default:
+        return rec.n ?? ''
+    }
+  }
+  const rendered = ordered.filter((rec) => {
+    // Saved Messages is a pinned row above the list here, not a section. Its
+    // record still rides along untouched: on Android it IS a section, and
+    // dropping the record would delete that client's ordering.
+    if (rec.id === SYS_SAVED) return false
+    if (rec.k === 'u') return sectionsOk !== false && userSecIds.has(rec.id)
+    // A section behind a PIN keeps its header whether or not it holds
+    // anything: a header that appears only when there is something inside
+    // announces exactly what the user asked to hide.
+    if (rec.p === 1) return true
+    switch (rec.id) {
+      case SYS_FAV:
+        return fav.length + favGroups.length > 0
+      case SYS_CI:
+        return crossLoose.length > 0
+      case SYS_GROUPS:
+        return true
+      case SYS_ONLINE:
+        return online.length > 0
+      case SYS_OFFLINE:
+        return offline.length > 0
+      case SYS_ARCHIVE:
+        return archived.length + archivedGroups.length > 0
+      default:
+        // A built-in id from a newer client: keep the record, draw nothing.
+        return false
+    }
+  })
+
+  /// Move `id` next to `anchorId` and write the new order once.
+  ///
+  /// `o` moves in steps of 1024 and a drop between two neighbours takes the
+  /// midpoint. When the neighbours are less than 2 apart there is no room
+  /// left, so every section is renormalised to `index * 1024`: a normal
+  /// last-writer-wins write, rare, and it converges.
+  function placeSection(id: string, anchorId: string, side: 'before' | 'after') {
+    const rest = ordered.filter((r) => r.id !== id)
+    const ai = rest.findIndex((r) => r.id === anchorId)
+    if (ai < 0) return
+    const at = side === 'before' ? ai : ai + 1
+    const before = rest[at - 1]
+    const after = rest[at]
+    const lo = before ? orderOf(before) : after ? orderOf(after) - 2 * ORDER_STEP : 0
+    const hi = after ? orderOf(after) : before ? orderOf(before) + 2 * ORDER_STEP : ORDER_STEP
+    if (hi - lo < 2) {
+      const ids = [...rest.slice(0, at).map((r) => r.id), id, ...rest.slice(at).map((r) => r.id)]
+      editSections((tr) => setOrder(tr, new Map(ids.map((x, i) => [x, i * ORDER_STEP]))), { defer: true })
+      return
+    }
+    editSections((tr) => setOrder(tr, new Map([[id, Math.floor((lo + hi) / 2)]])), { defer: true })
+  }
+  function moveSection(id: string, dir: -1 | 1) {
+    const at = rendered.findIndex((r) => r.id === id)
+    const neighbour = rendered[at + dir]
+    if (!neighbour) return
+    placeSection(id, neighbour.id, dir === -1 ? 'before' : 'after')
+  }
+  function dropSection(from: string, over: string) {
+    const a = rendered.findIndex((r) => r.id === from)
+    const b = rendered.findIndex((r) => r.id === over)
+    if (a < 0 || b < 0 || a === b) return
+    placeSection(from, over, a < b ? 'after' : 'before')
+  }
+
+  const isLocked = (rec: SectionRecord) => rec.p === 1 && !unlocked.has(rec.id)
+  /// Everything a section header needs that is not its title or its rows.
+  function chrome(rec: SectionRecord, at: number) {
+    return {
+      id: rec.id,
+      collapsed,
+      locked: isLocked(rec),
+      lockedBody: (
+        <SectionLockedBody
+          canVerify={canPin}
+          onUnlock={() => setUnlocked((prev) => new Set(prev).add(rec.id))}
+        />
+      ),
+      // ⚠⚠ NOT on a locked section, and this is the gate itself, not a
+      // nicety. The menu carries "stop asking for a PIN" and "delete section",
+      // and neither asks for the PIN: on a locked header they turned the gate
+      // off in two clicks, with no verify call, no failure counter and no
+      // cooldown (the whole point of `vault_verify` keeping those), and then
+      // synced `p:0` to the phone, where the section stopped being gated too.
+      // `rightAction` was already suppressed this way one line below; this was
+      // not. Unlock first, then the menu.
+      onMenu:
+        sectionsOk === true && !isLocked(rec)
+          ? (x: number, y: number) =>
+              setMenu({
+                at: { x, y },
+                target: { id: rec.id, user: rec.k === 'u', title: titleOf(rec), pinned: rec.p === 1 },
+              })
+          : undefined,
+      // Collapsing a section the user got past the PIN for puts the gate back.
+      onCollapse: () =>
+        setUnlocked((prev) => {
+          if (!prev.has(rec.id)) return prev
+          const next = new Set(prev)
+          next.delete(rec.id)
+          return next
+        }),
+      reorder: reordering
+        ? {
+            first: at === 0,
+            last: at === rendered.length - 1,
+            dragging: dragging === rec.id,
+            onUp: () => moveSection(rec.id, -1),
+            onDown: () => moveSection(rec.id, 1),
+            onDragStart: () => setDragging(rec.id),
+            onDragEnd: () => setDragging(null),
+            onDropOn: (from: string | null) => {
+              const src = from ?? dragging
+              if (src && src !== rec.id) dropSection(src, rec.id)
+              setDragging(null)
+            },
+          }
+        : undefined,
+    }
+  }
+
+  /// Contacts, cross-island peers and groups as one pick list for the plus
+  /// button, keyed the way the slot keys them. A person who is both a server
+  /// contact row and a local cross-island record is one candidate, not two.
+  function pickCandidates(): SectionCandidate[] {
+    const byKey = new Map<string, SectionCandidate>()
+    for (const c of contacts) {
+      byKey.set(peerKey(c.uin, c.host), {
+        key: peerKey(c.uin, c.host),
+        title: ciAliasFor(c.uin, c.host) || c.nickname || `#${c.uin}`,
+        subtitle: c.host ? `#${c.uin} · ${c.host}` : `#${c.uin}`,
+        kind: 'peer',
+        status: c.status,
+        crossIsland: !!c.host,
+        avatarMediaId: c.avatar_media_id,
+        avatarMediaKey: c.avatar_media_key,
+      })
+    }
+    for (const ci of crossIsland) {
+      const key = peerKey(ci.uin, ci.host)
+      if (byKey.has(key)) continue
+      byKey.set(key, {
+        key,
+        title: ciAliasFor(ci.uin, ci.host) || ci.nickname || `${ci.uin}@${ci.host}`,
+        subtitle: `#${ci.uin} · ${ci.host}`,
+        kind: 'peer',
+        crossIsland: true,
+        avatarMediaId: ci.avatarMediaId,
+        avatarMediaKey: ci.avatarMediaKey,
+      })
+    }
+    for (const g of groups) {
+      const key = sectionKeyForGroup(g)
+      if (!key || byKey.has(key)) continue
+      byKey.set(key, {
+        key,
+        title: g.name,
+        subtitle: g.host ?? t('section.groups'),
+        kind: 'group',
+        avatarMediaId: g.avatar_media_id,
+        avatarMediaKey: g.avatar_media_key,
+      })
+    }
+    return [...byKey.values()]
+  }
+
+  /// The picker closed: one write for the whole sheet, adds and removals
+  /// together.
+  ///
+  /// ⚠ The sheet hands over what the USER did (ticked, unticked), not the
+  /// membership it ended up showing. Diffing its list against the tree as it
+  /// stands now was a silent undo of anything another device did to this
+  /// section while the sheet sat open: the sheet's checkboxes are seeded once,
+  /// so a chat the phone filed here in the meantime looked like a row the user
+  /// had unticked, and went out with a tombstone newer than the phone's add.
+  function saveMembership(id: string, added: string[], gone: string[]) {
+    if (added.length === 0 && gone.length === 0) return
+    editSections((tr) => {
+      let out = added.length > 0 ? addMembers(tr, id, added) : tr
+      for (const k of gone) out = removeMemberFrom(out, id, k)
+      return out
+    })
+  }
+
+  function renderSection(rec: SectionRecord, at: number) {
+    const c = chrome(rec, at)
+    switch (rec.id) {
+      case SYS_FAV:
+        return (
+          <Section key={rec.id} {...c} title={titleOf(rec)} count={fav.length + favGroups.length}>
+            {favGroups.map((g) => (
+              <GroupRow key={`g${g.id}`} group={g} onChanged={refresh} />
+            ))}
+            {fav.map((ct) => (
+              <ContactRow key={ct.uin} contact={ct} muted={muted.has(ct.uin)} favorite onChanged={refresh} />
+            ))}
+          </Section>
+        )
+      case SYS_CI:
+        return (
+          <Section key={rec.id} {...c} title={titleOf(rec)} count={crossLoose.length}>
+            {crossLoose.map((ci) => (
+              <CrossIslandRow
+                key={`${ci.uin}@${ci.host}`}
+                ci={ci}
+                aliasFor={ciAliasFor}
+                onChanged={() => refresh(true)}
+              />
+            ))}
+          </Section>
+        )
+      case SYS_GROUPS:
+        return (
+          <Section
+            key={rec.id}
+            {...c}
+            title={titleOf(rec)}
+            count={normalGroups.length}
+            unread={groupSectionUnread(normalGroups)}
+            rightAction={
+              <button
+                onClick={() => setShowCreateGroup(true)}
+                className="text-xs text-accent hover:text-accent-dim font-semibold px-2 py-1"
+              >
+                {t('section.groups.create')}
+              </button>
+            }
+          >
+            {normalGroups.length === 0 ? (
+              <li className="px-4 py-3 lg:py-2 text-xs text-fg-dim">{t('section.groups.empty')}</li>
+            ) : (
+              normalGroups.map((g) => <GroupRow key={g.id} group={g} onChanged={refresh} />)
+            )}
+          </Section>
+        )
+      case SYS_ONLINE:
+      case SYS_OFFLINE: {
+        const rows = rec.id === SYS_ONLINE ? online : offline
+        return (
+          <Section key={rec.id} {...c} title={titleOf(rec)} count={rows.length} unread={sectionUnread(rows)}>
+            {rows.map((ct) => (
+              <ContactRow key={ct.uin} contact={ct} muted={muted.has(ct.uin)} onChanged={refresh} />
+            ))}
+          </Section>
+        )
+      }
+      case SYS_ARCHIVE:
+        return (
+          <Section
+            key={rec.id}
+            {...c}
+            title={titleOf(rec)}
+            count={archived.length + archivedGroups.length}
+            collapsedByDefault
+          >
+            {archivedGroups.map((g) => (
+              <GroupRow key={`g${g.id}`} group={g} onChanged={refresh} />
+            ))}
+            {archived.map((ct) => (
+              <ContactRow key={ct.uin} contact={ct} muted={muted.has(ct.uin)} archived onChanged={refresh} />
+            ))}
+          </Section>
+        )
+      default: {
+        const cs = (filedContacts.get(rec.id) ?? []).sort(filedContactOrder)
+        const gs = (filedGroups.get(rec.id) ?? []).sort(filedGroupOrder)
+        const cis = filedCross.get(rec.id) ?? []
+        const total = cs.length + gs.length + cis.length
+        return (
+          <Section
+            key={rec.id}
+            {...c}
+            title={titleOf(rec)}
+            count={total}
+            unread={sectionUnread(cs) + groupSectionUnread(gs)}
+            rightAction={
+              <button
+                onClick={() => setPicker(rec.id)}
+                className="text-xs text-accent hover:text-accent-dim font-semibold px-2 py-1"
+                title={t('sections.add')}
+                aria-label={t('sections.add')}
+              >
+                +
+              </button>
+            }
+          >
+            {/* An empty user section still renders: it was made on purpose.
+                This differs from Archive and Favorites, which hide. */}
+            {total === 0 ? (
+              <li className="px-4 py-3 lg:py-2 text-xs text-fg-dim">{t('sections.empty')}</li>
+            ) : (
+              <>
+                {gs.map((g) => (
+                  <GroupRow key={`g${g.id}`} group={g} onChanged={refresh} />
+                ))}
+                {cs.map((ct) => (
+                  <ContactRow
+                    key={ct.uin}
+                    contact={ct}
+                    muted={muted.has(ct.uin)}
+                    favorite={favorites.has(ct.uin)}
+                    onChanged={refresh}
+                  />
+                ))}
+                {cis.map((ci) => (
+                  <CrossIslandRow
+                    key={`${ci.uin}@${ci.host}`}
+                    ci={ci}
+                    aliasFor={ciAliasFor}
+                    onChanged={() => refresh(true)}
+                  />
+                ))}
+              </>
+            )}
+          </Section>
+        )
+      }
+    }
+  }
 
   return (
     <div className="min-h-screen bg-surface-dim">
@@ -505,118 +1025,23 @@ export function Contacts() {
           </ul>
         )}
 
-        {fav.length + favGroups.length > 0 && (
-          <Section
-            id="fav"
-            title={t('section.favorites')}
-            count={fav.length + favGroups.length}
-            collapsed={collapsed}
-          >
-            {favGroups.map((g) => (
-              <GroupRow key={`g${g.id}`} group={g} onChanged={refresh} />
-            ))}
-            {fav.map((c) => (
-              <ContactRow
-                key={c.uin}
-                contact={c}
-                muted={muted.has(c.uin)}
-                favorite
-                onChanged={refresh}
-              />
-            ))}
-          </Section>
-        )}
-
-        {crossIsland.length > 0 && (
-          <Section id="crossisland" title="Cross-island" count={crossIsland.length} collapsed={collapsed}>
-            {crossIsland.map((ci) => (
-              <CrossIslandRow key={`${ci.uin}@${ci.host}`} ci={ci} aliasFor={ciAliasFor} onChanged={() => refresh(true)} />
-            ))}
-          </Section>
-        )}
-
-        <Section
-          id="groups"
-          title={t('section.groups')}
-          count={normalGroups.length}
-          unread={groupSectionUnread(normalGroups)}
-          collapsed={collapsed}
-          rightAction={
+        {/* Reorder mode. The founder asked for dragging; a section header is
+            also a touch target on a phone-sized window, where HTML5 drag does
+            not fire at all, so the same mode carries arrows. Either way the
+            write happens on drop, debounced and coalesced: never per frame. */}
+        {reordering && (
+          <div className="flex items-center justify-between gap-2 px-2 -mb-2">
+            <span className="text-xs text-fg-secondary">{t('sections.reorder.hint')}</span>
             <button
-              onClick={() => setShowCreateGroup(true)}
-              className="text-xs text-accent hover:text-accent-dim font-semibold px-2 py-1"
+              onClick={() => setReordering(false)}
+              className="text-xs font-semibold text-accent hover:text-accent-dim px-2 py-1"
             >
-              {t('section.groups.create')}
+              {t('sections.reorder.done')}
             </button>
-          }
-        >
-          {normalGroups.length === 0 ? (
-            <li className="px-4 py-3 lg:py-2 text-xs text-fg-dim">{t('section.groups.empty')}</li>
-          ) : (
-            normalGroups.map((g) => <GroupRow key={g.id} group={g} onChanged={refresh} />)
-          )}
-        </Section>
-
-        {online.length > 0 && (
-          <Section
-            id="online"
-            title={t('section.online')}
-            count={online.length}
-            unread={sectionUnread(online)}
-            collapsed={collapsed}
-          >
-            {online.map((c) => (
-              <ContactRow
-                key={c.uin}
-                contact={c}
-                muted={muted.has(c.uin)}
-                onChanged={refresh}
-              />
-            ))}
-          </Section>
+          </div>
         )}
 
-        {offline.length > 0 && (
-          <Section
-            id="offline"
-            title={t('section.offline')}
-            count={offline.length}
-            unread={sectionUnread(offline)}
-            collapsed={collapsed}
-          >
-            {offline.map((c) => (
-              <ContactRow
-                key={c.uin}
-                contact={c}
-                muted={muted.has(c.uin)}
-                onChanged={refresh}
-              />
-            ))}
-          </Section>
-        )}
-
-        {archived.length + archivedGroups.length > 0 && (
-          <Section
-            id="archive"
-            title={t('section.archive')}
-            count={archived.length + archivedGroups.length}
-            collapsed={collapsed}
-            collapsedByDefault
-          >
-            {archivedGroups.map((g) => (
-              <GroupRow key={`g${g.id}`} group={g} onChanged={refresh} />
-            ))}
-            {archived.map((c) => (
-              <ContactRow
-                key={c.uin}
-                contact={c}
-                muted={muted.has(c.uin)}
-                archived
-                onChanged={refresh}
-              />
-            ))}
-          </Section>
-        )}
+        {rendered.map((rec, at) => renderSection(rec, at))}
       </main>
 
       {showRequests && (
@@ -629,6 +1054,28 @@ export function Contacts() {
         />
       )}
       {showAdd && <AddContactModal onClose={() => setShowAdd(false)} />}
+      {menu && (
+        <SectionMenu
+          at={menu.at}
+          target={menu.target}
+          canPin={canPin}
+          onClose={() => setMenu(null)}
+          onReorder={() => setReordering(true)}
+          onTogglePin={() => editSections((tr) => setPinned(tr, menu.target.id, !menu.target.pinned))}
+          onCreate={(name) => editSections((tr) => createSection(tr, name))}
+          onRename={(name) => editSections((tr) => renameSection(tr, menu.target.id, name))}
+          onDelete={() => editSections((tr) => deleteSection(tr, menu.target.id))}
+        />
+      )}
+      {picker && (
+        <SectionPickerSheet
+          sectionName={titleOf(ordered.find((r) => r.id === picker) ?? { id: picker })}
+          candidates={pickCandidates()}
+          selected={membersOf(tree, picker)}
+          onClose={() => setPicker(null)}
+          onSave={(added, gone) => saveMembership(picker, added, gone)}
+        />
+      )}
       {showCreateGroup && (
         <CreateGroupSheet
           contacts={contacts}
@@ -656,6 +1103,11 @@ function Section({
   collapsed,
   collapsedByDefault,
   rightAction,
+  locked = false,
+  lockedBody,
+  onMenu,
+  onCollapse,
+  reorder,
 }: {
   id: string
   title: string
@@ -665,30 +1117,136 @@ function Section({
   collapsed: { has: (id: string) => boolean; toggle: (id: string) => void }
   collapsedByDefault?: boolean
   rightAction?: React.ReactNode
+  /// This section asks for the PIN and has not been answered yet.
+  locked?: boolean
+  /// What to show when the header of a locked section is opened: the PIN
+  /// field on the desktop, an honest one-liner in the browser.
+  lockedBody?: React.ReactNode
+  /// Right-click, or a half-second press with a finger, at those coordinates.
+  onMenu?: (x: number, y: number) => void
+  /// The header was clicked while the section was open.
+  onCollapse?: () => void
+  reorder?: {
+    first: boolean
+    last: boolean
+    dragging: boolean
+    onUp: () => void
+    onDown: () => void
+    onDragStart: () => void
+    onDragEnd: () => void
+    /// The id the drop carried, when the browser gave us one.
+    onDropOn: (from: string | null) => void
+  }
 }) {
+  const { t } = useI18n()
   // The collapsed-set tracks user-toggled state; for sections that
   // start collapsed (Archive), we invert: the absence of the id
   // in the set means "use default" → render collapsed.
   const userToggled = collapsed.has(id)
-  const isCollapsed = collapsedByDefault ? !userToggled : userToggled
+  const persistedCollapse = collapsedByDefault ? !userToggled : userToggled
+  /// A locked section does NOT use the collapse set. Its open state is view
+  /// memory that dies with this screen, so that a section left open cannot
+  /// still be open after a cold start.
+  const [gateOpen, setGateOpen] = useState(false)
+  const isCollapsed = locked ? !gateOpen : persistedCollapse
+  const trigger = useSectionMenuTrigger((x, y) => onMenu?.(x, y))
+
+  const toggle = () => {
+    // A long press ends in a click as well; without this the menu would open
+    // and the section would collapse underneath it.
+    if (trigger.suppressed()) return
+    if (locked) {
+      setGateOpen((v) => !v)
+      return
+    }
+    if (!isCollapsed) onCollapse?.()
+    collapsed.toggle(id)
+  }
 
   return (
-    <section>
-      <div className="flex items-center justify-between mb-1.5 px-2">
+    <section className={reorder?.dragging ? 'opacity-50' : ''}>
+      <div
+        className="flex items-center justify-between mb-1.5 px-2"
+        draggable={!!reorder}
+        onDragStart={
+          reorder
+            ? (e) => {
+                // ⚠ The id rides in the dataTransfer as well as in React
+                // state. State alone would depend on a re-render landing
+                // between dragstart and drop, which is true of a human drag
+                // and not of anything faster.
+                e.dataTransfer.setData('text/plain', id)
+                e.dataTransfer.effectAllowed = 'move'
+                reorder.onDragStart()
+              }
+            : undefined
+        }
+        onDragEnd={reorder?.onDragEnd}
+        onDragOver={reorder ? (e) => e.preventDefault() : undefined}
+        onDrop={
+          reorder
+            ? (e) => {
+                e.preventDefault()
+                reorder.onDropOn(e.dataTransfer.getData('text/plain') || null)
+              }
+            : undefined
+        }
+      >
         <button
-          onClick={() => collapsed.toggle(id)}
-          className="flex items-center gap-1.5 text-xs font-bold text-fg-secondary uppercase tracking-wider hover:text-fg-primary"
+          onClick={toggle}
+          onContextMenu={onMenu ? trigger.handlers.onContextMenu : undefined}
+          onPointerDown={onMenu ? trigger.handlers.onPointerDown : undefined}
+          onPointerMove={onMenu ? trigger.handlers.onPointerMove : undefined}
+          onPointerUp={onMenu ? trigger.handlers.onPointerUp : undefined}
+          onPointerCancel={onMenu ? trigger.handlers.onPointerCancel : undefined}
+          className="flex items-center gap-1.5 text-xs font-bold text-fg-secondary uppercase tracking-wider hover:text-fg-primary min-w-0"
         >
+          {reorder && <span className="text-fg-dim cursor-grab">⠿</span>}
           <span className="text-fg-dim">{isCollapsed ? '▸' : '▾'}</span>
-          {title}
-          <span className="text-fg-dim font-mono">·{count}</span>
-          {unread > 0 && (
-            <span className="ml-1 inline-flex items-center justify-center min-w-[1rem] h-4 px-1 rounded-full bg-red-500 text-white text-[0.625rem] font-bold tracking-normal">
-              {unread > 99 ? '99+' : unread}
+          <span className="truncate">{title}</span>
+          {/* ⚠ A locked section shows NEITHER its count NOR its unread badge.
+              A badge over a section the user hid is a leak of exactly what was
+              hidden. */}
+          {locked ? (
+            <span className="text-fg-dim" title={t('sections.locked.title')} aria-label={t('sections.locked.title')}>
+              <KeyIcon size={13} />
             </span>
+          ) : (
+            <>
+              <span className="text-fg-dim font-mono">·{count}</span>
+              {unread > 0 && (
+                <span className="ml-1 inline-flex items-center justify-center min-w-[1rem] h-4 px-1 rounded-full bg-red-500 text-white text-[0.625rem] font-bold tracking-normal">
+                  {unread > 99 ? '99+' : unread}
+                </span>
+              )}
+            </>
           )}
         </button>
-        {rightAction}
+        <div className="flex items-center gap-1 flex-none">
+          {reorder && (
+            <>
+              <button
+                onClick={reorder.onUp}
+                disabled={reorder.first}
+                className="text-fg-secondary hover:text-fg-primary disabled:opacity-30 px-1.5 py-0.5"
+                aria-label={t('sections.move_up')}
+                title={t('sections.move_up')}
+              >
+                ▲
+              </button>
+              <button
+                onClick={reorder.onDown}
+                disabled={reorder.last}
+                className="text-fg-secondary hover:text-fg-primary disabled:opacity-30 px-1.5 py-0.5"
+                aria-label={t('sections.move_down')}
+                title={t('sections.move_down')}
+              >
+                ▼
+              </button>
+            </>
+          )}
+          {!locked && rightAction}
+        </div>
       </div>
       {/* NOT overflow-hidden — that clipped the absolutely-positioned contact
           action menu (the three-dots dropdown). So round the element that
@@ -699,10 +1257,100 @@ function Section({
           `> *` takes whatever the row leads with, div or anchor. */}
       {!isCollapsed && (
         <ul className="bg-surface rounded-lg [&_li:first-child>*]:rounded-t-lg [&_li:last-child>*]:rounded-b-lg">
-          {children}
+          {locked ? lockedBody : children}
         </ul>
       )}
     </section>
+  )
+}
+
+/// What sits behind the header of a PIN-gated section.
+///
+/// Two honest answers, never a third:
+///
+///   * the desktop with a PIN asks for it, and checks it through the vault's
+///     own verify, which counts a wrong answer exactly as the lock screen does
+///     (otherwise this field is an unlimited PIN oracle that walks around the
+///     lockout).
+///   * everywhere else says so and offers to open the section anyway. The
+///     browser has no PIN subsystem and is not getting a fake one: a hashed
+///     PIN in localStorage would be a curtain over an open window, and a
+///     greyed-out padlock would imply the phones offer something comparable in
+///     kind rather than in degree.
+///
+/// Either way the chats themselves are untouched: they stay in search, in
+/// notifications and in the message database. Only the row's placement in this
+/// list is hidden. Anyone who wants the conversation itself gated locks the
+/// chat, which already exists.
+function SectionLockedBody({ canVerify, onUnlock }: { canVerify: boolean; onUnlock: () => void }) {
+  const { t } = useI18n()
+  const [pin, setPin] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  if (!canVerify) {
+    return (
+      <li className="px-4 py-3 space-y-2">
+        <p className="text-xs text-fg-secondary leading-relaxed">
+          {t(vaultSupported() ? 'sections.locked.nopin' : 'sections.locked.browser')}
+        </p>
+        <button
+          onClick={onUnlock}
+          className="h-8 px-3 rounded-md bg-field hover:bg-line/50 text-xs font-semibold transition-colors"
+        >
+          {t('sections.locked.open_anyway')}
+        </button>
+      </li>
+    )
+  }
+
+  async function submit() {
+    if (busy || !pin) return
+    setBusy(true)
+    setError(null)
+    try {
+      if (await vaultVerify(pin)) {
+        setPin('')
+        onUnlock()
+      } else {
+        setError(t('sections.locked.wrong'))
+      }
+    } catch (e) {
+      const code = e instanceof Error ? e.message : String(e)
+      const wait = code.startsWith('locked_out:') ? code.slice('locked_out:'.length) : null
+      setError(wait ? t('sections.locked.wait', { n: wait }) : t('sections.locked.wrong'))
+    } finally {
+      setBusy(false)
+      setPin('')
+    }
+  }
+
+  return (
+    <li className="px-4 py-3 space-y-2">
+      <p className="text-xs text-fg-secondary leading-relaxed">{t('sections.menu.pin.note')}</p>
+      <div className="flex gap-2">
+        <input
+          type="password"
+          inputMode="numeric"
+          autoFocus
+          value={pin}
+          onChange={(e) => setPin(e.target.value)}
+          placeholder={t('sections.locked.enter')}
+          className="flex-1 h-9 px-2 rounded-md bg-field outline-none focus:ring-1 focus:ring-accent text-sm"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') void submit()
+          }}
+        />
+        <button
+          onClick={() => void submit()}
+          disabled={busy || !pin}
+          className="h-9 px-3 rounded-md bg-accent hover:bg-accent-dim disabled:opacity-50 text-white text-xs font-semibold"
+        >
+          {t('sections.locked.open')}
+        </button>
+      </div>
+      {error && <div className="text-xs text-red-500">{error}</div>}
+    </li>
   )
 }
 
@@ -892,7 +1540,7 @@ function GroupRow({ group, onChanged }: { group: RCQGroup; onChanged: () => void
               {isMuted && <MuteGlyph />}
             </div>
             <div className="text-xs text-fg-dim">
-              {t('section.groups.members', { n: memberCount(group) })}
+              {t('section.groups.members', { n: compactCount(memberCount(group)) })}
               {group.host && <span className="font-mono"> · {group.host}</span>}
             </div>
           </div>

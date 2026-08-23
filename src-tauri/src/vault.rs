@@ -291,6 +291,52 @@ fn unlock_at(p: &std::path::Path, state: &Unlocked, pin: &str) -> Result<String,
     }
 }
 
+/// Is this the PIN? Answers, and nothing else.
+///
+/// The section gate (docs/sections-design-2026-08-23.md §5) needs to know
+/// whether somebody typed the right PIN, and must not get anything else out of
+/// asking: the vault stays locked, no key is stored, no plaintext is returned.
+///
+/// ⚠⚠ It keeps the SAME failure counter and cooldown accounting as `unlock`.
+/// Without that, the gate would be an unlimited PIN oracle sitting next to a
+/// lockout it walks straight around: five wrong tries at the lock screen cost
+/// five seconds, five wrong tries here would have cost nothing. Do not
+/// "simplify" this by calling `unlock` and throwing the plaintext away either:
+/// that stores the key and unlocks the whole session.
+pub fn verify(app: &AppHandle, pin: &str) -> Result<bool, String> {
+    verify_at(&path(app)?, pin)
+}
+
+fn verify_at(p: &std::path::Path, pin: &str) -> Result<bool, String> {
+    let mut f = read_at(p).ok_or("no_vault")?;
+    let wait = cooldown_remaining(&f);
+    if wait > 0 {
+        return Err(format!("locked_out:{wait}"));
+    }
+    let salt = B64.decode(&f.salt).map_err(|_| "corrupt_vault")?;
+    let nonce = B64.decode(&f.nonce).map_err(|_| "corrupt_vault")?;
+    let ct = B64.decode(&f.ct).map_err(|_| "corrupt_vault")?;
+    let mut key = derive(pin, &salt, f.m_cost, f.t_cost)?;
+    let ok = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key))
+        .decrypt(Nonce::from_slice(&nonce), ct.as_ref())
+        .is_ok();
+    // The derived key never leaves this function. Overwrite it rather than
+    // letting it fall off the stack.
+    key.fill(0);
+    if ok {
+        if f.failures != 0 || f.last_fail != 0 {
+            f.failures = 0;
+            f.last_fail = 0;
+            let _ = write_at(p, &f);
+        }
+    } else {
+        f.failures = f.failures.saturating_add(1);
+        f.last_fail = now_secs();
+        let _ = write_at(p, &f);
+    }
+    Ok(ok)
+}
+
 /// Read the contents back while ALREADY unlocked, with no PIN.
 ///
 /// The page reloads itself for reasons that have nothing to do with locking:
@@ -483,6 +529,34 @@ mod tests {
         let back = remove_at(&p, &state, "4821").unwrap();
         assert_eq!(back, "{\"account\":\"second\"}");
         assert!(!p.exists());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn verify_answers_without_unlocking_and_still_counts_failures() {
+        let dir = std::env::temp_dir().join(format!("rcq-vault-verify-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("vault.json");
+        let state = Unlocked::default();
+        create_at(&p, &state, "4821", "{\"account\":\"first\"}").unwrap();
+        lock(&state);
+
+        // The right PIN says yes and does NOT open the session.
+        assert!(verify_at(&p, "4821").unwrap());
+        assert!(
+            state.0.lock().unwrap().is_none(),
+            "★ verify must not store the key: the section gate is not a login"
+        );
+
+        // ★ A wrong PIN is counted exactly as it is at the lock screen, so the
+        // gate cannot be used to guess around the cooldown.
+        assert!(!verify_at(&p, "0000").unwrap());
+        assert_eq!(read_at(&p).unwrap().failures, 1);
+        assert!(!verify_at(&p, "0001").unwrap());
+        assert_eq!(read_at(&p).unwrap().failures, 2);
+        // ...and the right one clears the count, same as unlock.
+        assert!(verify_at(&p, "4821").unwrap());
+        assert_eq!(read_at(&p).unwrap().failures, 0);
         std::fs::remove_dir_all(&dir).ok();
     }
 

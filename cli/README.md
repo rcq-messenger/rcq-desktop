@@ -14,8 +14,11 @@ npm run cli:test       # offline round-trip smoke tests (no island touched):
                        #   group dual-send, skdm handshake, held replay, dedup
 ```
 
-Requires Node 22+ (global fetch, WebSocket, WebCrypto). `cli/dist/` is
-self-contained: ship `rcq.mjs` together with the `pkg-node/` directory.
+Requires Node 22+ (global fetch, WebSocket, WebCrypto), and **Node 24+ if you
+use `rcq proxy`**: the proxy rides Node's own env-proxy support, which older
+runtimes read nothing of. On 22 and 23 a command with a proxy configured is
+refused rather than sent direct. `cli/dist/` is self-contained: ship `rcq.mjs`
+together with the `pkg-node/` directory.
 
 ## Use
 
@@ -32,14 +35,19 @@ node cli/dist/rcq.mjs log [<uin>|g<id>] [n]
 node cli/dist/rcq.mjs send <uin>|g<id> "text" [--yes]
 node cli/dist/rcq.mjs watch [--groups]
 node cli/dist/rcq.mjs lang [en|ru]
+node cli/dist/rcq.mjs proxy [set <addr>|clear|test]      # your own Tor / i2p / tunnel
+node cli/dist/rcq.mjs routes [--probe|--refresh|--singbox]  # roads to the island
 ```
 
 For subcommands, stdout is data only (messages, the phrase, lists); status
 goes to stderr. Exit codes: 0 ok, 1 error, 2 usage.
 
 Environment: `RCQ_CLI_HOME` moves the state dir, `RCQ_VERBOSE=1` shows
-protocol detail, `NO_COLOR` strips colour, and `RCQ_TIMEOUT_MS` (default
-20000) is how long any one request may take before it is abandoned. Node's
+protocol detail, `NO_COLOR` strips colour, `RCQ_PROXY` overrides the saved
+proxy for one command (`RCQ_PROXY=off` turns it off for one command),
+`RCQ_NO_UPDATE_CHECK=1` stops the CLI asking GitHub anything, and
+`RCQ_TIMEOUT_MS` (default 20000) is how long any one request may take before
+it is abandoned. Node's
 `fetch` has no timeout of its own and neither does `src/lib/api.ts`, so
 without a deadline a connection that is established and then goes silent
 hangs for as long as the kernel keeps the socket: measured against prod on
@@ -183,6 +191,167 @@ yours. The live `contact_request` / `contact_response` frames are island
 frames rather than envelopes and are routed separately from the sealed ones,
 so a request that lands while you are sitting at the prompt says so.
 
+## Roads to the island
+
+```
+rcq routes                             which road is in use, and what was tried
+rcq routes --probe                     walk the ladder now instead of reusing the answer
+rcq routes --refresh                   re-fetch and verify the signed relay list
+rcq routes --singbox --out FILE        write a sing-box config from that list
+```
+
+Three rungs, in the order the phones walk them
+(`Session.kt runRouteLadder`):
+
+1. **Direct** - the island's own address. Always preferred and always
+   re-checked, so a network that stops blocking recovers on its own.
+2. **The CDN front** - the same island under `cdn.rcq.app`, or wherever the
+   signed config's `transport.front` moved it. Only a hostname changes, which
+   is why this is the one circumvention layer the CLI can do entirely by
+   itself. Flagship only: the front proxies one island, and sending a
+   self-hosted island through it would turn a working server into a 404.
+3. **Your proxy** - `rcq proxy set`, below. A proxy is a MODE rather than a
+   rung: the address ladder still runs inside it (proxy, then proxy + front),
+   and nothing ever falls back OUT of it. Somebody who pointed RCQ at Tor and
+   then had it quietly retry direct would be deanonymised by their own
+   messenger, so that road is closed by construction - the proxy is in the
+   process environment before any of this code is evaluated.
+
+The answer is written down (`routes.json`) and reused for half an hour, so a
+`rcq send` in a cron loop pays for a probe once rather than every minute; the
+front also engages on socket evidence alone, after three sockets in a row that
+died moments after opening while ordinary requests were fine, which is the
+signature of a middlebox no health probe can see.
+
+**The relay list.** `--refresh` fetches the Ed25519-signed relay config the
+phones use, from the two compiled-in mirrors plus whatever mirrors the last
+payload named - a list that can include a **TXT record read over DoH**, which
+is the channel that keeps working when both mirror names are blocked. ⚠ That
+extra channel arrives INSIDE a payload, so it is only available to a state dir
+that has already verified one (the phones' bundled sources are the same two
+HTTPS mirrors): on a first refresh from a fresh `$RCQ_CLI_HOME`, on a blocked
+network, there are two mirrors to try and nothing else. A payload older than one already
+trusted is refused: a signature proves a payload came from us and says nothing
+about when, so a replayed old one would walk a client back onto relays we
+retired.
+
+**What the CLI cannot do, and does not pretend to.** The relays speak
+VLESS+Reality and Hysteria2. The phones tunnel through them by linking a Go
+sing-box core; Node has nothing to link, and there will be no embedded
+transport here. So `rcq routes --singbox` writes the config for a sing-box you
+install yourself:
+
+```
+rcq routes --singbox --out ~/.config/rcq/singbox.json
+sing-box run -c ~/.config/rcq/singbox.json
+rcq proxy set socks5://127.0.0.1:1089
+```
+
+The relay list, the tiering and the onion entry are ours; the circumvention is
+sing-box's. Two rules in that config are stricter than the phones', both from
+the adversarial review in `RCQ/docs/relay-distribution-v2.md`:
+
+* a broker relay can never win the latency race - `urltest` picks the fastest
+  passing outbound, so a well-provisioned hostile relay would become the sole
+  hop and see client-IP together with the island. The signed list is the
+  primary group; the broker pool enters as one nested member behind a
+  tolerance wide enough that only a real failure moves traffic onto it.
+* a broker relay is never the onion **entry**. The broker asserts `tier` over
+  plain TLS, so a compromised one could otherwise mint the one hop that sees
+  the client's address. Only the signed config names an entry.
+
+The entry itself the CLI does choose, and it is sticky across runs: highest
+reachable by a TCP probe, random among near-equals, kept once picked (the Tor
+guard lesson). If the pinned entry does not answer, the config degrades to a
+single hop over the signed list ONLY - never through a relay an onion user
+did not vouch for.
+
+## Your own proxy (Tor, i2p, a tunnel)
+
+```
+rcq proxy                              what is set right now
+rcq proxy set tor                      preset: SOCKS5 127.0.0.1:9050 (Orbot, or a local tor)
+rcq proxy set i2p                      preset: SOCKS5 127.0.0.1:4447 (i2pd)
+rcq proxy set socks5://127.0.0.1:9050
+rcq proxy set http://user:pass@10.0.0.9:8118
+rcq proxy test                         prove it carries traffic to the island
+rcq proxy clear                        back to a direct connection
+```
+
+Everything the CLI opens after that goes through the proxy: the HTTPS calls,
+the WebSocket, and the update check. Nothing else needs configuring and no
+part of the protocol changes. Same idea, and the same vocabulary, as
+LOCAL_PROXY on the phones (`RCQ/docs/proxy-design.md`): one proxy at a time,
+and the proxy is the whole circumvention layer.
+
+`set` checks it right away (`--no-test` skips that, for scripts). The check is
+not a ping: it makes one real request to the island's `/health` through the
+proxy, in a child process that was started behind it, and before that a
+control run through an address nothing can be listening on, aimed at a server
+on your own loopback. If that control run SUCCEEDS then this Node is ignoring
+the proxy environment altogether, and the test says so instead of handing you
+a green light that means nothing. The control run never touches the island:
+a detector for "your traffic is going out unproxied" must not be the thing
+that sends the unproxied packet.
+`rcq proxy test` exits 0 or 1, so `rcq proxy test && rcq send ...` is a usable
+shape, and every failure names itself: nothing listening there, that port is
+not a SOCKS5 proxy, the proxy answered but the island did not.
+
+Only `socks5://`, `http://` and `https://` are accepted, and that is not our
+list: Node itself refuses the others before any of our code runs, so a stored
+`socks5h://` would break every later command including the one that clears it.
+(`socks5://` already hands the island's NAME to the proxy rather than an
+address the CLI resolved, which is what `socks5h` buys elsewhere.)
+
+**How it engages.** `NODE_USE_ENV_PROXY=1` with `HTTPS_PROXY` makes Node's own
+`fetch` and `WebSocket` ride the proxy, socks5 included. Node reads that
+environment once, before any of our code runs, and never re-reads it, so `rcq`
+cannot simply set it for itself: when a proxy is configured the process
+**re-execs itself** with the variables in place (`process.execve`, so it is
+the same pid, the same terminal, the same exit code) before anything else
+happens. The bash launcher could have exported them instead, but it is only
+one of the ways in (`node cli/dist/rcq.mjs` is another), and a proxy that
+engages only when somebody went through a shell script is a proxy that
+silently does not engage. Cost: one extra process start per command while a
+proxy is set. Needs **Node 24 or newer**; on 22 and 23 those variables do
+nothing at all, so a command with a proxy configured is REFUSED there rather
+than quietly sent over your own address. Everything else about the proxy fails
+the same way: a value the runtime cannot carry (`socks5h://`, a typo, a
+hand-edited `proxy.json`) stops the command instead of falling back to a direct
+connection, and a proxy exported in your shell that names a different address
+than the one you configured loses to yours.
+
+`rcq proxy` is the one command that deliberately does NOT run behind the proxy
+it configures, so a proxy that is down can always be cleared.
+
+**A throwaway account, under your own protection**, start to finish:
+
+```
+export RCQ_CLI_HOME=$(mktemp -d)   # its own identity, history and proxy
+rcq proxy set tor                  # everything below rides your Tor
+rcq register                       # prints the UIN and the 24 words
+rcq send 100200 "on my way"
+rm -rf "$RCQ_CLI_HOME"             # and it never existed
+```
+
+The proxy is set BEFORE the account exists, so registering is itself the first
+thing it carries and the island never sees your address at any point.
+
+⚠ `RCQ_PROXY=off` runs one command direct, and it has no place in this recipe:
+any command that carries the throwaway account's token - `whoami`, `send`,
+`watch` - ties that UIN to your real address on the island permanently, and
+`rm -rf "$RCQ_CLI_HOME"` deletes only your half. Use it to compare routes
+before an account exists, or from a state dir you do not mind linking.
+
+**What this does not give you.** A proxy is not RCQ's relay ladder. There is
+no CDN front here, no relay pool, no onion mode, and if the island's address
+is blocked for your proxy too then nothing improves. The island still sees a
+connection and a session: from the proxy's address instead of yours. Tor hides
+where you are from the island; it does not hide from the island that somebody
+is talking, how often, or to which account. And a proxy you did not build
+yourself sees exactly what a relay would, so this is worth precisely as much
+as the proxy is.
+
 ## State
 
 `$RCQ_CLI_HOME` (default `~/.config/rcq`), dir 0700, files 0600:
@@ -206,11 +375,32 @@ so a request that lands while you are sitting at the prompt says so.
   plaintext copy of that in a file nobody mentioned is not a feature. Inside a
   session readline still recalls everything.
 * `lang`: the chosen language (`en`/`ru`), written by `rcq lang`.
+* `proxy.json`: the proxy address, written by `rcq proxy set`. Per state dir,
+  so a throwaway `RCQ_CLI_HOME` has its own. It can carry a password, which is
+  why nothing ever prints it unredacted.
+* `routes.json`: which road answered last and when, the whole last walk of the
+  ladder (so `rcq routes` can show it while a `rcq watch` is running in
+  another terminal), and the pinned onion entry for the sing-box config.
+* `relay-config.json`: the last Ed25519-verified relay payload, verbatim. It
+  is re-verified on every read, so a hand-edited copy is simply ignored.
 
 Local stores inside `localstorage.json` are keyed per account
 (`setAccountScope`, called from `cli/src/directory.ts`): the roster
 snapshot under `rcq.web.<uin>.contacts.snapshot`, learned names under
-`rcq.cli.names.<uin>`.
+`rcq.cli.names.<uin>`, and the fingerprint of the contact list last mirrored
+into the vault under `rcq.cli.vaultmirror.<uin>`.
+
+**The vault mirror.** Every contact list the island answers with is folded
+into the account's encrypted `contacts` slot (stage 4 of
+`RCQ/docs/core-metadata-plan.md`; the same `mirrorContactsToVault` the web
+calls). In this phase the server list is still the truth and the slot is a
+sealed copy; the point of shipping it now is that the day the island stops
+answering `/contacts`, a reinstall recovers its roster from the slot and from
+nowhere else, and a client that has been mirroring all along already has one.
+The fingerprint above is why it costs nothing on a repeat: a browser tab keeps
+that memory in RAM, a CLI process lives for one command, so it goes on disk.
+Bounded at 6 seconds - a `rcq contacts` that printed its rows and then sat
+there waiting on bookkeeping would be a worse client for a better copy.
 
 ## Architecture
 
@@ -248,10 +438,18 @@ apologise vaguely for one, it now says which.
 * **Read receipts.** Only `delivered` goes out, so a peer's tick never turns.
   Incoming read receipts print to stderr under `RCQ_VERBOSE` only, and are
   not told apart from delivered ones.
-* **Circumvention.** No CDN front, no proxy support, no relay use. On a
-  network that blocks the island's host the CLI simply cannot connect,
-  which is a poor showing for the client that exists because app stores can
-  be blocked.
+* **Circumvention.** Three rungs now: direct, the CDN front, and a proxy you
+  run yourself (see "Roads to the island" above). What is still missing is an
+  EMBEDDED obfuscated transport. The relays are reachable only through a
+  sing-box you install; `rcq routes --singbox` writes its config and picks the
+  onion entry, but nothing dials VLESS+Reality or Hysteria2 in this process,
+  and nothing here builds an onion circuit. A blocked user with no sing-box
+  and no proxy has the front and nothing after it.
+* **Broker relays.** `rcq routes --singbox --bridges` asks the island's broker
+  for a few community relays and writes them into the config as a
+  fallback-only group. It never registers a relay, never shares one into a
+  chat, and never imports one somebody pasted: the in-chat relay-share card
+  the phones render has no counterpart here.
 * **Account and device management.** No `devices`, no slot revoke, no
   unlink, no burn, no report channel, no `rcq link` (a second box still takes
   the 24-word phrase on a command line). `account_burned` off the socket is

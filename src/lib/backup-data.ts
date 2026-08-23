@@ -157,6 +157,13 @@ export async function exportBackup(uin: number, phrase: string): Promise<Blob> {
   }
   for (const t of outgoingThreads()) {
     for (const r of t.rows) {
+      // ⚠ Disappearing messages are left out of the archive entirely, the same
+      // rule `exportAllIncoming` applies to the other half of the conversation.
+      // An archive outlives the sweeper, the device and the timer, so writing
+      // one down is how a message somebody asked to be temporary becomes
+      // permanent, and the restore path below already refuses to take them
+      // back for exactly that reason.
+      if (r.expiresAt != null) continue
       records.push(outgoingToRecord(r, t.isGroup ? null : t.id, t.isGroup ? t.id : null))
     }
   }

@@ -16,12 +16,13 @@
 
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Api, ApiError, type GroupPreview } from '../lib/api'
+import { Api, ApiError, parseErrorCode, type GroupPreview } from '../lib/api'
 import { useIdentity } from '../lib/identity-context'
 import { useI18n } from '../lib/i18n-context'
 import { hostOfApiBase } from '../lib/multihome'
 import { aliasFor, ensureGuestAuth, ensureGuestOn } from '../lib/visited-islands'
 import { GroupAvatar } from './GroupAvatar'
+import { compactCount } from '../lib/format-count'
 
 // Per-account cache of "which groups am I in", so the card can show
 // Open vs Join without a fetch per render. Keyed by the identity uin
@@ -215,7 +216,7 @@ export function GroupJoinCard({ groupId, host, compact = false, menuSpace = fals
             <span className="block truncate text-[0.6875rem] text-fg-dim">
               {closedToMe
                 ? t('group_join.closed_button')
-                : t('section.groups.members', { n: preview.member_count })}
+                : t('section.groups.members', { n: compactCount(preview.member_count) })}
               {foreignHost ? ` · ${foreignHost}` : ''}
             </span>
           </span>
@@ -233,7 +234,7 @@ export function GroupJoinCard({ groupId, host, compact = false, menuSpace = fals
         <div className={`min-w-0 flex-1${menuSpace ? ' pr-7' : ''}`}>
           <div className="truncate text-sm font-medium">{preview.name}</div>
           <div className="truncate text-[0.6875rem] text-fg-dim">
-            {t('section.groups.members', { n: preview.member_count })}
+            {t('section.groups.members', { n: compactCount(preview.member_count) })}
             {preview.owner_nickname ? ` · ${t('group_join.owner', { name: preview.owner_nickname })}` : ''}
           </div>
           {foreignHost && (
@@ -276,21 +277,4 @@ export function GroupJoinCard({ groupId, host, compact = false, menuSpace = fals
       )}
     </div>
   )
-}
-
-/// Pull a `{detail:{code}}` (or `{detail:"code"}`) string out of an
-/// error body without throwing on non-JSON.
-function parseErrorCode(body: string): string | null {
-  try {
-    const parsed = JSON.parse(body) as { detail?: unknown }
-    const d = parsed.detail
-    if (typeof d === 'string') return d
-    if (d && typeof d === 'object' && 'code' in d) {
-      const code = (d as { code?: unknown }).code
-      return typeof code === 'string' ? code : null
-    }
-  } catch {
-    /* non-JSON body */
-  }
-  return null
 }

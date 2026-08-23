@@ -6,4 +6,35 @@
 export { newTestIdentity } from './group-entry'
 export { slotId, seal, open, readSlot, writeSlot, deleteSlot, listSlots, jsonBytes, bytesJson, VaultError, VAULT_CONTACTS } from '../../src/lib/vault'
 export { foldServerList } from '../../src/lib/contacts-vault'
+// The sections slot (founder item 1, 23.08). Pure by construction, so the
+// merge is tested here rather than in a browser: cli/test/sections.mjs.
+export {
+  addMembers,
+  clampName,
+  createSection,
+  decode as decodeSections,
+  deleteSection,
+  dropExpired,
+  emptyTree,
+  encode as encodeSections,
+  forgetMember,
+  groupKey,
+  memberIndex,
+  membersOf,
+  merge as mergeSections,
+  newSectionId,
+  orderedSections,
+  orderOf,
+  peerKey,
+  removeMemberFrom,
+  renameSection,
+  sameContent,
+  SectionsError,
+  setOrder,
+  setPinned,
+  totalMembers,
+  userSections,
+  MAX_MEMBERS_PER_SECTION,
+  MAX_SECTIONS,
+} from '../../src/lib/sections'
 export { ApiError } from '../../src/lib/api'

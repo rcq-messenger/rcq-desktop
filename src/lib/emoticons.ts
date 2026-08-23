@@ -174,18 +174,27 @@ export const PALETTE: PaletteEntry[] = (() => {
   return out
 })()
 
-/// Default six quick reactions — byte-identical to iOS
-/// `EmoticonStore.defaultReactions` / Android `DEFAULT_REACTION_EMOJIS`.
+/// Default six quick reactions. Identical to iOS `EmoticonStore.defaultReactions`.
+/// Android's `DEFAULT_REACTION_EMOJIS` is NOT the same list (it still names
+/// biggrin / shok / mad, none of which the kolobok set has); checked
+/// 2026-08-23, every name below resolves to a file in `public/emoticons/`.
+/// Keep it that way: a default that has no GIF behind it is a blank slot in
+/// the reaction bar, not a missing feature the user can reason about.
+///
 /// Used ONLY when the stored reactions key is ABSENT; a stored `[]` is an
 /// intentional empty set and is respected (see emoticon-choices.ts).
 export const DEFAULT_REACTIONS: readonly string[] = [
   'good', 'give_heart', 'laugh1', 'scare', 'cray', 'ireful1',
 ] as const
 
-/// Caps: the composer panel holds up to 40 emoticons, reactions up to 6
-/// (matches the native picker).
+/// Caps: the composer panel and the quick reactions both hold up to 40.
+///
+/// Reactions used to stop at 6 (the size of the default set). The bar the
+/// picker draws scrolls, so the six were a limit with nothing behind them:
+/// raised to match the panel on founder's request (item 10, 2026-08-23).
+/// Nothing on the wire cares, a reaction is one asset name.
 export const PANEL_CAP = 40
-export const REACTION_CAP = 6
+export const REACTION_CAP = 40
 
 /// Map chosen asset names → PaletteEntry[] preserving the user's pick order
 /// (unknown assets are skipped). Renders the user's chosen composer panel.

@@ -88,6 +88,45 @@ async function request<T>(
   }
 }
 
+/// Pull a `{"detail":{"code":"..."}}` (or `{"detail":"..."}`) string out of an
+/// error body without throwing on a non-JSON one. The island answers in both
+/// shapes (its own refusals carry the object, FastAPI's own carry the bare
+/// string), so every caller that wants to tell one refusal from another has to
+/// look in both places, and that lives here rather than in each screen.
+export function parseErrorCode(body: string): string | null {
+  try {
+    const parsed = JSON.parse(body) as { detail?: unknown }
+    const d = parsed.detail
+    if (typeof d === 'string') return d
+    if (d && typeof d === 'object' && 'code' in d) {
+      const code = (d as { code?: unknown }).code
+      return typeof code === 'string' ? code : null
+    }
+  } catch {
+    /* non-JSON body */
+  }
+  return null
+}
+
+/// Seconds the island asks us to wait, out of a rate-limit refusal
+/// (`{"detail":{"code":"rate_limited","retry_after":30}}`). Null when the body
+/// does not carry one: the caller then says "later" rather than inventing a
+/// number the island never gave.
+export function parseRetryAfter(body: string): number | null {
+  try {
+    const parsed = JSON.parse(body) as { detail?: unknown }
+    const d = parsed.detail
+    if (d && typeof d === 'object' && 'retry_after' in d) {
+      const raw = (d as { retry_after?: unknown }).retry_after
+      const n = typeof raw === 'number' ? raw : Number(raw)
+      return Number.isFinite(n) && n > 0 ? Math.ceil(n) : null
+    }
+  } catch {
+    /* non-JSON body */
+  }
+  return null
+}
+
 // -----------------------------------------------------------
 // Domain shapes — mirror the FastAPI Pydantic models. We only
 // pull the fields we use; extra fields from the server are ignored
@@ -116,6 +155,15 @@ export interface Contact {
   /// absent is treated as callable. The island enforces the policy on the
   /// call_offer regardless, so this only decides what we DRAW.
   callable?: boolean | null
+  /// Whether WE may open THIS contact's profile card, per their
+  /// `profile_card_policy`, the same shape as `callable` above and for the
+  /// same reason: a policy that belongs to someone else can only reach us as a
+  /// verdict the island already computed for this viewer.
+  ///
+  /// ⚠ No island fills this in yet (founder item 22 is half-built: the setting
+  /// is stored, the per-viewer verdict is not published). Absent is treated as
+  /// openable, so nothing regresses while that half is missing.
+  profile_openable?: boolean | null
   // Federation (F2): set for a cross-island peer (the island host where they
   // live). Undefined/absent = a normal flagship contact. When present, the chat
   // send path routes via federation-send (deliverCrossIsland) instead of the
@@ -147,6 +195,14 @@ export interface UserInfo {
   group_invite_policy?: string | null
   trade_policy?: string | null
   call_policy?: string | null
+  /// Founder item 22: who may OPEN my profile card from an incidental
+  /// surface (a reactions list, the sender name over a photo, a member
+  /// roster). Same tri-state as its neighbours and it travels the same way,
+  /// through PUT /users/me. Owner-only in the echo, like every other policy
+  /// here, so this field tells you about YOURSELF and never about a peer;
+  /// deciding whether a PEER's card may be opened is `canOpenProfileCard`
+  /// in `lib/profile-card-privacy.ts`.
+  profile_card_policy?: string | null
   hof_opt_in?: boolean | null
   hof_avatar?: string | null
 }
@@ -238,31 +294,6 @@ export interface RCQGroup {
   slowmode_sec?: number
 }
 
-/// Live poll state from `/polls/{id}`. `voter_uins` is populated only for
-/// non-anonymous polls (the backend strips it otherwise).
-export interface PollTally {
-  option_index: number
-  count: number
-  voter_uins: number[]
-}
-export interface PollOut {
-  poll_id?: number
-  creator_uin?: number
-  closed_at?: string | null
-  tallies: PollTally[]
-  total_votes: number
-  my_votes: number[]
-}
-
-/// What `POST /groups/{id}/polls` hands back. The island only ever sees the
-/// SHAPE of a ballot (how many options, single-choice, anonymous) — the
-/// question and the option labels ride encrypted in the `poll` envelope — so
-/// this id is the whole of the server-side link between the two.
-export interface CreatePollOut {
-  poll_id: number
-  created_at?: string
-}
-
 /// Lightweight group info shown to a non-member who's about to join
 /// (the join card / `/g/:id` page). Mirrors backend `GroupPreviewOut`
 /// — name + member count + owner, no roster or history.
@@ -294,6 +325,11 @@ export interface ProfileUpdate {
   group_invite_policy?: string
   trade_policy?: string
   call_policy?: string
+  /// See `UserInfo.profile_card_policy`. An island that does not know the
+  /// field yet answers 200 and drops it (`ProfileUpdateIn` is `extra="ignore"`
+  /// by design, which is how the presence toggle was retired without breaking
+  /// shipped clients), so sending it is safe against every island.
+  profile_card_policy?: string
   hof_opt_in?: boolean
   /// Public HoF avatar as a data-URI (image/gif|png|jpeg|webp, base64,
   /// capped ~256KB server-side). Empty string clears it.
@@ -372,6 +408,12 @@ export interface ReportTurn {
 
 export interface MyReport {
   id: number
+  /// The number the operator sees in the admin queue, so the reporter can
+  /// quote it back. The admin console renders `#{id}` and always has, so `id`
+  /// IS that number today; these two are the names a dedicated field could
+  /// arrive under, and `reportNumber()` below prefers them when it does.
+  number?: number
+  report_number?: number
   reason: string
   /// 'open' | 'resolved' | 'dismissed' | 'duplicate' — a plain server string,
   /// not an enum, so unknown values must fall back rather than render a key.
@@ -397,6 +439,13 @@ export const REPORT_MAX_REASON = 1000
 
 export function reportTextLimit(tag: string = REPORT_TAG): number {
   return REPORT_MAX_REASON - tag.length - 1
+}
+
+/// The number to print on a report row. A dedicated field wins when the island
+/// sends one; otherwise the row id, which is the number the operator already
+/// reads off the admin queue.
+export function reportNumber(r: MyReport): number {
+  return r.number ?? r.report_number ?? r.id
 }
 
 // -----------------------------------------------------------
@@ -543,27 +592,15 @@ export const Api = {
     return request<RCQGroup>(id, 'GET', `/groups/${groupId}`)
   },
 
-  // Live poll tallies (counts + my_votes + voter_uins for non-anonymous).
-  loadPoll(id: WebIdentity, pollId: number): Promise<PollOut> {
-    return request<PollOut>(id, 'GET', `/polls/${pollId}`)
-  },
-
-  // Toggle the caller's vote on an option; returns the refreshed tally.
-  votePoll(id: WebIdentity, pollId: number, optionIndex: number): Promise<PollOut> {
-    return request<PollOut>(id, 'POST', `/polls/${pollId}/vote`, { option_index: optionIndex })
-  },
-
-  /// Register a new poll's shape on the group's island. `message_id` is the
-  /// envelope UUID we are about to send — that is what ties the tally rows to
-  /// the ballot the members will decrypt. Body fields and their order mirror
-  /// Android's `RcqApi.CreatePollBody`.
-  createPoll(
-    id: WebIdentity,
-    groupId: number,
-    body: { message_id: string; num_options: number; single_choice: boolean; anonymous: boolean },
-  ): Promise<CreatePollOut> {
-    return request<CreatePollOut>(id, 'POST', `/groups/${groupId}/polls`, body)
-  },
+  // ⚠ `loadPoll` / `votePoll` / `createPoll` were removed on 2026-08-23 with the
+  // rest of polls (founder item 14a). They are not coming back under another
+  // name: the reason was never the endpoints' shape but what the island ends up
+  // holding. `poll_votes` stores `voter_uin` next to `option_index` in the
+  // clear, for a poll marked anonymous exactly as for an open one, and
+  // `polls.creator_uin` sits beside the envelope UUID and so names the author of
+  // one specific message under sealed sender. A ballot that is not end-to-end
+  // encrypted is not a feature this client can offer honestly. The backend half
+  // is being removed in parallel.
 
   createGroup(id: WebIdentity, name: string, memberUINs: number[]): Promise<RCQGroup> {
     return request<RCQGroup>(id, 'POST', '/groups', {
@@ -628,6 +665,23 @@ export const Api = {
     return request<RCQGroup>(id, 'POST', `/groups/${groupId}/members/${uin}/permissions`, {
       permissions,
     })
+  },
+
+  /// Hand the group over to another member (founder item 23). Owner only,
+  /// enforced on the island; the caller stays in the room as a plain member and
+  /// keeps nothing: an owner's implicit capabilities are the owner row, not a
+  /// permission set that survives the move.
+  ///
+  /// Returns the whole group in the same shape `GET /groups/{id}` does, roster
+  /// included, so the answer is the new truth about BOTH `owner_uin` and every
+  /// member's role. Apply it wholesale rather than patching `owner_uin` alone.
+  ///
+  /// Refusals arrive as `detail.code`: `owner_only` (not the owner),
+  /// `already_owner` (they are the owner), `not_a_member` (they are not in the
+  /// group), `no_such_user` (this island has no such account),
+  /// `target_suspended`, plus a 429 `rate_limited` carrying `retry_after`.
+  transferGroupOwner(id: WebIdentity, groupId: number, toUin: number): Promise<RCQGroup> {
+    return request<RCQGroup>(id, 'POST', `/groups/${groupId}/transfer-owner`, { to_uin: toUin })
   },
 
   /// Set the group's single pinned-announcement slot. Used by both the
@@ -747,6 +801,22 @@ export const Api = {
   /// answered a question by filing a second report. 409 when it is closed.
   addToReport(id: WebIdentity, reportId: number, body: string): Promise<ReportTurn> {
     return request<ReportTurn>(id, 'POST', `/reports/mine/${reportId}/messages`, { body })
+  },
+
+  /// Rewrite your own report while nobody has answered it (founder item 26).
+  /// People notice the typo, or the missing detail, the second the thing is
+  /// sent; without this the only fix is delete-and-resend, which loses the
+  /// place in the queue.
+  ///
+  /// ⚠ Depends on `PATCH /reports/mine/{id}` existing on the island. It does
+  /// NOT exist on the flagship yet: the caller must treat 404/405 as "this
+  /// island cannot do it" rather than as an error, which is what MyReports
+  /// does. `reason` is the WHOLE stored string, platform tag included: the
+  /// screen hides the tag while reading and puts the original one back before
+  /// saving, so an edit never silently strips the marker the admin queue
+  /// sorts by, and never glues a second tag on top of the first.
+  editMyReport(id: WebIdentity, reportId: number, reason: string): Promise<MyReport | void> {
+    return request<MyReport | void>(id, 'PATCH', `/reports/mine/${reportId}`, { reason })
   },
 
   /// Withdraw one of your own reports. 404 when it is not yours, 409

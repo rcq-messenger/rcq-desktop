@@ -79,6 +79,20 @@ export function MessageToasts() {
   // Desktop only: fire an OS notification for a new message that arrives while
   // the window isn't focused (when it IS focused the in-app banner below is
   // enough). Reuses the same name/preview resolution as the banner.
+  //
+  // ⚠⚠ A DISAPPEARING MESSAGE IS NEVER SPELLED OUT HERE. This copy is the one
+  // this client cannot reach again: `sendNotification` takes no id we could
+  // address later, and a notification that has landed in the macOS
+  // Notification Center or the Windows Action Center sits there with whatever
+  // text it was given until somebody happens to swipe it away, hours after
+  // the sender was told the message had gone. The row itself is swept from
+  // state, from IndexedDB and out of the export by `sweepExpiredIncoming`, and
+  // none of that touches the shade. Android hit exactly this and answered it
+  // by CANCELLING the notification on both of its reapers
+  // (`Push.cancelMessageThread`); there is no cancel to reach for here, so the
+  // body says what arrived and not what it said. This is newly reachable:
+  // before disappearing messages landed, web and desktop honoured no `ttl` at
+  // all.
   useEffect(() => {
     if (!isTauri() || !identity) return
     const viewer = identity.uin
@@ -89,7 +103,8 @@ export function MessageToasts() {
           ? lookupGroupName(viewer, toast.groupId) || t('toast.group')
           : lookupContactName(viewer, toast.from) || `#${toast.from}`
       const preview =
-        toast.kind === 'photo' ? t('toast.photo')
+        toast.expiresAt != null ? t('chat.ttl.quoted')
+        : toast.kind === 'photo' ? t('toast.photo')
         : toast.kind === 'video' ? t('chat.media.kind.video')
         : toast.kind === 'file' ? toast.text || t('chat.media.kind.file')
         : toast.kind === 'other' ? t('toast.attachment')

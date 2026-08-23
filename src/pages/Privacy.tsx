@@ -1,17 +1,29 @@
 // Privacy settings — split out of `Settings` once the picker count
-// hit five. Mirrors iOS `PrivacySettingsView`. Five tri-state
-// scopes: last_seen / gender_visibility / group_invites /
-// trade_offers / calls. PUT /users/me writes through optimistic UI;
+// hit five. Mirrors iOS `PrivacySettingsView`. Tri-state scopes:
+// last_seen / gender_visibility / profile_card / calls /
+// group_invites. PUT /users/me writes through optimistic UI;
 // the backend echoes the active values via GET so a reload
 // reconciles in case a write actually failed.
+//
+// ⚠ The "visibility after exit" pair (`presence_persistent` +
+// `presence_ttl_minutes`) is NOT missing from this screen by accident and must
+// not be added back: the feature was withdrawn product-wide on 2026-08-23. The
+// web client never drew it, which is the only reason there is nothing to
+// delete here. The island drops both keys from a PUT rather than refusing it,
+// so shipped iOS and Android builds keep saving their profiles.
 
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Api, type UserInfo } from '../lib/api'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
-import { alwaysRelay, setAlwaysRelay } from '../lib/call-privacy'
+import { alwaysRelay, setAlwaysRelay, setMyCallPolicy, type CallPolicy } from '../lib/call-privacy'
 import { strangerQuarantineEnabled, setStrangerQuarantine } from '../lib/stranger-requests'
+import {
+  myProfileCardPolicy,
+  setMyProfileCardPolicy,
+  type ProfileCardPolicy,
+} from '../lib/profile-card-privacy'
 
 type Scope = 'everyone' | 'contacts' | 'nobody'
 
@@ -23,12 +35,34 @@ export function Privacy() {
   const [error, setError] = useState<string | null>(null)
   const [relayCalls, setRelayCalls] = useState(alwaysRelay())
   const [strangers, setStrangers] = useState(() => strangerQuarantineEnabled())
+  /// Held apart from `info` because the island may not echo the field at all
+  /// (an older one, or the flagship until the server half of item 22 lands),
+  /// and a picker that snapped back to "Everyone" on every reload would look
+  /// like the setting refusing to save.
+  const [cardPolicy, setCardPolicy] = useState<ProfileCardPolicy>(() => myProfileCardPolicy())
 
   useEffect(() => {
     if (!identity) return
     void (async () => {
       try {
-        setInfo(await Api.myInfo(identity))
+        const mine = await Api.myInfo(identity)
+        setInfo(mine)
+        // The server's word wins whenever it has one, and refreshes the local
+        // mirror the other surfaces read.
+        const echoed = mine.profile_card_policy
+        if (echoed === 'everyone' || echoed === 'contacts' || echoed === 'nobody') {
+          setCardPolicy(echoed)
+          setMyProfileCardPolicy(echoed)
+        }
+        // Same for the call policy. Seeded from the ECHO and not only from a
+        // change made here, or the mirror stays empty on every device but the
+        // one the setting was last touched on, and the missed-call marker gate
+        // that reads it (`call-privacy.ts`) reads the permissive default for a
+        // user who chose otherwise years ago on their phone.
+        const calls = mine.call_policy
+        if (calls === 'everyone' || calls === 'contacts' || calls === 'nobody') {
+          setMyCallPolicy(calls)
+        }
       } catch (e) {
         setError(e instanceof Error ? e.message : 'failed')
       }
@@ -47,7 +81,7 @@ export function Privacy() {
       // future surfaces (chat call buttons, etc.) react immediately
       // without a re-fetch round-trip.
       if (field === 'call_policy') {
-        localStorage.setItem('rcq.privacy.callPolicy', value)
+        setMyCallPolicy(value as CallPolicy)
       }
       await Api.updateProfile(identity!, { [field]: value } as never)
     } catch {
@@ -100,6 +134,26 @@ export function Privacy() {
                 t={t}
                 disabled={!info.gender}
                 disabledHint={t('settings.privacy.gender_first')}
+              />
+            </div>
+            {/* Founder item 22: who may OPEN my card, as opposed to what they
+                read once it is open. The surfaces that hand a stranger the
+                link are incidental ones (a reactions list, the sender name
+                over a photo, a member roster), none of which anybody chose to
+                appear on. Stored and synced like its neighbours; see the ⚠⚠ in
+                lib/profile-card-privacy.ts for why the client half alone does
+                not yet enforce anything against a remote viewer. */}
+            <div className="py-3">
+              <ScopePicker
+                label={t('settings.privacy.profile_card')}
+                description={t('settings.privacy.profile_card_desc')}
+                value={cardPolicy}
+                onChange={(v) => {
+                  setCardPolicy(v)
+                  setMyProfileCardPolicy(v)
+                  void patch('profile_card_policy', v)
+                }}
+                t={t}
               />
             </div>
             {/* Who may ring me. The island has enforced this on call_offer all

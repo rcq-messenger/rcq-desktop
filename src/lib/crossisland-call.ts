@@ -38,6 +38,7 @@
 import { getCrossIsland } from './crossisland-store'
 import { newUUIDv4, type CallEnvelope, type WebIdentity } from './crypto'
 import { depositSealedWithKeys, fetchPeerKeyCard } from './federation-send'
+import { sendAnchorMs } from './disappearing'
 import { logCall } from './outgoing-store'
 import { loadServerInfo } from './server-info'
 
@@ -377,13 +378,48 @@ export function fileMissedCrossIslandOffer(
   host: string,
   media: string,
   tsSeconds: number,
+  callId?: string,
+): void {
+  fileMissedCall(peerUin, host, media, tsSeconds, callId)
+}
+
+/// The same row, for a caller-written `call_missed` MARKER (§5d) rather than a
+/// stale offer.
+///
+/// A same-island call is signalled over the socket and leaves nothing durable
+/// behind, so a callee who was not connected learns nothing at all: no ring, no
+/// row, an empty conversation when they next open the app (#678/#686). The
+/// island tells the caller `call_unreachable` when it has neither a socket nor
+/// a push endpoint for the callee, and the caller then deposits this marker
+/// into their queue.
+///
+/// ⚠⚠ WEB AND DESKTOP ARE THE POPULATION THIS FIRES FOR. `call_unreachable` is
+/// chosen purely on the callee having no `device_tokens` row, and this client
+/// registers no push token on any platform (the island's own list is "ios,
+/// ios-voip, android-up"), so a web/desktop-only account produces it EVERY
+/// time. The marker was nonetheless dropped on the floor here, because
+/// `route()` gated the whole `kind === "call"` branch on a foreign sender host
+/// and a marker for a same-island call carries ours: every unanswered call to a
+/// desktop user cost one sealed deposit and one 30-day queue row and told the
+/// callee nothing.
+///
+/// `tsSeconds` is the caller's clock, so it goes through the same rail every
+/// other timestamp off a wire does; without it a marker with `ts: 0` files a
+/// row at the epoch, which sorts below the whole conversation.
+export function fileMissedCall(
+  peerUin: number,
+  host: string | null,
+  media: string,
+  tsSeconds: number,
+  callId?: string,
 ): void {
   const kind = media === 'video' ? 'call.log.video' : 'call.log.voice'
   logCall(
     peerUin,
     `${kind}|call.log.incoming|call.log.missed`,
     true,
-    tsSeconds * 1000,
+    sendAnchorMs(tsSeconds, Date.now()),
     host,
+    callId,
   )
 }

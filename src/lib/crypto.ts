@@ -77,7 +77,16 @@ export interface TextEnvelope {
   kind: 'text'
   id: string // uppercase UUID, matches iOS JSONEncoder
   text: string
+  /// Disappearing-message TTL in whole SECONDS (iOS/Android key "ttl"); absent
+  /// means permanent. See `disappearing.ts` for what honouring it means here.
   ttl?: number
+  /// Sender's epoch SECONDS, sent only alongside `ttl`. It is what the
+  /// countdown is anchored to, so a message drained out of the queue a week
+  /// late is already gone rather than granted a fresh lifetime (the Android
+  /// bug). Same field name and units as the `call` / `contactreq` / `profile`
+  /// envelopes. Additive: a decoder that does not know it ignores it, and a
+  /// sender that does not send one falls back to receipt time.
+  ts?: number
   fwdName?: string
   reply?: ReplyContext
 }
@@ -106,6 +115,10 @@ export interface PhotoEnvelope {
   mediaID: string
   mediaKey: string // base64 AES-256 key
   caption?: string
+  /// Disappearing-message TTL in seconds + the sender's epoch seconds to count
+  /// from. See TextEnvelope.
+  ttl?: number
+  ts?: number
   fwdName?: string
   reply?: ReplyContext
 }
@@ -123,6 +136,10 @@ export interface VideoEnvelope {
   thumbnailB64: string // base64 JPEG poster frame
   durationSec: number
   caption?: string
+  /// Disappearing-message TTL in seconds + the sender's epoch seconds to count
+  /// from. See TextEnvelope.
+  ttl?: number
+  ts?: number
   fwdName?: string
   reply?: ReplyContext
 }
@@ -136,6 +153,10 @@ export interface LocationEnvelope {
   lat: number
   lng: number
   caption?: string
+  /// Disappearing-message TTL in seconds + the sender's epoch seconds to count
+  /// from. See TextEnvelope.
+  ttl?: number
+  ts?: number
   reply?: ReplyContext
 }
 
@@ -152,6 +173,10 @@ export interface FileEnvelope {
   mime: string // content type
   size: number // plaintext byte length
   caption?: string
+  /// Disappearing-message TTL in seconds + the sender's epoch seconds to count
+  /// from. See TextEnvelope.
+  ttl?: number
+  ts?: number
   fwdName?: string
   reply?: ReplyContext
 }
@@ -173,9 +198,19 @@ export interface CarbonEnvelope {
 
 /// Group poll announcement (iOS/Android kind "poll"). Terse wire keys to
 /// match the mobile clients: `poll` = server poll id, `q` = question,
-/// `opts` = option labels, `sc` = single-choice, `anon` = anonymous. The
-/// full ballot rides encrypted here so the web renders it without needing
-/// `/polls/{id}`; live tallies + voting hit that endpoint on top.
+/// `opts` = option labels, `sc` = single-choice, `anon` = anonymous.
+///
+/// ⚠⚠ RECEIVE-ONLY since 2026-08-23. Polls were cut from this client (founder
+/// item 14a): the ballots are not end-to-end encrypted (the island stores
+/// `voter_uin` and `option_index` in the clear, for "anonymous" polls as much
+/// as for open ones), and `polls.creator_uin` sits next to the envelope UUID,
+/// which names the author of that one message. Nothing here composes or ships
+/// one any more, and `envelopeToObject` deliberately has no branch for it.
+///
+/// The SHAPE stays because an old peer on an old build can still send one, and
+/// a removed feature must still ANSWER: `incoming-store` turns it into the
+/// "no longer supported" placeholder rather than dropping it on the floor,
+/// where the reader would see a silent gap in the conversation.
 export interface PollEnvelope {
   kind: 'poll'
   id: string // uppercase UUID (the message id)
@@ -419,6 +454,10 @@ export function envelopeToObject(env: Envelope): Record<string, unknown> {
     obj.id = env.id
     obj.text = env.text
     if (env.ttl != null) obj.ttl = env.ttl
+    // Only beside a ttl. A bare timestamp on every message would be a new
+    // metadata field inside the ciphertext that buys nothing, and the whole
+    // point of `ts` is that the countdown has something to count from.
+    if (env.ttl != null && env.ts != null) obj.ts = env.ts
     if (env.fwdName != null) obj.fwdName = env.fwdName
     if (env.reply != null) obj.reply = env.reply
   } else if (env.kind === 'reaction') {
@@ -432,6 +471,8 @@ export function envelopeToObject(env: Envelope): Record<string, unknown> {
     obj.mediaID = env.mediaID
     obj.mediaKey = env.mediaKey
     if (env.caption != null) obj.caption = env.caption
+    if (env.ttl != null) obj.ttl = env.ttl
+    if (env.ttl != null && env.ts != null) obj.ts = env.ts
     if (env.fwdName != null) obj.fwdName = env.fwdName
     if (env.reply != null) obj.reply = env.reply
   } else if (env.kind === 'video') {
@@ -441,6 +482,8 @@ export function envelopeToObject(env: Envelope): Record<string, unknown> {
     obj.thumbnailB64 = env.thumbnailB64
     obj.durationSec = env.durationSec
     if (env.caption != null) obj.caption = env.caption
+    if (env.ttl != null) obj.ttl = env.ttl
+    if (env.ttl != null && env.ts != null) obj.ts = env.ts
     if (env.fwdName != null) obj.fwdName = env.fwdName
     if (env.reply != null) obj.reply = env.reply
   } else if (env.kind === 'file') {
@@ -451,7 +494,23 @@ export function envelopeToObject(env: Envelope): Record<string, unknown> {
     obj.mime = env.mime
     obj.size = env.size
     if (env.caption != null) obj.caption = env.caption
+    if (env.ttl != null) obj.ttl = env.ttl
+    if (env.ttl != null && env.ts != null) obj.ts = env.ts
     if (env.fwdName != null) obj.fwdName = env.fwdName
+    if (env.reply != null) obj.reply = env.reply
+  } else if (env.kind === 'location') {
+    // ⚠⚠ This branch was simply MISSING, and the `else if` chain has no default:
+    // a location built by `sendLocation` fell off the end of it and went on the
+    // wire as the bare object `{"kind":"location"}`: no id, no coordinates, no
+    // caption. Every point ever sent from the web or the desktop arrived on the
+    // phones as an empty pin. Field order matches the phones (`Envelope.kt`
+    // Location, iOS `case .location`): kind, id, lat, lng, caption.
+    obj.id = env.id
+    obj.lat = env.lat
+    obj.lng = env.lng
+    if (env.caption != null) obj.caption = env.caption
+    if (env.ttl != null) obj.ttl = env.ttl
+    if (env.ttl != null && env.ts != null) obj.ts = env.ts
     if (env.reply != null) obj.reply = env.reply
   } else if (env.kind === 'edit') {
     obj.targetID = env.targetID
@@ -561,7 +620,7 @@ const PAD_OVERHEAD = 10
 /// frequent, and their size carries no content, so buying them uniformity is not
 /// worth the relay bytes. Padding is sender-only, so this set is a local policy
 /// choice and never part of the interop contract.
-const PAD_KINDS = new Set(['text', 'photo', 'video', 'file', 'location', 'edit', 'poll', 'carbon'])
+const PAD_KINDS = new Set(['text', 'photo', 'video', 'file', 'location', 'edit', 'carbon'])
 export function shouldPadKind(kind: string): boolean {
   return PAD_KINDS.has(kind)
 }

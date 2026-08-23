@@ -110,6 +110,9 @@ for scripts and one-shots (stdout is data, status goes to stderr):
                                             (--yes agrees to write to a non-contact)
   rcq watch (wt)                            read-only stream of incoming messages
   rcq export (x)                            print the history file path and line count
+  rcq proxy (px) [set <addr>|clear|test]    push every connection through YOUR proxy
+  rcq routes (route) [--probe|--singbox]    roads to the island: what was tried, what answered
+                                            (Tor, i2p, ssh -D); plain "rcq proxy" explains it
   rcq lang (lng) [{codes}]     show or set the language
   rcq --version                             version + update check
   rcq --help                                this text
@@ -147,6 +150,9 @@ RCQ_VERBOSE=1 shows protocol detail; NO_COLOR strips colour.
                                             (--yes соглашается писать не-контакту)
   rcq watch (wt)                            поток входящих, только чтение
   rcq export (x)                            напечатать путь к файлу истории и число строк
+  rcq proxy (px) [set <адрес>|clear|test]   гнать все соединения через ВАШ прокси
+  rcq routes (route) [--probe|--singbox]    дороги к острову: что пробовали и что ответило
+                                            (Tor, i2p, ssh -D); просто "rcq proxy" объяснит
   rcq lang (lng) [{codes}]     показать или сменить язык
   rcq --version                             версия + проверка обновления
   rcq --help                                этот текст
@@ -184,6 +190,9 @@ para scripts y comandos únicos (stdout son datos, el estado va a stderr):
                                             (--yes acepta escribir a un no-contacto)
   rcq watch (wt)                            flujo de mensajes entrantes, solo lectura
   rcq export (x)                            imprimir la ruta del historial y el número de líneas
+  rcq proxy (px) [set <dir>|clear|test]     mandar cada conexión por TU proxy
+  rcq routes (route) [--probe|--singbox]    caminos a la isla: qué se probó y qué respondió
+                                            (Tor, i2p, ssh -D); "rcq proxy" solo lo explica
   rcq lang (lng) [{codes}]     mostrar o cambiar el idioma
   rcq --version                             versión + comprobación de actualización
   rcq --help                                este texto
@@ -221,6 +230,9 @@ para scripts e comandos avulsos (stdout são dados, o status vai para stderr):
                                             (--yes concorda em escrever a um não-contato)
   rcq watch (wt)                            fluxo de mensagens recebidas, somente leitura
   rcq export (x)                            imprimir o caminho do histórico e a contagem de linhas
+  rcq proxy (px) [set <end>|clear|test]     mandar cada conexão pelo SEU proxy
+  rcq routes (route) [--probe|--singbox]    caminhos até a ilha: o que se tentou e o que respondeu
+                                            (Tor, i2p, ssh -D); "rcq proxy" sozinho explica
   rcq lang (lng) [{codes}]     mostrar ou trocar o idioma
   rcq --version                             versão + verificação de atualização
   rcq --help                                este texto
@@ -258,6 +270,9 @@ betikler ve tek seferlik komutlar için (stdout veridir, durum stderr'e gider):
                                             (--yes bir kişi olmayana yazmayı kabul eder)
   rcq watch (wt)                            gelen mesaj akışı, salt okunur
   rcq export (x)                            geçmiş dosyasının yolunu ve satır sayısını yaz
+  rcq proxy (px) [set <adres>|clear|test]   her bağlantıyı KENDİ proxynizden geçirin
+  rcq routes (route) [--probe|--singbox]    adaya giden yollar: ne denendi, ne yanıt verdi
+                                            (Tor, i2p, ssh -D); tek başına "rcq proxy" anlatır
   rcq lang (lng) [{codes}]     dili göster veya ayarla
   rcq --version                             sürüm + güncelleme kontrolü
   rcq --help                                bu metin
@@ -295,6 +310,9 @@ RCQ_VERBOSE=1 protokol ayrıntısını gösterir; NO_COLOR rengi kaldırır.
                                             (--yes погоджується писати не-контакту)
   rcq watch (wt)                            потік вхідних, лише читання
   rcq export (x)                            надрукувати шлях до файлу історії і кількість рядків
+  rcq proxy (px) [set <адреса>|clear|test]  гнати всі зʼєднання через ВАШ проксі
+  rcq routes (route) [--probe|--singbox]    дороги до острова: що пробували і що відповіло
+                                            (Tor, i2p, ssh -D); просто "rcq proxy" пояснить
   rcq lang (lng) [{codes}]     показати або змінити мову
   rcq --version                             версія + перевірка оновлення
   rcq --help                                цей текст
@@ -332,6 +350,9 @@ RCQ_VERBOSE=1 показує деталі протоколу; NO_COLOR приб�
                                             (--yes 同意给非联系人写信)
   rcq watch (wt)                            收信流, 只读
   rcq export (x)                            打印历史文件路径和行数
+  rcq proxy (px) [set <地址>|clear|test]     让每个连接都走你自己的代理
+  rcq routes (route) [--probe|--singbox]    通往服务器的路线：试过什么，什么给了回应
+                                            (Tor, i2p, ssh -D); 单写 "rcq proxy" 会解释
   rcq lang (lng) [{codes}]     显示或设置语言
   rcq --version                             版本 + 更新检查
   rcq --help                                此文本
@@ -367,6 +388,242 @@ RCQ_VERBOSE=1 显示协议细节; NO_COLOR 去掉颜色。
     tr: 'dil: {lang}',
     uk: 'мова: {lang}',
     'zh-Hans': '语言: {lang}',
+  },
+
+  'proxy.usage': {
+    en: `usage: rcq proxy [show | set <address> | clear | test]
+  address: socks5://127.0.0.1:9050 (or just 127.0.0.1:9050), http://host:8118,
+           or a preset: tor (Orbot, 127.0.0.1:9050), i2p (i2pd, 127.0.0.1:4447)
+  the proxy is stored in $RCQ_CLI_HOME and used by every command after it,
+  including the update check. RCQ_PROXY=off turns it off for one command.`,
+    ru: `использование: rcq proxy [show | set <адрес> | clear | test]
+  адрес: socks5://127.0.0.1:9050 (или просто 127.0.0.1:9050), http://host:8118,
+         либо готовое имя: tor (Orbot, 127.0.0.1:9050), i2p (i2pd, 127.0.0.1:4447)
+  прокси лежит в $RCQ_CLI_HOME и работает во всех следующих командах,
+  включая проверку обновлений. RCQ_PROXY=off выключает его на одну команду.`,
+    es: `uso: rcq proxy [show | set <dirección> | clear | test]
+  dirección: socks5://127.0.0.1:9050 (o solo 127.0.0.1:9050), http://host:8118,
+             o un preajuste: tor (Orbot, 127.0.0.1:9050), i2p (i2pd, 127.0.0.1:4447)
+  el proxy se guarda en $RCQ_CLI_HOME y lo usa cada comando posterior,
+  incluida la comprobación de actualización. RCQ_PROXY=off lo apaga una vez.`,
+    pt: `uso: rcq proxy [show | set <endereço> | clear | test]
+  endereço: socks5://127.0.0.1:9050 (ou só 127.0.0.1:9050), http://host:8118,
+            ou um preset: tor (Orbot, 127.0.0.1:9050), i2p (i2pd, 127.0.0.1:4447)
+  o proxy fica em $RCQ_CLI_HOME e é usado por todo comando seguinte,
+  inclusive a verificação de atualização. RCQ_PROXY=off desliga por um comando.`,
+    tr: `kullanım: rcq proxy [show | set <adres> | clear | test]
+  adres: socks5://127.0.0.1:9050 (ya da sadece 127.0.0.1:9050), http://host:8118,
+         veya hazır bir ad: tor (Orbot, 127.0.0.1:9050), i2p (i2pd, 127.0.0.1:4447)
+  proxy $RCQ_CLI_HOME içinde durur ve sonraki her komutta kullanılır,
+  güncelleme kontrolü dahil. RCQ_PROXY=off tek komut için kapatır.`,
+    uk: `використання: rcq proxy [show | set <адреса> | clear | test]
+  адреса: socks5://127.0.0.1:9050 (або просто 127.0.0.1:9050), http://host:8118,
+          чи готова назва: tor (Orbot, 127.0.0.1:9050), i2p (i2pd, 127.0.0.1:4447)
+  проксі лежить у $RCQ_CLI_HOME і працює в усіх наступних командах,
+  разом з перевіркою оновлень. RCQ_PROXY=off вимикає його на одну команду.`,
+    'zh-Hans': `用法: rcq proxy [show | set <地址> | clear | test]
+  地址: socks5://127.0.0.1:9050 (或只写 127.0.0.1:9050), http://host:8118,
+        或预设名: tor (Orbot, 127.0.0.1:9050), i2p (i2pd, 127.0.0.1:4447)
+  代理存放在 $RCQ_CLI_HOME, 之后每条命令都会走它, 包括更新检查。
+  RCQ_PROXY=off 可以只关掉一条命令的代理。`,
+  },
+  'proxy.on': {
+    en: 'every connection goes through your proxy',
+    ru: 'все соединения идут через ваш прокси',
+    es: 'todas las conexiones pasan por tu proxy',
+    pt: 'todas as conexões passam pelo seu proxy',
+    tr: 'her bağlantı proxy üzerinden gidiyor',
+    uk: 'усі зʼєднання йдуть через ваш проксі',
+    'zh-Hans': '所有连接都走你的代理',
+  },
+  'proxy.off': {
+    en: 'no proxy: every connection goes straight to the island',
+    ru: 'прокси нет: все соединения идут прямо на остров',
+    es: 'sin proxy: cada conexión va directo a la isla',
+    pt: 'sem proxy: cada conexão vai direto para a ilha',
+    tr: 'proxy yok: her bağlantı doğrudan adaya gidiyor',
+    uk: 'проксі немає: усі зʼєднання йдуть прямо на острів',
+    'zh-Hans': '没有代理: 每个连接都直连服务器',
+  },
+  'proxy.set': {
+    en: 'proxy: {url} - the next command already uses it',
+    ru: 'прокси: {url} - следующая команда уже идёт через него',
+    es: 'proxy: {url} - el siguiente comando ya lo usa',
+    pt: 'proxy: {url} - o próximo comando já o usa',
+    tr: 'proxy: {url} - sonraki komut zaten bunu kullanıyor',
+    uk: 'проксі: {url} - наступна команда вже йде через нього',
+    'zh-Hans': '代理: {url} - 下一条命令就会走它',
+  },
+  'proxy.cleared': {
+    en: 'proxy cleared: connections go straight to the island again',
+    ru: 'прокси убран: соединения снова идут прямо на остров',
+    es: 'proxy borrado: las conexiones vuelven a ir directo a la isla',
+    pt: 'proxy removido: as conexões voltam a ir direto para a ilha',
+    tr: 'proxy silindi: bağlantılar yine doğrudan adaya gidiyor',
+    uk: 'проксі прибрано: зʼєднання знову йдуть прямо на острів',
+    'zh-Hans': '代理已清除: 连接重新直连服务器',
+  },
+  'proxy.nothingToClear': {
+    en: 'no proxy was set',
+    ru: 'прокси и не было',
+    es: 'no había proxy',
+    pt: 'não havia proxy',
+    tr: 'zaten proxy yoktu',
+    uk: 'проксі й не було',
+    'zh-Hans': '本来就没有代理',
+  },
+  'proxy.needsUrl': {
+    en: 'proxy set needs an address, for example: rcq proxy set tor',
+    ru: 'proxy set требует адрес, например: rcq proxy set tor',
+    es: 'proxy set necesita una dirección, por ejemplo: rcq proxy set tor',
+    pt: 'proxy set precisa de um endereço, por exemplo: rcq proxy set tor',
+    tr: 'proxy set bir adres ister, örneğin: rcq proxy set tor',
+    uk: 'proxy set потребує адресу, наприклад: rcq proxy set tor',
+    'zh-Hans': 'proxy set 需要一个地址, 例如: rcq proxy set tor',
+  },
+  'proxy.syntax': {
+    en: "'{arg}' is not a proxy address. Try socks5://127.0.0.1:9050, or just tor",
+    ru: "'{arg}' не похоже на адрес прокси. Например: socks5://127.0.0.1:9050 или просто tor",
+    es: "'{arg}' no es una dirección de proxy. Probá socks5://127.0.0.1:9050, o solo tor",
+    pt: "'{arg}' não é um endereço de proxy. Tente socks5://127.0.0.1:9050, ou só tor",
+    tr: "'{arg}' bir proxy adresi değil. socks5://127.0.0.1:9050 deneyin, ya da sadece tor",
+    uk: "'{arg}' не схоже на адресу проксі. Спробуйте socks5://127.0.0.1:9050 або просто tor",
+    'zh-Hans': "'{arg}' 不是代理地址。试试 socks5://127.0.0.1:9050, 或者直接写 tor",
+  },
+  'proxy.scheme': {
+    en: '{scheme}:// proxies do not work here. Node carries this traffic and it takes socks5://, http:// and https:// only',
+    ru: 'прокси {scheme}:// здесь не работают. Трафик несёт сам Node, а он понимает только socks5://, http:// и https://',
+    es: 'los proxies {scheme}:// no funcionan acá. Node lleva este tráfico y solo acepta socks5://, http:// y https://',
+    pt: 'proxies {scheme}:// não funcionam aqui. O Node carrega este tráfego e só aceita socks5://, http:// e https://',
+    tr: '{scheme}:// proxyleri burada çalışmaz. Bu trafiği Node taşır ve yalnızca socks5://, http:// ve https:// kabul eder',
+    uk: 'проксі {scheme}:// тут не працюють. Трафік несе сам Node, а він розуміє лише socks5://, http:// і https://',
+    'zh-Hans': '{scheme}:// 代理在这里不能用。这条流量由 Node 承载, 它只接受 socks5://、http:// 和 https://',
+  },
+  'proxy.testing': {
+    en: 'testing {url} -> {island}',
+    ru: 'проверяю {url} -> {island}',
+    es: 'probando {url} -> {island}',
+    pt: 'testando {url} -> {island}',
+    tr: 'deneniyor {url} -> {island}',
+    uk: 'перевіряю {url} -> {island}',
+    'zh-Hans': '正在测试 {url} -> {island}',
+  },
+  'proxy.ok': {
+    en: 'it works: {island} answered through the proxy in {ms} ms',
+    ru: 'работает: {island} ответил через прокси за {ms} мс',
+    es: 'funciona: {island} respondió a través del proxy en {ms} ms',
+    pt: 'funciona: {island} respondeu através do proxy em {ms} ms',
+    tr: 'çalışıyor: {island} proxy üzerinden {ms} ms içinde yanıt verdi',
+    uk: 'працює: {island} відповів через проксі за {ms} мс',
+    'zh-Hans': '可用: {island} 通过代理在 {ms} 毫秒内作出了回应',
+  },
+  'proxy.failRefused': {
+    en: 'nothing is listening at {addr}. Is the proxy (Tor, i2pd, your tunnel) actually running?',
+    ru: 'на {addr} никто не слушает. Прокси (Tor, i2pd, ваш туннель) точно запущен?',
+    es: 'nadie escucha en {addr}. ¿El proxy (Tor, i2pd, tu túnel) está corriendo?',
+    pt: 'ninguém escuta em {addr}. O proxy (Tor, i2pd, seu túnel) está mesmo rodando?',
+    tr: '{addr} adresinde kimse dinlemiyor. Proxy (Tor, i2pd, tüneliniz) gerçekten çalışıyor mu?',
+    uk: 'на {addr} ніхто не слухає. Проксі (Tor, i2pd, ваш тунель) справді запущений?',
+    'zh-Hans': '{addr} 上没有人在监听。代理 (Tor、i2pd 或你的隧道) 真的在运行吗?',
+  },
+  'proxy.failNotSocks': {
+    en: '{addr} answered, but not as a SOCKS5 proxy. Wrong port, or an HTTP proxy that wants http://?',
+    ru: '{addr} ответил, но не как SOCKS5-прокси. Не тот порт, или это HTTP-прокси и нужно http://?',
+    es: '{addr} respondió, pero no como proxy SOCKS5. ¿Puerto equivocado, o un proxy HTTP que quiere http://?',
+    pt: '{addr} respondeu, mas não como proxy SOCKS5. Porta errada, ou um proxy HTTP que quer http://?',
+    tr: '{addr} yanıt verdi ama SOCKS5 proxy gibi değil. Yanlış port mu, yoksa http:// isteyen bir HTTP proxy mi?',
+    uk: '{addr} відповів, але не як SOCKS5-проксі. Не той порт, чи це HTTP-проксі і потрібен http://?',
+    'zh-Hans': '{addr} 有回应, 但不是 SOCKS5 代理。端口不对, 还是一个需要 http:// 的 HTTP 代理?',
+  },
+  'proxy.failNotHttp': {
+    en: '{addr} answered, but not as an HTTP proxy. Wrong port, or a SOCKS5 proxy that wants socks5://?',
+    ru: '{addr} ответил, но не как HTTP-прокси. Не тот порт, или это SOCKS5 и нужно socks5://?',
+    es: '{addr} respondió, pero no como proxy HTTP. ¿Puerto equivocado, o un proxy SOCKS5 que quiere socks5://?',
+    pt: '{addr} respondeu, mas não como proxy HTTP. Porta errada, ou um proxy SOCKS5 que quer socks5://?',
+    tr: '{addr} yanıt verdi ama HTTP proxy gibi değil. Yanlış port mu, yoksa socks5:// isteyen bir SOCKS5 proxy mi?',
+    uk: '{addr} відповів, але не як HTTP-проксі. Не той порт, чи це SOCKS5 і потрібен socks5://?',
+    'zh-Hans': '{addr} 有回应, 但不是 HTTP 代理。端口不对, 还是一个需要 socks5:// 的 SOCKS5 代理?',
+  },
+  'proxy.failTimeout': {
+    en: 'the proxy took the connection and nothing came back in {ms} ms. It may not be able to reach {island} either',
+    ru: 'прокси принял соединение, но за {ms} мс ничего не вернулось. Возможно, он и сам не достаёт до {island}',
+    es: 'el proxy aceptó la conexión y no volvió nada en {ms} ms. Puede que tampoco alcance {island}',
+    pt: 'o proxy aceitou a conexão e nada voltou em {ms} ms. Talvez ele também não alcance {island}',
+    tr: 'proxy bağlantıyı aldı ama {ms} ms içinde hiçbir şey dönmedi. {island} adresine kendisi de erişemiyor olabilir',
+    uk: 'проксі прийняв зʼєднання, але за {ms} мс нічого не повернулося. Можливо, він і сам не дістає до {island}',
+    'zh-Hans': '代理接受了连接, 但 {ms} 毫秒内什么都没回来。它可能也到不了 {island}',
+  },
+  'proxy.failStatus': {
+    en: 'the proxy reached {island}, which answered {status} instead of a health check',
+    ru: 'прокси дошёл до {island}, но тот ответил {status} вместо проверки здоровья',
+    es: 'el proxy llegó a {island}, que respondió {status} en vez de un chequeo de salud',
+    pt: 'o proxy chegou a {island}, que respondeu {status} em vez de um health check',
+    tr: 'proxy {island} adresine ulaştı ama oradan sağlık yanıtı yerine {status} geldi',
+    uk: 'проксі дійшов до {island}, але той відповів {status} замість перевірки здоровʼя',
+    'zh-Hans': '代理到达了 {island}, 但它返回了 {status} 而不是健康检查',
+  },
+  'proxy.failOther': {
+    en: 'the proxy did not carry traffic to {island}: {detail}',
+    ru: 'прокси не донёс трафик до {island}: {detail}',
+    es: 'el proxy no llevó el tráfico hasta {island}: {detail}',
+    pt: 'o proxy não levou o tráfego até {island}: {detail}',
+    tr: 'proxy trafiği {island} adresine taşımadı: {detail}',
+    uk: 'проксі не доніс трафік до {island}: {detail}',
+    'zh-Hans': '代理没有把流量送到 {island}: {detail}',
+  },
+  'proxy.ignored': {
+    en: 'this Node ({version}) ignores the proxy environment: it needs Node 24 or newer. NOTHING is being proxied',
+    ru: 'этот Node ({version}) игнорирует переменные прокси: нужен Node 24 или новее. НИЧЕГО через прокси не идёт',
+    es: 'este Node ({version}) ignora el entorno de proxy: hace falta Node 24 o más nuevo. NADA pasa por el proxy',
+    pt: 'este Node ({version}) ignora o ambiente de proxy: precisa de Node 24 ou mais novo. NADA passa pelo proxy',
+    tr: 'bu Node ({version}) proxy ortam değişkenlerini yok sayıyor: Node 24 veya üstü gerekir. HİÇBİR ŞEY proxy üzerinden gitmiyor',
+    uk: 'цей Node ({version}) ігнорує змінні проксі: потрібен Node 24 або новіший. НІЧОГО через проксі не йде',
+    'zh-Hans': '这个 Node ({version}) 会忽略代理环境变量: 需要 Node 24 或更新的版本。现在没有任何流量走代理',
+  },
+  'proxy.refusedUnsupported': {
+    en: 'refusing to run this command with a proxy that does nothing: upgrade to Node 24+, or run with RCQ_PROXY=off if a direct connection is acceptable',
+    ru: 'команда не будет выполнена с прокси, который ничего не делает: поставьте Node 24+ или запустите с RCQ_PROXY=off, если прямое соединение вас устраивает',
+    es: 'no ejecuto este comando con un proxy que no hace nada: actualizá a Node 24+, o corré con RCQ_PROXY=off si aceptás una conexión directa',
+    pt: 'não vou rodar este comando com um proxy que não faz nada: atualize para Node 24+, ou rode com RCQ_PROXY=off se aceitar uma conexão direta',
+    tr: 'hiçbir şey yapmayan bir proxy ile bu komutu çalıştırmıyorum: Node 24+ sürümüne geçin ya da doğrudan bağlantıyı kabul ediyorsanız RCQ_PROXY=off ile çalıştırın',
+    uk: 'команда не виконається з проксі, який нічого не робить: поставте Node 24+ або запустіть з RCQ_PROXY=off, якщо пряме зʼєднання вас влаштовує',
+    'zh-Hans': '不会在一个形同虚设的代理下执行这条命令: 请升级到 Node 24+, 或者如果你接受直连, 用 RCQ_PROXY=off 运行',
+  },
+  'proxy.refusedBadValue': {
+    en: 'the proxy in {source} cannot be used, and this command will not fall back to a direct connection: fix it with `rcq proxy set <address>`, or use RCQ_PROXY=off',
+    ru: 'прокси из {source} использовать нельзя, а прямым соединением команда не пойдёт: поправьте `rcq proxy set <адрес>` или укажите RCQ_PROXY=off',
+    es: 'el proxy de {source} no se puede usar, y este comando no va a caer a una conexión directa: arreglalo con `rcq proxy set <dirección>`, o usá RCQ_PROXY=off',
+    pt: 'o proxy de {source} não pode ser usado, e este comando não vai cair para uma conexão direta: corrija com `rcq proxy set <endereço>`, ou use RCQ_PROXY=off',
+    tr: '{source} içindeki proxy kullanılamaz ve bu komut doğrudan bağlantıya düşmeyecek: `rcq proxy set <adres>` ile düzeltin ya da RCQ_PROXY=off kullanın',
+    uk: 'проксі з {source} використати не можна, і прямим зʼєднанням команда не піде: виправте через `rcq proxy set <адреса>` або вкажіть RCQ_PROXY=off',
+    'zh-Hans': '{source} 里的代理无法使用, 而这条命令不会退回到直连: 用 `rcq proxy set <地址>` 改好, 或者使用 RCQ_PROXY=off',
+  },
+  'proxy.caveat': {
+    en: 'what this does not do: the island still sees a connection, from the proxy address instead of yours, and this is not RCQ relay circumvention',
+    ru: 'чего это не даёт: остров всё равно видит соединение, только с адреса прокси, а не вашего, и это не обход через релеи RCQ',
+    es: 'lo que no hace: la isla igual ve una conexión, desde la dirección del proxy en vez de la tuya, y esto no es la evasión por relés de RCQ',
+    pt: 'o que isto não faz: a ilha ainda vê uma conexão, do endereço do proxy em vez do seu, e isto não é a evasão pelos relés do RCQ',
+    tr: 'bunun yapmadığı şey: ada yine bir bağlantı görür, sizinki yerine proxy adresinden, ve bu RCQ relay atlatması değildir',
+    uk: 'чого це не дає: острів усе одно бачить зʼєднання, лише з адреси проксі, а не вашої, і це не обхід через релеї RCQ',
+    'zh-Hans': '它做不到的事: 服务器仍然看得到一个连接, 只是来自代理地址而不是你的地址, 而且这不是 RCQ 的中继绕行',
+  },
+  'label.proxy': {
+    en: 'proxy',
+    ru: 'прокси',
+    es: 'proxy',
+    pt: 'proxy',
+    tr: 'proxy',
+    uk: 'проксі',
+    'zh-Hans': '代理',
+  },
+  'interactive.proxy': {
+    en: 'proxy: {url} (change it with `rcq proxy` outside; it engages when rcq starts)',
+    ru: 'прокси: {url} (менять через `rcq proxy` снаружи; включается при старте rcq)',
+    es: 'proxy: {url} (cambialo con `rcq proxy` afuera; se activa al iniciar rcq)',
+    pt: 'proxy: {url} (mude com `rcq proxy` fora daqui; entra em ação quando o rcq inicia)',
+    tr: 'proxy: {url} (dışarıda `rcq proxy` ile değiştirin; rcq başlarken devreye girer)',
+    uk: 'проксі: {url} (міняти через `rcq proxy` ззовні; вмикається на старті rcq)',
+    'zh-Hans': '代理: {url} (在外面用 `rcq proxy` 修改; 它在 rcq 启动时生效)',
   },
 
   'args.flagNeedsValue': {
@@ -447,6 +704,238 @@ RCQ_VERBOSE=1 显示协议细节; NO_COLOR 去掉颜色。
   'label.nickname': { en: 'nickname', ru: 'ник', es: 'apodo', pt: 'apelido', tr: 'takma ad', uk: 'нік', 'zh-Hans': '昵称' },
   'label.island': { en: 'island', ru: 'остров', es: 'isla', pt: 'ilha', tr: 'ada', uk: 'острів', 'zh-Hans': '服务器' },
   'label.device': { en: 'device', ru: 'устройство', es: 'dispositivo', pt: 'dispositivo', tr: 'cihaz', uk: 'пристрій', 'zh-Hans': '设备' },
+  'label.route': { en: 'route', ru: 'маршрут', es: 'ruta', pt: 'rota', tr: 'rota', uk: 'маршрут', 'zh-Hans': '路线' },
+  'label.front': { en: 'front', ru: 'фронт', es: 'frente', pt: 'frente', tr: 'cephe', uk: 'фронт', 'zh-Hans': '前置域名' },
+  'label.relays': { en: 'relays', ru: 'релеи', es: 'relés', pt: 'relés', tr: 'röleler', uk: 'релеї', 'zh-Hans': '中继' },
+  'label.sources': { en: 'sources', ru: 'источники', es: 'fuentes', pt: 'fontes', tr: 'kaynaklar', uk: 'джерела', 'zh-Hans': '来源' },
+  'label.probe': { en: 'probe', ru: 'проба', es: 'sonda', pt: 'sonda', tr: 'sinama', uk: 'проба', 'zh-Hans': '探测' },
+  'label.singbox': { en: 'sing-box', ru: 'sing-box', es: 'sing-box', pt: 'sing-box', tr: 'sing-box', uk: 'sing-box', 'zh-Hans': 'sing-box' },
+
+  // rcq routes - the ladder of roads to the island. Verdicts and labels only;
+  // hostnames, versions, milliseconds and rung names are DATA and stay bare.
+  'routes.ok': { en: 'ok', ru: 'отвечает', es: 'responde', pt: 'responde', tr: 'yanit veriyor', uk: 'відповідає', 'zh-Hans': '可达' },
+  'routes.blocked': { en: 'no answer', ru: 'нет ответа', es: 'sin respuesta', pt: 'sem resposta', tr: 'yanit yok', uk: 'немає відповіді', 'zh-Hans': '无响应' },
+  'routes.skipped': { en: 'skipped', ru: 'пропущен', es: 'omitido', pt: 'ignorado', tr: 'atlandi', uk: 'пропущено', 'zh-Hans': '已跳过' },
+  'routes.notTried': { en: 'not tried', ru: 'не понадобился', es: 'no hizo falta', pt: 'nao foi preciso', tr: 'gerekmedi', uk: 'не знадобився', 'zh-Hans': '未尝试' },
+
+  'routes.signedConfig': {
+    en: 'signed config v{version}',
+    ru: 'подписанный список v{version}',
+    es: 'lista firmada v{version}',
+    pt: 'lista assinada v{version}',
+    tr: 'imzali liste v{version}',
+    uk: 'підписаний список v{version}',
+    'zh-Hans': '已签名配置 v{version}',
+  },
+  'routes.bundledSeed': {
+    en: 'built-in list, no signed payload yet',
+    ru: 'встроенный список, подписанного пока не было',
+    es: 'lista incorporada, aun sin payload firmado',
+    pt: 'lista embutida, ainda sem payload assinado',
+    tr: 'gomulu liste, henuz imzali bir yuk yok',
+    uk: 'вбудований список, підписаного ще не було',
+    'zh-Hans': '内置列表，尚未取得已签名配置',
+  },
+  'routes.lastWalk': {
+    en: 'last walk:',
+    ru: 'последний обход:',
+    es: 'ultimo recorrido:',
+    pt: 'ultima passagem:',
+    tr: 'son deneme:',
+    uk: 'останній обхід:',
+    'zh-Hans': '上次探测：',
+  },
+  'routes.neverWalked': {
+    en: 'the ladder has not been walked yet: rcq routes --probe',
+    ru: 'лестницу ещё не проходили: rcq routes --probe',
+    es: 'la escalera aun no se ha recorrido: rcq routes --probe',
+    pt: 'a escada ainda nao foi percorrida: rcq routes --probe',
+    tr: 'merdiven henuz denenmedi: rcq routes --probe',
+    uk: 'драбину ще не проходили: rcq routes --probe',
+    'zh-Hans': '还没有走过这条路线阶梯：rcq routes --probe',
+  },
+
+  'routes.noEmbeddedTransport': {
+    en:
+      'the relays need sing-box, which this client cannot embed: Node has no way to speak\n' +
+      'VLESS+Reality or Hysteria2. `rcq routes --singbox` writes a config for a sing-box you\n' +
+      'install yourself; point `rcq proxy` at it and every byte rides the relays. The onion\n' +
+      'chain is written there too, and sing-box is what builds and carries it.',
+    ru:
+      'релеям нужен sing-box, а встроить его сюда нельзя: Node не умеет ни VLESS+Reality,\n' +
+      'ни Hysteria2. `rcq routes --singbox` пишет конфиг для sing-box, который вы ставите\n' +
+      'сами; направьте на него `rcq proxy` и весь трафик пойдёт через релеи. Луковая цепочка\n' +
+      'тоже пишется туда, но строит и держит её sing-box, а не мы.',
+    es:
+      'los reles necesitan sing-box, que este cliente no puede incrustar: Node no habla\n' +
+      'VLESS+Reality ni Hysteria2. `rcq routes --singbox` escribe la configuracion para un\n' +
+      'sing-box que instalas tu; apunta `rcq proxy` a el y todo el trafico pasa por los reles.\n' +
+      'La cadena onion tambien se escribe alli, y quien la construye es sing-box.',
+    pt:
+      'os reles precisam do sing-box, que este cliente nao pode embutir: o Node nao fala\n' +
+      'VLESS+Reality nem Hysteria2. `rcq routes --singbox` escreve a configuracao de um\n' +
+      'sing-box que voce instala; aponte `rcq proxy` para ele e tudo passa pelos reles.\n' +
+      'A cadeia onion tambem vai no arquivo, e quem a constroi e o sing-box.',
+    tr:
+      'roleler sing-box ister, bu istemci onu icine alamaz: Node ne VLESS+Reality ne de\n' +
+      'Hysteria2 konusur. `rcq routes --singbox` kendi kurdugunuz bir sing-box icin yapilandirma\n' +
+      'yazar; `rcq proxy` ile ona baglayin, tum trafik rolelerden gecer. Onion zinciri de o\n' +
+      'dosyaya yazilir, kuran ve tasiyan sing-box olur.',
+    uk:
+      'релеям потрібен sing-box, а вбудувати його сюди не можна: Node не вміє ні VLESS+Reality,\n' +
+      'ні Hysteria2. `rcq routes --singbox` пише конфіг для sing-box, який ви ставите самі;\n' +
+      'спрямуйте на нього `rcq proxy` і весь трафік піде через релеї. Цибулевий ланцюг теж\n' +
+      'пишеться туди, але будує і тримає його sing-box, а не ми.',
+    'zh-Hans':
+      '中继需要 sing-box，本客户端无法内嵌它：Node 既不会 VLESS+Reality 也不会 Hysteria2。\n' +
+      '`rcq routes --singbox` 会为你自行安装的 sing-box 写出配置；再用 `rcq proxy` 指向它，\n' +
+      '所有流量就都走中继。洋葱链路也写在同一个配置里，真正搭建并承载它的是 sing-box。',
+  },
+  'routes.singboxMissing': {
+    en: 'not on PATH: install it, or point rcq proxy at one running elsewhere',
+    ru: 'нет в PATH: поставьте его или направьте rcq proxy на уже запущенный',
+    es: 'no esta en PATH: instalalo, o apunta rcq proxy a uno que ya corra',
+    pt: 'nao esta no PATH: instale, ou aponte rcq proxy para um que ja rode',
+    tr: 'PATH uzerinde yok: kurun ya da rcq proxy ile calisan birine baglanin',
+    uk: 'немає в PATH: поставте його або спрямуйте rcq proxy на вже запущений',
+    'zh-Hans': '不在 PATH 中：请安装，或用 rcq proxy 指向别处已运行的实例',
+  },
+  'routes.usage': {
+    en: `usage: rcq routes [--probe] [--refresh] [--singbox [--out FILE] [--port N] [--onion|--no-onion] [--bridges]]
+  --probe    walk the ladder now instead of reusing the last answer
+  --refresh  re-fetch and verify the signed relay list
+  --singbox  print (or write) a sing-box config built from that list`,
+    ru: `использование: rcq routes [--probe] [--refresh] [--singbox [--out ФАЙЛ] [--port N] [--onion|--no-onion] [--bridges]]
+  --probe    пройти лестницу сейчас, а не брать прошлый ответ
+  --refresh  заново скачать и проверить подписанный список релеев
+  --singbox  напечатать (или записать) конфиг sing-box по этому списку`,
+    es: `uso: rcq routes [--probe] [--refresh] [--singbox [--out ARCHIVO] [--port N] [--onion|--no-onion] [--bridges]]
+  --probe    recorrer la escalera ahora en vez de reusar la respuesta anterior
+  --refresh  volver a bajar y verificar la lista firmada de reles
+  --singbox  imprimir (o escribir) una configuracion de sing-box con esa lista`,
+    pt: `uso: rcq routes [--probe] [--refresh] [--singbox [--out ARQUIVO] [--port N] [--onion|--no-onion] [--bridges]]
+  --probe    percorrer a escada agora em vez de reusar a resposta anterior
+  --refresh  baixar e verificar de novo a lista assinada de reles
+  --singbox  imprimir (ou gravar) uma configuracao de sing-box a partir dela`,
+    tr: `kullanim: rcq routes [--probe] [--refresh] [--singbox [--out DOSYA] [--port N] [--onion|--no-onion] [--bridges]]
+  --probe    onceki yaniti kullanmak yerine merdiveni simdi dene
+  --refresh  imzali role listesini yeniden indir ve dogrula
+  --singbox  o listeden bir sing-box yapilandirmasi yaz (ya da yazdir)`,
+    uk: `використання: rcq routes [--probe] [--refresh] [--singbox [--out ФАЙЛ] [--port N] [--onion|--no-onion] [--bridges]]
+  --probe    пройти драбину зараз, а не брати минулу відповідь
+  --refresh  заново завантажити і перевірити підписаний список релеїв
+  --singbox  надрукувати (або записати) конфіг sing-box за цим списком`,
+    'zh-Hans': `用法: rcq routes [--probe] [--refresh] [--singbox [--out 文件] [--port N] [--onion|--no-onion] [--bridges]]
+  --probe    立即重走一遍阶梯，而不是沿用上次的结论
+  --refresh  重新获取并验证已签名的中继列表
+  --singbox  按该列表打印（或写出）一份 sing-box 配置`,
+  },
+
+  'routes.refreshOk': {
+    en: 'signed relay list v{version} verified and cached',
+    ru: 'подписанный список релеев v{version} проверен и сохранён',
+    es: 'lista firmada de reles v{version} verificada y guardada',
+    pt: 'lista assinada de reles v{version} verificada e guardada',
+    tr: 'imzali role listesi v{version} dogrulandi ve saklandi',
+    uk: 'підписаний список релеїв v{version} перевірено і збережено',
+    'zh-Hans': '已签名的中继列表 v{version} 校验通过并已缓存',
+  },
+  'routes.refreshFail': {
+    en: 'no source answered with a valid payload; keeping the list already held',
+    ru: 'ни один источник не дал корректного списка; остаётся прежний',
+    es: 'ninguna fuente dio un payload valido; se conserva la lista anterior',
+    pt: 'nenhuma fonte deu um payload valido; a lista anterior fica',
+    tr: 'hicbir kaynak gecerli bir yuk vermedi; onceki liste kaliyor',
+    uk: 'жодне джерело не дало коректного списку; лишається попередній',
+    'zh-Hans': '没有来源给出有效的配置，继续沿用已有的列表',
+  },
+  'routes.badPort': {
+    en: '--port takes a port number from 1 to 65535',
+    ru: '--port принимает номер порта от 1 до 65535',
+    es: '--port toma un numero de puerto de 1 a 65535',
+    pt: '--port aceita um numero de porta de 1 a 65535',
+    tr: '--port 1 ile 65535 arasinda bir port numarasi alir',
+    uk: '--port приймає номер порту від 1 до 65535',
+    'zh-Hans': '--port 需要一个 1 到 65535 之间的端口号',
+  },
+
+  'routes.shapeOnion': {
+    en: 'two hops, entry {entry} pinned; sing-box builds the chain',
+    ru: 'два прыжка, вход {entry} закреплён; цепочку строит sing-box',
+    es: 'dos saltos, entrada {entry} fijada; la cadena la arma sing-box',
+    pt: 'dois saltos, entrada {entry} fixada; a cadeia e montada pelo sing-box',
+    tr: 'iki siçrama, giris {entry} sabit; zinciri sing-box kurar',
+    uk: 'два стрибки, вхід {entry} закріплено; ланцюг будує sing-box',
+    'zh-Hans': '两跳，入口 {entry} 已固定；链路由 sing-box 搭建',
+  },
+  'routes.shapeOnionDegraded': {
+    en: 'onion is on but the chain cannot form; one hop over the signed relays only',
+    ru: 'лук включён, но цепочка не складывается; один прыжок только по подписанным релеям',
+    es: 'onion esta activo pero la cadena no se forma; un salto solo por los reles firmados',
+    pt: 'onion esta ligado mas a cadeia nao se forma; um salto so pelos reles assinados',
+    tr: 'onion acik ama zincir kurulamiyor; yalnizca imzali roleler uzerinden tek siçrama',
+    uk: 'цибуля увімкнена, але ланцюг не складається; один стрибок лише по підписаних релеях',
+    'zh-Hans': '洋葱模式已开启但链路无法成形；只在已签名的中继上单跳',
+  },
+  'routes.shapeSingleHop': {
+    en: 'one hop, the fastest relay wins',
+    ru: 'один прыжок, побеждает самый быстрый релей',
+    es: 'un salto, gana el rele mas rapido',
+    pt: 'um salto, vence o rele mais rapido',
+    tr: 'tek siçrama, en hizli role kazanir',
+    uk: 'один стрибок, перемагає найшвидший релей',
+    'zh-Hans': '单跳，最快的中继胜出',
+  },
+  'routes.entryUnprobed': {
+    en: 'the entry was chosen without probing: your proxy is engaged, and a probe is a raw socket that would have gone around it',
+    ru: 'вход выбран без пробы: включён ваш прокси, а проба это сырой сокет, который пошёл бы мимо него',
+    es: 'la entrada se eligió sin sondear: tu proxy está activo, y la sonda es un socket crudo que lo habría esquivado',
+    pt: 'a entrada foi escolhida sem sondagem: seu proxy está ativo, e a sonda é um socket cru que passaria por fora dele',
+    tr: 'giriş sinama yapılmadan seçildi: proxy devrede ve sinama, onun etrafından dolaşacak ham bir soket',
+    uk: 'вхід обрано без проби: увімкнено ваш проксі, а проба це сирий сокет, який пішов би повз нього',
+    'zh-Hans': '入口是在没有探测的情况下选定的: 你的代理已生效, 而探测用的是会绕过它的原始套接字',
+  },
+  'routes.relayCounts': {
+    en: '{trusted} from the signed list, {community} from the broker (fallback only, never an entry)',
+    ru: '{trusted} из подписанного списка, {community} от брокера (только запас, никогда не вход)',
+    es: '{trusted} de la lista firmada, {community} del broker (solo reserva, nunca entrada)',
+    pt: '{trusted} da lista assinada, {community} do broker (so reserva, nunca entrada)',
+    tr: 'imzali listeden {trusted}, brokerdan {community} (yalnizca yedek, asla giris degil)',
+    uk: '{trusted} з підписаного списку, {community} від брокера (лише запас, ніколи не вхід)',
+    'zh-Hans': '{trusted} 个来自已签名列表，{community} 个来自 broker（仅作后备，绝不做入口）',
+  },
+  'routes.noBridges': {
+    en: 'the broker handed out nothing: it rations per network, and it may be blocked here too',
+    ru: 'брокер ничего не выдал: он делит пул по сетям, и его самого могли перекрыть',
+    es: 'el broker no dio nada: raciona por red, y aqui tambien puede estar bloqueado',
+    pt: 'o broker nao deu nada: ele raciona por rede, e aqui tambem pode estar bloqueado',
+    tr: 'broker bir sey vermedi: havuzu aglara bolusturur ve burada o da engelli olabilir',
+    uk: 'брокер нічого не видав: він ділить пул за мережами, і його самого могли перекрити',
+    'zh-Hans': 'broker 没有给出任何中继：它按网络配额发放，而且在这里也可能被封',
+  },
+  'routes.singboxHowto': {
+    en: `then, with a sing-box of your own:
+  sing-box run -c {file}
+  rcq proxy set socks5://127.0.0.1:{port}`,
+    ru: `дальше, со своим sing-box:
+  sing-box run -c {file}
+  rcq proxy set socks5://127.0.0.1:{port}`,
+    es: `luego, con tu propio sing-box:
+  sing-box run -c {file}
+  rcq proxy set socks5://127.0.0.1:{port}`,
+    pt: `depois, com um sing-box seu:
+  sing-box run -c {file}
+  rcq proxy set socks5://127.0.0.1:{port}`,
+    tr: `sonra, kendi sing-box'iniz ile:
+  sing-box run -c {file}
+  rcq proxy set socks5://127.0.0.1:{port}`,
+    uk: `далі, зі своїм sing-box:
+  sing-box run -c {file}
+  rcq proxy set socks5://127.0.0.1:{port}`,
+    'zh-Hans': `随后，用你自己的 sing-box：
+  sing-box run -c {file}
+  rcq proxy set socks5://127.0.0.1:{port}`,
+  },
 
   'phrase.keep': {
     en:
@@ -1577,6 +2066,8 @@ this account
   /nick (n) NAME       rename this account
   /export (x)          where the history file is
   /lang (lng) [code]   show or set the language
+  /proxy (px)          is your own proxy carrying this session
+  /routes (route)      which road to the island is in use
   /help (h)            this text
   /quit (q)            leave (Ctrl+D, or Ctrl+C on an empty line)
 Anything else you type goes to whoever the prompt names. Up-arrow walks back
@@ -1608,6 +2099,8 @@ and keeps the session.`,
   /nick (n) ИМЯ        переименовать аккаунт
   /export (x)          где лежит файл истории
   /lang (lng) [код]    показать или сменить язык
+  /proxy (px)          идёт ли эта сессия через ваш прокси
+  /routes (route)      какой дорогой до острова вы сейчас идёте
   /help (h)            этот текст
   /quit (q)            выйти (Ctrl+D или Ctrl+C на пустой строке)
 Всё остальное уходит тому, чьё имя в строке ввода. Стрелка вверх листает
@@ -1638,6 +2131,8 @@ esta cuenta
   /nick (n) NOMBRE     renombrar esta cuenta
   /export (x)          dónde está el archivo de historial
   /lang (lng) [código] mostrar o cambiar el idioma
+  /proxy (px)          si esta sesión va por tu propio proxy
+  /routes (route)      por qué camino a la isla vas ahora
   /help (h)            este texto
   /quit (q)            salir (Ctrl+D, o Ctrl+C en una línea vacía)
 Cualquier otra cosa que escribas va a quien nombre la línea. La flecha arriba
@@ -1669,6 +2164,8 @@ esta conta
   /nick (n) NOME       renomear esta conta
   /export (x)          onde fica o arquivo de histórico
   /lang (lng) [código] mostrar ou trocar o idioma
+  /proxy (px)          se esta sessão passa pelo seu proxy
+  /routes (route)      por qual caminho até a ilha você está
   /help (h)            este texto
   /quit (q)            sair (Ctrl+D, ou Ctrl+C numa linha vazia)
 Qualquer outra coisa que você digitar vai para quem a linha nomear. Seta para
@@ -1700,6 +2197,8 @@ bu hesap
   /nick (n) AD         bu hesabı yeniden adlandır
   /export (x)          geçmiş dosyası nerede
   /lang (lng) [kod]    dili göster veya ayarla
+  /proxy (px)          bu oturum kendi proxynizden mi geçiyor
+  /routes (route)      adaya hangi yoldan gidiliyor
   /help (h)            bu metin
   /quit (q)            çık (Ctrl+D ya da boş satırda Ctrl+C)
 Yazdığın başka her şey, satırın adını verdiği kişiye gider. Yukarı ok
@@ -1731,6 +2230,8 @@ oturumu değil.`,
   /nick (n) ІМʼЯ       перейменувати акаунт
   /export (x)          де лежить файл історії
   /lang (lng) [код]    показати або змінити мову
+  /proxy (px)          чи йде ця сесія через ваш проксі
+  /routes (route)      якою дорогою до острова ви зараз ідете
   /help (h)            цей текст
   /quit (q)            вийти (Ctrl+D або Ctrl+C на порожньому рядку)
 Усе інше йде тому, чиє імʼя в рядку вводу. Стрілка вгору гортає набрані
@@ -1761,6 +2262,8 @@ oturumu değil.`,
   /nick (n) 名称       重命名此账号
   /export (x)          历史文件在哪里
   /lang (lng) [代码]   显示或设置语言
+  /proxy (px)          这次会话是否走你自己的代理
+  /routes (route)      当前走的是哪条通往服务器的路线
   /help (h)            此文本
   /quit (q)            退出 (Ctrl+D, 或在空行按 Ctrl+C)
 你输入的其他任何内容都会发给输入行指向的人。上方向键回看你输入过的命令;

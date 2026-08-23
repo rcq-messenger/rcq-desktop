@@ -9,6 +9,7 @@ import { Api, type RCQGroup } from '../lib/api'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
 import { useArchiveGroups, useFavoriteGroups, useMutedGroups } from '../lib/local-store'
+import { forgetSectionMember, sectionKeyForGroup } from '../lib/sections-vault'
 
 interface Props {
   group: RCQGroup
@@ -46,6 +47,9 @@ export function GroupActionsMenu({ group, onClose, onChanged }: Props) {
       muted.remove(group.id)
       favorites.remove(group.id)
       archive.remove(group.id)
+      // Leaving is a deliberate local action, so the section membership goes
+      // with a tombstone. Nothing else prunes the slot.
+      forgetSectionMember(identity, sectionKeyForGroup(group))
       onChanged()
       onClose()
     } catch (e) {

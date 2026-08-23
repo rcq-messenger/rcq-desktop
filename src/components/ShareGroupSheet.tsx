@@ -18,6 +18,7 @@ import { Api, type RCQGroup } from '../lib/api'
 import { contactsCache, restoreSnapshot } from '../lib/contacts-cache'
 import { groupShareLink } from '../lib/group-invite'
 import { memberCount } from '../lib/group-roster'
+import { compactCount } from '../lib/format-count'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
 import { isForeignGroupId } from '../lib/visited-islands'
@@ -113,7 +114,7 @@ export function ShareGroupSheet({
                     <GroupAvatar size={32} mediaId={g.avatar_media_id} mediaKey={g.avatar_media_key} />
                     <div className="flex-1 min-w-0">
                       <div className="text-sm truncate">{g.name}</div>
-                      <div className="font-mono text-[0.625rem] text-fg-dim">{memberCount(g)}</div>
+                      <div className="font-mono text-[0.625rem] text-fg-dim">{compactCount(memberCount(g))}</div>
                     </div>
                   </button>
                 </li>

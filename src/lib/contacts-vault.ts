@@ -28,9 +28,18 @@
 
 import type { Contact } from './api'
 import type { WebIdentity } from './crypto'
-import { scopedKey } from './account-scope'
 import { fetchServerInfo } from './server-info'
-import { bytesJson, jsonBytes, readSlot, slotId, VAULT_CONTACTS, VaultError, writeSlot } from './vault'
+import {
+  bytesJson,
+  jsonBytes,
+  lastSeenVersion,
+  readSlot,
+  rememberVersion,
+  slotId,
+  VAULT_CONTACTS,
+  VaultError,
+  writeSlot,
+} from './vault'
 
 export interface VaultContactEntry {
   /// Added (ms since epoch, first seen by any of the account's devices).
@@ -57,7 +66,24 @@ export interface VaultContacts {
 }
 
 const TOMBSTONE_TTL_MS = 90 * 24 * 3600 * 1000
-const VERSION_KEY = 'vault.contacts.version'
+
+/// Set for the rest of the session when the island serves a version below the
+/// floor, or when another device retired this derivation (`vault_reset`).
+/// Keyed by account so switching accounts in one tab clears it.
+let stoppedFor: number | null = null
+
+/// Stop the mirror for this session, from outside: `/auth/reissue` elsewhere
+/// retired the identity this browser's slot name and key are derived from.
+export function retireContactsMirror(uin: number): void {
+  stoppedFor = uin
+  lastMirrored = null
+}
+
+/// Account switch inside one tab.
+export function resetContactsSyncState(): void {
+  stoppedFor = null
+  lastMirrored = null
+}
 
 function emptyList(): VaultContacts {
   return { v: 1, c: {}, g: {} }
@@ -79,24 +105,12 @@ function decode(p: Uint8Array | null): VaultContacts {
   return emptyList()
 }
 
-/// The last slot version this browser saw, per account. Handed to the vault
-/// reads as the rollback floor (see vault.ts readSlot).
-function lastSeenVersion(): number {
-  try {
-    const v = Number(localStorage.getItem(scopedKey(VERSION_KEY)) ?? '0')
-    return Number.isFinite(v) && v > 0 ? v : 0
-  } catch {
-    return 0
-  }
-}
-
-export function rememberVaultVersion(version: number) {
-  try {
-    if (version > 0) localStorage.setItem(scopedKey(VERSION_KEY), String(version))
-    else localStorage.removeItem(scopedKey(VERSION_KEY))
-  } catch {
-    /* no storage; the next read simply has no floor */
-  }
+/// The last slot version this browser saw. Handed to the vault reads as the
+/// rollback floor (see vault.ts readSlot), and kept there, keyed by SLOT NAME:
+/// a reissue gives the account new names, and a floor that outlives the name
+/// it belonged to is a floor no fresh slot can ever climb over.
+export function lastSeenContactsVersion(identity: WebIdentity): number {
+  return lastSeenVersion(slotId(identity, VAULT_CONTACTS))
 }
 
 /// Fold the server's list into the slot. `list` is the full `/contacts`
@@ -107,6 +121,7 @@ export async function mirrorContactsToVault(
   identity: WebIdentity,
   list: Contact[],
 ): Promise<'written' | 'unchanged' | 'skipped' | 'failed'> {
+  if (stoppedFor === identity.uin) return 'skipped'
   // The list is fetched on every visit to the contacts page (one active
   // user was seen doing it every twenty seconds), and the mirror must not
   // turn each of those into a vault read as well. Same list as last time
@@ -132,18 +147,27 @@ export async function mirrorContactsToVault(
         outcome = 'written'
         return jsonBytes(next)
       },
-      lastSeenVersion(),
+      lastSeenVersion(slot),
     )
-    rememberVaultVersion(version)
+    rememberVersion(slot, version)
     lastMirrored = key
     return outcome
   } catch (e) {
     if (e instanceof VaultError && e.code === 'rolled_back') {
-      // The island served an older version than this browser has seen. In
-      // the mirror phase the server list is the truth anyway, so the only
-      // thing to do is not to trust the floor any more and let the next
-      // refresh rewrite the slot from the list.
-      rememberVaultVersion(0)
+      // The island served an older version than this browser has seen. This
+      // used to clear the floor and let the next refresh rewrite the slot
+      // from the server list, on the grounds that the server list is the
+      // truth in the mirror phase. ⚠ It is the wrong move, because a rollback
+      // is not one situation: `/auth/reissue` on another device empties the
+      // vault and RETIRES this derivation, and the 404 that leaves behind
+      // reads exactly like a restored backup. Rewriting there re-publishes
+      // the whole contact list under the retired slot name, sealed with the
+      // key the user has just declared compromised, which is the one thing
+      // the reissue existed to prevent. So: stop for this session and keep
+      // the floor. A genuinely rolled-back island heals on its own, because
+      // another device's writes carry its version back over the floor.
+      stoppedFor = identity.uin
+      console.warn('[vault] contacts slot is below the floor; the mirror is stopped for this session')
     }
     return 'failed'
   }
@@ -153,6 +177,13 @@ export async function mirrorContactsToVault(
 /// edges (uin, blocked, nickname, host), sorted; keyed by account so a
 /// switch never compares across accounts.
 let lastMirrored: string | null = null
+
+/// Forget that fingerprint. Called when another device's write lands (the
+/// `vault_changed` nudge, or the reconnect sweep): the slot moved under us, so
+/// "the same list as last time" no longer means "the slot already agrees".
+export function invalidateContactsMirror(): void {
+  lastMirrored = null
+}
 
 function listKey(uin: number, list: Contact[]): string {
   const parts = list
@@ -215,13 +246,15 @@ function sameEntry(x: VaultContactEntry, y: VaultContactEntry): boolean {
 export async function readContactsFromVault(identity: WebIdentity): Promise<VaultContacts | null> {
   const info = await fetchServerInfo(identity.apiBase)
   if (info?.capabilities.vault !== true) return null
+  if (stoppedFor === identity.uin) return null
   const slot = slotId(identity, VAULT_CONTACTS)
   try {
-    const r = await readSlot(identity, slot, lastSeenVersion())
+    const r = await readSlot(identity, slot, lastSeenVersion(slot))
     if (!r.plaintext) return null
-    rememberVaultVersion(r.version)
+    rememberVersion(slot, r.version)
     return decode(r.plaintext)
-  } catch {
+  } catch (e) {
+    if (e instanceof VaultError && e.code === 'rolled_back') stoppedFor = identity.uin
     return null
   }
 }

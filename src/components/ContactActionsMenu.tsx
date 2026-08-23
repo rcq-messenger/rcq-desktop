@@ -15,6 +15,8 @@ import {
   useFavorites,
   useMutedPeers,
 } from '../lib/local-store'
+import { peerKey } from '../lib/sections'
+import { forgetSectionMember } from '../lib/sections-vault'
 
 interface Props {
   contact: Contact
@@ -75,6 +77,12 @@ export function ContactActionsMenu({ contact, onClose, onChanged }: Props) {
       favorites.remove(contact.uin)
       archive.remove(contact.uin)
       muted.remove(contact.uin)
+      // ...and out of the section that held them, with a tombstone, because
+      // this is a deliberate local action. That is the ONLY thing allowed to
+      // prune the sections slot: a chat that merely fails to render is left
+      // alone, since a roster fetch that failed once would otherwise empty
+      // every device's sections.
+      forgetSectionMember(identity, peerKey(contact.uin, contact.host))
       onChanged()
       onClose()
     } catch (e) {

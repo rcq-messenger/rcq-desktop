@@ -12,7 +12,15 @@
 // `combined` minus the leading nonce. No AAD (iOS seals without AAD).
 
 import { b64ToBytes, bytesToB64 } from './crypto'
-import { saveBufferDesktop } from './desktop'
+import {
+  ByteReader,
+  CHUNKED_HEADER_LEN,
+  chunkRecordLen,
+  looksChunked,
+  openChunk,
+  parseChunkedHeader,
+} from './media-chunked'
+import { isTauri, saveBufferDesktop } from './desktop'
 import { openBuffer, sealBuffer } from './pin-seal'
 import { idbDel, idbGet, idbSet } from './signal-persist'
 
@@ -61,6 +69,40 @@ function cacheKey(mediaId: string, keyB64: string): string {
   return `${mediaId}:${keyB64}`
 }
 
+/// Forget one decrypted picture: the object URL held for this page and the
+/// plaintext copy in IndexedDB, index entry included.
+///
+/// ⚠ A disappearing photo is mostly NOT its message row. The row goes when the
+/// sweeper runs, but the bytes it pointed at were decrypted once and written
+/// here under `img:<mediaId>:<mediaKey>`, and nothing ever invalidated that
+/// entry: the picture outlived the message that carried it, in the clear, with
+/// the media key spelled out in the key name. Both sweepers call this for a
+/// photo they take away (`incoming-store`, `outgoing-store`), which is the only
+/// way the promise the row's `expiresAt` makes covers the larger half of it.
+export async function forgetCachedImage(mediaId: string, keyB64: string): Promise<void> {
+  const k = cacheKey(mediaId, keyB64)
+  const pending = _urlCache.get(k)
+  _urlCache.delete(k)
+  if (pending) {
+    try {
+      const url = await pending
+      // Revoking drops the browser's own copy of the decrypted blob. The row is
+      // being taken off the screen in the same tick, so nothing is left holding
+      // this URL.
+      if (url) URL.revokeObjectURL(url)
+    } catch {
+      /* a failed decrypt has nothing to revoke */
+    }
+  }
+  await idbDel(IMG_PREFIX + k).catch(() => {})
+  try {
+    const index = (await idbGet<string[]>(IMG_INDEX)) ?? []
+    if (index.includes(k)) await idbSet(IMG_INDEX, index.filter((x) => x !== k))
+  } catch {
+    /* the entry itself is gone; a stale index line only costs one miss */
+  }
+}
+
 /// Sniff an image MIME from the leading magic bytes so the object URL
 /// carries the right type for `<img>`. iOS uploads avatars as JPEG,
 /// but be tolerant of PNG/GIF/WebP too.
@@ -76,32 +118,139 @@ function sniffImageType(bytes: Uint8Array): string {
   return 'image/jpeg'
 }
 
-/// Fetch the encrypted blob at `/media/{id}` and AES-256-GCM decrypt it to the
-/// raw plaintext ArrayBuffer. Shared by the image / video / file paths — none
-/// of them sniff or wrap here; the caller decides the MIME + how to present the
-/// bytes. Returns an ArrayBuffer (a valid BlobPart, avoiding the
-/// Uint8Array<ArrayBufferLike> ↔ BlobPart friction in newer TS DOM libs).
-async function fetchDecryptToBuffer(apiBase: string, mediaId: string, keyB64: string): Promise<ArrayBuffer | null> {
+/// The most plaintext this page will materialise from ONE monolithic blob.
+///
+/// ⚠⚠ A receive-side ceiling, and it exists because a single-seal blob cannot
+/// have one anywhere else: its one tag covers the whole file, so the bytes have
+/// to be held, copied for `crypto.subtle` and allocated again as plaintext
+/// before anything can say whether they are genuine. Three full-size copies of
+/// a 400 MB video is a dead tab, and a dead tab is not a failed download — it
+/// takes the chat with it. Refusing reads as "this did not load", which is
+/// survivable and honest. Chunked containers are NOT subject to this: they cost
+/// one chunk.
+const MAX_MONOLITHIC_PLAINTEXT = 256 * 1024 * 1024
+
+/// Decrypted plaintext as the pieces it arrived in, plus enough of the front to
+/// sniff a MIME from. Kept as pieces on purpose: a Blob can be built out of
+/// them without ever concatenating the whole file into one buffer, which is the
+/// difference between playing a long video and killing the tab.
+interface DecryptedParts {
+  parts: Uint8Array[]
+  head: Uint8Array
+  bytes: number
+}
+
+/// Fetch the encrypted blob at `/media/{id}` and AES-256-GCM decrypt it.
+///
+/// Two shapes arrive here and both are handled by layout, never by guesswork
+/// about who sent it:
+///
+///   * the monolithic seal `nonce(12) || ciphertext || tag(16)`, which every
+///     client writes for anything of ordinary size, and
+///   * RCQM1 (`media-chunked.ts`), the chunked container a client uses for a
+///     file too big to seal in one piece. It is decrypted a chunk at a time
+///     straight off the response stream, so a film costs one chunk of memory.
+async function fetchDecryptParts(apiBase: string, mediaId: string, keyB64: string): Promise<DecryptedParts | null> {
   try {
     const keyBytes = b64ToBytes(keyB64)
     if (keyBytes.length !== 32) return null
     // Fresh ArrayBuffer so it's an unambiguous BufferSource for WebCrypto.
     const keyAb = new ArrayBuffer(32)
     new Uint8Array(keyAb).set(keyBytes)
+    const key = await crypto.subtle.importKey('raw', keyAb, { name: 'AES-GCM' }, false, ['decrypt'])
     const res = await fetch(`${apiBase}/media/${mediaId}`)
     if (!res.ok) return null
-    const combinedBuf = await res.arrayBuffer()
-    // nonce(12) || ciphertext || tag(16) — need at least nonce + tag.
-    if (combinedBuf.byteLength < 12 + 16) return null
-    // Slice into plain ArrayBuffers (valid BufferSource without fighting
-    // the Uint8Array<ArrayBufferLike> generic in newer TS DOM libs).
-    const iv = combinedBuf.slice(0, 12)
-    const data = combinedBuf.slice(12) // ciphertext || tag
-    const key = await crypto.subtle.importKey('raw', keyAb, { name: 'AES-GCM' }, false, ['decrypt'])
-    return await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, data)
+    const declared = Number(res.headers.get('content-length'))
+    const blobLength = Number.isFinite(declared) && declared > 0 ? declared : null
+    if (!res.body) {
+      // No streaming body (a test double, or an engine old enough not to have
+      // one). The whole blob at once, still behind the ceiling.
+      if (blobLength !== null && blobLength > MAX_MONOLITHIC_PLAINTEXT) return null
+      return await decryptWhole(new Uint8Array(await res.arrayBuffer()), key)
+    }
+    const reader = new ByteReader(res.body)
+    // Six bytes decide the shape, and a monolithic blob can be as short as 28,
+    // so the sniff must not ask for the whole 30-byte header up front.
+    const magic = await reader.readExactly(6)
+    if (magic === null) return null
+    if (!looksChunked(magic)) {
+      const rest = await reader.readAll(MAX_MONOLITHIC_PLAINTEXT)
+      if (rest === null) {
+        console.warn(`[media] ${mediaId}: monolithic blob past the ${MAX_MONOLITHIC_PLAINTEXT} byte ceiling; not opened`)
+        return null
+      }
+      const combined = new Uint8Array(magic.length + rest.length)
+      combined.set(magic, 0)
+      combined.set(rest, magic.length)
+      return await decryptWhole(combined, key)
+    }
+    const tail = await reader.readExactly(CHUNKED_HEADER_LEN - magic.length)
+    if (tail === null) return null
+    const header = new Uint8Array(CHUNKED_HEADER_LEN)
+    header.set(magic, 0)
+    header.set(tail, magic.length)
+    const h = parseChunkedHeader(header, blobLength)
+    if (h === null) return null
+    const parts: Uint8Array[] = []
+    for (let i = 0; i < h.chunkCount; i++) {
+      const record = await reader.readExactly(chunkRecordLen(h, i))
+      if (record === null) return null
+      // Throws on a bad tag, which for this container also means reordered,
+      // dropped or edited. The catch below turns that into the same failed
+      // bubble a bad monolithic seal produces.
+      parts.push(await openChunk(record, i, h, key))
+    }
+    // Bytes after the last record mean this is not the file the header
+    // describes, and the header is the only thing every tag agreed on.
+    if (!(await reader.atEnd())) return null
+    return { parts, head: parts.length > 0 ? parts[0].subarray(0, 32) : new Uint8Array(0), bytes: h.plainLen }
   } catch {
     return null
   }
+}
+
+async function decryptWhole(combined: Uint8Array, key: CryptoKey): Promise<DecryptedParts | null> {
+  // nonce(12) || ciphertext || tag(16) — need at least nonce + tag.
+  if (combined.length < 12 + 16) return null
+  const iv = combined.slice(0, 12)
+  const data = combined.slice(12) // ciphertext || tag
+  const plain = new Uint8Array(
+    await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv as unknown as BufferSource }, key, data as unknown as BufferSource),
+  )
+  return { parts: [plain], head: plain.subarray(0, 32), bytes: plain.length }
+}
+
+function joinParts(d: DecryptedParts): ArrayBuffer {
+  const out = new Uint8Array(d.bytes)
+  let at = 0
+  for (const p of d.parts) {
+    out.set(p, at)
+    at += p.length
+  }
+  return out.buffer
+}
+
+/// The plaintext as one ArrayBuffer. For the paths whose whole job is to hand
+/// the bytes to something that wants them contiguous (an image, the desktop
+/// save dialog); anything that only needs to be rendered or downloaded should
+/// take the Blob below instead and skip the copy.
+async function fetchDecryptToBuffer(apiBase: string, mediaId: string, keyB64: string): Promise<ArrayBuffer | null> {
+  const d = await fetchDecryptParts(apiBase, mediaId, keyB64)
+  return d === null ? null : joinParts(d)
+}
+
+/// The plaintext as a Blob, built from the pieces it arrived in. The browser
+/// owns the storage from here (it will spill a large one to disk), so nothing
+/// on this path holds a whole video in the JS heap.
+async function fetchDecryptToBlob(
+  apiBase: string,
+  mediaId: string,
+  keyB64: string,
+  type: (head: Uint8Array) => string,
+): Promise<Blob | null> {
+  const d = await fetchDecryptParts(apiBase, mediaId, keyB64)
+  if (d === null) return null
+  return new Blob(d.parts as unknown as BlobPart[], { type: type(d.head) })
 }
 
 /// Both halves at once: the object URL to render, and the bytes to cache. The
@@ -390,9 +539,9 @@ export async function loadEncryptedVideo(
   mediaId: string,
   keyB64: string,
 ): Promise<string | null> {
-  const buf = await fetchDecryptToBuffer(apiBase, mediaId, keyB64)
-  if (!buf) return null
-  return URL.createObjectURL(new Blob([buf], { type: sniffVideoType(new Uint8Array(buf)) }))
+  const blob = await fetchDecryptToBlob(apiBase, mediaId, keyB64, sniffVideoType)
+  if (!blob) return null
+  return URL.createObjectURL(blob)
 }
 
 /// Fetch + decrypt any media and save it. Returns false on failure so the
@@ -411,11 +560,16 @@ export async function downloadEncryptedFile(
   fileName: string,
   mime?: string,
 ): Promise<boolean> {
-  const buf = await fetchDecryptToBuffer(apiBase, mediaId, keyB64)
-  if (!buf) return false
-  const desktop = await saveBufferDesktop(buf, fileName)
-  if (desktop !== null) return desktop !== 'failed'
-  const url = URL.createObjectURL(new Blob([buf], { type: mime || 'application/octet-stream' }))
+  const blob = await fetchDecryptToBlob(apiBase, mediaId, keyB64, () => mime || 'application/octet-stream')
+  if (!blob) return false
+  // ⚠ The desktop dialog wants the bytes contiguous, so THAT path pays for one
+  // buffer; the browser path hands the Blob straight to an object URL and never
+  // builds one at all.
+  if (isTauri()) {
+    const desktop = await saveBufferDesktop(await blob.arrayBuffer(), fileName)
+    if (desktop !== null) return desktop !== 'failed'
+  }
+  const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
   a.download = fileName || 'file'

@@ -22,6 +22,7 @@ import {
   isContact,
   knownName,
   lookupUser,
+  noteVaultChanged,
   peerLabel,
   primeDirectory,
   refreshDirectory,
@@ -40,6 +41,8 @@ import { canonical } from './aliases'
 import { currentLang, LANG_CODES, normalizeLang, setLang, tr } from './i18n'
 import { logRowHuman, readLog, recentThreads, threadTag, type Thread } from './log'
 import { loadPromptHistory, rememberCommand } from './prompt-history'
+import { readProxyUrl, redactProxyUrl } from './env-proxy'
+import { describeRoute, describeRung, lastWalk } from './routes'
 import {
   announceGroupNews,
   describeEnvelope,
@@ -343,6 +346,8 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
     onControl: (frame) => {
       // Somebody asked to be let in, or answered our asking. Not an envelope:
       // the island writes these itself, and they used to be dropped whole.
+      // A vault nudge is silent - it changes what we believe, not the screen.
+      if (noteVaultChanged(identity.uin, frame)) return
       const line = describeRequestFrame(identity, frame)
       if (line) printAbove(out.yellow(line))
     },
@@ -896,6 +901,32 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
       case 'export':
         printAbove(out.dim(tr('export.at', { file: historyPath(identity.uin) })))
         return
+      // Read-only on purpose. The proxy is engaged by re-exec'ing the process
+      // (see env-proxy.ts), so a /proxy that could CHANGE it would be a switch
+      // that does nothing until the next start - worse than no switch. This
+      // answers "am I behind my proxy right now"; `rcq proxy` does the rest.
+      case 'proxy': {
+        const px = readProxyUrl()
+        printAbove(out.dim(px ? tr('interactive.proxy', { url: redactProxyUrl(px) }) : tr('proxy.off')))
+        return
+      }
+      // Read-only too, and for a sharper reason: walking the ladder means TLS
+      // handshakes with budgets measured in seconds, and a prompt that stops
+      // answering for fifteen of them is not diagnostics. This shows what the
+      // last walk found; `rcq routes --probe` in another terminal walks it
+      // again, which is exactly why that command holds no lock.
+      case 'routes': {
+        const walk = lastWalk()
+        const lines = [`  ${tr('label.route')}: ${describeRoute()}`]
+        if (walk) {
+          lines.push(out.dim(`  ${tr('routes.lastWalk')} ${new Date(walk.at).toISOString()}`))
+          for (const r of walk.rungs) lines.push(out.dim(describeRung(r)))
+        } else {
+          lines.push(out.dim(tr('routes.neverWalked')))
+        }
+        printBlock(lines)
+        return
+      }
       case 'lang': {
         if (!arg) {
           printBlock([`  ${currentLang()}`, out.dim(tr('lang.usage', { codes: LANG_CODES }))])

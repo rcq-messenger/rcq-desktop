@@ -8,6 +8,7 @@
 
 import { currentDeviceId } from '../../src/lib/signal-device'
 import type { WebIdentity } from '../../src/lib/crypto'
+import { escalateForDeadSockets } from './routes'
 import { tr } from './i18n'
 import { err } from './style'
 
@@ -25,8 +26,13 @@ export const SEALED_WS_TYPES = new Set([
 /// learn, without polling, that somebody is asking to be let in. Dropping
 /// these is why an interactive session could not tell you the answer to a
 /// request you had sent thirty seconds earlier.
+/// `vault_changed` joins them for a quieter reason: the island tells every
+/// OTHER session of the account that a sealed slot moved (the writer is left
+/// out by install name, so this is never our own echo). Nothing is merged from
+/// it in the mirror phase, but it is the only signal that the copy this
+/// process believes is current no longer is: see directory.ts.
 export const CONTROL_WS_TYPES = new Set([
-  'contact_request', 'contact_response', 'contact_request_cancelled',
+  'contact_request', 'contact_response', 'contact_request_cancelled', 'vault_changed',
 ])
 
 export interface SealedFrame {
@@ -67,6 +73,13 @@ export interface SocketHandlers {
 const STABLE_MS = 60_000
 const PING_MS = 25_000
 
+/// How many sockets in a row must die on arrival before the route ladder is
+/// asked to escalate. Three, the same streak front.ts uses on the web, and for
+/// the same reason: a middlebox that passes HTTPS and kills WebSocket streams
+/// is invisible to the health probe, so the only evidence is the sockets
+/// themselves, and one dead socket is a network hiccup, not evidence.
+const DEAD_STREAK = 3
+
 export class RcqSocket {
   private ws: WebSocket | null = null
   private pingTimer: ReturnType<typeof setInterval> | null = null
@@ -82,6 +95,8 @@ export class RcqSocket {
   /// them); what a person needs is one line when the client goes offline and
   /// one when it comes back.
   private downSaid = false
+  /// Sockets that died on arrival since the last one that held.
+  private deadStreak = 0
 
   constructor(
     private identity: WebIdentity,
@@ -183,12 +198,31 @@ export class RcqSocket {
         this.downSaid = true
         process.stderr.write(err.dim(tr('ws.down')) + '\n')
       }
-      if (lived >= STABLE_MS) this.backoff = 0
+      if (lived >= STABLE_MS) {
+        this.backoff = 0
+        this.deadStreak = 0
+      } else {
+        this.deadStreak++
+      }
       this.openedAt = null
       // Jittered so a fleet of cron'd CLIs bounced by one island restart does
       // not redial in lockstep.
       const delay = Math.min(30_000, 1000 * 2 ** this.backoff) + Math.floor(Math.random() * 1000)
       this.backoff = Math.min(this.backoff + 1, 5)
+      // A run of sockets that never held is the signature of a middlebox that
+      // lets HTTPS through and kills streams: the failure the route ladder's
+      // own probe is structurally unable to see. Ask it to escalate, and
+      // redial straight away when it moved us: waiting out the backoff on a
+      // road we just abandoned buys nothing.
+      if (this.deadStreak >= DEAD_STREAK) {
+        this.deadStreak = 0
+        void escalateForDeadSockets(this.identity.apiBase).then((changed) => {
+          if (!changed || this.stopped) return
+          if (this.redialTimer) clearTimeout(this.redialTimer)
+          this.backoff = 0
+          this.redialTimer = setTimeout(() => this.dial(), 250)
+        })
+      }
       this.redialTimer = setTimeout(() => this.dial(), delay)
     })
 

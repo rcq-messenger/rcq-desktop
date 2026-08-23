@@ -42,6 +42,7 @@ import { chacha20poly1305 } from '@noble/ciphers/chacha'
 import { hkdf } from '@noble/hashes/hkdf'
 import { sha256 } from '@noble/hashes/sha256'
 import { Api, ApiError } from './api'
+import { scopedKey } from './account-scope'
 import { bytesToB64, b64ToBytes, type WebIdentity } from './crypto'
 
 const SALT = new Uint8Array(32)
@@ -53,6 +54,10 @@ const dec = new TextDecoder()
 /// Names the first-party clients agree on. The island never sees these; it
 /// sees `slotId(name)`.
 export const VAULT_CONTACTS = 'contacts'
+/// The chat-list sections (founder item 1, 23.08). Same derivation, a
+/// different name, and therefore a slot id the island cannot tell apart from
+/// any other. See sections.ts for what is inside.
+export const VAULT_SECTIONS = 'sections'
 
 export function slotId(identity: WebIdentity, name: string): string {
   const id = hkdf(sha256, identity.identityPriv, SALT, enc.encode('rcq.vault.slot.v1|' + name), 16)
@@ -117,6 +122,59 @@ function unpad(b: Uint8Array): Uint8Array {
 export class VaultError extends Error {
   constructor(public code: 'bad_format' | 'bad_seal' | 'rolled_back' | 'conflict_loop') {
     super(code)
+  }
+}
+
+// -----------------------------------------------------------
+// The rollback floor
+// -----------------------------------------------------------
+
+/// The highest version this browser has seen for a slot. Handed to `readSlot`
+/// so an island serving an older copy is an error rather than data.
+///
+/// ⚠⚠ KEYED BY SLOT NAME, not by account, and that is not tidiness. A slot
+/// name is `HKDF(identity_priv, ...)`, so `POST /auth/reissue` does not move
+/// the account's slots to a new version, it moves them to NEW NAMES. A floor
+/// filed under the account alone outlives the derivation it belonged to: the
+/// rotating device republishes its contacts and its sections under the fresh
+/// names, the island answers those names at version 1, `1 < 12` reads as a
+/// rollback, and the account's vault is then dead on that device forever,
+/// because the floor is persisted and every later session repeats it. Keyed by
+/// name a new derivation starts at 0, which is what it actually is.
+///
+/// ⚠ The old account-wide keys (`vault.contacts.version`,
+/// `vault.sections.version`) are deliberately NOT read as a fallback: after a
+/// reissue they are exactly the poison above. An install that upgrades
+/// therefore starts one read without a floor, which the first read then sets.
+function floorKey(slot: string): string {
+  return scopedKey(`vault.version.${slot}`)
+}
+
+export function lastSeenVersion(slot: string): number {
+  try {
+    const v = Number(localStorage.getItem(floorKey(slot)) ?? '0')
+    return Number.isFinite(v) && v > 0 ? v : 0
+  } catch {
+    return 0
+  }
+}
+
+export function rememberVersion(slot: string, version: number): void {
+  try {
+    if (version > 0) localStorage.setItem(floorKey(slot), String(version))
+  } catch {
+    /* no storage; the next read simply has no floor */
+  }
+}
+
+/// Forget the floor for a slot whose NAME is retired (`vault_reset`). Nothing
+/// else clears it: a floor that goes down on its own is a floor that lets an
+/// island serve yesterday's copy.
+export function forgetVersion(slot: string): void {
+  try {
+    localStorage.removeItem(floorKey(slot))
+  } catch {
+    /* no storage; nothing was remembered either */
   }
 }
 

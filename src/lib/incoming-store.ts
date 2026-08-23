@@ -10,7 +10,9 @@ import { openValue, pinSealActive, sealExistingHistory, sealValue } from './pin-
 import { playSound } from './sounds'
 import { markMention, mentionsMe } from './mentions'
 import { contactsCache, snapshotFor } from './contacts-cache'
-import { applyReceiptToOutgoing } from './outgoing-store'
+import { applyReceiptToOutgoing, sweepExpiredOutgoing } from './outgoing-store'
+import { SWEEP_INTERVAL_MS, expiryFrom, lapsed, sendAnchorMs } from './disappearing'
+import { forgetCachedImage } from './media'
 
 export interface IncomingRow {
   id: string // envelope UUID
@@ -21,6 +23,11 @@ export interface IncomingRow {
   // media support). 'photo'/'video'/'file' carry mediaId/mediaKey (+ poster /
   // file metadata); 'other' is a still-unsupported media kind (voice/location)
   // shown as a label.
+  ///
+  /// ⚠ 'poll' is a LEGACY value, kept because rows persisted before polls were
+  /// cut (founder item 14a) still carry it and because an old peer can still
+  /// send one. It renders as the "no longer supported" placeholder; nothing
+  /// composes it, and no ballot is stored with it any more.
   kind?: 'text' | 'photo' | 'video' | 'file' | 'other' | 'poll'
   mediaId?: string
   mediaKey?: string
@@ -30,19 +37,13 @@ export interface IncomingRow {
   fileName?: string // for 'file': original name
   fileMime?: string // for 'file': content type
   fileSize?: number // for 'file': plaintext byte length
-  poll?: PollRow // for 'poll': the ballot (rendered + votable)
   replyTo?: ReplyContext // quoted message this is a reply to (if any)
   edited?: boolean // author edited this message after sending
-}
-
-/// A group poll carried inline in a 'poll' message — enough to render the
-/// ballot offline; live tallies + voting hit /polls/{pollId}.
-export interface PollRow {
-  pollId: number
-  question: string
-  options: string[]
-  single: boolean
-  anon: boolean
+  /// Disappearing message (founder item 20): epoch ms after which this row is
+  /// swept from memory, from IndexedDB and out of any backup export. Absent =
+  /// permanent. Anchored to the SENDER's clock where the envelope gave us one,
+  /// never to receipt. See `disappearing.ts`.
+  expiresAt?: number
 }
 
 /// Build an IncomingRow from a decrypted envelope, or null for kinds we
@@ -52,19 +53,31 @@ export interface PollRow {
 /// dropped. The envelope union is text/reaction/photo, but a real
 /// inbound JSON can carry any iOS kind — inspect loosely for those.
 function rowFromEnvelope(from: number, env: Envelope): IncomingRow | null {
+  const now = Date.now()
+  /// The disappearing-message deadline this envelope asks for, or nothing.
+  /// ⚠ Counted from the SENDER's `ts` when there is one, not from `now`: a
+  /// message drained out of the queue after a week offline is already past its
+  /// deadline and must not be granted a fresh lifetime here (the Android bug,
+  /// `Session.expiryFor`). `expiresAt` in the past is fine: the sweeper is
+  /// what removes it, and it runs on hydrate and on a timer.
+  const dying = (ttl: unknown, ts: unknown): { expiresAt?: number } => {
+    const at = expiryFrom(typeof ttl === 'number' ? ttl : null, sendAnchorMs(ts, now))
+    return at != null ? { expiresAt: at } : {}
+  }
   if (env.kind === 'text') {
-    return { id: env.id, from, text: env.text, at: Date.now(), kind: 'text', replyTo: env.reply }
+    return { id: env.id, from, text: env.text, at: now, kind: 'text', replyTo: env.reply, ...dying(env.ttl, env.ts) }
   }
   if (env.kind === 'photo') {
     return {
       id: env.id,
       from,
       text: env.caption ?? '',
-      at: Date.now(),
+      at: now,
       kind: 'photo',
       mediaId: env.mediaID,
       mediaKey: env.mediaKey,
       replyTo: env.reply,
+      ...dying(env.ttl, env.ts),
     }
   }
   // Video (#15): keep the media ref + poster + duration so the web can play /
@@ -74,13 +87,14 @@ function rowFromEnvelope(from: number, env: Envelope): IncomingRow | null {
       id: env.id,
       from,
       text: env.caption ?? '',
-      at: Date.now(),
+      at: now,
       kind: 'video',
       mediaId: env.mediaID,
       mediaKey: env.mediaKey,
       thumbnailB64: env.thumbnailB64,
       durationSec: env.durationSec,
       replyTo: env.reply,
+      ...dying(env.ttl, env.ts),
     }
   }
   // File / document (#16): keep the media ref + name/mime/size for the
@@ -90,7 +104,7 @@ function rowFromEnvelope(from: number, env: Envelope): IncomingRow | null {
       id: env.id,
       from,
       text: env.caption ?? '',
-      at: Date.now(),
+      at: now,
       kind: 'file',
       mediaId: env.mediaID,
       mediaKey: env.mediaKey,
@@ -98,33 +112,33 @@ function rowFromEnvelope(from: number, env: Envelope): IncomingRow | null {
       fileMime: env.mime,
       fileSize: env.size,
       replyTo: env.reply,
+      ...dying(env.ttl, env.ts),
     }
   }
-  const loose = env as { kind?: string; id?: string; caption?: string }
+  const loose = env as { kind?: string; id?: string; caption?: string; ttl?: unknown; ts?: unknown }
   if (loose.id && (loose.kind === 'voice' || loose.kind === 'location')) {
     const geo = loose as { lat?: number; lng?: number }
     return {
       id: loose.id,
       from,
       text: loose.caption ?? '',
-      at: Date.now(),
+      at: now,
       kind: 'other',
       mediaKind: loose.kind,
       ...(geo.lat != null && geo.lng != null ? { lat: geo.lat, lng: geo.lng } : {}),
+      ...dying(loose.ttl, loose.ts),
     }
   }
-  // Group poll (terse wire keys poll/q/opts/sc/anon — see PollEnvelope). Was
-  // silently dropped, so polls were invisible on web (#7).
+  // A group poll from an old peer. Polls were cut (founder item 14a) and this
+  // client no longer renders a ballot, votes, or talks to /polls/{id}, but the
+  // envelope still arrives, and a removed feature has to ANSWER rather than
+  // vanish: dropping it here would leave a silent hole in the conversation and
+  // an answer to a question the reader never saw was asked. The question text
+  // is kept as the row body so the chat-list preview and search still have
+  // something honest to show; the row itself draws as "no longer supported".
   if (loose.kind === 'poll' && loose.id) {
-    const p = env as unknown as { id: string; poll: number; q?: string; opts?: string[]; sc?: boolean; anon?: boolean }
-    return {
-      id: p.id,
-      from,
-      text: p.q ?? '', // question doubles as the toast/preview text
-      at: Date.now(),
-      kind: 'poll',
-      poll: { pollId: p.poll, question: p.q ?? '', options: p.opts ?? [], single: !!p.sc, anon: !!p.anon },
-    }
+    const p = env as unknown as { id: string; q?: string }
+    return { id: p.id, from, text: p.q ?? '', at: now, kind: 'poll' }
   }
   return null
 }
@@ -324,6 +338,11 @@ export interface Toast {
   groupId: number | null
   text: string // snippet/caption ('' for media w/o caption)
   kind: 'text' | 'photo' | 'video' | 'file' | 'other'
+  /// The row's deadline, when it has one. The in-app banner is transient and
+  /// does not care, but the DESKTOP shell turns a toast into an OS
+  /// notification, and that copy outlives everything this client can reach:
+  /// see `MessageToasts`.
+  expiresAt?: number
 }
 const toastListeners = new Set<(t: Toast) => void>()
 
@@ -356,6 +375,10 @@ interface Persisted {
   // Message ids retracted by delete-for-everyone. Persisted so a reload /
   // carbon can't resurrect a deleted message. Optional for back-compat.
   deleted?: string[]
+  // Message ids whose disappearing deadline this device has already honoured.
+  // Persisted for the same reason `deleted` is: an unacked queue row outlives
+  // the sweep that removed it. Optional for back-compat.
+  expired?: string[]
 }
 
 function emit() {
@@ -397,8 +420,8 @@ function bumpUnread(threadKey: string, row: IncomingRow, groupId: number | null)
     emitUnread()
     if (_catchingUp > 0) return
     playSound('message_incoming')
-    // Media kinds pass through for a typed preview; text/poll/undefined show
-    // their text (poll text is the question).
+    // Media kinds pass through for a typed preview; everything else shows its
+    // text (for a retired poll that is the question it asked).
     const tk: Toast['kind'] =
       row.kind === 'photo' || row.kind === 'video' || row.kind === 'file' || row.kind === 'other'
         ? row.kind
@@ -409,6 +432,7 @@ function bumpUnread(threadKey: string, row: IncomingRow, groupId: number | null)
       groupId,
       text: row.text,
       kind: tk,
+      ...(row.expiresAt != null ? { expiresAt: row.expiresAt } : {}),
     }
     for (const l of toastListeners) l(toast)
   }
@@ -477,11 +501,195 @@ export function useTotalUnread(): number {
 
 /// Everything this account has RECEIVED, for a backup export. Returns the raw
 /// rows keyed by thread; the caller maps them to the neutral archive record.
+///
+/// ⚠ Disappearing messages are left OUT, not merely marked. An archive is the
+/// one place a temporary message can quietly become permanent: it survives the
+/// sweeper, it survives the device, and `importBackup` would be free to put it
+/// back years later. The restore side already refuses any record carrying an
+/// `expires_at` for exactly this reason; this is the other half, and together
+/// they mean a `.rcqbak` written here simply never contains one.
 export function exportAllIncoming(): {
   peers: Record<string, IncomingRow[]>
   groups: Record<string, IncomingRow[]>
 } {
-  return { peers: Object.fromEntries(byPeer), groups: Object.fromEntries(byGroup) }
+  const keep = (rows: IncomingRow[]) => rows.filter((r) => r.expiresAt == null)
+  const peers: Record<string, IncomingRow[]> = {}
+  const groups: Record<string, IncomingRow[]> = {}
+  for (const [k, rows] of byPeer) peers[k] = keep(rows)
+  for (const [k, rows] of byGroup) groups[k] = keep(rows)
+  return { peers, groups }
+}
+
+// ── Disappearing messages (founder item 20) ─────────────────────────────────
+
+/// Ids of rows this device has already expired and taken away.
+///
+/// ⚠ Without this memory a swept row comes BACK, with a full fresh lifetime. A
+/// live-delivered row is only acked by the background drain up to 90 seconds
+/// later (`message-receiver`), so a one-minute message can be swept while the
+/// island still holds its queue copy; the next sign-in re-serves it, `seen` was
+/// rebuilt only from what was found on disk, and `rowFromEnvelope` re-anchors a
+/// `ts`-less envelope (every phone build today sends one) at RECEIPT. The
+/// message the sender was told had vanished would reappear with a chime, an
+/// unread bump and its whole timer again.
+///
+/// Bounded and oldest-first: this is a memory of what not to show, not history,
+/// and it rides in the same full-snapshot blob every persist rewrites.
+const expiredIds = new Set<string>()
+const EXPIRED_MEMORY = 1500
+function rememberExpired(id: string): void {
+  expiredIds.add(id)
+  if (expiredIds.size > EXPIRED_MEMORY) {
+    for (const v of expiredIds) {
+      expiredIds.delete(v)
+      if (expiredIds.size <= EXPIRED_MEMORY - 300) break
+    }
+  }
+}
+
+/// Refuse an envelope that is already dead on arrival, instead of filing it and
+/// sweeping it a moment later.
+///
+/// Two ways a row lands past its deadline. A RETRY of an old send keeps the
+/// original `ts` (`attemptSendRow` derives it from `sentAt` on purpose), so a
+/// message composed with a one-minute timer and retried two hours later arrives
+/// with a deadline two hours in the past; and a queue redelivery brings back
+/// something this device already swept. Filing either one paints it in the open
+/// chat, chimes, fires a desktop notification carrying the body, bumps the
+/// badge and writes it to disk for the up-to-`SWEEP_INTERVAL_MS` until the next
+/// tick. A message the sender was told had vanished must not be announced.
+function refuseExpired(row: IncomingRow): boolean {
+  if (expiredIds.has(row.id)) return true
+  if (!lapsed(row.expiresAt)) return false
+  rememberExpired(row.id)
+  persist()
+  return true
+}
+
+/// Everything one expired row takes with it besides the row: its reactions, the
+/// decrypted picture it pointed at, and a note that it must never be accepted
+/// again. Returns whether the reaction store changed, so the caller can emit
+/// once for a whole sweep.
+function retireExpiredRow(r: IncomingRow): boolean {
+  rememberExpired(r.id)
+  // A photo's bytes are the larger half of it, and they sit decrypted in the
+  // image cache under the media id + key until something deletes them.
+  if (r.kind === 'photo' && r.mediaId && r.mediaKey) void forgetCachedImage(r.mediaId, r.mediaKey)
+  return reactionsByTarget.delete(r.id)
+}
+
+/// Drop every row whose deadline has passed, from memory and from the disk
+/// snapshot. Returns how many went, so a caller can skip the repaint when
+/// nothing did.
+///
+/// Reactions on a swept row go with it: the reaction store is keyed by the
+/// message id and would otherwise keep "who reacted to what" for a message
+/// nobody can read any more, which is the metadata half of the same promise.
+export function sweepExpiredIncoming(now: number = Date.now()): number {
+  let removed = 0
+  let reactionsChanged = false
+  let unreadChanged = false
+  const sweep = (map: Map<number, IncomingRow[]>, threadKey: (id: number) => string) => {
+    for (const [key, rows] of map) {
+      const kept = rows.filter((r) => !lapsed(r.expiresAt, now))
+      const gone = rows.length - kept.length
+      if (gone === 0) continue
+      const tk = threadKey(key)
+      const n = unread.get(tk) ?? 0
+      // ⚠ The unread count comes with them, for the reason `markDeleted`
+      // records a few dozen lines up: the unread run is measured by counting
+      // BACK from the end of the thread, so every row that leaves without
+      // decrementing slides the divider one message the wrong way. A badge
+      // that outlives the message it was counting also offers the reader a
+      // thread with nothing new in it.
+      //
+      // ⚠⚠ But only the rows that were INSIDE that run may be subtracted, and
+      // expiry systematically takes the OLDEST ones, which are exactly the
+      // rows already read. Subtracting all of them zeroed a live badge (a
+      // thread where six read messages lapse and two unread ones remain went
+      // to 0), and a zero on open means no divider at all: the two waiting
+      // messages were scrolled past without a marker.
+      //
+      // The run starts where counting back `n` of OTHER people's rows lands,
+      // the same walk `Chat`'s divider anchor performs (a group carries carbons
+      // of my own, and one of those was never waiting to be read).
+      let unreadFrom = rows.length
+      if (n > 0) {
+        let counted = 0
+        for (let i = rows.length - 1; i >= 0; i--) {
+          if (_activeUin != null && rows[i].from === _activeUin) continue
+          counted += 1
+          unreadFrom = i
+          if (counted === n) break
+        }
+      }
+      let goneUnread = 0
+      rows.forEach((r, i) => {
+        if (!lapsed(r.expiresAt, now)) return
+        if (i >= unreadFrom) goneUnread += 1
+        if (retireExpiredRow(r)) reactionsChanged = true
+      })
+      removed += gone
+      map.set(key, kept)
+      if (n > 0 && goneUnread > 0) {
+        const next = Math.max(0, n - goneUnread)
+        if (next > 0) unread.set(tk, next)
+        else unread.delete(tk)
+        unreadChanged = true
+      }
+    }
+  }
+  sweep(byPeer, peerKey)
+  sweep(byGroup, groupKey)
+  if (reactionsChanged) emitReactions()
+  if (unreadChanged) {
+    persistUnread()
+    emitUnread()
+  }
+  if (removed > 0) {
+    persist()
+    emit()
+  }
+  return removed
+}
+
+/// One timer for the whole app, started when an account's history is hydrated.
+/// It drives BOTH halves of the conversation: the received rows here and this
+/// device's own sent rows in `outgoing-store`, which are the same feature and
+/// should never be seen to disappear at different moments.
+///
+/// ⚠ The open thread owns its outgoing rows in component state (see
+/// `setOutgoingSink`), so `Chat` filters those itself on the same interval.
+/// This sweep is what takes care of every thread that is NOT on screen, and of
+/// the copies on disk.
+let sweepTimer: ReturnType<typeof setInterval> | null = null
+function startExpirySweeper() {
+  if (sweepTimer != null) return
+  const tick = () => {
+    sweepExpiredIncoming()
+    // The reactions on MY OWN expired rows go with them too. `outgoing-store`
+    // cannot do it itself (the reaction store is here, keyed by message id, and
+    // the import between the two files only goes one way), and leaving them
+    // behind keeps "peer X reacted with Y to message Z" on this disk, reloaded
+    // on every hydrate, for a message that no longer exists anywhere.
+    let reactionsChanged = false
+    for (const id of sweepExpiredOutgoing()) {
+      if (reactionsByTarget.delete(id)) reactionsChanged = true
+    }
+    if (reactionsChanged) {
+      emitReactions()
+      persist()
+    }
+  }
+  tick()
+  sweepTimer = setInterval(tick, SWEEP_INTERVAL_MS)
+  // A tab that was hidden for an hour ran no timers worth trusting; catch up
+  // the moment it comes back, before the user reads anything.
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') tick()
+    })
+  }
 }
 
 /// Merge restored rows into a thread. Only ADDS: a row whose id is already
@@ -528,6 +736,7 @@ function writeNow(): Promise<void> {
     groups: Object.fromEntries(byGroup),
     reactions,
     deleted: [...deletedIds],
+    expired: [...expiredIds],
   }
   const uin = _activeUin
   // Sealed under the desktop PIN when there is one; the plain object otherwise
@@ -624,6 +833,12 @@ export async function hydrateIncoming(uin: number): Promise<void> {
   // wait for this flag (read receipts) would otherwise wait forever on a
   // fresh install.
   _hydratedFor = uin
+  // ⚠ BEFORE the early return below. "Nothing on disk" is a perfectly ordinary
+  // state (a fresh install, a browser whose storage was cleared) and messages
+  // start arriving into it seconds later; starting the sweeper only on the
+  // path where a blob was found would leave exactly those installs never
+  // expiring anything until the next reload.
+  startExpirySweeper()
   if (!saved) return
   for (const [k, rows] of Object.entries(saved.peers ?? {})) {
     byPeer.set(Number(k), rows)
@@ -639,6 +854,12 @@ export async function hydrateIncoming(uin: number): Promise<void> {
     if (inner.size) reactionsByTarget.set(t, inner)
   }
   for (const id of saved.deleted ?? []) deletedIds.add(id)
+  for (const id of saved.expired ?? []) expiredIds.add(id)
+  // ⚠ BEFORE the first emit. Anything whose deadline lapsed while this browser
+  // was closed must never reach the screen, not even for the frame between
+  // hydration and the first sweeper tick. Android's `loadMessagesFromDb` reaps
+  // ahead of seeding its flows for the same reason.
+  sweepExpiredIncoming()
   emit()
   emitReactions()
 }
@@ -680,6 +901,7 @@ export function addIncoming(from: number, env: Envelope): void {
   const row = rowFromEnvelope(from, env)
   if (!row) return
   if (deletedIds.has(row.id)) return
+  if (refuseExpired(row)) return
   // Our own note bouncing back off the island (see [ownEnvelopes]).
   if (from === _activeUin && ownEnvelopes.has(row.id)) return
   const key = `p:${from}:${row.id}`
@@ -748,6 +970,7 @@ export function addGroupIncoming(groupId: number, from: number, env: Envelope): 
   const row = rowFromEnvelope(from, env)
   if (!row) return
   if (deletedIds.has(row.id)) return
+  if (refuseExpired(row)) return
   const key = `g:${groupId}:${row.id}`
   if (seen.has(key)) return
   seen.add(key)

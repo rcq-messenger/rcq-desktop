@@ -22,6 +22,9 @@ const ALIASES: Record<string, string> = {
   n: 'nick',
   x: 'export',
   lng: 'lang',
+  px: 'proxy',
+  p: 'proxy',
+  route: 'routes',
   // people
   c: 'contacts',
   w: 'who',

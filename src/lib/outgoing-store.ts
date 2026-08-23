@@ -12,7 +12,8 @@
 import { scopedKey } from './account-scope'
 import { isSealedText, openText, sealText } from './pin-seal'
 import type { Envelope, CarbonEnvelope, ReplyContext } from './crypto'
-import type { PollRow } from './incoming-store'
+import { expiryFrom, lapsed, sendAnchorMs } from './disappearing'
+import { forgetCachedImage } from './media'
 
 export interface OutgoingRow {
   id: string
@@ -30,14 +31,20 @@ export interface OutgoingRow {
   /// in the conversation, the way both phones write one. It never goes on the
   /// wire — each device logs its own — and it renders as a centred line rather
   /// than a bubble.
+  ///
+  /// ⚠ 'poll' is a LEGACY value. Polls were cut from this client (founder item
+  /// 14a) and nothing composes one any more; rows written before that still
+  /// carry the kind, and they draw as the "no longer supported" placeholder
+  /// rather than disappearing out from under a conversation.
   kind?: 'text' | 'photo' | 'video' | 'file' | 'other' | 'call' | 'poll'
-  /// For 'poll': the ballot I posted, stored the same way the received half
-  /// keeps it (IncomingRow.poll) so both sides render through one component.
-  /// Only the ballot is kept — tallies are always fetched fresh from
-  /// /polls/{id}, never persisted, exactly as on the phones.
-  poll?: PollRow
   /// For 'call': nobody picked up (or it was declined). Drives the icon.
   callMissed?: boolean
+  /// For 'call': which call this row records. Present so two records of ONE
+  /// call collapse into one row: this client's own, written when the ring
+  /// ends, and the caller's `call_missed` marker (§5d) for the same call
+  /// arriving off the queue. The row id is derived from it, so the dedupe is
+  /// `appendToThreadLog`'s existing id check rather than a second scan.
+  callId?: string
   /// For 'call': the island the other party lives on, when it is not ours
   /// (§5d). A 1:1 thread's log is keyed by the BARE uin here, so the thread for
   /// `1234@is2.rcq.app` and the thread for a local #1234 are the same log —
@@ -67,6 +74,11 @@ export interface OutgoingRow {
   myReaction?: string
   /// Author edited this message after sending.
   edited?: boolean
+  /// Disappearing message (founder item 20): epoch ms after which this row is
+  /// swept from state, from localStorage and out of any backup export. Absent =
+  /// permanent. For my own messages the anchor is simply `sentAt`: the send
+  /// time is not something this side has to guess at.
+  expiresAt?: number
 }
 
 /// Per-thread storage key for the outgoing log, inside the ACTIVE account's
@@ -157,19 +169,34 @@ export async function releaseSealedOutgoing(): Promise<void> {
   mem = null
 }
 
-export function loadPersisted(key: string): OutgoingRow[] {
+/// Exactly what is stored for a thread, with nothing filtered or rewritten.
+/// Only the sweeper wants this: every other reader wants `loadPersisted`, which
+/// hides what has already expired.
+function rawRows(key: string): OutgoingRow[] {
   try {
     const arr = mem ? mem.get(key) : (() => {
       const raw = localStorage.getItem(key)
       return raw ? (JSON.parse(raw) as OutgoingRow[]) : null
     })()
-    if (!arr) return []
-    // 'sending' rows from a previous session were never delivered — surface
-    // them as failed on rehydrate so the user retries.
-    return arr.map((r) => (r.state === 'sending' ? { ...r, state: 'failed' } : r))
+    return Array.isArray(arr) ? arr : []
   } catch {
     return []
   }
+}
+
+export function loadPersisted(key: string): OutgoingRow[] {
+  const now = Date.now()
+  return (
+    rawRows(key)
+      // Disappearing messages whose deadline passed while this thread was
+      // closed (or this browser was). Filtered on READ as well as by the
+      // sweeper below, so a row can never be painted once and then taken away.
+      // Opening a chat must not flash a message that is already gone.
+      .filter((r) => !lapsed(r.expiresAt, now))
+      // 'sending' rows from a previous session were never delivered — surface
+      // them as failed on rehydrate so the user retries.
+      .map((r) => (r.state === 'sending' ? { ...r, state: 'failed' } : r))
+  )
 }
 
 export function savePersisted(key: string, rows: OutgoingRow[]) {
@@ -190,6 +217,50 @@ export function savePersisted(key: string, rows: OutgoingRow[]) {
   } catch {
     // QuotaExceeded etc. — skip. The in-memory log still works.
   }
+}
+
+/// Drop every persisted outgoing row whose disappearing deadline has passed,
+/// across EVERY thread this browser holds, including the ones nobody has
+/// opened. Returns the ids that went, so the caller can take the metadata that
+/// belongs to them with it (the reaction store lives in `incoming-store`, keyed
+/// by message id, and the import between the two only goes one way).
+///
+/// ⚠ Deliberately a sweep over all the keys rather than something the open
+/// chat does: a message you sent an hour ago with a one-hour timer has to stop
+/// existing whether or not you happen to be looking at that conversation, and
+/// the disk copy is the one that outlives the tab. `Chat` handles the rows it
+/// owns in component state on the same interval; this handles the rest.
+///
+/// Called from the single sweeper timer in `incoming-store`, so the two halves
+/// of a conversation never expire a few seconds apart on screen.
+export function sweepExpiredOutgoing(now: number = Date.now()): string[] {
+  const removed: string[] = []
+  for (const k of outgoingKeys()) {
+    // ⚠ `rawRows`, not `loadPersisted`. The loader already hides expired rows,
+    // so a sweep built on it would compare a filtered list against itself,
+    // find nothing to do and never write: the rows would stay on disk
+    // forever while looking gone on screen.
+    const rows = rawRows(k)
+    const kept = rows.filter((r) => !lapsed(r.expiresAt, now))
+    if (kept.length === rows.length) continue
+    for (const r of rows) {
+      if (!lapsed(r.expiresAt, now)) continue
+      removed.push(r.id)
+      // The decrypted picture goes with the row. It was cached under the media
+      // id + key when it was first painted and nothing else ever invalidates
+      // that entry, so a photo I sent with a timer on it would otherwise stay
+      // readable on this disk long after the bubble went.
+      if (r.kind === 'photo' && r.mediaId && r.mediaKey) void forgetCachedImage(r.mediaId, r.mediaKey)
+    }
+    savePersisted(k, kept)
+  }
+  return removed
+}
+
+/// The deadline a row I am sending right now should carry, given this thread's
+/// timer. Anchored to `sentAt`, which for my own message IS the send time.
+export function ownExpiry(ttlSeconds: number | null, sentAt: number): number | undefined {
+  return expiryFrom(ttlSeconds, sentAt)
 }
 
 /// Append a row to a thread's persisted outgoing log without going through
@@ -225,17 +296,27 @@ export function logCall(
   missed: boolean,
   at: number,
   host?: string | null,
+  callId?: string,
 ): void {
   const row: OutgoingRow = {
-    // The host is part of the id too: two calls with the same peer number on
-    // two islands in the same millisecond is not a real scenario, but a
-    // dedup-by-id that treats them as one row is a wrong row, not a missing one.
-    id: `call-${at}-${peerUin}${host ? `@${host}` : ''}`,
+    // ⚠ DERIVED FROM THE CALL ID when there is one, so that two records of the
+    // same call collapse: the one this client writes when the ring ends, and
+    // the caller's `call_missed` marker for it arriving off the queue a moment
+    // later (the two overlap whenever this client's socket comes back inside
+    // the second the caller spent depositing). `appendToThreadLog` already
+    // refuses a row whose id it holds, so the id IS the dedupe.
+    //
+    // Without one, the timestamp shape stands: the host is part of it too,
+    // because two calls with the same peer number on two islands in the same
+    // millisecond is not a real scenario, but a dedup-by-id that treats them
+    // as one row is a wrong row, not a missing one.
+    id: callId ? `call-id-${callId}` : `call-${at}-${peerUin}${host ? `@${host}` : ''}`,
     text,
     sentAt: at,
     state: 'sent',
     kind: 'call',
     callMissed: missed,
+    ...(callId ? { callId } : {}),
     ...(host ? { peerHost: host } : {}),
   }
   const key = storageKey(false, peerUin)
@@ -305,28 +386,39 @@ export function applyReceiptToOutgoing(peerUin: number, kind: 'delivered' | 'rea
 /// for kinds we don't surface (e.g. a nested reaction — reactions sync via
 /// their own self-echo, never as a carbon).
 function outgoingRowFromInner(inner: Envelope): OutgoingRow | null {
+  const now = Date.now()
+  /// A message I sent from my phone with a timer on it has to carry the same
+  /// deadline here, or the copy on the desktop outlives the one the timer was
+  /// set on. The anchor is the ORIGINATING device's `ts` when it sent one;
+  /// `now` is when the carbon reached this browser, which can be much later.
+  const dying = (ttl: unknown, ts: unknown): { expiresAt?: number } => {
+    const at = expiryFrom(typeof ttl === 'number' ? ttl : null, sendAnchorMs(ts, now))
+    return at != null ? { expiresAt: at } : {}
+  }
   if (inner.kind === 'text') {
     return {
       id: inner.id,
       text: inner.text,
-      sentAt: Date.now(),
+      sentAt: now,
       state: 'sent',
       kind: 'text',
       ...(inner.reply ? { replyTo: inner.reply } : {}),
       ...(inner.fwdName ? { fwdName: inner.fwdName } : {}),
+      ...dying(inner.ttl, inner.ts),
     }
   }
   if (inner.kind === 'photo') {
     return {
       id: inner.id,
       text: inner.caption ?? '',
-      sentAt: Date.now(),
+      sentAt: now,
       state: 'sent',
       kind: 'photo',
       mediaId: inner.mediaID,
       mediaKey: inner.mediaKey,
       ...(inner.reply ? { replyTo: inner.reply } : {}),
       ...(inner.fwdName ? { fwdName: inner.fwdName } : {}),
+      ...dying(inner.ttl, inner.ts),
     }
   }
   // Video sent from another device (#15): keep the media ref + poster so the
@@ -335,7 +427,7 @@ function outgoingRowFromInner(inner: Envelope): OutgoingRow | null {
     return {
       id: inner.id,
       text: inner.caption ?? '',
-      sentAt: Date.now(),
+      sentAt: now,
       state: 'sent',
       kind: 'video',
       mediaId: inner.mediaID,
@@ -344,6 +436,7 @@ function outgoingRowFromInner(inner: Envelope): OutgoingRow | null {
       durationSec: inner.durationSec,
       ...(inner.reply ? { replyTo: inner.reply } : {}),
       ...(inner.fwdName ? { fwdName: inner.fwdName } : {}),
+      ...dying(inner.ttl, inner.ts),
     }
   }
   // File / document sent from another device (#16): keep the media ref + name/
@@ -352,7 +445,7 @@ function outgoingRowFromInner(inner: Envelope): OutgoingRow | null {
     return {
       id: inner.id,
       text: inner.caption ?? '',
-      sentAt: Date.now(),
+      sentAt: now,
       state: 'sent',
       kind: 'file',
       mediaId: inner.mediaID,
@@ -362,22 +455,24 @@ function outgoingRowFromInner(inner: Envelope): OutgoingRow | null {
       fileSize: inner.size,
       ...(inner.reply ? { replyTo: inner.reply } : {}),
       ...(inner.fwdName ? { fwdName: inner.fwdName } : {}),
+      ...dying(inner.ttl, inner.ts),
     }
   }
   // A still-unsupported media kind sent from another device (voice/location).
   // The web can't render these, but show a placeholder so the user sees that
   // they sent something here rather than a silent gap.
-  const loose = inner as { kind?: string; id?: string; caption?: string }
+  const loose = inner as { kind?: string; id?: string; caption?: string; ttl?: unknown; ts?: unknown }
   if (loose.id && (loose.kind === 'voice' || loose.kind === 'location')) {
     const geo = loose as { lat?: number; lng?: number }
     return {
       id: loose.id,
       text: loose.caption ?? '',
-      sentAt: Date.now(),
+      sentAt: now,
       state: 'sent',
       kind: 'other',
       mediaKind: loose.kind,
       ...(geo.lat != null && geo.lng != null ? { lat: geo.lat, lng: geo.lng } : {}),
+      ...dying(loose.ttl, loose.ts),
     }
   }
   return null

@@ -11,6 +11,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Api, type Contact, type RCQGroup } from '../lib/api'
 import { memberCount } from '../lib/group-roster'
+import { compactCount } from '../lib/format-count'
 import { useIdentity } from '../lib/identity-context'
 import { useI18n } from '../lib/i18n-context'
 import { contactAlias } from '../lib/local-store'
@@ -196,7 +197,7 @@ export function ForwardModal({
                     <div className="flex-1 min-w-0 text-left">
                       <div className="text-sm truncate">{g.name}</div>
                       <div className="font-mono text-[0.625rem] text-fg-dim">
-                        {memberCount(g)}
+                        {compactCount(memberCount(g))}
                       </div>
                     </div>
                   </Row>

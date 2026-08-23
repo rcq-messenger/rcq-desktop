@@ -12,7 +12,7 @@
 // incoming yet). Forwards write into the target thread's storage
 // so the forwarded message shows up there when the user navigates.
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { scopedKey } from '../lib/account-scope'
 import { AnimatePresence, motion } from 'framer-motion'
@@ -25,7 +25,7 @@ import { ReactionAuthors, type ReactionAuthor } from '../components/ReactionAuth
 import { ReactionPicker } from '../components/ReactionPicker'
 import { PersonAvatar } from '../components/PersonAvatar'
 import { SenderAvatar } from '../components/SenderAvatar'
-import { Api, peerBundleFrom, type Contact, type PollOut, type RCQGroup, type UserInfo } from '../lib/api'
+import { Api, peerBundleFrom, type Contact, type RCQGroup, type UserInfo } from '../lib/api'
 import { isTauri, openExternal } from '../lib/desktop'
 import {
   useIncoming,
@@ -41,7 +41,8 @@ import {
   isDeleted,
   useDeletedVersion,
   noteOwnEnvelope,
-  type PollRow,
+  sweepExpiredIncoming,
+  type IncomingRow,
 } from '../lib/incoming-store'
 import { PartialFanOutError, sendV2 } from '../lib/signal-device'
 import { getCrossIsland } from '../lib/crossisland-store'
@@ -58,7 +59,6 @@ import {
   type ReactionEnvelope,
   type ReplyContext,
   type TextEnvelope,
-  type PollEnvelope,
 } from '../lib/crypto'
 import {
   type OutgoingRow,
@@ -66,6 +66,7 @@ import {
   loadPersisted,
   savePersisted,
   appendToThreadLog,
+  ownExpiry,
   setEditSink,
   setOutgoingSink,
   setReceiptSink,
@@ -73,7 +74,6 @@ import {
 import { noteThreadViewed } from '../lib/read-receipts'
 import { buildGroupDualSend, encryptGroupEnvelope } from '../lib/group-crypto'
 import { parseGroupInvite } from '../lib/group-invite'
-import { PollComposerSheet } from '../components/PollComposerSheet'
 import { ShareGroupSheet } from '../components/ShareGroupSheet'
 import {
   clearMention,
@@ -85,6 +85,21 @@ import {
 import type { MentionContext } from '../components/EmoticonText'
 import { groupApiCtx } from '../lib/visited-islands'
 import { ensureRoster, memberCount } from '../lib/group-roster'
+import { useGroupChanged } from '../lib/group-events'
+import { compactCount } from '../lib/format-count'
+import {
+  SWEEP_INTERVAL_MS,
+  TTL_OPTIONS,
+  lapsed,
+  remainingLabel,
+  setThreadTtl,
+  threadTtl,
+  ttlLabelKey,
+  ttlThreadKey,
+  useThreadTtl,
+} from '../lib/disappearing'
+import { noteReactionUsed } from '../lib/reaction-usage'
+import { canOpenProfileCard } from '../lib/profile-card-privacy'
 import { GroupJoinCard } from '../components/GroupJoinCard'
 import { GroupAvatar } from '../components/GroupAvatar'
 import { DecryptedImage } from '../components/DecryptedImage'
@@ -103,7 +118,7 @@ import { useWS } from '../lib/ws'
 /// Envelope kinds `shipEnvelopeToCurrentThread` is allowed to encrypt + send.
 /// (Carbons take a separate path; this gates the in-thread sends.) `edit` was
 /// missing here, which silently rejected edit propagation to the peer.
-const SHIPPABLE_KINDS = new Set<Envelope['kind']>(['text', 'reaction', 'photo', 'video', 'file', 'edit', 'delete', 'poll', 'location'])
+const SHIPPABLE_KINDS = new Set<Envelope['kind']>(['text', 'reaction', 'photo', 'video', 'file', 'edit', 'delete', 'location'])
 
 /// Message kinds we mirror to the user's other devices via a carbon
 /// (NOT reactions — those sync through their own self-echo).
@@ -197,10 +212,31 @@ export function Chat() {
   const [group, setGroup] = useState<RCQGroup | null>(() =>
     isGroup && groupId != null ? _groupCache.get(groupId) ?? null : null,
   )
-  // Owner-only group we cannot post in: the composer below is replaced by a
-  // notice, so nothing on this screen may invite a reply either.
+  // Owner-only group we cannot post in (founder item 24). The composer stays on
+  // screen and goes DISABLED rather than being swapped for a notice: the notice
+  // used to replace it, and unmounting the bar froze `--rcq-composer-h` at its
+  // last value, so the thread kept paying for a composer that was not there.
+  // A greyed-out field with the reason in its placeholder also says the same
+  // thing in the place the user is already looking.
   const readOnlyHere =
     isGroup && group?.post_policy === 'owner_only' && identity != null && group.owner_uin !== identity.uin
+  /// This thread's disappearing-message timer, in seconds, or null when it is
+  /// off (founder item 20). Per thread and per DEVICE: it decides what the rows
+  /// this browser composes ask their recipients to do, and it never travels to
+  /// the peer as a setting of its own. Same model as iOS `ChatSettingsStore`.
+  const ttlKey =
+    isGroup && groupId != null
+      ? ttlThreadKey(true, groupId)
+      : peerUIN != null
+        ? ttlThreadKey(false, peerUIN)
+        : null
+  const threadTtlSec = useThreadTtl(ttlKey)
+  /// A group nobody new may join. A SEPARATE fact from `readOnlyHere`: on the
+  /// island `is_closed` is purely a join gate (groups.py) and says nothing about
+  /// who may post, so the two must never be folded together. It matters here for
+  /// one thing only: the empty-state invitation to say hello, which in a closed
+  /// room with no history is an invitation to nobody.
+  const closedHere = isGroup && !!group?.is_closed
   const [myInfo, setMyInfo] = useState<UserInfo | null>(null)
   const [input, setInput] = useState('')
   const [showPicker, setShowPicker] = useState(false)
@@ -209,12 +245,15 @@ export function Chat() {
   // The attach button opens a small menu (Photo / File) — the web couldn't
   // send documents before (#16). Each picks a different hidden <input>.
   const [attachMenuOpen, setAttachMenuOpen] = useState(false)
-  // The two attach-menu entries that open a sheet of their own: a poll to
-  // compose (groups only, the endpoint lives under /groups/{id}) and one of my
-  // groups to hand over as an invite link. Both existed on Android long before
-  // the desktop had either (#578).
-  const [pollSheetOpen, setPollSheetOpen] = useState(false)
+  // One of my groups, to hand over as an invite link. Existed on Android long
+  // before the desktop had it (#578). The poll composer used to sit beside it
+  // and is gone (founder item 14a).
   const [shareGroupOpen, setShareGroupOpen] = useState(false)
+  /// Which face the attach menu is showing: its own list, or the
+  /// disappearing-message timers. One panel with two views rather than a second
+  /// floating menu, so the outside-click and Escape handling that already knows
+  /// about `[data-attach-menu]` covers both without a second set of rules.
+  const [attachView, setAttachView] = useState<'main' | 'ttl'>('main')
   // A file is being dragged over the conversation (drop-to-send overlay).
   const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -230,6 +269,11 @@ export function Chat() {
   const composerRef = useRef<HTMLDivElement>(null)
   /// The title/search/pin stack, measured for the same reason.
   const topBarsRef = useRef<HTMLDivElement>(null)
+  /// What those two measured last time. The publishing effect writes four CSS
+  /// custom properties and may re-pin the scroll, which is a full layout: it
+  /// is worth a comparison to skip when neither bar has actually moved.
+  const lastBarHRef = useRef(-1)
+  const lastTopHRef = useRef(-1)
   // The scrolling message pane (<main>). We scroll this element directly to
   // its bottom rather than scrollIntoView-ing a zero-height anchor — the
   // anchor approach was landing short, leaving the newest messages tucked
@@ -376,6 +420,7 @@ export function Chat() {
     setError(null)
     setShowPicker(false)
     setAttachMenuOpen(false)
+    setAttachView('main')
     // The unread machinery too. This component is not keyed by route, so a
     // chat-to-chat jump reuses the instance — and the anchor effect below
     // bails before claiming the key when the new thread has no rows yet, which
@@ -534,6 +579,7 @@ export function Chat() {
     function onKey(e: KeyboardEvent) {
       if (e.key !== 'Escape') return
       if (searchOpen) { setSearchOpen(false); setQuery(''); return }
+      if (attachMenuOpen && attachView === 'ttl') return setAttachView('main')
       if (attachMenuOpen) return setAttachMenuOpen(false)
       if (showPicker) return setShowPicker(false)
       if (reactionForRowId) return setReactionForRowId(null)
@@ -552,7 +598,10 @@ export function Chat() {
       // its fixed descendants — so that "full screen" backdrop only ever
       // covered the composer bar. This handler already watches the whole
       // document for the sibling menus; the attach menu just rides along.
-      if (!el?.closest('[data-attach-menu]')) setAttachMenuOpen(false)
+      if (!el?.closest('[data-attach-menu]')) {
+        setAttachMenuOpen(false)
+        setAttachView('main')
+      }
       // Let the bubble's own handler decide — it toggles its menu, and closing
       // here first would make the click a no-op.
       if (el?.closest('[data-chat-menu]')) return
@@ -571,31 +620,61 @@ export function Chat() {
       document.removeEventListener('keydown', onKey)
       document.removeEventListener('mousedown', onDown)
     }
-  }, [searchOpen, attachMenuOpen, showPicker, reactionForRowId, actionsForRowId, editingRow, replyTo])
+  }, [searchOpen, attachMenuOpen, attachView, showPicker, reactionForRowId, actionsForRowId, editingRow, replyTo])
 
   // Publish the composer's height so the thread can reserve exactly that much
   // room. A ResizeObserver rather than a constant: the bar is a different
   // height with a reply strip open, with the emoji panel up, and on every line
   // the input wraps to.
+  //
+  // ⚠⚠ This used to carry NO dependency array at all, so it tore down and
+  // rebuilt the observer after every single render and, worse, ran a
+  // read(offsetHeight) → write(4 custom properties) → read(scrollHeight) →
+  // write(scrollTop) cycle each time. Every keystroke and every delivery
+  // receipt paid for a full layout of the thread, which is what made sending
+  // a reply feel like a freeze (founder item 30b). The observer is the part
+  // that has to be live, and it already is: it fires whenever either bar
+  // actually changes height, which is the only thing this effect reacts to.
+  // Both elements are unconditional in the tree, so there is nothing to
+  // re-subscribe to except a change of thread.
   useEffect(() => {
     const bar = composerRef.current
     const top = topBarsRef.current
     if (!bar || !top) return
+    // Forget the cached measurements on (re)subscribe: the variables may be
+    // carrying another thread's numbers, and the first apply() below must
+    // write whatever it measures rather than compare against a stale cache.
+    lastBarHRef.current = -1
+    lastTopHRef.current = -1
     const apply = () => {
+      const barH = bar.offsetHeight
+      const topH = top.offsetHeight
+      // Nothing moved: no writes, no relayout. The ResizeObserver fires an
+      // initial callback on observe() and again on every subpixel reflow of
+      // either bar, and rewriting the same four values from there is what
+      // kicked the list's OWN observer (see below) into a scroll → onScroll →
+      // setState → render loop.
+      if (barH === lastBarHRef.current && topH === lastTopHRef.current) return
+      const grew = barH > lastBarHRef.current
+      lastBarHRef.current = barH
+      lastTopHRef.current = topH
       const root = bar.parentElement
-      root?.style.setProperty('--rcq-composer-h', `${bar.offsetHeight}px`)
-      root?.style.setProperty('--rcq-topbars-h', `${top.offsetHeight}px`)
+      root?.style.setProperty('--rcq-composer-h', `${barH}px`)
+      root?.style.setProperty('--rcq-topbars-h', `${topH}px`)
       // ...and on the document root, because the emoji panel is PORTALLED to
       // body (the composer bar's backdrop-filter makes it the containing block
       // for anything fixed inside it) and still has to sit exactly on top of
       // this bar. A variable set on the composer's parent is invisible from
       // there; one on the root is visible everywhere.
-      document.documentElement.style.setProperty('--rcq-composer-h', `${bar.offsetHeight}px`)
+      document.documentElement.style.setProperty('--rcq-composer-h', `${barH}px`)
       // A bar that GROWS (a wrapped line, the reply strip, the emoji panel)
       // adds padding under the last message without moving the scroll — so
       // the message the reader was looking at slides under the bar. If they
-      // were at the newest, keep them there.
-      if (atBottomRef.current) {
+      // were at the newest, keep them there. ⚠ Only on growth: a bar that
+      // shrank (the reply strip closing, the emoji panel going away) gives
+      // room back rather than taking it, and re-pinning there is exactly the
+      // scroll the list's own observer already performs.
+      if (grew && atBottomRef.current) {
         const el = scrollRef.current
         if (el) el.scrollTop = el.scrollHeight
       }
@@ -605,7 +684,7 @@ export function Chat() {
     ro.observe(bar)
     ro.observe(top)
     return () => ro.disconnect()
-  })
+  }, [persistKey])
 
   /** Pin the list to the bottom and mark it as followed. Called when the user
    *  does something that means "I want to be at the newest": sending, or
@@ -778,7 +857,22 @@ export function Chat() {
         pinTargetRef.current = null
         // The previous thread's unseen ids must not leak into this one — the
         // anchor effect rebuilds the list once this thread's rows are in.
-        unseenIdsRef.current = []
+        // ⚠ The NUMBER goes with the ids. Emptying the list alone left the
+        // badge painting the previous conversation's count until the anchor
+        // effect got around to reseeding it, so opening a read chat straight
+        // after an unread one flashed a figure that belonged to neither.
+        //
+        // ⚠⚠ ...but NOT when the anchor effect has already claimed this thread,
+        // which is every in-app open: the store is hydrated by then, so that
+        // effect runs on the first commit, in this same passive-effect pass and
+        // BEFORE this one. A blanket clear here threw away the backlog it had
+        // just built, the go-there effect then seeded the badge from an empty
+        // array, and the arrow came up bare with nothing for `onScroll` to
+        // cross off (founder item 30a, the other half of it). Only a reload
+        // straight onto a chat URL escaped, because there the first commit has
+        // no rows yet.
+        if (anchorDecidedRef.current === persistKey) setUnseenBelow(unseenIdsRef.current.length)
+        else clearUnseenBelow()
       } else if (resumeFromBottom != null) {
         pinTargetRef.current = null
         atBottomRef.current = false
@@ -867,6 +961,34 @@ export function Chat() {
     // ввода". Android re-pins on every keyboard-inset frame for exactly this.
     ro.observe(el)
     return () => ro.disconnect()
+  }, [persistKey])
+
+  // Disappearing messages, the on-screen half (founder item 20).
+  //
+  // The store's own sweeper handles every thread that is NOT open, plus the
+  // copies on disk. The open thread is different: `Chat` OWNS its outgoing rows
+  // in component state, and the persist effect above would write an unfiltered
+  // copy of them straight back over anything the store swept. So the rows this
+  // component holds are filtered here, on the same interval, and the received
+  // half is nudged in the same tick so the two sides of a conversation are never
+  // seen to expire seconds apart.
+  //
+  // ⚠ `setOutgoing` returns the SAME array when nothing lapsed. A new array
+  // every ten seconds would re-run the persist effect, the scroll effect and
+  // every memoised bubble on the thread, for no change at all.
+  useEffect(() => {
+    if (!persistKey) return
+    const tick = () => {
+      sweepExpiredIncoming()
+      setOutgoing((rows) => {
+        const now = Date.now()
+        const kept = rows.filter((r) => !lapsed(r.expiresAt, now))
+        return kept.length === rows.length ? rows : kept
+      })
+    }
+    tick()
+    const iv = setInterval(tick, SWEEP_INTERVAL_MS)
+    return () => clearInterval(iv)
   }, [persistKey])
 
   // Mark this thread as the active one: clears its unread badge on open
@@ -1122,7 +1244,7 @@ export function Chat() {
       // no recipient at all, so nothing is in flight to lose. The carbon is
       // the same courtesy copy it is everywhere else — and awaiting it read as
       // a guarantee it cannot give, since it swallows its own errors, skips
-      // the kinds outside CARBON_KINDS (video, poll) and skips foreign groups
+      // the kinds outside CARBON_KINDS (video) and skips foreign groups
       // entirely. The row in this thread's log is the artifact, exactly as on
       // the phone, where a solo group posts an empty fan-out and files the
       // message locally.
@@ -1168,6 +1290,32 @@ export function Chat() {
 
   async function attemptSendRow(row: OutgoingRow) {
     let env: Envelope
+    // ⚠ A ballot from before polls were cut (founder item 14a). Nothing
+    // composes one any more, but a row whose send never finished is still in
+    // the log as 'failed', and the chain below has no poll branch left: it
+    // would fall through to the final `else` and ship the QUESTION to the room
+    // as an ordinary text message under the poll's own id, with no options and
+    // no ballot, while the sender's own bubble kept drawing the "no longer
+    // supported" placeholder and flipped to ✓ sent. A retired feature answers
+    // instead of vanishing: the row stays where it is and says it cannot go.
+    if (row.kind === 'poll') {
+      setOutgoing((rows) =>
+        rows.map((r) => (r.id === row.id ? { ...r, state: 'failed', error: t('chat.media.retired') } : r)),
+      )
+      toast(t('chat.media.retired'), 'error')
+      return
+    }
+    // The disappearing instruction this row is carrying, in the shape the wire
+    // wants it: seconds of life plus the moment they start counting. Derived
+    // back out of the row's own deadline rather than read from the thread's
+    // timer, so a RETRY of a message sent ten minutes ago tells the recipient
+    // what is actually left of it instead of restarting the clock, and so a
+    // row written before the timer was changed keeps the terms it was sent on.
+    const dying = ((): { ttl?: number; ts?: number } => {
+      if (row.expiresAt == null) return {}
+      const secs = Math.max(1, Math.round((row.expiresAt - row.sentAt) / 1000))
+      return { ttl: secs, ts: Math.floor(row.sentAt / 1000) }
+    })()
     if (row.kind === 'photo' && row.mediaId && row.mediaKey) {
       env = {
         kind: 'photo',
@@ -1175,6 +1323,7 @@ export function Chat() {
         mediaID: row.mediaId,
         mediaKey: row.mediaKey,
         ...(row.text ? { caption: row.text } : {}),
+        ...dying,
         ...(row.replyTo ? { reply: row.replyTo } : {}),
         ...(row.fwdName ? { fwdName: row.fwdName } : {}),
       }
@@ -1188,23 +1337,10 @@ export function Chat() {
         mime: row.fileMime ?? 'application/octet-stream',
         size: row.fileSize ?? 0,
         ...(row.text ? { caption: row.text } : {}),
+        ...dying,
         ...(row.replyTo ? { reply: row.replyTo } : {}),
         ...(row.fwdName ? { fwdName: row.fwdName } : {}),
       }
-    } else if (row.kind === 'poll' && row.poll) {
-      // Terse keys, and this exact order, are the mobile wire: Android writes
-      // kind/id/poll/q/opts/sc/anon in `Envelope.kt:300`. `poll` is the id the
-      // island handed back a moment ago — the ballot itself never reaches it.
-      const poll: PollEnvelope = {
-        kind: 'poll',
-        id: row.id,
-        poll: row.poll.pollId,
-        q: row.poll.question,
-        opts: row.poll.options,
-        sc: row.poll.single,
-        anon: row.poll.anon,
-      }
-      env = poll
     } else if (row.kind === 'other' && row.mediaKind === 'location' && row.lat != null && row.lng != null) {
       env = {
         kind: 'location',
@@ -1212,6 +1348,7 @@ export function Chat() {
         lat: row.lat,
         lng: row.lng,
         ...(row.text ? { caption: row.text } : {}),
+        ...dying,
         ...(row.replyTo ? { reply: row.replyTo } : {}),
       }
     } else {
@@ -1219,6 +1356,7 @@ export function Chat() {
         kind: 'text',
         id: row.id,
         text: row.text,
+        ...dying,
         ...(row.replyTo ? { reply: row.replyTo } : {}),
         ...(row.fwdName ? { fwdName: row.fwdName } : {}),
       }
@@ -1345,10 +1483,28 @@ export function Chat() {
     if (!res.ok) toast(t('chat.error.send_failed'), 'error')
   }
 
+  /// The deadline a row composed right now should carry, given this thread's
+  /// timer. Empty when disappearing is off, so it spreads into a row literal
+  /// without leaving an `expiresAt: undefined` key behind for JSON to persist.
+  function dyingNow(sentAt: number): { expiresAt?: number } {
+    const at = ownExpiry(threadTtlSec, sentAt)
+    return at != null ? { expiresAt: at } : {}
+  }
+
   async function send() {
     if (!identity) return
     if (editingRow) {
       await saveEdit()
+      return
+    }
+    // Broadcast group, and I am not the owner. The composer is disabled rather
+    // than replaced now (item 24), so the guard has to live on the send paths
+    // too: a draft typed before the owner flipped the policy, a dropped file,
+    // and Enter on a stale render all reach here without going past a button.
+    // The island refuses these deposits anyway; this is so the refusal is a
+    // sentence rather than a red error from the wire.
+    if (readOnlyHere) {
+      toast(t('chat.owner_only.notice'), 'error')
       return
     }
     const trimmed = input.trim()
@@ -1363,12 +1519,14 @@ export function Chat() {
     armSlowmode()
 
     const msgId = newUUIDv4()
+    const sentAt = Date.now()
     const row: OutgoingRow = {
       id: msgId,
       text: trimmed,
-      sentAt: Date.now(),
+      sentAt,
       state: 'sending',
       ...(replyTo ? { replyTo } : {}),
+      ...dyingNow(sentAt),
     }
     setOutgoing((rows) => [...rows, row])
     setInput('')
@@ -1402,6 +1560,10 @@ export function Chat() {
   /// text (as a `photo` envelope). Caption support is a later add.
   async function sendPhoto(file: File) {
     if (!identity || uploadingPhoto) return
+    if (readOnlyHere) {
+      toast(t('chat.owner_only.notice'), 'error')
+      return
+    }
     if (slowmodeBlocked()) return
     setUploadingPhoto(true)
     try {
@@ -1418,15 +1580,17 @@ export function Chat() {
       // and both bubbles render it; there was simply no way to fill it in, so
       // people sent a picture and then a separate line about it.
       const caption = input.trim()
+      const sentAt = Date.now()
       const row: OutgoingRow = {
         id: newUUIDv4(),
         text: caption,
-        sentAt: Date.now(),
+        sentAt,
         state: 'sending',
         kind: 'photo',
         mediaId: up.mediaId,
         mediaKey: up.keyB64,
         ...(replyTo ? { replyTo } : {}),
+        ...dyingNow(sentAt),
       }
       setOutgoing((rows) => [...rows, row])
       if (caption) setInput('')
@@ -1451,6 +1615,10 @@ export function Chat() {
   async function sendLocation() {
     if (!identity) return
     setAttachMenuOpen(false)
+    if (readOnlyHere) {
+      toast(t('chat.owner_only.notice'), 'error')
+      return
+    }
     if (!navigator.geolocation) {
       toast(t(isTauri() ? 'chat.error.no_geolocation.desktop' : 'chat.error.no_geolocation'), 'error')
       return
@@ -1469,16 +1637,18 @@ export function Chat() {
     }
     armSlowmode()
     const caption = input.trim()
+    const sentAt = Date.now()
     const row: OutgoingRow = {
       id: newUUIDv4(),
       text: caption,
-      sentAt: Date.now(),
+      sentAt,
       state: 'sending',
       kind: 'other',
       mediaKind: 'location',
       lat: pos.coords.latitude,
       lng: pos.coords.longitude,
       ...(replyTo ? { replyTo } : {}),
+      ...dyingNow(sentAt),
     }
     setOutgoing((rows) => [...rows, row])
     if (caption) setInput('')
@@ -1487,65 +1657,16 @@ export function Chat() {
     await attemptSendRow(row)
   }
 
-  /// Post a group poll (#578 — the desktop could vote but not ask). Two steps,
-  /// in Android's order (`Session.sendPoll`, Session.kt:3340):
-  ///   1. mint the message UUID here, uppercase, because it is the id the
-  ///      island files the tally rows under AND the id of the envelope;
-  ///   2. register the poll's SHAPE on the group's island — how many options,
-  ///      single-choice, anonymous — and take the poll_id it returns;
-  ///   3. ship a `poll` envelope carrying that id plus the question and the
-  ///      option labels, which the island never sees.
-  /// Order matters: the envelope cannot go first, because it has to carry the
-  /// poll_id, and a member who received a ballot with no id could not vote.
-  /// Returns null on success, or a message for the sheet to show — a failed
-  /// create must not close the composer and throw away what was typed.
-  async function sendPoll(
-    question: string,
-    options: string[],
-    single: boolean,
-    anon: boolean,
-  ): Promise<string | null> {
-    // Polls are group-only: the create endpoint lives under /groups/{id}, and
-    // both phones ignore a `poll` envelope that arrives in a 1:1.
-    if (!identity || !isGroup || !gctx || !group) return t('chat.error.send_failed')
-    if (slowmodeBlocked()) return t('chat.slowmode.wait', { s: String(Math.max(1, Math.ceil((slowUntil - Date.now()) / 1000))) })
-    const id = newUUIDv4() // uppercase UUID, same convention as the phones
-    let pollId: number
-    try {
-      const created = await Api.createPoll(gctx.ident, gctx.gid, {
-        message_id: id,
-        num_options: options.length,
-        single_choice: single,
-        anonymous: anon,
-      })
-      pollId = created.poll_id
-    } catch (e) {
-      return e instanceof Error ? e.message : t('chat.error.send_failed')
-    }
-    // See sendPhoto: armed only once the ballot registered on the island.
-    armSlowmode()
-    const row: OutgoingRow = {
-      id,
-      // The question doubles as this row's text so the chat list preview, the
-      // search index and a reply quote all read as the phones' do.
-      text: question,
-      sentAt: Date.now(),
-      state: 'sending',
-      kind: 'poll',
-      poll: { pollId, question, options, single, anon },
-    }
-    setOutgoing((rows) => [...rows, row])
-    stickToBottom()
-    await attemptSendRow(row)
-    return null
-  }
-
   /// Send a group invite link into the open conversation. It goes as plain
   /// text, exactly as Android sends it (ChatScreen.kt:1706): every client
   /// already recognises the link and paints a join card over it, so this needs
   /// no envelope of its own and reaches old versions intact.
   async function sendGroupInvite(link: string) {
     if (!identity) return
+    if (readOnlyHere) {
+      toast(t('chat.owner_only.notice'), 'error')
+      return
+    }
     // An invite IS a link — a room with links off means all of them.
     if (isGroup && !linksAllowed) {
       toast(t('chat.links_off.notice'), 'error')
@@ -1553,12 +1674,14 @@ export function Chat() {
     }
     if (slowmodeBlocked()) return
     armSlowmode()
+    const sentAt = Date.now()
     const row: OutgoingRow = {
       id: newUUIDv4(),
       text: link,
-      sentAt: Date.now(),
+      sentAt,
       state: 'sending',
       ...(replyTo ? { replyTo } : {}),
+      ...dyingNow(sentAt),
     }
     setOutgoing((rows) => [...rows, row])
     setReplyTo(null)
@@ -1571,6 +1694,10 @@ export function Chat() {
   /// chip on both sides. Same upload-before-row pattern as sendPhoto.
   async function sendFile(file: File) {
     if (!identity || uploadingFile) return
+    if (readOnlyHere) {
+      toast(t('chat.owner_only.notice'), 'error')
+      return
+    }
     // Files switched off by the group's owner — covers the attach menu, the
     // drop-to-send overlay and any future path in one place.
     if (isGroup && !filesAllowed) {
@@ -1591,10 +1718,11 @@ export function Chat() {
       }
       // See sendPhoto: armed only once the upload made it.
       armSlowmode()
+      const sentAt = Date.now()
       const row: OutgoingRow = {
         id: newUUIDv4(),
         text: '',
-        sentAt: Date.now(),
+        sentAt,
         state: 'sending',
         kind: 'file',
         mediaId: up.mediaId,
@@ -1603,6 +1731,7 @@ export function Chat() {
         fileMime: file.type || 'application/octet-stream',
         fileSize: up.size,
         ...(replyTo ? { replyTo } : {}),
+        ...dyingNow(sentAt),
       }
       setOutgoing((rows) => [...rows, row])
       setReplyTo(null)
@@ -1646,6 +1775,11 @@ export function Chat() {
     const myUin = identity.uin
     const current = reactionsForTarget(targetId)?.get(myUin) ?? null
     const next = current === asset ? null : asset
+    // Frequency for the quick bar's order (founder item 21). Only a reaction
+    // being SET counts: clearing one is not a vote for it, and counting the
+    // clear would push an asset up the bar every time somebody changed their
+    // mind about it. Local, per account, and it never leaves the device.
+    if (next != null) noteReactionUsed(next)
     applyReaction(targetId, myUin, next)
     setReactionForRowId(null)
     setActionsForRowId(null)
@@ -1693,8 +1827,16 @@ export function Chat() {
   }
   function startReply(row: OutgoingRow) {
     // Media rows carry no text — quote the file name (or the generic
-    // attachment label) so the reply strip is never blank.
-    startReplyTo(row.id, row.text || row.fileName || t('chat.pin.attachment'), myNickname)
+    // attachment label) so the reply strip is never blank. A row of mine that
+    // is on its way out is quoted by label only, for the reason spelled out
+    // beside `replyQuote` on the received side.
+    startReplyTo(
+      row.id,
+      row.expiresAt != null
+        ? t('chat.ttl.quoted')
+        : row.text || row.fileName || t('chat.pin.attachment'),
+      myNickname,
+    )
   }
 
   function cancelReply() {
@@ -1775,12 +1917,20 @@ export function Chat() {
   /// (founder batch 21.08, item 3). Same wire as the author's own retract —
   /// each receiver checks this sender against its own roster before honoring
   /// it, so the button grants nothing the group did not already grant.
+  /// The `delete` cap is the whole point of granting it (SPEC 6.6), and this
+  /// check used to ignore it and test `role === "admin"` instead, which no
+  /// island ever writes. So on web the owner alone could retract, and handing
+  /// somebody the delete right did nothing. Android had it right all along
+  /// (Group.kt:32). Same shape as `roomExempt` below.
   const canModerate =
     isGroup &&
     group != null &&
     myGroupUin != null &&
     (group.owner_uin === myGroupUin ||
-      group.members.find((m) => m.uin === myGroupUin)?.role === 'admin')
+      (() => {
+        const me = group.members.find((m) => m.uin === myGroupUin)
+        return me?.role === 'admin' || (me?.permissions?.includes('delete') ?? false)
+      })())
 
   /// Exempt from the room's content rules (links/files off, slowmode): the
   /// owner, an admin, or a member holding any granted cap — the same set the
@@ -1862,170 +2012,6 @@ export function Chat() {
       })
   }
 
-  /// Swipe-left-to-reply (touch, mobile-web "like on phones"). Returns touch
-  /// handlers for a message row; a quick leftward drag fires `onReply`.
-  function swipeReply(onReply: () => void) {
-    let startX = 0
-    let startY = 0
-    let active = false
-    return {
-      onTouchStart: (e: React.TouchEvent) => {
-        const tch = e.touches[0]
-        startX = tch.clientX
-        startY = tch.clientY
-        active = true
-      },
-      onTouchMove: (e: React.TouchEvent) => {
-        if (!active) return
-        const tch = e.touches[0]
-        // Cancel if the gesture is mostly vertical (a scroll).
-        if (Math.abs(tch.clientY - startY) > 30) active = false
-      },
-      onTouchEnd: (e: React.TouchEvent) => {
-        if (!active) return
-        active = false
-        const dx = e.changedTouches[0].clientX - startX
-        if (dx < -55) onReply()
-      },
-    }
-  }
-
-  /// Right-click / long-press handlers that open a message's actions menu —
-  /// for the bubbles that are not a plain <button> (photo, video, file, poll,
-  /// invite): their tap keeps doing what it does (lightbox, play, vote), and
-  /// THIS is how the menu — report, reply, download — is reached on them
-  /// (founder, 21.08: "я не могу пожаловаться даже на сообщение").
-  function pressMenu(rowId: string) {
-    // One shared ref, not per-call closures: pressMenu runs again on every
-    // render, and a timer held in a closure would be orphaned by a re-render
-    // mid-gesture — firing 450ms after touchstart even though the finger
-    // already left. Only one touch gesture exists at a time, so sharing is
-    // free. `firedAt` guards the Android double: the OS fires a contextmenu
-    // ~500ms into the same long-press our timer resolves at 450ms, and the
-    // second event would toggle the just-opened menu straight back shut.
-    const st = pressRef.current
-    const clear = () => {
-      if (st.timer != null) {
-        clearTimeout(st.timer)
-        st.timer = null
-      }
-    }
-    return {
-      onContextMenu: (e: React.MouseEvent<HTMLElement>) => {
-        e.preventDefault()
-        if (Date.now() - st.firedAt < 800) return
-        toggleActions(rowId, e.currentTarget, e)
-      },
-      onTouchStart: (e: React.TouchEvent<HTMLElement>) => {
-        const tch = e.touches[0]
-        if (!tch) return
-        st.sx = tch.clientX
-        st.sy = tch.clientY
-        // currentTarget is gone by the time the timer fires — capture now.
-        const el = e.currentTarget
-        clear()
-        st.timer = window.setTimeout(() => {
-          st.timer = null
-          st.firedAt = Date.now()
-          toggleActions(rowId, el)
-        }, 450)
-      },
-      onTouchMove: (e: React.TouchEvent<HTMLElement>) => {
-        const tch = e.touches[0]
-        if (!tch) return
-        if (Math.abs(tch.clientX - st.sx) > 10 || Math.abs(tch.clientY - st.sy) > 10) clear()
-      },
-      onTouchEnd: clear,
-      onTouchCancel: clear,
-    }
-  }
-
-  /// A row the outgoing menu may open for. 'sending'/'failed' rows have
-  /// their own inline controls (retry/dismiss) and render no menu — letting
-  /// a press open one would only dim the thread over nothing.
-  function vouchedOut(row: OutgoingRow): boolean {
-    return row.state === 'sent' || row.state === 'delivered' || row.state === 'read'
-  }
-
-  /// Right-click/long-press attrs for MY media rows — only once the row has
-  /// a menu to show (see vouchedOut).
-  function outgoingPressMenu(row: OutgoingRow) {
-    return vouchedOut(row) ? { 'data-chat-menu': true, ...pressMenu(row.id) } : {}
-  }
-
-  /// The visible half of the same thing, for MY rows. Same gate: a row still in
-  /// flight has no menu to open, so it gets no handle to open one with either.
-  /// The parent has to be `relative` (the handle pins itself to its corner).
-  function outgoingMenuButton(row: OutgoingRow, tone: 'over' | 'chrome') {
-    if (!vouchedOut(row)) return null
-    return (
-      <BubbleMenuButton
-        tone={tone}
-        label={t('chat.actions.more')}
-        open={actionsForRowId === row.id}
-        onOpen={(el) => toggleActions(row.id, el)}
-      />
-    )
-  }
-
-  /// The floating menu + reaction picker for MY photo/video/file rows — the
-  /// media rows had neither (no way to reply to your own photo from a
-  /// desktop, no way to retract a file). One helper, because the three
-  /// branches would otherwise carry three copies of the same overlay.
-  function outgoingMediaOverlays(row: OutgoingRow) {
-    const showActions = actionsForRowId === row.id
-    const showReactionPicker = reactionForRowId === row.id
-    const vouched = row.state === 'sent' || row.state === 'delivered' || row.state === 'read'
-    return (
-      <>
-        <AnimatePresence>
-          {showActions && vouched && (
-            <ActionMenu align="end" up={actionsUp} max={actionsMax}>
-              {actionsLink != null && (
-                <ActionButton onClick={() => openLinkFromMenu(actionsLink)} label={t('chat.actions.open_link')} icon={<MenuLinkIcon />} />
-              )}
-              {actionsLink != null && (
-                <ActionButton onClick={() => copyText(actionsLink)} label={t('chat.actions.copy_link')} icon={<MenuCopyIcon />} />
-              )}
-              {row.kind === 'file' && row.mediaId && row.mediaKey && filesAllowed && (
-                <ActionButton
-                  onClick={() => void downloadRowFile(row.id, row.mediaId!, row.mediaKey!, row.fileName, row.fileMime)}
-                  label={t('chat.actions.download')}
-                  icon={<MenuDownloadIcon />}
-                />
-              )}
-              <ActionButton
-                onClick={() => { setActionsForRowId(null); setReactionForRowId(row.id) }}
-                label={t('chat.actions.react')}
-                icon={<MenuReactIcon />}
-              />
-              <ActionButton onClick={() => startReply(row)} label={t('chat.actions.reply')} icon={<MenuReplyIcon />} />
-              <ActionButton onClick={() => void deleteForEveryone(row)} label={t('chat.actions.delete')} icon={<MenuTrashIcon />} danger />
-            </ActionMenu>
-          )}
-        </AnimatePresence>
-        <AnimatePresence>
-          {showReactionPicker && (
-            <motion.div
-              key="rp"
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 4 }}
-              transition={{ duration: 0.12 }}
-              className={`absolute z-20 right-0 ${actionsUp ? 'bottom-full mb-1' : 'top-full mt-1'}`}
-            >
-              <ReactionPicker
-                uin={identity!.uin}
-                current={reactionsForTarget(row.id)?.get(identity!.uin) ?? null}
-                onPick={(asset) => void toggleReaction(row.id, asset)}
-              />
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </>
-    )
-  }
-
   /// Forward a row to another thread. Builds a fresh OutgoingRow with
   /// the same text + `fwdName` set to my own nickname (the original
   /// author from the recipient's perspective), encrypts to the picked
@@ -2038,7 +2024,18 @@ export function Chat() {
     // Credit the ORIGINAL author, not whoever pressed forward. Sending my own
     // name on somebody else's words is the one thing a forward must not do.
     const fwdName = row.author
-    const env: TextEnvelope = { kind: 'text', id: newId, text: row.text, fwdName }
+    // ⚠ The TARGET thread's timer, not this one's. A forward is composed here
+    // but lands over there, and it was the only send path that carried no `ttl`
+    // at all: forwarding one line into a room set to five minutes left a
+    // permanent message in it, on every participant's device, in a conversation
+    // whose header says everything disappears. Same shape `dyingNow` gives the
+    // other paths, read off the destination.
+    const sentAt = Date.now()
+    const targetTtl = threadTtl(ttlThreadKey(target.kind === 'group', target.kind === 'group' ? target.id : target.uin))
+    const expiresAt = ownExpiry(targetTtl, sentAt)
+    const dying: { ttl?: number; ts?: number } =
+      targetTtl != null && expiresAt != null ? { ttl: targetTtl, ts: Math.floor(sentAt / 1000) } : {}
+    const env: TextEnvelope = { kind: 'text', id: newId, text: row.text, fwdName, ...dying }
     try {
       if (target.kind === 'group') {
         // target.id may be a foreign-group alias — resolve the island ctx.
@@ -2071,9 +2068,10 @@ export function Chat() {
       const newRow: OutgoingRow = {
         id: newId,
         text: row.text,
-        sentAt: Date.now(),
+        sentAt,
         state: 'sent',
         fwdName,
+        ...(expiresAt != null ? { expiresAt } : {}),
       }
       const targetKey =
         target.kind === 'group'
@@ -2168,63 +2166,6 @@ export function Chat() {
     }
   }
 
-  /// Reaction chips under a bubble — one per distinct asset with a count;
-  /// the viewer's own asset is highlighted. Tapping a chip toggles it.
-  /// `align` matches the bubble side. Reads the shared reactions store
-  /// (the component already subscribes via useReactionsVersion()).
-  function renderReactions(targetId: string, align: 'start' | 'end') {
-    const chips = aggregateReactions(targetId, identity!.uin)
-    if (chips.length === 0) return null
-    // Long-press is the touch equivalent of the right-click below. Cancelled by
-    // moving or lifting early so a scroll never opens the sheet.
-    let pressTimer: ReturnType<typeof setTimeout> | undefined
-    const holdStart = () => {
-      pressTimer = setTimeout(() => {
-        pressTimer = undefined
-        setReactionAuthorsFor(targetId)
-      }, 450)
-    }
-    const holdCancel = () => {
-      if (pressTimer) clearTimeout(pressTimer)
-      pressTimer = undefined
-    }
-    return (
-      <div className={`flex flex-wrap gap-1 ${align === 'end' ? 'justify-end' : 'justify-start'}`}>
-        {chips.map((c) => (
-          <button
-            key={c.asset}
-            onClick={() => void toggleReaction(targetId, c.asset)}
-            onContextMenu={(e) => {
-              e.preventDefault()
-              setReactionAuthorsFor(targetId)
-            }}
-            onPointerDown={holdStart}
-            onPointerUp={holdCancel}
-            onPointerLeave={holdCancel}
-            onPointerCancel={holdCancel}
-            className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 transition-colors ${
-              c.mine ? 'bg-accent/25' : 'bg-field hover:bg-line/60'
-            }`}
-            title={c.asset}
-          >
-            {/* ⚠ `w-auto`, not a square. The kolobki are not square images (21x25,
-                33x40, 37x25 …), and a fixed w-4 h-4 box squeezed every one of them
-                into it — the same flattening `object-contain` fixed in the picker,
-                still here under the bubble. The height is what a chip needs to
-                agree on; the width is the picture's own business. */}
-            <img
-              src={emoticonAssetURL(c.asset)}
-              alt={c.asset}
-              className="h-4 w-auto max-w-6 select-none object-contain"
-              draggable={false}
-            />
-            {c.count > 1 && <span className="font-mono text-[0.625rem] text-fg-secondary">{c.count}</span>}
-          </button>
-        ))}
-      </div>
-    )
-  }
-
   const { aliasFor: peerAliasFor } = useContactAliases()
   // ⚠ With the host: a cross-island alias lives under `uin@host` (see
   // aliasKey), and a bare-uin lookup here made every name set for a foreign
@@ -2243,6 +2184,15 @@ export function Chat() {
         : [],
     [isGroup, group],
   )
+  /// Everything `nickOf` needs, refreshed on every render and read only when
+  /// somebody actually calls it. `useContactAliases` hands back a NEW
+  /// `aliasFor` every render, and with it in the dependency list below the
+  /// mention context was a new object every render too — which fed a new prop
+  /// into every bubble on the thread and made the memoised rows below
+  /// pointless. The context is stable now; `aliasSig` is what carries the news
+  /// that a name changed.
+  const mentionLiveRef = useRef({ aliasFor: peerAliasFor, group, isGroup, navigate })
+  mentionLiveRef.current = { aliasFor: peerAliasFor, group, isGroup, navigate }
   const mentionCtx = useMemo<MentionContext | undefined>(() => {
     if (!identity) return undefined
     return {
@@ -2250,21 +2200,66 @@ export function Chat() {
       // A `#<uin>` becomes a name only for someone actually here: my alias for
       // them first, then their group nick, then a contact. Anyone else stays
       // literal digits, so a pin cannot point the group at a stranger.
-      nickOf: (uin: number) =>
-        peerAliasFor(uin) ||
-        (isGroup ? group?.members.find((m) => m.uin === uin)?.nickname : null) ||
-        contactAlias(uin) ||
-        null,
-      onOpen: (uin: number) => navigate(`/profile/${uin}`),
+      nickOf: (uin: number) => {
+        const live = mentionLiveRef.current
+        return (
+          live.aliasFor(uin) ||
+          (live.isGroup ? live.group?.members.find((m) => m.uin === uin)?.nickname : null) ||
+          contactAlias(uin) ||
+          null
+        )
+      },
+      onOpen: (uin: number) => mentionLiveRef.current.navigate(`/profile/${uin}`),
       meUin: identity.uin,
     }
-  }, [identity, mentionRoster, isGroup, group, peerAliasFor, navigate])
+  }, [identity, mentionRoster])
   /// The same thing for my own bubbles, which are tinted with the accent and
   /// therefore cannot show an accent-coloured name.
   const mentionCtxSelf = useMemo<MentionContext | undefined>(
     () => (mentionCtx ? { ...mentionCtx, tone: 'self' } : undefined),
     [mentionCtx],
   )
+
+  /// Every `#<uin>` the bodies in this thread actually name.
+  ///
+  /// `nickOf` resolves those through the WHOLE alias map, not just this room's
+  /// roster, so a mentioned NON-member (a contact of mine nobody here knows) is
+  /// drawn by my alias for them and was invisible to the signature below.
+  /// Renaming one left every memoised bubble printing the old name until the
+  /// thread was remounted. Recomputed only when the message arrays change, the
+  /// same cost `mentionIds` already pays a few lines down.
+  const mentionedUins = useMemo<number[]>(() => {
+    const found = new Set<number>()
+    const re = /#(\d{3,})/g
+    const scan = (s: string) => {
+      let m: RegExpExecArray | null
+      while ((m = re.exec(s)) !== null) found.add(Number(m[1]))
+    }
+    for (const r of incoming) if (r.text) scan(r.text)
+    for (const r of outgoing) if (r.text) scan(r.text)
+    return [...found]
+  }, [incoming, outgoing])
+
+  /// A signature of MY OWN names for the people this thread can name. The
+  /// mention context above is deliberately stable, so it cannot tell a
+  /// memoised bubble that an alias changed underneath it; this scalar can,
+  /// because it is one of every row's props. Cheap: one lookup per member of
+  /// the open group, one per uin the thread mentions, and in a 1:1 with no
+  /// mentions in it nothing at all.
+  const aliasSig = [
+    peerAlias ?? '',
+    mentionRoster.map((m) => peerAliasFor(m.uin) ?? '').join(','),
+    mentionedUins.map((u) => peerAliasFor(u) ?? '').join(','),
+  ].join('|')
+
+  /// The open group's roster keyed by uin. The row loop below wants the
+  /// sender's nickname and avatar for every message, and a linear find per row
+  /// made that O(rows × members) on every render of a large group.
+  const memberByUin = useMemo(() => {
+    const byUin = new Map<number, RCQGroup['members'][number]>()
+    if (isGroup && group) for (const m of group.members) byUin.set(m.uin, m)
+    return byUin
+  }, [isGroup, group])
 
   /// Does this body call me? Used for the bubble tint and for the jump list.
   const bodyMentionsMe = useCallback(
@@ -2393,6 +2388,32 @@ export function Chat() {
         member?.nickname ??
         (uin === peerUIN ? peer?.nickname : undefined) ??
         `#${uin}`
+      // Where tapping this person goes (founder item 22). The rows used to be
+      // inert: a name and a number that looked exactly like every other
+      // clickable name in the app and did nothing.
+      //
+      // A cross-island card carries its island, because our own
+      // `/users/{uin}/info` knows nothing about them and would 404. Same rule
+      // `headerLink` follows a few lines down.
+      //
+      // ⚠ The privacy gate (`canOpenProfileCard`) is asked here rather than in
+      // the sheet: this is where we know who the viewer is, whose thread it is,
+      // and which of these people are held as contacts. It FAILS OPEN, and it
+      // has to: the enforcement that counts is the island refusing to serve the
+      // card, and until that exists a link that quietly stopped working would
+      // read as a broken screen rather than as a setting.
+      const host = uin === peerUIN ? peer?.host ?? islandHost : null
+      const openable = canOpenProfileCard(
+        { uin, profile_openable: uin === peerUIN ? peer?.profile_openable : undefined },
+        { myUin: identity.uin, isContact: uin === peerUIN },
+      )
+      const profileTo = !openable
+        ? null
+        : mine
+          ? '/profile'
+          : host
+            ? `/profile/${uin}?i=${encodeURIComponent(host)}`
+            : `/profile/${uin}`
       return {
         uin,
         asset,
@@ -2401,6 +2422,7 @@ export function Chat() {
         avatarMediaId: member?.avatar_media_id ?? (uin === peerUIN ? peer?.avatar_media_id : undefined),
         avatarMediaKey: member?.avatar_media_key ?? (uin === peerUIN ? peer?.avatar_media_key : undefined),
         crossIsland: uin === peerUIN ? !!peer?.host : false,
+        profileTo,
       }
     })
     // `reactionsVersion` is what makes this recompute when a reaction lands.
@@ -2446,35 +2468,34 @@ export function Chat() {
     return () => clearInterval(iv)
   }, [slowUntil])
 
-  // Live group-settings/roster refresh: the island broadcasts the full group
-  // snapshot as `group_membership_changed` on any patch (≤100 members; larger
-  // rooms get only the id and we refetch). Without this, an owner flipping
-  // slowmode reached members only on their next chat open. Cross-island
-  // groups ride a different island's socket, so they stay on the
-  // fetch-on-open path.
-  useEffect(() => {
-    if (!isGroup || gctx == null || gctx.host) return
-    const off = ws.on('group_membership_changed', (ev) => {
-      const snap = (ev as { group?: RCQGroup }).group
-      const gid = snap?.id ?? (ev as { group_id?: number }).group_id
-      if (gid !== gctx.gid) return
-      if (snap) {
-        _groupCache.set(gctx.gid, snap)
-        setGroup(snap)
-      } else {
-        void Api.groupInfo(gctx.ident, gctx.gid)
-          .then((g) => {
-            _groupCache.set(gctx.gid, g)
-            setGroup(g)
-          })
-          .catch(() => {})
-      }
-    })
-    return off
-    // gctx is rebuilt every render from (identity, groupId) — depending on
-    // the pieces keeps the subscription from churning each paint.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ws, isGroup, gctx?.gid, gctx?.host, identity?.uin])
+  // Live group-settings/roster refresh: the island broadcasts a patch as
+  // `group_membership_changed` on any change. Without this, an owner flipping
+  // slowmode reached members only on their next chat open. Both shapes of the
+  // frame are handled in `group-events`. Above 100 members it degrades to the
+  // id plus `owner_uin`, and the owner half of it lands here immediately, which
+  // is what keeps `canPin` / `canModerate` / `readOnlyHere` from drawing the
+  // previous owner's rights in a big room after a handover. Cross-island groups
+  // ride a different island's socket, so they stay on the fetch-on-open path.
+  useGroupChanged(
+    { enabled: isGroup && gctx != null && !gctx.host, ident: gctx?.ident ?? null, gid: gctx?.gid ?? null },
+    (patch) => {
+      const gid = gctx?.gid
+      setGroup((prev) => {
+        // ⚠ The owner patch is MERGED into what we already hold. It carries the
+        // owner and nothing else, so replacing the group with it would blank
+        // the roster, and a blank roster is not a display problem here: it is
+        // what the send path seals against.
+        const next =
+          patch.kind === 'snapshot'
+            ? patch.group
+            : prev
+              ? { ...prev, owner_uin: patch.ownerUin }
+              : prev
+        if (next && gid != null) _groupCache.set(gid, next)
+        return next
+      })
+    },
+  )
 
   // Outgoing: one "started" per burst, a "stopped" when the composer goes
   // quiet for 3s or the message ships. Sending on every keystroke would be a
@@ -2504,7 +2525,10 @@ export function Chat() {
   }, [ws, peerUIN, isGroup, isSelf])
 
   const headerSub = isGroup
-    ? group ? t('section.groups.members', { n: memberCount(group) }) : ''
+    // Compact from 1000 up (founder item 27): "999", then "1K", "2.1K". The
+    // thresholds live in `format-count.ts` so the phones can mirror the exact
+    // same rules rather than each inventing their own rounding.
+    ? group ? t('section.groups.members', { n: compactCount(memberCount(group)) }) : ''
     : isSelf
       ? t('chat.saved.subtitle')
       : peerTyping
@@ -2640,6 +2664,82 @@ export function Chat() {
       // Cross-island: carry the island so the profile renders from the local
       // card (own-island /users/{uin}/info would 404).
       : peer ? (peer.host ? `/profile/${peer.uin}?i=${encodeURIComponent(peer.host)}` : `/profile/${peer.uin}`) : '#'
+
+  // ── What a bubble may do ────────────────────────────────────────────
+  // Every callback a message row can reach, in ONE object whose identity NEVER
+  // changes. The rows are memoised (see IncomingMessageRow / OutgoingMessageRow
+  // below) and React.memo compares props by identity: a bundle rebuilt each
+  // render would fail that comparison for every bubble on the thread and the
+  // memo would buy nothing at all.
+  //
+  // The methods delegate through a ref that is refreshed on every render, so a
+  // row that has not re-rendered for a hundred keystrokes still calls today's
+  // closure. That matters: `downloadRowFile` reads `downloadingRowId`, `retry`
+  // reads the outgoing log — a frozen copy of either would act on state that
+  // is minutes old.
+  const rowLiveRef = useRef<RowActions | null>(null)
+  rowLiveRef.current = {
+    toggleActions,
+    toggleReactionPicker: (rowId, anchor) => {
+      // Both menus float from the same anchor, so they must not be open
+      // together. The actions toggle already clears this one; this is the
+      // other half of the pair.
+      setActionsUp(placeMenu(anchor, PICKER_ROOM_PX).up)
+      setActionsForRowId(null)
+      setReactionForRowId((id) => (id === rowId ? null : rowId))
+    },
+    openReactionPicker: (rowId) => {
+      setActionsForRowId(null)
+      setReactionForRowId(rowId)
+    },
+    showReactionAuthors: setReactionAuthorsFor,
+    toggleReaction: (targetId, asset) => void toggleReaction(targetId, asset),
+    jumpToMessage,
+    startReplyTo,
+    startReply,
+    startEdit,
+    copyText,
+    openLink: openLinkFromMenu,
+    pinMessage,
+    startForward: (text, author) => {
+      setForwardingRow({ text, author })
+      setActionsForRowId(null)
+    },
+    startReport,
+    downloadRowFile: (rowId, mediaId, mediaKey, name, mime) =>
+      void downloadRowFile(rowId, mediaId, mediaKey, name, mime),
+    deleteIncoming: (id) => void deleteIncoming(id),
+    deleteAsModerator: (id) => void deleteAsModerator(id),
+    deleteForEveryone: (row) => void deleteForEveryone(row),
+    retry: (id) => void retry(id),
+    dismiss,
+  }
+  const rowActionsRef = useRef<RowActions | null>(null)
+  if (!rowActionsRef.current) {
+    rowActionsRef.current = {
+      toggleActions: (...a) => rowLiveRef.current!.toggleActions(...a),
+      toggleReactionPicker: (...a) => rowLiveRef.current!.toggleReactionPicker(...a),
+      openReactionPicker: (...a) => rowLiveRef.current!.openReactionPicker(...a),
+      showReactionAuthors: (...a) => rowLiveRef.current!.showReactionAuthors(...a),
+      toggleReaction: (...a) => rowLiveRef.current!.toggleReaction(...a),
+      jumpToMessage: (...a) => rowLiveRef.current!.jumpToMessage(...a),
+      startReplyTo: (...a) => rowLiveRef.current!.startReplyTo(...a),
+      startReply: (...a) => rowLiveRef.current!.startReply(...a),
+      startEdit: (...a) => rowLiveRef.current!.startEdit(...a),
+      copyText: (...a) => rowLiveRef.current!.copyText(...a),
+      openLink: (...a) => rowLiveRef.current!.openLink(...a),
+      pinMessage: (...a) => rowLiveRef.current!.pinMessage(...a),
+      startForward: (...a) => rowLiveRef.current!.startForward(...a),
+      startReport: (...a) => rowLiveRef.current!.startReport(...a),
+      downloadRowFile: (...a) => rowLiveRef.current!.downloadRowFile(...a),
+      deleteIncoming: (...a) => rowLiveRef.current!.deleteIncoming(...a),
+      deleteAsModerator: (...a) => rowLiveRef.current!.deleteAsModerator(...a),
+      deleteForEveryone: (...a) => rowLiveRef.current!.deleteForEveryone(...a),
+      retry: (...a) => rowLiveRef.current!.retry(...a),
+      dismiss: (...a) => rowLiveRef.current!.dismiss(...a),
+    }
+  }
+  const rowActions = rowActionsRef.current
 
   return (
     // h-screen FIRST, dvh second: `100dvh` is an enhancement (it accounts for
@@ -2900,8 +3000,22 @@ export function Chat() {
           // floor is the composer's top edge, the same maths as roomAround: a
           // row still under the blurred bar has not been seen. The list is a
           // contiguous tail, so only the front needs checking — O(newly seen).
+          //
+          // ⚠⚠ NOT while the view is still being held against the unread
+          // divider by us rather than by the reader. Opening a thread on the
+          // divider seeds the badge and writes `scrollTop` in the same breath,
+          // and that write calls this handler back: with the divider parked at
+          // the top of the pane the whole unread run measures as "above the
+          // floor", so every id was crossed off before a word of it had been
+          // read and the badge went straight to 0 (founder item 30a: "счётчик
+          // непрочитанных на стрелке пропал"). A wheel or a touch releases the
+          // pin (see releaseUnreadPin), and from that moment on this is a
+          // genuine account of what the reader has passed.
+          const pinned = pinTargetRef.current === 'unread'
           const ids = unseenIdsRef.current
-          if (bottom) {
+          if (pinned) {
+            /* held against the divider — nothing has been read yet */
+          } else if (bottom) {
             clearUnseenBelow()
           } else if (ids.length) {
             const cs = el.parentElement ? getComputedStyle(el.parentElement) : null
@@ -2958,10 +3072,14 @@ export function Chat() {
                   ? t('chat.empty.readonly')
                   : t('chat.empty.peer', { name: headerName })}
             </div>
-            {/* No invitation to say hello where the composer is a notice: in an
-                owner-only group the button filled a composer that is not there,
-                so it did nothing at all. */}
-            {!readOnlyHere && (
+            {/* No invitation to say hello where saying hello is not on offer:
+                an owner-only group (the composer is disabled, so the button
+                would fill a field nobody can send from) and a group closed to
+                new members with nothing in it yet (a room nobody can join,
+                with no conversation to open, is not waiting for a greeting).
+                The empty state itself stays either way: "nothing here yet" is
+                still the thing the reader came to find out. */}
+            {!readOnlyHere && !closedHere && (
             <button
               type="button"
               onClick={() => {
@@ -3014,9 +3132,23 @@ export function Chat() {
                   </li>
                 )
               }
+              // ⚠⚠ EVERY prop handed to the two row components below is either
+              // a scalar or an object whose identity is stable while its
+              // contents are (the row itself, the mention context, the action
+              // bundle). That is the whole point: they are memoised, React
+              // compares those props by identity, and one object literal or
+              // one inline arrow built here would fail the comparison for every
+              // bubble on the thread — putting the tokenisation of every
+              // message back on the keystroke and the send path, which is the
+              // freeze item 30b reported. Anything a row needs that is derived
+              // from state (a name, a flag, whether ITS menu is open) is
+              // narrowed to a scalar here rather than passed whole.
+              const rowId = item.kind === 'in' ? item.msg.id : item.row.id
+              const openMenu = actionsForRowId === rowId
+              const openPicker = reactionForRowId === rowId
               if (item.kind === 'in') {
                 const m = item.msg
-                const senderMember = isGroup ? group?.members.find((mem) => mem.uin === m.from) : undefined
+                const senderMember = isGroup ? memberByUin.get(m.from) : undefined
                 // My own name for them wins over the nick they chose, exactly as
                 // it does in the 1:1 header. Setting an alias and then still
                 // reading their nick over every message in a group read as the
@@ -3024,626 +3156,72 @@ export function Chat() {
                 const senderName = isGroup
                   ? peerAliasFor(m.from) || senderMember?.nickname || `#${m.from}`
                   : null
-                const invite = parseGroupInvite(m.text)
                 // ⚠ NO aliases in here: ReplyContext ships INSIDE the sealed
                 // envelope, so the quote's author label reaches the peer. My
                 // own name for someone is device-only by contract — sending it
                 // to the very person it describes is the one leak worse than
                 // storing it. Their self-chosen nickname only.
                 const replyAuthor = (isGroup ? senderMember?.nickname : peer?.nickname) ?? `#${m.from}`
-                const isPlainText =
-                  m.kind !== 'photo' && m.kind !== 'video' && m.kind !== 'file' && m.kind !== 'other' && invite == null
-                const showActions = actionsForRowId === m.id
-                const showReactionPicker = reactionForRowId === m.id
                 return (
-                  <li key={`in-${m.id}`} id={`msg-${m.id}`} className={`group flex justify-start rounded-lg transition-colors duration-500 ${item.cont ? '-mt-1' : ''} ${highlightId === m.id ? 'bg-accent/15' : ''} ${showActions || showReactionPicker ? 'relative z-[20]' : ''}`} {...swipeReply(() => startReplyTo(m.id, m.text, replyAuthor))}>
-                    <div className="relative max-w-[80%] flex flex-col items-start gap-1">
-                      {senderName && !item.cont && (
-                        <Link
-                          to={`/profile/${m.from}`}
-                          className="flex items-center gap-1.5 font-mono text-[0.625rem] text-fg-dim px-1 hover:text-accent transition-colors"
-                        >
-                          {/* Beside the nick, never instead of it, and only
-                              when there is a picture. */}
-                          <SenderAvatar mediaId={senderMember?.avatar_media_id} mediaKey={senderMember?.avatar_media_key} size={16} />
-                          {senderName}
-                        </Link>
-                      )}
-                      {m.replyTo && (
-                        <button
-                          type="button"
-                          onClick={() => jumpToMessage(m.replyTo!.id)}
-                          className="border-l-2 border-accent/60 pl-2 max-w-full text-left rounded-r hover:bg-line/30 transition-colors cursor-pointer"
-                        >
-                          <div className="font-mono text-[0.625rem] text-fg-dim">{m.replyTo.authorName}</div>
-                          <div className="text-[0.6875rem] text-fg-secondary line-clamp-3 break-words max-w-[18rem]"><EmoticonText text={m.replyTo.snippet} emoticonSize={14} /></div>
-                        </button>
-                      )}
-                      {m.kind === 'poll' && m.poll ? (
-                        <div className="relative" data-chat-menu {...pressMenu(m.id)}>
-                          <PollBubble poll={m.poll} />
-                          <BubbleMenuButton tone="chrome" label={t('chat.actions.more')} open={showActions} onOpen={(el) => toggleActions(m.id, el)} />
-                        </div>
-                      ) : m.kind === 'photo' && m.mediaId && m.mediaKey ? (
-                        <div className="flex flex-col items-start gap-1" data-chat-menu {...pressMenu(m.id)}>
-                          <div className="relative">
-                            <DecryptedImage mediaId={m.mediaId} mediaKey={m.mediaKey} apiBase={groupMediaBase} />
-                            <BubbleMenuButton tone="over" label={t('chat.actions.more')} open={showActions} onOpen={(el) => toggleActions(m.id, el)} />
-                          </div>
-                          {m.text && (
-                            <div className="rounded-lg px-3 py-2 text-sm bg-bubble-other" onClick={(e) => toggleActions(m.id, e.currentTarget, e)}>
-                              <EmoticonText text={m.text} emoticonSize={18} mention={mentionCtx} link={{ enabled: linksAllowed }} />
-                            </div>
-                          )}
-                        </div>
-                      ) : m.kind === 'video' && m.mediaId && m.mediaKey ? (
-                        <div className="flex flex-col items-start gap-1" data-chat-menu {...pressMenu(m.id)}>
-                          <div className="relative">
-                            <DecryptedVideo
-                              mediaId={m.mediaId}
-                              mediaKey={m.mediaKey}
-                              thumbnailB64={m.thumbnailB64}
-                              durationSec={m.durationSec}
-                              apiBase={groupMediaBase}
-                            />
-                            <BubbleMenuButton tone="over" label={t('chat.actions.more')} open={showActions} onOpen={(el) => toggleActions(m.id, el)} />
-                          </div>
-                          {m.text && (
-                            <div className="rounded-lg px-3 py-2 text-sm bg-bubble-other" onClick={(e) => toggleActions(m.id, e.currentTarget, e)}>
-                              <EmoticonText text={m.text} emoticonSize={18} mention={mentionCtx} link={{ enabled: linksAllowed }} />
-                            </div>
-                          )}
-                        </div>
-                      ) : m.kind === 'file' && m.mediaId && m.mediaKey ? (
-                        <div className="flex flex-col items-start gap-1" data-chat-menu {...pressMenu(m.id)}>
-                          <FileBubble
-                            mediaId={m.mediaId}
-                            mediaKey={m.mediaKey}
-                            fileName={m.fileName}
-                            mime={m.fileMime}
-                            size={m.fileSize}
-                            apiBase={groupMediaBase}
-                            onPress={(el) => toggleActions(m.id, el)}
-                            busy={downloadingRowId === m.id}
-                            disabledNote={filesAllowed ? undefined : t('chat.files_off.chip')}
-                          />
-                          {m.text && (
-                            <div className="rounded-lg px-3 py-2 text-sm bg-bubble-other" onClick={(e) => toggleActions(m.id, e.currentTarget, e)}>
-                              <EmoticonText text={m.text} emoticonSize={18} mention={mentionCtx} link={{ enabled: linksAllowed }} />
-                            </div>
-                          )}
-                        </div>
-                      ) : m.kind === 'other' ? (
-                        <div className="relative" data-chat-menu {...pressMenu(m.id)}>
-                          <MediaPlaceholder mediaKind={m.mediaKind} />
-                          <BubbleMenuButton tone="chrome" label={t('chat.actions.more')} open={showActions} onOpen={(el) => toggleActions(m.id, el)} />
-                        </div>
-                      ) : invite != null && linksAllowed ? (
-                        // Links-off rooms drop to the plain-text bubble below:
-                        // a join card is the most clickable link there is.
-                        <div className="relative" data-chat-menu {...pressMenu(m.id)}>
-                          <GroupJoinCard groupId={invite.id} host={invite.host} menuSpace />
-                          <BubbleMenuButton tone="chrome" label={t('chat.actions.more')} open={showActions} onOpen={(el) => toggleActions(m.id, el)} />
-                        </div>
-                      ) : (
-                        <button
-                          data-chat-menu
-                          onClick={(e) => toggleActions(m.id, e.currentTarget, e)}
-                          onContextMenu={(e) => { e.preventDefault(); toggleActions(m.id, e.currentTarget, e) }}
-                          className="rounded-lg px-3 py-2 text-sm text-left bg-bubble-other hover:brightness-110 transition-colors"
-                        >
-                          <EmoticonText text={m.text} emoticonSize={18} mention={mentionCtx} link={{ enabled: linksAllowed }} />
-                          {m.edited && <span className="ml-1 text-[0.625rem] text-fg-dim italic">{t('chat.edit.edited')}</span>}
-                        </button>
-                      )}
-                      {renderReactions(m.id, 'start')}
-                      <div className="text-[0.625rem] font-mono text-fg-dim">
-                        {new Date(m.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </div>
-                      {/* ⚠ Floats, like the reaction picker right below. As an
-                          in-flow block it grew the row and shoved every message
-                          under it down the thread, so opening a menu moved the
-                          text you were about to act on. Same anchor
-                          (`top-full` on the bubble's `relative` column), one
-                          layer above the picker; the two are never open at once,
-                          both toggles close the other. */}
-                      <AnimatePresence>
-                      {showActions && (
-                        <ActionMenu align="start" up={actionsUp} max={actionsMax}>
-                          {/* The click that opened this menu landed on a URL:
-                              opening and copying it lead — a link never
-                              navigates by itself anymore. */}
-                          {actionsLink != null && (
-                            <ActionButton
-                              onClick={() => openLinkFromMenu(actionsLink)}
-                              label={t('chat.actions.open_link')}
-                              icon={<MenuLinkIcon />}
-                            />
-                          )}
-                          {actionsLink != null && (
-                            <ActionButton onClick={() => copyText(actionsLink)} label={t('chat.actions.copy_link')} icon={<MenuCopyIcon />} />
-                          )}
-                          {/* A file downloads from HERE now, not from the tap
-                              itself — the tap opens this menu. */}
-                          {m.kind === 'file' && m.mediaId && m.mediaKey && filesAllowed && (
-                            <ActionButton
-                              onClick={() => void downloadRowFile(m.id, m.mediaId!, m.mediaKey!, m.fileName, m.fileMime)}
-                              label={t('chat.actions.download')}
-                              icon={<MenuDownloadIcon />}
-                            />
-                          )}
-                          {/* The only way in on a touch screen. The ☺ beside
-                              the bubble is `rcq-hover-only` — deliberately, it
-                              needs a pointer to hover it — so without this row
-                              a phone browser could not react at all, and on an
-                              OWN message not even a desktop menu offered it. */}
-                          <ActionButton
-                            onClick={() => { setActionsForRowId(null); setReactionForRowId(m.id) }}
-                            label={t('chat.actions.react')}
-                            icon={<MenuReactIcon />}
-                          />
-                          <ActionButton
-                            onClick={() => startReplyTo(m.id, m.text || m.fileName || t('chat.pin.attachment'), replyAuthor)}
-                            label={t('chat.actions.reply')}
-                            icon={<MenuReplyIcon />}
-                          />
-                          {m.kind === 'text' && (
-                            <ActionButton onClick={() => copyText(m.text)} label={t('chat.actions.copy')} icon={<MenuCopyIcon />} />
-                          )}
-                          {canPin && isPlainText && (
-                            <ActionButton onClick={() => pinMessage(m.text)} label={t('chat.actions.pin')} icon={<MenuPinIcon />} />
-                          )}
-                          {m.kind === 'text' && (
-                            <ActionButton
-                              onClick={() => { setForwardingRow({ text: m.text, author: replyAuthor }); setActionsForRowId(null) }}
-                              label={t('chat.actions.forward')}
-                              icon={<MenuForwardIcon />}
-                            />
-                          )}
-                          {/* Reporting somebody's message to the island's
-                              operators — reachable on EVERY kind now, which
-                              was the founder's point: a video or file offered
-                              no menu at all, so no way to report it. */}
-                          {!isSelf && (
-                            <ActionButton
-                              onClick={() => startReport(m)}
-                              label={t('chat.actions.report')}
-                              icon={<MenuFlagIcon />}
-                            />
-                          )}
-                          {/* The group's owner / an admin retracts anybody's
-                              message for everyone (founder batch 21.08 item
-                              3). Sits above "hide": one is moderation, the
-                              other is housekeeping, and they answer different
-                              questions. */}
-                          {canModerate && !isSelf && (
-                            <ActionButton
-                              onClick={() => void deleteAsModerator(m.id)}
-                              label={t('chat.actions.delete')}
-                              icon={<MenuTrashIcon />}
-                              danger
-                            />
-                          )}
-                          {/* Hides it HERE only. There is no deleting somebody
-                              else's message off their device, and offering a
-                              button that looks like it might is worse than not
-                              offering one — hence the wording, not "delete".
-                              Saved Messages is the one thread where the "other
-                              device" is mine, so there it really does delete
-                              everywhere and says so — see [deleteIncoming]. */}
-                          <ActionButton
-                            onClick={() => void deleteIncoming(m.id)}
-                            label={t(isSelf ? 'chat.actions.delete' : 'chat.actions.hide')}
-                            icon={isSelf ? <MenuTrashIcon /> : <MenuHideIcon />}
-                            danger={isSelf}
-                          />
-                        </ActionMenu>
-                      )}
-                      </AnimatePresence>
-                      <AnimatePresence>
-                        {showReactionPicker && (
-                          <motion.div
-                            key="rp"
-                            initial={{ opacity: 0, y: 4 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: 4 }}
-                            transition={{ duration: 0.12 }}
-                            className={`absolute z-20 left-0 ${actionsUp ? 'bottom-full mb-1' : 'top-full mt-1'}`}
-                          >
-                            <ReactionPicker
-                              uin={identity!.uin}
-                              current={reactionsForTarget(m.id)?.get(identity!.uin) ?? null}
-                              onPick={(asset) => void toggleReaction(m.id, asset)}
-                            />
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-                    <button
-                      type="button"
-                      data-chat-menu
-                      onClick={(e) => {
-                        // Both float from the same anchor now, so they must not
-                        // be open together. The actions toggle already clears
-                        // this one; this is the other half of the pair.
-                        setActionsUp(placeMenu(e.currentTarget, PICKER_ROOM_PX).up)
-                        setActionsForRowId(null)
-                        setReactionForRowId((id) => (id === m.id ? null : m.id))
-                      }}
-                      aria-label={t('chat.actions.react')}
-                      title={t('chat.actions.react')}
-                      className="self-center ml-1 h-7 w-7 rounded-full bg-surface text-fg-dim opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity flex-none rcq-hover-only items-center justify-center"
-                    >
-                      <MenuReactIcon />
-                    </button>
-                  </li>
+                  <IncomingMessageRow
+                    key={`in-${m.id}`}
+                    msg={m}
+                    cont={!!item.cont}
+                    highlighted={highlightId === m.id}
+                    showActions={openMenu}
+                    showReactionPicker={openPicker}
+                    menuUp={(openMenu || openPicker) && actionsUp}
+                    menuMax={openMenu ? actionsMax : 0}
+                    actionsLink={openMenu ? actionsLink : null}
+                    isSelf={isSelf}
+                    canPin={canPin}
+                    canModerate={canModerate}
+                    linksAllowed={linksAllowed}
+                    filesAllowed={filesAllowed}
+                    downloading={downloadingRowId === m.id}
+                    senderName={senderName}
+                    senderAvatarId={senderMember?.avatar_media_id}
+                    senderAvatarKey={senderMember?.avatar_media_key}
+                    replyAuthor={replyAuthor}
+                    mention={mentionCtx}
+                    mediaBase={groupMediaBase}
+                    myUin={identity.uin}
+                    aliasSig={aliasSig}
+                    reactionsVersion={reactionsVersion}
+                    pressState={pressRef}
+                    t={t}
+                    h={rowActions}
+                  />
                 )
               }
               const row = item.row
-              // Links-off rooms render the raw text bubble instead (same rule
-              // as the incoming side — a join card is a link).
-              const outInvite = linksAllowed ? parseGroupInvite(row.text) : null
-              if (outInvite != null) {
-                // A group-invite link I shared — show the join card
-                // (not a raw URL bubble) with the delivery state below.
-                return (
-                  <li key={row.id} id={`msg-${row.id}`} className={`group flex justify-end rounded-lg transition-colors duration-500 ${item.cont ? '-mt-1' : ''} ${highlightId === row.id ? 'bg-accent/15' : ''} ${actionsForRowId === row.id || reactionForRowId === row.id ? 'relative z-[20]' : ''}`}>
-                    <div className="relative max-w-[80%] flex flex-col items-end gap-1" {...outgoingPressMenu(row)}>
-                      {/* An invite I sent had no menu on any gesture at all:
-                          the card swallowed the tap into Join and the row
-                          carried nothing else. Retracting your own invite is
-                          the whole point of having one here. */}
-                      <div className="relative">
-                        <GroupJoinCard groupId={outInvite.id} host={outInvite.host} menuSpace />
-                        {outgoingMenuButton(row, 'chrome')}
-                      </div>
-                      {renderReactions(row.id, 'end')}
-                      {outgoingMediaOverlays(row)}
-                      <div className="flex items-center justify-end gap-1 text-[0.625rem] font-mono text-fg-dim">
-                        {new Date(row.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        {row.state === 'sending' && <ClockMark />}
-                        <DeliveryMarks state={row.state} />
-                        {row.state === 'failed' && (
-                          <>
-                            <span className="text-red-500">·{t('chat.delivery.failed')}</span>
-                            <button
-                              onClick={() => void retry(row.id)}
-                              className="ml-1 rounded px-1.5 py-0.5 text-red-600 hover:bg-red-500/15 transition-colors"
-                            >
-                              ↻ {t('chat.delivery.retry')}
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </li>
-                )
-              }
-              if (row.kind === 'photo' && row.mediaId && row.mediaKey) {
-                // A photo I sent — render the image bubble + delivery state.
-                return (
-                  <li key={row.id} id={`msg-${row.id}`} className={`group flex justify-end rounded-lg transition-colors duration-500 ${item.cont ? '-mt-1' : ''} ${highlightId === row.id ? 'bg-accent/15' : ''} ${actionsForRowId === row.id || reactionForRowId === row.id ? 'relative z-[20]' : ''}`}>
-                    <div className="relative max-w-[80%] flex flex-col items-end gap-1" {...outgoingPressMenu(row)}>
-                      <div className="relative">
-                        <DecryptedImage mediaId={row.mediaId} mediaKey={row.mediaKey} apiBase={groupMediaBase} />
-                        {outgoingMenuButton(row, 'over')}
-                      </div>
-                      {row.text && (
-                        <div className="rounded-lg px-3 py-2 text-sm bg-bubble-self" onClick={vouchedOut(row) ? (e) => toggleActions(row.id, e.currentTarget, e) : undefined}>
-                          <EmoticonText text={row.text} emoticonSize={18} mention={mentionCtxSelf} link={{ enabled: linksAllowed }} />
-                        </div>
-                      )}
-                      {renderReactions(row.id, 'end')}
-                      {outgoingMediaOverlays(row)}
-                      <div className="flex items-center justify-end gap-1 text-[0.625rem] font-mono text-fg-dim">
-                        {new Date(row.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        {row.state === 'sending' && <ClockMark />}
-                        <DeliveryMarks state={row.state} />
-                        {row.state === 'failed' && (
-                          <>
-                            <span className="text-red-500">·{t('chat.delivery.failed')}</span>
-                            <button
-                              onClick={() => void retry(row.id)}
-                              className="ml-1 rounded px-1.5 py-0.5 text-red-600 hover:bg-red-500/15 transition-colors"
-                            >
-                              ↻ {t('chat.delivery.retry')}
-                            </button>
-                            <button
-                              onClick={() => dismiss(row.id)}
-                              className="rounded px-1.5 py-0.5 text-fg-dim hover:bg-line transition-colors"
-                            >
-                              × {t('chat.delivery.dismiss')}
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </li>
-                )
-              }
-              if (row.kind === 'video' && row.mediaId && row.mediaKey) {
-                // A video I sent (echoed from another device via a carbon) —
-                // render the player + delivery state.
-                return (
-                  <li key={row.id} id={`msg-${row.id}`} className={`group flex justify-end rounded-lg transition-colors duration-500 ${item.cont ? '-mt-1' : ''} ${highlightId === row.id ? 'bg-accent/15' : ''} ${actionsForRowId === row.id || reactionForRowId === row.id ? 'relative z-[20]' : ''}`}>
-                    <div className="relative max-w-[80%] flex flex-col items-end gap-1" {...outgoingPressMenu(row)}>
-                      <div className="relative">
-                        <DecryptedVideo
-                          mediaId={row.mediaId}
-                          mediaKey={row.mediaKey}
-                          thumbnailB64={row.thumbnailB64}
-                          durationSec={row.durationSec}
-                          apiBase={groupMediaBase}
-                        />
-                        {outgoingMenuButton(row, 'over')}
-                      </div>
-                      {row.text && (
-                        <div className="rounded-lg px-3 py-2 text-sm bg-bubble-self" onClick={vouchedOut(row) ? (e) => toggleActions(row.id, e.currentTarget, e) : undefined}>
-                          <EmoticonText text={row.text} emoticonSize={18} mention={mentionCtxSelf} link={{ enabled: linksAllowed }} />
-                        </div>
-                      )}
-                      {renderReactions(row.id, 'end')}
-                      {outgoingMediaOverlays(row)}
-                      <div className="flex items-center justify-end gap-1 text-[0.625rem] font-mono text-fg-dim">
-                        {new Date(row.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        <span className="text-accent">✓</span>
-                      </div>
-                    </div>
-                  </li>
-                )
-              }
-              if (row.kind === 'file' && row.mediaId && row.mediaKey) {
-                // A document I sent — render the download chip + delivery state.
-                return (
-                  <li key={row.id} id={`msg-${row.id}`} className={`group flex justify-end rounded-lg transition-colors duration-500 ${item.cont ? '-mt-1' : ''} ${highlightId === row.id ? 'bg-accent/15' : ''} ${actionsForRowId === row.id || reactionForRowId === row.id ? 'relative z-[20]' : ''}`}>
-                    <div className="relative max-w-[80%] flex flex-col items-end gap-1" {...outgoingPressMenu(row)}>
-                      <FileBubble
-                        mediaId={row.mediaId}
-                        mediaKey={row.mediaKey}
-                        fileName={row.fileName}
-                        mime={row.fileMime}
-                        size={row.fileSize}
-                        apiBase={groupMediaBase}
-                        onPress={vouchedOut(row) ? (el) => toggleActions(row.id, el) : undefined}
-                        busy={downloadingRowId === row.id}
-                        disabledNote={filesAllowed ? undefined : t('chat.files_off.chip')}
-                      />
-                      {row.text && (
-                        <div className="rounded-lg px-3 py-2 text-sm bg-bubble-self" onClick={vouchedOut(row) ? (e) => toggleActions(row.id, e.currentTarget, e) : undefined}>
-                          <EmoticonText text={row.text} emoticonSize={18} mention={mentionCtxSelf} link={{ enabled: linksAllowed }} />
-                        </div>
-                      )}
-                      {renderReactions(row.id, 'end')}
-                      {outgoingMediaOverlays(row)}
-                      <div className="flex items-center justify-end gap-1 text-[0.625rem] font-mono text-fg-dim">
-                        {new Date(row.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        {row.state === 'sending' && <ClockMark />}
-                        <DeliveryMarks state={row.state} />
-                        {row.state === 'failed' && (
-                          <>
-                            <span className="text-red-500">·{t('chat.delivery.failed')}</span>
-                            <button
-                              onClick={() => void retry(row.id)}
-                              className="ml-1 rounded px-1.5 py-0.5 text-red-600 hover:bg-red-500/15 transition-colors"
-                            >
-                              ↻ {t('chat.delivery.retry')}
-                            </button>
-                            <button
-                              onClick={() => dismiss(row.id)}
-                              className="rounded px-1.5 py-0.5 text-fg-dim hover:bg-line transition-colors"
-                            >
-                              × {t('chat.delivery.dismiss')}
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </li>
-                )
-              }
-              if (row.kind === 'poll' && row.poll) {
-                // A ballot I posted. Same bubble the received half uses, so the
-                // author watches the same tallies everyone else does — one
-                // component, one source of truth (/polls/{id}).
-                return (
-                  <li key={row.id} id={`msg-${row.id}`} className={`group flex justify-end rounded-lg transition-colors duration-500 ${item.cont ? '-mt-1' : ''} ${highlightId === row.id ? 'bg-accent/15' : ''} ${actionsForRowId === row.id || reactionForRowId === row.id ? 'relative z-[20]' : ''}`}>
-                    <div className="relative max-w-[80%] flex flex-col items-end gap-1" {...outgoingPressMenu(row)}>
-                      <div className="relative">
-                        <PollBubble poll={row.poll} mine />
-                        {outgoingMenuButton(row, 'chrome')}
-                      </div>
-                      {renderReactions(row.id, 'end')}
-                      {outgoingMediaOverlays(row)}
-                      <div className="flex items-center justify-end gap-1 text-[0.625rem] font-mono text-fg-dim">
-                        {new Date(row.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        {row.state === 'sending' && <ClockMark />}
-                        <DeliveryMarks state={row.state} />
-                        {row.state === 'failed' && (
-                          <>
-                            <span className="text-red-500">·{t('chat.delivery.failed')}</span>
-                            <button
-                              onClick={() => void retry(row.id)}
-                              className="ml-1 rounded px-1.5 py-0.5 text-red-600 hover:bg-red-500/15 transition-colors"
-                            >
-                              ↻ {t('chat.delivery.retry')}
-                            </button>
-                            <button
-                              onClick={() => dismiss(row.id)}
-                              className="rounded px-1.5 py-0.5 text-fg-dim hover:bg-line transition-colors"
-                            >
-                              × {t('chat.delivery.dismiss')}
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </li>
-                )
-              }
-              if (row.kind === 'other') {
-                // A still-unsupported media (voice/location) the user sent from
-                // another device, echoed here via a carbon.
-                return (
-                  <li key={row.id} id={`msg-${row.id}`} className={`group flex justify-end rounded-lg transition-colors duration-500 ${item.cont ? '-mt-1' : ''} ${highlightId === row.id ? 'bg-accent/15' : ''} ${actionsForRowId === row.id || reactionForRowId === row.id ? 'relative z-[20]' : ''}`}>
-                    <div className="relative max-w-[80%] flex flex-col items-end gap-1" {...outgoingPressMenu(row)}>
-                      <div className="relative">
-                        <MediaPlaceholder mediaKind={row.mediaKind} />
-                        {outgoingMenuButton(row, 'chrome')}
-                      </div>
-                      {renderReactions(row.id, 'end')}
-                      {outgoingMediaOverlays(row)}
-                      <div className="flex items-center justify-end gap-1 text-[0.625rem] font-mono text-fg-dim">
-                        {new Date(row.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        <span className="text-accent">✓</span>
-                      </div>
-                    </div>
-                  </li>
-                )
-              }
-              const showActions = actionsForRowId === row.id
-              const showReactionPicker = reactionForRowId === row.id
               return (
-              <li key={row.id} id={`msg-${row.id}`} className={`group flex justify-end rounded-lg transition-colors duration-500 ${item.cont ? '-mt-1' : ''} ${highlightId === row.id ? 'bg-accent/15' : ''} ${showActions || showReactionPicker ? 'relative z-[20]' : ''}`} {...swipeReply(() => startReply(row))}>
-                <div className="relative max-w-[80%] flex flex-col items-end gap-1">
-                  {row.fwdName && (
-                    <div className="font-mono text-[0.625rem] uppercase tracking-wider text-fg-dim">
-                      ↗ {t('chat.forwarded_label', { name: row.fwdName })}
-                    </div>
-                  )}
-                  {row.replyTo && (
-                    <button
-                      type="button"
-                      onClick={() => jumpToMessage(row.replyTo!.id)}
-                      className="border-l-2 border-accent/60 pl-2 max-w-full text-left rounded-r hover:bg-line/30 transition-colors cursor-pointer"
-                    >
-                      <div className="font-mono text-[0.625rem] text-fg-dim">{row.replyTo.authorName}</div>
-                      <div className="text-[0.6875rem] text-fg-secondary line-clamp-3 break-words max-w-[18rem]">
-                        <EmoticonText text={row.replyTo.snippet} emoticonSize={14} />
-                      </div>
-                    </button>
-                  )}
-                  <button
-                    data-chat-menu
-                    onClick={(e) => toggleActions(row.id, e.currentTarget, e)}
-                    // Right-click opens the same actions. On a phone, tapping a
-                    // bubble to get reply/edit/delete is the obvious gesture; on
-                    // a desktop it is not, and a right-click just produced the
-                    // browser's own menu — so desktop Windows reported that
-                    // deleting a note "is still not there" when it had been
-                    // there all along, one left-click away.
-                    onContextMenu={(e) => { e.preventDefault(); toggleActions(row.id, e.currentTarget, e) }}
-                    className={`rounded-lg px-3 py-2 text-sm text-left transition-colors ${
-                      row.state === 'failed'
-                        ? 'bg-red-50 border border-red-200'
-                        : 'bg-bubble-self hover:bg-bubble-self/90'
-                    }`}
-                  >
-                    <EmoticonText text={row.text} emoticonSize={18} mention={mentionCtxSelf} link={{ enabled: linksAllowed }} />
-                    {row.edited && <span className="ml-1 text-[0.625rem] text-fg-dim italic">{t('chat.edit.edited')}</span>}
-                  </button>
-                  {renderReactions(row.id, 'end')}
-                  <div className="flex items-center justify-end gap-1 text-[0.625rem] font-mono text-fg-dim">
-                    {new Date(row.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    {row.state === 'sending' && <ClockMark />}
-                    <DeliveryMarks state={row.state} />
-                    {row.state === 'failed' && (
-                      <>
-                        <span className="text-red-500">·{t('chat.delivery.failed')}</span>
-                        <button
-                          onClick={() => void retry(row.id)}
-                          className="ml-1 rounded px-1.5 py-0.5 text-red-600 hover:bg-red-500/15 transition-colors"
-                        >
-                          ↻ {t('chat.delivery.retry')}
-                        </button>
-                        <button
-                          onClick={() => dismiss(row.id)}
-                          className="rounded px-1.5 py-0.5 text-fg-dim hover:bg-line transition-colors"
-                        >
-                          × {t('chat.delivery.dismiss')}
-                        </button>
-                      </>
-                    )}
-                  </div>
-                  {row.state === 'failed' && row.error && (
-                    <div className="text-right text-[0.625rem] text-red-500/80 max-w-full break-words">
-                      {row.error}
-                    </div>
-                  )}
-                  {/* Floats for the same reason as the incoming side above,
-                      anchored right because this column is right-aligned. */}
-                  <AnimatePresence>
-                  {showActions && (row.state === 'sent' || row.state === 'delivered' || row.state === 'read') && (
-                    <ActionMenu align="end" up={actionsUp} max={actionsMax}>
-                      {actionsLink != null && (
-                        <ActionButton
-                          onClick={() => openLinkFromMenu(actionsLink)}
-                          label={t('chat.actions.open_link')}
-                          icon={<MenuLinkIcon />}
-                        />
-                      )}
-                      {actionsLink != null && (
-                        <ActionButton onClick={() => copyText(actionsLink)} label={t('chat.actions.copy_link')} icon={<MenuCopyIcon />} />
-                      )}
-                      {/* Reacting to your own message: the founder's report.
-                          The menu listed reply / edit / copy / forward / delete
-                          and nothing else, so the only route was the hover ☺ —
-                          which does not exist on a touch screen. */}
-                      <ActionButton
-                        onClick={() => { setActionsForRowId(null); setReactionForRowId(row.id) }}
-                        label={t('chat.actions.react')}
-                        icon={<MenuReactIcon />}
-                      />
-                      <ActionButton onClick={() => startReply(row)} label={t('chat.actions.reply')} icon={<MenuReplyIcon />} />
-                      {(!row.kind || row.kind === 'text') && (
-                        <ActionButton onClick={() => startEdit(row)} label={t('chat.actions.edit')} icon={<MenuEditIcon />} />
-                      )}
-                      {(!row.kind || row.kind === 'text') && (
-                        <ActionButton onClick={() => copyText(row.text)} label={t('chat.actions.copy')} icon={<MenuCopyIcon />} />
-                      )}
-                      {canPin && (
-                        <ActionButton onClick={() => pinMessage(row.text)} label={t('chat.actions.pin')} icon={<MenuPinIcon />} />
-                      )}
-                      <ActionButton onClick={() => setForwardingRow({ text: row.text, author: myNickname })} label={t('chat.actions.forward')} icon={<MenuForwardIcon />} />
-                      <ActionButton onClick={() => void deleteForEveryone(row)} label={t('chat.actions.delete')} icon={<MenuTrashIcon />} danger />
-                    </ActionMenu>
-                  )}
-                  </AnimatePresence>
-                  <AnimatePresence>
-                    {showReactionPicker && (
-                      <motion.div
-                        key="rp"
-                        initial={{ opacity: 0, y: 4 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: 4 }}
-                        transition={{ duration: 0.12 }}
-                        className={`absolute z-20 right-0 ${actionsUp ? 'bottom-full mb-1' : 'top-full mt-1'}`}
-                      >
-                        <ReactionPicker
-                          uin={identity!.uin}
-                          current={reactionsForTarget(row.id)?.get(identity!.uin) ?? null}
-                          onPick={(asset) => void toggleReaction(row.id, asset)}
-                        />
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-                <button
-                  type="button"
-                  data-chat-menu
-                  onClick={(e) => {
-                    setActionsUp(placeMenu(e.currentTarget, PICKER_ROOM_PX).up)
-                    setActionsForRowId(null)
-                    setReactionForRowId((id) => (id === row.id ? null : row.id))
-                  }}
-                  aria-label={t('chat.actions.react')}
-                  title={t('chat.actions.react')}
-                  className="self-center mr-1 order-first h-7 w-7 rounded-full bg-surface text-fg-dim opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity flex-none rcq-hover-only items-center justify-center"
-                >
-                  <MenuReactIcon />
-                </button>
-              </li>
-            )
-          })}
+                <OutgoingMessageRow
+                  key={row.id}
+                  row={row}
+                  cont={!!item.cont}
+                  highlighted={highlightId === row.id}
+                  showActions={openMenu}
+                  showReactionPicker={openPicker}
+                  menuUp={(openMenu || openPicker) && actionsUp}
+                  menuMax={openMenu ? actionsMax : 0}
+                  actionsLink={openMenu ? actionsLink : null}
+                  canPin={canPin}
+                  linksAllowed={linksAllowed}
+                  filesAllowed={filesAllowed}
+                  downloading={downloadingRowId === row.id}
+                  myNickname={myNickname}
+                  mention={mentionCtxSelf}
+                  mediaBase={groupMediaBase}
+                  myUin={identity.uin}
+                  aliasSig={aliasSig}
+                  reactionsVersion={reactionsVersion}
+                  pressState={pressRef}
+                  t={t}
+                  h={rowActions}
+                />
+              )
+            })}
         </ul>
         {/* Scroll anchor — keeps the newest message in view. */}
         <div ref={bottomRef} />
@@ -3756,7 +3334,13 @@ export function Chat() {
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.14 }}
                   onClick={() => setShowPicker(false)}
-                  className="fixed inset-0 z-50 bg-black/40 backdrop-blur-md"
+                  /// Transparent, deliberately. This panel is a composer
+                  /// accessory, not a dialog: veiling and blurring the whole
+                  /// window for it read as "the app is busy" when the user only
+                  /// reached for an emoticon. The layer stays because it
+                  /// swallows the click that closes the panel and because the
+                  /// panel positions against it; only the paint goes.
+                  className="fixed inset-0 z-50"
                 >
                   {/* Over the composer, not in the middle of the window. It was
                       centred for a while and that is the wrong place for it:
@@ -3868,12 +3452,6 @@ export function Chat() {
                 {t('chat.blocked.unblock')}
               </button>
             </div>
-          ) : isGroup && group?.post_policy === 'owner_only' && identity != null && group.owner_uin !== identity.uin ? (
-            // Broadcast group: only the owner posts. Match the iOS/Android
-            // read-only notice (the server enforces it too now).
-            <div className="flex items-center justify-center rounded-2xl bg-surface px-4 py-3 text-sm text-fg-secondary">
-              <span>{t('chat.owner_only.notice')}</span>
-            </div>
           ) : (
           <div className="relative">
           <div className="flex items-end gap-2">
@@ -3901,8 +3479,14 @@ export function Chat() {
             <div className="relative flex-none">
               <button
                 data-attach-menu
-                onClick={() => setAttachMenuOpen((v) => !v)}
-                disabled={(!peer && !group) || uploadingPhoto || uploadingFile}
+                onClick={() => {
+                  // Always reopens on the main list. A menu that remembers it
+                  // was last showing the timers would hide the attachments
+                  // behind a back arrow for no reason anyone could guess.
+                  setAttachView('main')
+                  setAttachMenuOpen((v) => !v)
+                }}
+                disabled={(!peer && !group) || uploadingPhoto || uploadingFile || readOnlyHere}
                 className="h-10 w-10 rounded-full flex items-center justify-center text-fg-secondary hover:bg-line/60 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 title={t('chat.attach')}
                 aria-label={t('chat.attach')}
@@ -3925,6 +3509,49 @@ export function Chat() {
                       // one-word ones.
                       className="absolute bottom-full left-0 mb-2 z-20 w-52 rounded-xl bg-surface shadow-lg overflow-hidden"
                     >
+                      {attachView === 'ttl' ? (
+                        // Disappearing-message timers (founder item 20). A
+                        // second VIEW of this panel rather than a menu of its
+                        // own: the outside-click handler and Escape already know
+                        // `[data-attach-menu]`, and a second floating layer over
+                        // a `backdrop-filter` bar is exactly the trap this repo
+                        // has hit twice.
+                        <>
+                          <button
+                            onClick={() => setAttachView('main')}
+                            className="flex w-full items-center gap-2.5 whitespace-nowrap border-b border-line/60 px-3 py-2.5 text-left text-sm text-fg-secondary hover:bg-field transition-colors"
+                          >
+                            ← {t('chat.ttl.title')}
+                          </button>
+                          {TTL_OPTIONS.map((opt) => (
+                            <button
+                              key={opt.i18n}
+                              onClick={() => {
+                                if (ttlKey) setThreadTtl(ttlKey, opt.seconds)
+                                setAttachView('main')
+                                setAttachMenuOpen(false)
+                              }}
+                              className={`flex w-full items-center gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm hover:bg-field transition-colors ${
+                                (threadTtlSec ?? null) === opt.seconds ? 'text-accent' : ''
+                              }`}
+                            >
+                              <span className="w-3.5 flex-none text-center">
+                                {(threadTtlSec ?? null) === opt.seconds ? '✓' : ''}
+                              </span>
+                              {t(opt.i18n)}
+                            </button>
+                          ))}
+                          {/* Said in words, because it is the one thing about
+                              this feature people get wrong: the timer decides
+                              what THIS device asks recipients to do from now on,
+                              it does not reach back into what was already sent
+                              and it is not a promise about anybody's device. */}
+                          <div className="border-t border-line/60 px-3 py-2 text-[0.625rem] leading-snug text-fg-dim">
+                            {t('chat.ttl.hint')}
+                          </div>
+                        </>
+                      ) : (
+                      <>
                       <button
                         onClick={() => {
                           setAttachMenuOpen(false)
@@ -3957,9 +3584,7 @@ export function Chat() {
                         <PinIcon />
                         {t('chat.attach.location')}
                       </button>
-                      {/* Same order the phones use: group invite, then the
-                          poll (groups only, where the endpoint lives). An
-                          invite is a link, so a links-off room hides it. */}
+                      {/* An invite is a link, so a links-off room hides it. */}
                       {linksAllowed && (
                         <button
                           onClick={() => {
@@ -3972,17 +3597,24 @@ export function Chat() {
                           {t('chat.attach.group')}
                         </button>
                       )}
-                      {isGroup && (
-                        <button
-                          onClick={() => {
-                            setAttachMenuOpen(false)
-                            setPollSheetOpen(true)
-                          }}
-                          className="flex w-full items-center gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm hover:bg-field transition-colors"
-                        >
-                          <PollIcon />
-                          {t('chat.attach.poll')}
-                        </button>
+                      {/* Where the poll composer used to be (founder item
+                          14a). The timer is the one thing in this menu that is
+                          not a thing to send but a rule for everything sent
+                          after it, so it sits last, under a divider. */}
+                      <button
+                        onClick={() => setAttachView('ttl')}
+                        className="flex w-full items-center gap-2.5 whitespace-nowrap border-t border-line/60 px-3 py-2.5 text-left text-sm hover:bg-field transition-colors"
+                      >
+                        <ClockIcon className="text-fg-secondary" />
+                        <span className="flex-1">{t('chat.ttl.title')}</span>
+                        <span className={`font-mono text-[0.625rem] ${threadTtlSec ? 'text-accent' : 'text-fg-dim'}`}>
+                          {/* A number some future build wrote and this one has
+                              no label for prints as seconds rather than as
+                              "Off", which would be a lie about a live timer. */}
+                          {ttlLabelKey(threadTtlSec) ? t(ttlLabelKey(threadTtlSec)!) : `${threadTtlSec}s`}
+                        </span>
+                      </button>
+                      </>
                       )}
                     </motion.div>
                   </>
@@ -4014,11 +3646,17 @@ export function Chat() {
               ref={taRef}
               className="flex-1 rounded-2xl bg-surface px-4 py-2.5 text-sm outline-none leading-snug focus:ring-1 focus:ring-accent transition-colors max-h-[8.75rem] overflow-y-auto"
               placeholder={
-                isGroup && group
-                  ? t('chat.placeholder.group', { name: group.name })
-                  : peer
-                    ? t('chat.placeholder', { nick: peer.nickname })
-                    : t('chat.placeholder_loading')
+                // The reason, where the user is already looking. A broadcast
+                // group used to swap the whole bar for a notice; the bar is
+                // still here and simply cannot be typed in, which is the same
+                // sentence without the layout consequences (see readOnlyHere).
+                readOnlyHere
+                  ? t('chat.owner_only.notice')
+                  : isGroup && group
+                    ? t('chat.placeholder.group', { name: group.name })
+                    : peer
+                      ? t('chat.placeholder', { nick: peer.nickname })
+                      : t('chat.placeholder_loading')
               }
               value={input}
               onChange={(v) => { setInput(v); if (v) notifyTyping(); else stopTyping() }}
@@ -4035,11 +3673,11 @@ export function Chat() {
                 if (last) startEdit(last)
               }}
               onPasteImage={(file) => void sendPhoto(file)}
-              disabled={!peer && !group}
+              disabled={(!peer && !group) || readOnlyHere}
             />
             <button
               onClick={() => void send()}
-              disabled={(!peer && !group) || !input.trim() || slowActive}
+              disabled={(!peer && !group) || !input.trim() || slowActive || readOnlyHere}
               className="h-10 w-10 rounded-full bg-accent hover:bg-accent-dim text-white flex items-center justify-center flex-none disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               aria-label={slowActive ? t('chat.slowmode.wait', { s: String(slowLeft) }) : t('chat.send')}
               title={slowActive ? t('chat.slowmode.wait', { s: String(slowLeft) }) : t('chat.send')}
@@ -4080,10 +3718,6 @@ export function Chat() {
         onClose={() => setReactionAuthorsFor(null)}
       />
 
-      {pollSheetOpen && isGroup && (
-        <PollComposerSheet onClose={() => setPollSheetOpen(false)} onCreate={sendPoll} />
-      )}
-
       {shareGroupOpen && (
         <ShareGroupSheet
           onClose={() => setShareGroupOpen(false)}
@@ -4093,6 +3727,936 @@ export function Chat() {
     </div>
   )
 }
+
+// ── One message, memoised ───────────────────────────────────────────────
+// The thread is not virtualised and it never will be cheap to rebuild: every
+// bubble runs EmoticonText's tokeniser over its body, and there can be
+// hundreds on screen. Before this split, one `setOutgoing` — a keystroke's
+// worth of draft, a delivery receipt, the optimistic row a send inserts — re-
+// rendered every bubble in the conversation, which is what made sending a
+// reply feel like the window had frozen (founder item 30b). iOS reached the
+// same conclusion first and marks its row `.equatable()` (Views/MessageRow).
+//
+// ⚠⚠ React.memo's DEFAULT comparison is used on purpose, and it is what makes
+// this safe: it compares every prop there is, so no prop can be forgotten out
+// of a hand-written check and silently stop a row from repainting. The
+// obligation moves to the caller instead — every prop must be a scalar, or an
+// object whose identity changes exactly when its contents do. Two props
+// (`aliasSig`, `reactionsVersion`) exist only to carry that news for state the
+// rows read out of the shared stores rather than take as data.
+
+/// The i18n translator, as handed down to a row.
+type Translate = (key: string, params?: Record<string, string | number>) => string
+
+/// The long-press gesture's shared scratch space (see pressMenuAttrs).
+interface PressState {
+  timer: number | null
+  sx: number
+  sy: number
+  firedAt: number
+}
+
+/// Everything a bubble can ask the thread to do. Built once, in Chat, with a
+/// stable identity — see the note where it is assembled.
+interface RowActions {
+  toggleActions: (rowId: string, anchor?: HTMLElement | null, ev?: { target: EventTarget | null }) => void
+  toggleReactionPicker: (rowId: string, anchor: HTMLElement) => void
+  openReactionPicker: (rowId: string) => void
+  showReactionAuthors: (targetId: string) => void
+  toggleReaction: (targetId: string, asset: string | null) => void
+  jumpToMessage: (id: string) => void
+  startReplyTo: (id: string, text: string, authorName: string) => void
+  startReply: (row: OutgoingRow) => void
+  startEdit: (row: OutgoingRow) => void
+  copyText: (text: string) => void
+  openLink: (url: string) => void
+  pinMessage: (text: string) => void
+  startForward: (text: string, author: string) => void
+  startReport: (m: { from: number; text: string; kind?: string; fileName?: string; mediaId?: string }) => void
+  downloadRowFile: (rowId: string, mediaId: string, mediaKey: string, name?: string, mime?: string) => void
+  deleteIncoming: (id: string) => void
+  deleteAsModerator: (id: string) => void
+  deleteForEveryone: (row: OutgoingRow) => void
+  retry: (id: string) => void
+  dismiss: (id: string) => void
+}
+
+/// What both sides of the conversation need to draw one bubble.
+interface CommonRowProps {
+  t: Translate
+  h: RowActions
+  /// This row is a continuation of the one above it (same author, same day,
+  /// close enough in time) — it loses its name and tightens the gap.
+  cont: boolean
+  /// A quote or a search hit landed on this row: flash it.
+  highlighted: boolean
+  showActions: boolean
+  showReactionPicker: boolean
+  /// Where the floating menu hangs and how tall it may be. Only meaningful
+  /// while this row's own menu is open, so the caller sends constants
+  /// otherwise — a shared "which way is up" would repaint the whole thread
+  /// every time anybody opened a menu.
+  menuUp: boolean
+  menuMax: number
+  actionsLink: string | null
+  linksAllowed: boolean
+  filesAllowed: boolean
+  /// This row's file is being decrypted for saving right now.
+  downloading: boolean
+  mention: MentionContext | undefined
+  mediaBase: string | undefined
+  myUin: number
+  /// Repaint triggers, deliberately unused in the body: the chips read the
+  /// reactions store directly and the mention context reads the alias store,
+  /// and neither can tell a memoised row that it changed. See the note above.
+  aliasSig: string
+  reactionsVersion: number
+  pressState: { current: PressState }
+}
+
+interface IncomingRowProps extends CommonRowProps {
+  msg: IncomingRow
+  isSelf: boolean
+  canPin: boolean
+  canModerate: boolean
+  senderName: string | null
+  senderAvatarId: string | null | undefined
+  senderAvatarKey: string | null | undefined
+  replyAuthor: string
+}
+
+interface OutgoingRowProps extends CommonRowProps {
+  row: OutgoingRow
+  canPin: boolean
+  myNickname: string
+}
+
+/// Reaction chips under a bubble — one per distinct asset with a count;
+/// the viewer's own asset is highlighted. Tapping a chip toggles it.
+/// `align` matches the bubble side. Reads the shared reactions store, which
+/// is why every row carries `reactionsVersion`.
+function reactionChips(targetId: string, align: 'start' | 'end', myUin: number, h: RowActions) {
+  const chips = aggregateReactions(targetId, myUin)
+  if (chips.length === 0) return null
+  // Long-press is the touch equivalent of the right-click below. Cancelled by
+  // moving or lifting early so a scroll never opens the sheet.
+  let pressTimer: ReturnType<typeof setTimeout> | undefined
+  const holdStart = () => {
+    pressTimer = setTimeout(() => {
+      pressTimer = undefined
+      h.showReactionAuthors(targetId)
+    }, 450)
+  }
+  const holdCancel = () => {
+    if (pressTimer) clearTimeout(pressTimer)
+    pressTimer = undefined
+  }
+  return (
+    <div className={`flex flex-wrap gap-1 ${align === 'end' ? 'justify-end' : 'justify-start'}`}>
+      {chips.map((c) => (
+        <button
+          key={c.asset}
+          onClick={() => h.toggleReaction(targetId, c.asset)}
+          onContextMenu={(e) => {
+            e.preventDefault()
+            h.showReactionAuthors(targetId)
+          }}
+          onPointerDown={holdStart}
+          onPointerUp={holdCancel}
+          onPointerLeave={holdCancel}
+          onPointerCancel={holdCancel}
+          className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 transition-colors ${
+            c.mine ? 'bg-accent/25' : 'bg-field hover:bg-line/60'
+          }`}
+          title={c.asset}
+        >
+          {/* ⚠ `w-auto`, not a square. The kolobki are not square images (21x25,
+              33x40, 37x25 …), and a fixed w-4 h-4 box squeezed every one of them
+              into it — the same flattening `object-contain` fixed in the picker,
+              still here under the bubble. The height is what a chip needs to
+              agree on; the width is the picture's own business. */}
+          <img
+            src={emoticonAssetURL(c.asset)}
+            alt={c.asset}
+            className="h-4 w-auto max-w-6 select-none object-contain"
+            draggable={false}
+          />
+          {c.count > 1 && <span className="font-mono text-[0.625rem] text-fg-secondary">{c.count}</span>}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/// Swipe-left-to-reply (touch, mobile-web "like on phones"). Returns touch
+/// handlers for a message row; a quick leftward drag fires `onReply`.
+function swipeReplyAttrs(onReply: () => void) {
+  let startX = 0
+  let startY = 0
+  let active = false
+  return {
+    onTouchStart: (e: React.TouchEvent) => {
+      const tch = e.touches[0]
+      startX = tch.clientX
+      startY = tch.clientY
+      active = true
+    },
+    onTouchMove: (e: React.TouchEvent) => {
+      if (!active) return
+      const tch = e.touches[0]
+      // Cancel if the gesture is mostly vertical (a scroll).
+      if (Math.abs(tch.clientY - startY) > 30) active = false
+    },
+    onTouchEnd: (e: React.TouchEvent) => {
+      if (!active) return
+      active = false
+      const dx = e.changedTouches[0].clientX - startX
+      if (dx < -55) onReply()
+    },
+  }
+}
+
+/// Right-click / long-press handlers that open a message's actions menu —
+/// for the bubbles that are not a plain <button> (photo, video, file, invite,
+/// placeholder): their tap keeps doing what it does (lightbox, play, join), and
+/// THIS is how the menu — report, reply, download — is reached on them
+/// (founder, 21.08: "я не могу пожаловаться даже на сообщение").
+function pressMenuAttrs(rowId: string, pressState: { current: PressState }, h: RowActions) {
+  // One shared scratch space, not per-call closures: this runs again on every
+  // render of the row, and a timer held in a closure would be orphaned by a
+  // re-render mid-gesture — firing 450ms after touchstart even though the
+  // finger already left. Only one touch gesture exists at a time, so the whole
+  // thread shares it. `firedAt` guards the Android double: the OS fires a
+  // contextmenu ~500ms into the same long-press our timer resolves at 450ms,
+  // and the second event would toggle the just-opened menu straight back shut.
+  const st = pressState.current
+  const clear = () => {
+    if (st.timer != null) {
+      clearTimeout(st.timer)
+      st.timer = null
+    }
+  }
+  return {
+    onContextMenu: (e: React.MouseEvent<HTMLElement>) => {
+      e.preventDefault()
+      if (Date.now() - st.firedAt < 800) return
+      h.toggleActions(rowId, e.currentTarget, e)
+    },
+    onTouchStart: (e: React.TouchEvent<HTMLElement>) => {
+      const tch = e.touches[0]
+      if (!tch) return
+      st.sx = tch.clientX
+      st.sy = tch.clientY
+      // currentTarget is gone by the time the timer fires — capture now.
+      const el = e.currentTarget
+      clear()
+      st.timer = window.setTimeout(() => {
+        st.timer = null
+        st.firedAt = Date.now()
+        h.toggleActions(rowId, el)
+      }, 450)
+    },
+    onTouchMove: (e: React.TouchEvent<HTMLElement>) => {
+      const tch = e.touches[0]
+      if (!tch) return
+      if (Math.abs(tch.clientX - st.sx) > 10 || Math.abs(tch.clientY - st.sy) > 10) clear()
+    },
+    onTouchEnd: clear,
+    onTouchCancel: clear,
+  }
+}
+
+/// A row the outgoing menu may open for. 'sending'/'failed' rows have
+/// their own inline controls (retry/dismiss) and render no menu — letting
+/// a press open one would only dim the thread over nothing.
+function vouchedOut(row: OutgoingRow): boolean {
+  return row.state === 'sent' || row.state === 'delivered' || row.state === 'read'
+}
+
+/// One received message.
+const IncomingMessageRow = memo(function IncomingMessageRow({
+  msg: m,
+  t,
+  h,
+  cont,
+  highlighted,
+  showActions,
+  showReactionPicker,
+  menuUp,
+  menuMax,
+  actionsLink,
+  linksAllowed,
+  filesAllowed,
+  downloading,
+  mention,
+  mediaBase,
+  myUin,
+  pressState,
+  isSelf,
+  canPin,
+  canModerate,
+  senderName,
+  senderAvatarId,
+  senderAvatarKey,
+  replyAuthor,
+}: IncomingRowProps) {
+  const invite = parseGroupInvite(m.text)
+  const isPlainText =
+    m.kind !== 'photo' &&
+    m.kind !== 'video' &&
+    m.kind !== 'file' &&
+    m.kind !== 'other' &&
+    m.kind !== 'poll' &&
+    invite == null
+  const press = () => pressMenuAttrs(m.id, pressState, h)
+  /// What a reply to this message may quote.
+  ///
+  /// ⚠ A quote is permanent, the message it quotes may not be. The timer is
+  /// per-side (see `disappearing.ts`), so a reply of mine to a peer's message
+  /// with five minutes on it carries no `ttl` of its own whenever MY thread
+  /// timer is off: copying the body into `replyTo.snippet` would ship it back
+  /// to them, persist it in this device's log and write it into a `.rcqbak`
+  /// export, and the one line the sender was promised would go stays word for
+  /// word inside the answer to it. Quote the label instead. The reply still
+  /// carries the message id, so both sides keep the thread and the jump to it.
+  const replyQuote =
+    m.expiresAt != null ? t('chat.ttl.quoted') : m.text || m.fileName || t('chat.pin.attachment')
+  return (
+    <li id={`msg-${m.id}`} className={`group flex justify-start rounded-lg transition-colors duration-500 ${cont ? '-mt-1' : ''} ${highlighted ? 'bg-accent/15' : ''} ${showActions || showReactionPicker ? 'relative z-[20]' : ''}`} {...swipeReplyAttrs(() => h.startReplyTo(m.id, replyQuote, replyAuthor))}>
+      <div className="relative max-w-[80%] flex flex-col items-start gap-1">
+        {senderName && !cont && (
+          <Link
+            to={`/profile/${m.from}`}
+            className="flex items-center gap-1.5 font-mono text-[0.625rem] text-fg-dim px-1 hover:text-accent transition-colors"
+          >
+            {/* Beside the nick, never instead of it, and only
+                when there is a picture. */}
+            <SenderAvatar mediaId={senderAvatarId} mediaKey={senderAvatarKey} size={16} />
+            {senderName}
+          </Link>
+        )}
+        {m.replyTo && (
+          <button
+            type="button"
+            onClick={() => h.jumpToMessage(m.replyTo!.id)}
+            className="border-l-2 border-accent/60 pl-2 max-w-full text-left rounded-r hover:bg-line/30 transition-colors cursor-pointer"
+          >
+            <div className="font-mono text-[0.625rem] text-fg-dim">{m.replyTo.authorName}</div>
+            <div className="text-[0.6875rem] text-fg-secondary line-clamp-3 break-words max-w-[18rem]"><EmoticonText text={m.replyTo.snippet} emoticonSize={14} /></div>
+          </button>
+        )}
+        {m.kind === 'poll' ? (
+          // A ballot from an old peer, or one this account received before
+          // polls were cut (founder item 14a). It renders as "no longer
+          // supported" rather than vanishing: the reader has to be able to see
+          // that something was said here, or the answers below it make no
+          // sense. Everything else about the row still works (reply, report,
+          // hide) because the menu hangs off the same handle.
+          <div className="relative" data-chat-menu {...press()}>
+            <MediaPlaceholder mediaKind="poll" />
+            <BubbleMenuButton tone="chrome" label={t('chat.actions.more')} open={showActions} onOpen={(el) => h.toggleActions(m.id, el)} />
+          </div>
+        ) : m.kind === 'photo' && m.mediaId && m.mediaKey ? (
+          <div className="flex flex-col items-start gap-1" data-chat-menu {...press()}>
+            <div className="relative">
+              <DecryptedImage mediaId={m.mediaId} mediaKey={m.mediaKey} apiBase={mediaBase} />
+              <BubbleMenuButton tone="over" label={t('chat.actions.more')} open={showActions} onOpen={(el) => h.toggleActions(m.id, el)} />
+            </div>
+            {m.text && (
+              <div className="rounded-lg px-3 py-2 text-sm bg-bubble-other" onClick={(e) => h.toggleActions(m.id, e.currentTarget, e)}>
+                <EmoticonText text={m.text} emoticonSize={18} mention={mention} link={{ enabled: linksAllowed }} />
+              </div>
+            )}
+          </div>
+        ) : m.kind === 'video' && m.mediaId && m.mediaKey ? (
+          <div className="flex flex-col items-start gap-1" data-chat-menu {...press()}>
+            <div className="relative">
+              <DecryptedVideo
+                mediaId={m.mediaId}
+                mediaKey={m.mediaKey}
+                thumbnailB64={m.thumbnailB64}
+                durationSec={m.durationSec}
+                apiBase={mediaBase}
+              />
+              <BubbleMenuButton tone="over" label={t('chat.actions.more')} open={showActions} onOpen={(el) => h.toggleActions(m.id, el)} />
+            </div>
+            {m.text && (
+              <div className="rounded-lg px-3 py-2 text-sm bg-bubble-other" onClick={(e) => h.toggleActions(m.id, e.currentTarget, e)}>
+                <EmoticonText text={m.text} emoticonSize={18} mention={mention} link={{ enabled: linksAllowed }} />
+              </div>
+            )}
+          </div>
+        ) : m.kind === 'file' && m.mediaId && m.mediaKey ? (
+          <div className="flex flex-col items-start gap-1" data-chat-menu {...press()}>
+            <FileBubble
+              mediaId={m.mediaId}
+              mediaKey={m.mediaKey}
+              fileName={m.fileName}
+              mime={m.fileMime}
+              size={m.fileSize}
+              apiBase={mediaBase}
+              onPress={(el) => h.toggleActions(m.id, el)}
+              busy={downloading}
+              disabledNote={filesAllowed ? undefined : t('chat.files_off.chip')}
+            />
+            {m.text && (
+              <div className="rounded-lg px-3 py-2 text-sm bg-bubble-other" onClick={(e) => h.toggleActions(m.id, e.currentTarget, e)}>
+                <EmoticonText text={m.text} emoticonSize={18} mention={mention} link={{ enabled: linksAllowed }} />
+              </div>
+            )}
+          </div>
+        ) : m.kind === 'other' ? (
+          <div className="relative" data-chat-menu {...press()}>
+            <MediaPlaceholder mediaKind={m.mediaKind} />
+            <BubbleMenuButton tone="chrome" label={t('chat.actions.more')} open={showActions} onOpen={(el) => h.toggleActions(m.id, el)} />
+          </div>
+        ) : invite != null && linksAllowed ? (
+          // Links-off rooms drop to the plain-text bubble below:
+          // a join card is the most clickable link there is.
+          <div className="relative" data-chat-menu {...press()}>
+            <GroupJoinCard groupId={invite.id} host={invite.host} menuSpace />
+            <BubbleMenuButton tone="chrome" label={t('chat.actions.more')} open={showActions} onOpen={(el) => h.toggleActions(m.id, el)} />
+          </div>
+        ) : (
+          <button
+            data-chat-menu
+            onClick={(e) => h.toggleActions(m.id, e.currentTarget, e)}
+            onContextMenu={(e) => { e.preventDefault(); h.toggleActions(m.id, e.currentTarget, e) }}
+            className="rounded-lg px-3 py-2 text-sm text-left bg-bubble-other hover:brightness-110 transition-colors"
+          >
+            <EmoticonText text={m.text} emoticonSize={18} mention={mention} link={{ enabled: linksAllowed }} />
+            {m.edited && <span className="ml-1 text-[0.625rem] text-fg-dim italic">{t('chat.edit.edited')}</span>}
+          </button>
+        )}
+        {reactionChips(m.id, 'start', myUin, h)}
+        <div className="flex items-center gap-1 text-[0.625rem] font-mono text-fg-dim">
+          {new Date(m.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          {m.expiresAt != null && <ExpiryMark expiresAt={m.expiresAt} t={t} />}
+        </div>
+        {/* ⚠ Floats, like the reaction picker right below. As an
+            in-flow block it grew the row and shoved every message
+            under it down the thread, so opening a menu moved the
+            text you were about to act on. Same anchor
+            (`top-full` on the bubble's `relative` column), one
+            layer above the picker; the two are never open at once,
+            both toggles close the other. */}
+        <AnimatePresence>
+        {showActions && (
+          <ActionMenu align="start" up={menuUp} max={menuMax}>
+            {/* The click that opened this menu landed on a URL:
+                opening and copying it lead — a link never
+                navigates by itself anymore. */}
+            {actionsLink != null && (
+              <ActionButton
+                onClick={() => h.openLink(actionsLink)}
+                label={t('chat.actions.open_link')}
+                icon={<MenuLinkIcon />}
+              />
+            )}
+            {actionsLink != null && (
+              <ActionButton onClick={() => h.copyText(actionsLink)} label={t('chat.actions.copy_link')} icon={<MenuCopyIcon />} />
+            )}
+            {/* A file downloads from HERE now, not from the tap
+                itself — the tap opens this menu. */}
+            {m.kind === 'file' && m.mediaId && m.mediaKey && filesAllowed && (
+              <ActionButton
+                onClick={() => h.downloadRowFile(m.id, m.mediaId!, m.mediaKey!, m.fileName, m.fileMime)}
+                label={t('chat.actions.download')}
+                icon={<MenuDownloadIcon />}
+              />
+            )}
+            {/* The only way in on a touch screen. The ☺ beside
+                the bubble is `rcq-hover-only` — deliberately, it
+                needs a pointer to hover it — so without this row
+                a phone browser could not react at all, and on an
+                OWN message not even a desktop menu offered it. */}
+            <ActionButton
+              onClick={() => h.openReactionPicker(m.id)}
+              label={t('chat.actions.react')}
+              icon={<MenuReactIcon />}
+            />
+            <ActionButton
+              onClick={() => h.startReplyTo(m.id, replyQuote, replyAuthor)}
+              label={t('chat.actions.reply')}
+              icon={<MenuReplyIcon />}
+            />
+            {m.kind === 'text' && (
+              <ActionButton onClick={() => h.copyText(m.text)} label={t('chat.actions.copy')} icon={<MenuCopyIcon />} />
+            )}
+            {canPin && isPlainText && (
+              <ActionButton onClick={() => h.pinMessage(m.text)} label={t('chat.actions.pin')} icon={<MenuPinIcon />} />
+            )}
+            {m.kind === 'text' && (
+              <ActionButton
+                onClick={() => h.startForward(m.text, replyAuthor)}
+                label={t('chat.actions.forward')}
+                icon={<MenuForwardIcon />}
+              />
+            )}
+            {/* Reporting somebody's message to the island's
+                operators — reachable on EVERY kind now, which
+                was the founder's point: a video or file offered
+                no menu at all, so no way to report it. */}
+            {!isSelf && (
+              <ActionButton
+                onClick={() => h.startReport(m)}
+                label={t('chat.actions.report')}
+                icon={<MenuFlagIcon />}
+              />
+            )}
+            {/* The group's owner / an admin retracts anybody's
+                message for everyone (founder batch 21.08 item
+                3). Sits above "hide": one is moderation, the
+                other is housekeeping, and they answer different
+                questions. */}
+            {canModerate && !isSelf && (
+              <ActionButton
+                onClick={() => h.deleteAsModerator(m.id)}
+                label={t('chat.actions.delete')}
+                icon={<MenuTrashIcon />}
+                danger
+              />
+            )}
+            {/* Hides it HERE only. There is no deleting somebody
+                else's message off their device, and offering a
+                button that looks like it might is worse than not
+                offering one — hence the wording, not "delete".
+                Saved Messages is the one thread where the "other
+                device" is mine, so there it really does delete
+                everywhere and says so — see [deleteIncoming]. */}
+            <ActionButton
+              onClick={() => h.deleteIncoming(m.id)}
+              label={t(isSelf ? 'chat.actions.delete' : 'chat.actions.hide')}
+              icon={isSelf ? <MenuTrashIcon /> : <MenuHideIcon />}
+              danger={isSelf}
+            />
+          </ActionMenu>
+        )}
+        </AnimatePresence>
+        <AnimatePresence>
+          {showReactionPicker && (
+            <motion.div
+              key="rp"
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 4 }}
+              transition={{ duration: 0.12 }}
+              className={`absolute z-20 left-0 ${menuUp ? 'bottom-full mb-1' : 'top-full mt-1'}`}
+            >
+              <ReactionPicker
+                uin={myUin}
+                current={reactionsForTarget(m.id)?.get(myUin) ?? null}
+                onPick={(asset) => h.toggleReaction(m.id, asset)}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+      <button
+        type="button"
+        data-chat-menu
+        onClick={(e) => h.toggleReactionPicker(m.id, e.currentTarget)}
+        aria-label={t('chat.actions.react')}
+        title={t('chat.actions.react')}
+        className="self-center ml-1 h-7 w-7 rounded-full bg-surface text-fg-dim opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity flex-none rcq-hover-only items-center justify-center"
+      >
+        <MenuReactIcon />
+      </button>
+    </li>
+  )
+})
+
+/// One message of mine, in every shape it can take.
+const OutgoingMessageRow = memo(function OutgoingMessageRow({
+  row,
+  t,
+  h,
+  cont,
+  highlighted,
+  showActions,
+  showReactionPicker,
+  menuUp,
+  menuMax,
+  actionsLink,
+  linksAllowed,
+  filesAllowed,
+  downloading,
+  mention,
+  mediaBase,
+  myUin,
+  pressState,
+  canPin,
+  myNickname,
+}: OutgoingRowProps) {
+  /// Right-click/long-press attrs for MY media rows — only once the row has
+  /// a menu to show (see vouchedOut).
+  const pressAttrs = () =>
+    vouchedOut(row) ? { 'data-chat-menu': true, ...pressMenuAttrs(row.id, pressState, h) } : {}
+  /// The visible half of the same thing. Same gate: a row still in flight has
+  /// no menu to open, so it gets no handle to open one with either. The parent
+  /// has to be `relative` (the handle pins itself to its corner).
+  const menuButton = (tone: 'over' | 'chrome') =>
+    vouchedOut(row) ? (
+      <BubbleMenuButton
+        tone={tone}
+        label={t('chat.actions.more')}
+        open={showActions}
+        onOpen={(el) => h.toggleActions(row.id, el)}
+      />
+    ) : null
+  /// The floating menu + reaction picker for MY photo/video/file rows — the
+  /// media rows had neither (no way to reply to your own photo from a
+  /// desktop, no way to retract a file). One helper, because the three
+  /// branches would otherwise carry three copies of the same overlay.
+  const mediaOverlays = () => (
+    <>
+      <AnimatePresence>
+        {showActions && vouchedOut(row) && (
+          <ActionMenu align="end" up={menuUp} max={menuMax}>
+            {actionsLink != null && (
+              <ActionButton onClick={() => h.openLink(actionsLink)} label={t('chat.actions.open_link')} icon={<MenuLinkIcon />} />
+            )}
+            {actionsLink != null && (
+              <ActionButton onClick={() => h.copyText(actionsLink)} label={t('chat.actions.copy_link')} icon={<MenuCopyIcon />} />
+            )}
+            {row.kind === 'file' && row.mediaId && row.mediaKey && filesAllowed && (
+              <ActionButton
+                onClick={() => h.downloadRowFile(row.id, row.mediaId!, row.mediaKey!, row.fileName, row.fileMime)}
+                label={t('chat.actions.download')}
+                icon={<MenuDownloadIcon />}
+              />
+            )}
+            <ActionButton
+              onClick={() => h.openReactionPicker(row.id)}
+              label={t('chat.actions.react')}
+              icon={<MenuReactIcon />}
+            />
+            <ActionButton onClick={() => h.startReply(row)} label={t('chat.actions.reply')} icon={<MenuReplyIcon />} />
+            <ActionButton onClick={() => h.deleteForEveryone(row)} label={t('chat.actions.delete')} icon={<MenuTrashIcon />} danger />
+          </ActionMenu>
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {showReactionPicker && (
+          <motion.div
+            key="rp"
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 4 }}
+            transition={{ duration: 0.12 }}
+            className={`absolute z-20 right-0 ${menuUp ? 'bottom-full mb-1' : 'top-full mt-1'}`}
+          >
+            <ReactionPicker
+              uin={myUin}
+              current={reactionsForTarget(row.id)?.get(myUin) ?? null}
+              onPick={(asset) => h.toggleReaction(row.id, asset)}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
+  )
+  /// The delivery line under one of my bubbles: the clock, the ticks, and the
+  /// retry/dismiss pair a failed send offers.
+  ///
+  /// `retryable` is false for a row this build can no longer put on the wire at
+  /// all (a legacy poll): offering ↻ there promises a send that `attemptSendRow`
+  /// refuses, and used to promise a worse one than that.
+  const deliveryLine = (withDismiss: boolean, retryable = true) => (
+    <div className="flex items-center justify-end gap-1 text-[0.625rem] font-mono text-fg-dim">
+      {new Date(row.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+      {row.expiresAt != null && <ExpiryMark expiresAt={row.expiresAt} t={t} />}
+      {row.state === 'sending' && <ClockMark />}
+      <DeliveryMarks state={row.state} />
+      {row.state === 'failed' && (
+        <>
+          <span className="text-red-500">·{t('chat.delivery.failed')}</span>
+          {retryable && (
+            <button
+              onClick={() => h.retry(row.id)}
+              className="ml-1 rounded px-1.5 py-0.5 text-red-600 hover:bg-red-500/15 transition-colors"
+            >
+              ↻ {t('chat.delivery.retry')}
+            </button>
+          )}
+          {withDismiss && (
+            <button
+              onClick={() => h.dismiss(row.id)}
+              className="rounded px-1.5 py-0.5 text-fg-dim hover:bg-line transition-colors"
+            >
+              × {t('chat.delivery.dismiss')}
+            </button>
+          )}
+        </>
+      )}
+    </div>
+  )
+  const liClass = `group flex justify-end rounded-lg transition-colors duration-500 ${cont ? '-mt-1' : ''} ${highlighted ? 'bg-accent/15' : ''} ${showActions || showReactionPicker ? 'relative z-[20]' : ''}`
+
+  // Links-off rooms render the raw text bubble instead (same rule
+  // as the incoming side — a join card is a link).
+  const outInvite = linksAllowed ? parseGroupInvite(row.text) : null
+  if (outInvite != null) {
+    // A group-invite link I shared — show the join card
+    // (not a raw URL bubble) with the delivery state below.
+    return (
+      <li id={`msg-${row.id}`} className={liClass}>
+        <div className="relative max-w-[80%] flex flex-col items-end gap-1" {...pressAttrs()}>
+          {/* An invite I sent had no menu on any gesture at all:
+              the card swallowed the tap into Join and the row
+              carried nothing else. Retracting your own invite is
+              the whole point of having one here. */}
+          <div className="relative">
+            <GroupJoinCard groupId={outInvite.id} host={outInvite.host} menuSpace />
+            {menuButton('chrome')}
+          </div>
+          {reactionChips(row.id, 'end', myUin, h)}
+          {mediaOverlays()}
+          {deliveryLine(false)}
+        </div>
+      </li>
+    )
+  }
+  if (row.kind === 'photo' && row.mediaId && row.mediaKey) {
+    // A photo I sent — render the image bubble + delivery state.
+    return (
+      <li id={`msg-${row.id}`} className={liClass}>
+        <div className="relative max-w-[80%] flex flex-col items-end gap-1" {...pressAttrs()}>
+          <div className="relative">
+            <DecryptedImage mediaId={row.mediaId} mediaKey={row.mediaKey} apiBase={mediaBase} />
+            {menuButton('over')}
+          </div>
+          {row.text && (
+            <div className="rounded-lg px-3 py-2 text-sm bg-bubble-self" onClick={vouchedOut(row) ? (e) => h.toggleActions(row.id, e.currentTarget, e) : undefined}>
+              <EmoticonText text={row.text} emoticonSize={18} mention={mention} link={{ enabled: linksAllowed }} />
+            </div>
+          )}
+          {reactionChips(row.id, 'end', myUin, h)}
+          {mediaOverlays()}
+          {deliveryLine(true)}
+        </div>
+      </li>
+    )
+  }
+  if (row.kind === 'video' && row.mediaId && row.mediaKey) {
+    // A video I sent (echoed from another device via a carbon) —
+    // render the player + delivery state.
+    return (
+      <li id={`msg-${row.id}`} className={liClass}>
+        <div className="relative max-w-[80%] flex flex-col items-end gap-1" {...pressAttrs()}>
+          <div className="relative">
+            <DecryptedVideo
+              mediaId={row.mediaId}
+              mediaKey={row.mediaKey}
+              thumbnailB64={row.thumbnailB64}
+              durationSec={row.durationSec}
+              apiBase={mediaBase}
+            />
+            {menuButton('over')}
+          </div>
+          {row.text && (
+            <div className="rounded-lg px-3 py-2 text-sm bg-bubble-self" onClick={vouchedOut(row) ? (e) => h.toggleActions(row.id, e.currentTarget, e) : undefined}>
+              <EmoticonText text={row.text} emoticonSize={18} mention={mention} link={{ enabled: linksAllowed }} />
+            </div>
+          )}
+          {reactionChips(row.id, 'end', myUin, h)}
+          {mediaOverlays()}
+          <div className="flex items-center justify-end gap-1 text-[0.625rem] font-mono text-fg-dim">
+            {new Date(row.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            {row.expiresAt != null && <ExpiryMark expiresAt={row.expiresAt} t={t} />}
+            <span className="text-accent">✓</span>
+          </div>
+        </div>
+      </li>
+    )
+  }
+  if (row.kind === 'file' && row.mediaId && row.mediaKey) {
+    // A document I sent — render the download chip + delivery state.
+    return (
+      <li id={`msg-${row.id}`} className={liClass}>
+        <div className="relative max-w-[80%] flex flex-col items-end gap-1" {...pressAttrs()}>
+          <FileBubble
+            mediaId={row.mediaId}
+            mediaKey={row.mediaKey}
+            fileName={row.fileName}
+            mime={row.fileMime}
+            size={row.fileSize}
+            apiBase={mediaBase}
+            onPress={vouchedOut(row) ? (el) => h.toggleActions(row.id, el) : undefined}
+            busy={downloading}
+            disabledNote={filesAllowed ? undefined : t('chat.files_off.chip')}
+          />
+          {row.text && (
+            <div className="rounded-lg px-3 py-2 text-sm bg-bubble-self" onClick={vouchedOut(row) ? (e) => h.toggleActions(row.id, e.currentTarget, e) : undefined}>
+              <EmoticonText text={row.text} emoticonSize={18} mention={mention} link={{ enabled: linksAllowed }} />
+            </div>
+          )}
+          {reactionChips(row.id, 'end', myUin, h)}
+          {mediaOverlays()}
+          {deliveryLine(true)}
+        </div>
+      </li>
+    )
+  }
+  if (row.kind === 'poll') {
+    // A ballot this account posted before polls were cut (founder item 14a).
+    // Same placeholder the received half shows: the row stays where it was in
+    // the conversation and says what it used to be, rather than leaving a hole
+    // that everything around it still refers to.
+    return (
+      <li id={`msg-${row.id}`} className={liClass}>
+        <div className="relative max-w-[80%] flex flex-col items-end gap-1" {...pressAttrs()}>
+          <div className="relative">
+            <MediaPlaceholder mediaKind="poll" />
+            {menuButton('chrome')}
+          </div>
+          {reactionChips(row.id, 'end', myUin, h)}
+          {mediaOverlays()}
+          {/* No ↻ here: this build has no way to put a ballot on the wire, so
+              the only honest offer on a failed one is to dismiss it. */}
+          {deliveryLine(true, false)}
+        </div>
+      </li>
+    )
+  }
+  if (row.kind === 'other') {
+    // A still-unsupported media (voice/location) the user sent from
+    // another device, echoed here via a carbon.
+    return (
+      <li id={`msg-${row.id}`} className={liClass}>
+        <div className="relative max-w-[80%] flex flex-col items-end gap-1" {...pressAttrs()}>
+          <div className="relative">
+            <MediaPlaceholder mediaKind={row.mediaKind} />
+            {menuButton('chrome')}
+          </div>
+          {reactionChips(row.id, 'end', myUin, h)}
+          {mediaOverlays()}
+          <div className="flex items-center justify-end gap-1 text-[0.625rem] font-mono text-fg-dim">
+            {new Date(row.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            {row.expiresAt != null && <ExpiryMark expiresAt={row.expiresAt} t={t} />}
+            <span className="text-accent">✓</span>
+          </div>
+        </div>
+      </li>
+    )
+  }
+  return (
+    <li id={`msg-${row.id}`} className={liClass} {...swipeReplyAttrs(() => h.startReply(row))}>
+      <div className="relative max-w-[80%] flex flex-col items-end gap-1">
+        {row.fwdName && (
+          <div className="font-mono text-[0.625rem] uppercase tracking-wider text-fg-dim">
+            ↗ {t('chat.forwarded_label', { name: row.fwdName })}
+          </div>
+        )}
+        {row.replyTo && (
+          <button
+            type="button"
+            onClick={() => h.jumpToMessage(row.replyTo!.id)}
+            className="border-l-2 border-accent/60 pl-2 max-w-full text-left rounded-r hover:bg-line/30 transition-colors cursor-pointer"
+          >
+            <div className="font-mono text-[0.625rem] text-fg-dim">{row.replyTo.authorName}</div>
+            <div className="text-[0.6875rem] text-fg-secondary line-clamp-3 break-words max-w-[18rem]">
+              <EmoticonText text={row.replyTo.snippet} emoticonSize={14} />
+            </div>
+          </button>
+        )}
+        <button
+          data-chat-menu
+          onClick={(e) => h.toggleActions(row.id, e.currentTarget, e)}
+          // Right-click opens the same actions. On a phone, tapping a
+          // bubble to get reply/edit/delete is the obvious gesture; on
+          // a desktop it is not, and a right-click just produced the
+          // browser's own menu — so desktop Windows reported that
+          // deleting a note "is still not there" when it had been
+          // there all along, one left-click away.
+          onContextMenu={(e) => { e.preventDefault(); h.toggleActions(row.id, e.currentTarget, e) }}
+          className={`rounded-lg px-3 py-2 text-sm text-left transition-colors ${
+            row.state === 'failed'
+              ? 'bg-red-50 border border-red-200'
+              : 'bg-bubble-self hover:bg-bubble-self/90'
+          }`}
+        >
+          <EmoticonText text={row.text} emoticonSize={18} mention={mention} link={{ enabled: linksAllowed }} />
+          {row.edited && <span className="ml-1 text-[0.625rem] text-fg-dim italic">{t('chat.edit.edited')}</span>}
+        </button>
+        {reactionChips(row.id, 'end', myUin, h)}
+        {deliveryLine(true)}
+        {row.state === 'failed' && row.error && (
+          <div className="text-right text-[0.625rem] text-red-500/80 max-w-full break-words">
+            {row.error}
+          </div>
+        )}
+        {/* Floats for the same reason as the incoming side above,
+            anchored right because this column is right-aligned. */}
+        <AnimatePresence>
+        {showActions && (row.state === 'sent' || row.state === 'delivered' || row.state === 'read') && (
+          <ActionMenu align="end" up={menuUp} max={menuMax}>
+            {actionsLink != null && (
+              <ActionButton
+                onClick={() => h.openLink(actionsLink)}
+                label={t('chat.actions.open_link')}
+                icon={<MenuLinkIcon />}
+              />
+            )}
+            {actionsLink != null && (
+              <ActionButton onClick={() => h.copyText(actionsLink)} label={t('chat.actions.copy_link')} icon={<MenuCopyIcon />} />
+            )}
+            {/* Reacting to your own message: the founder's report.
+                The menu listed reply / edit / copy / forward / delete
+                and nothing else, so the only route was the hover ☺ —
+                which does not exist on a touch screen. */}
+            <ActionButton
+              onClick={() => h.openReactionPicker(row.id)}
+              label={t('chat.actions.react')}
+              icon={<MenuReactIcon />}
+            />
+            <ActionButton onClick={() => h.startReply(row)} label={t('chat.actions.reply')} icon={<MenuReplyIcon />} />
+            {(!row.kind || row.kind === 'text') && (
+              <ActionButton onClick={() => h.startEdit(row)} label={t('chat.actions.edit')} icon={<MenuEditIcon />} />
+            )}
+            {(!row.kind || row.kind === 'text') && (
+              <ActionButton onClick={() => h.copyText(row.text)} label={t('chat.actions.copy')} icon={<MenuCopyIcon />} />
+            )}
+            {canPin && (
+              <ActionButton onClick={() => h.pinMessage(row.text)} label={t('chat.actions.pin')} icon={<MenuPinIcon />} />
+            )}
+            <ActionButton onClick={() => h.startForward(row.text, myNickname)} label={t('chat.actions.forward')} icon={<MenuForwardIcon />} />
+            <ActionButton onClick={() => h.deleteForEveryone(row)} label={t('chat.actions.delete')} icon={<MenuTrashIcon />} danger />
+          </ActionMenu>
+        )}
+        </AnimatePresence>
+        <AnimatePresence>
+          {showReactionPicker && (
+            <motion.div
+              key="rp"
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 4 }}
+              transition={{ duration: 0.12 }}
+              className={`absolute z-20 right-0 ${menuUp ? 'bottom-full mb-1' : 'top-full mt-1'}`}
+            >
+              <ReactionPicker
+                uin={myUin}
+                current={reactionsForTarget(row.id)?.get(myUin) ?? null}
+                onPick={(asset) => h.toggleReaction(row.id, asset)}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+      <button
+        type="button"
+        data-chat-menu
+        onClick={(e) => h.toggleReactionPicker(row.id, e.currentTarget)}
+        aria-label={t('chat.actions.react')}
+        title={t('chat.actions.react')}
+        className="self-center mr-1 order-first h-7 w-7 rounded-full bg-surface text-fg-dim opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity flex-none rcq-hover-only items-center justify-center"
+      >
+        <MenuReactIcon />
+      </button>
+    </li>
+  )
+})
 
 /// Reporting somebody's message to the island's operators. One textarea and
 /// the honest note about what rides along (the excerpt + the author's UIN) —
@@ -4386,7 +4950,7 @@ function ActionMenu({ align, up, max, children }: { align: 'start' | 'end'; up: 
 /// The handle that opens a bubble's menu when the bubble's own tap is already
 /// spoken for.
 ///
-/// A photo opens, a video plays, a poll takes a vote, an invite card joins. All
+/// A photo opens, a video plays, an invite card joins. All
 /// of that is right, and all of it left the menu reachable only by right-click
 /// or long-press, which is a gesture you either already know about or never
 /// find: "непонятно как взаимодействовать с контентом (фото итд), я жму на него
@@ -4394,7 +4958,7 @@ function ActionMenu({ align, up, max, children }: { align: 'start' | 'end'; up: 
 /// press gestures are untouched; this is the same menu with something to aim at.
 ///
 /// Two tones, because there are two kinds of thing underneath. `chrome` sits on
-/// one of our own surfaces (a poll, a join card) and is a bare glyph: no fill,
+/// one of our own surfaces (a join card, a placeholder) and is a bare glyph: no fill,
 /// no ring, nothing but the grey the rest of the secondary UI is drawn in. Note
 /// `fg-secondary` and not `fg-dim`, which is the quieter of the two and what a
 /// timestamp uses: against a light incoming bubble that one lands near 2:1,
@@ -4575,22 +5139,34 @@ function DocIcon() {
   )
 }
 
-/// Placeholder bubble for an incoming media kind the web can't render
-/// yet (video/voice/file/location). Shows the kind + an "open in app"
-/// hint rather than silently dropping the message.
+/// Placeholder bubble for a message this build does not render as itself.
+///
+/// Two different situations, one shape, because to the reader they are the same
+/// thing, "there is a message here and you cannot see it here":
+///   • a media kind the web still cannot draw (voice), which the phones can:
+///     "open in the app".
+///   • a kind that was REMOVED, which nothing will ever draw again. Polls
+///     (founder item 14a) are the first. ⚠ This branch is why the poll kind was
+///     not simply deleted: an old peer on an old build can still send one, and
+///     a message that silently disappears is worse than one that says what it
+///     was. Whatever else is cut later belongs here too.
 function MediaPlaceholder({ mediaKind }: { mediaKind?: string }) {
   const { t } = useI18n()
+  const retired = mediaKind === 'poll'
   const icon =
     mediaKind === 'video' ? '🎬' :
     mediaKind === 'voice' ? '🎤' :
-    mediaKind === 'location' ? '📍' : '📎'
+    mediaKind === 'location' ? '📍' :
+    retired ? '📊' : '📎'
   const label = mediaKind ? t(`chat.media.kind.${mediaKind}`) : t('chat.media.kind.file')
   // `pr-9` leaves the top-right corner to the ⋯ handle: this bubble is sized to
   // a two-word label, so without the gap the handle would sit on top of it.
   return (
     <div className="rounded-lg py-2 pl-3 pr-9 bg-bubble-other">
       <div className="text-sm">{icon} {label}</div>
-      <div className="text-[0.625rem] text-fg-dim">{t('chat.media.in_app_only')}</div>
+      <div className="text-[0.625rem] text-fg-dim">
+        {t(retired ? 'chat.media.retired' : 'chat.media.in_app_only')}
+      </div>
     </div>
   )
 }
@@ -4718,14 +5294,48 @@ function GroupInviteIcon() {
   )
 }
 
-/// Bars of a tally — the ballot the composer is about to make.
-function PollIcon() {
+/// A clock: the disappearing-message timer, in the attach menu and beside any
+/// message that carries one. Same vocabulary as iOS (`Image(systemName:
+/// "clock")` in `MessageRow.metaRow`), so a thread with a timer on it reads the
+/// same on a phone and on a desktop.
+function ClockIcon({ size = 14, className = '' }: { size?: number; className?: string }) {
   return (
-    <svg className="text-fg-secondary shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <line x1="4" y1="7" x2="16" y2="7" />
-      <line x1="4" y1="12" x2="20" y2="12" />
-      <line x1="4" y1="17" x2="10" y2="17" />
+    <svg className={`shrink-0 ${className}`} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="12" cy="12" r="9" />
+      <polyline points="12 7 12 12 15.5 14" />
     </svg>
+  )
+}
+
+/// The clock that sits in a message's meta line while that message is on its
+/// way out, with what is left of it printed beside it and repeated as the
+/// tooltip.
+///
+/// ⚠ Wall-clock time is the one thing no prop can carry. The rows are memoised
+/// (see the note above them) and every other input has a carrier (text, edits,
+/// receipts, reactions, deletion), so a bubble painted once went on printing
+/// "24h" for a whole day and then disappeared without warning. The tick lives
+/// HERE, in the leaf, where it repaints the clock and nothing else: the
+/// memoised bubble around it never re-renders, which is exactly the work item
+/// 30b paid for. Coarse on purpose, `SWEEP_INTERVAL_MS`: that is also how long
+/// a row can outlive its deadline, so a finer clock would print a precision the
+/// sweeper does not have.
+function ExpiryMark({ expiresAt, t }: { expiresAt: number; t: Translate }) {
+  const [, retick] = useState(0)
+  useEffect(() => {
+    const iv = setInterval(() => retick((n) => n + 1), SWEEP_INTERVAL_MS)
+    return () => clearInterval(iv)
+  }, [expiresAt])
+  const left = remainingLabel(expiresAt)
+  return (
+    <span
+      className="inline-flex items-center gap-0.5 text-fg-dim"
+      title={t('chat.ttl.remaining', { time: left })}
+      aria-label={t('chat.ttl.remaining', { time: left })}
+    >
+      <ClockIcon size={10} />
+      <span className="tabular-nums">{left}</span>
+    </span>
   )
 }
 
@@ -4774,66 +5384,6 @@ function PinnedRichText({ text, group, linksAllowed = true }: { text: string; gr
   }
   pushText(text.slice(last))
   return <div className="whitespace-pre-wrap break-words">{nodes}</div>
-}
-
-/// Renders a group poll inline (#7 — polls were invisible on web). The ballot
-/// comes from the envelope; live tallies + the caller's vote come from
-/// /polls/{id}. Tap an option to (un)vote.
-function PollBubble({ poll, mine = false }: { poll: PollRow; mine?: boolean }) {
-  const { t } = useI18n()
-  const { identity } = useIdentity()
-  const [tally, setTally] = useState<PollOut | null>(null)
-  useEffect(() => {
-    if (!identity) return
-    let alive = true
-    void Api.loadPoll(identity, poll.pollId)
-      .then((p) => { if (alive) setTally(p) })
-      .catch(() => {})
-    return () => { alive = false }
-  }, [identity, poll.pollId])
-  const total = tally?.total_votes ?? 0
-  const myVotes = tally?.my_votes ?? []
-  const closed = tally?.closed_at != null
-  async function vote(i: number) {
-    if (closed || !identity) return
-    try { setTally(await Api.votePoll(identity, poll.pollId, i)) } catch { /* ignore */ }
-  }
-  return (
-    <div className={`rounded-lg px-3 py-2 w-[18rem] max-w-full text-left ${mine ? 'bg-bubble-self' : 'bg-bubble-other'}`}>
-      {/* `pr-7` on the two header lines only: the ⋯ handle lives in that
-          corner, and the option bars below it start well clear of it. */}
-      <div className="text-sm font-semibold pr-7">{poll.question}</div>
-      <div className="text-[0.625rem] text-fg-dim mb-2 pr-7">
-        {poll.single ? t('poll.single') : t('poll.multi')}
-        {poll.anon ? ` · ${t('poll.anon')}` : ''}
-      </div>
-      <div className="flex flex-col gap-1.5">
-        {poll.options.map((opt, i) => {
-          const count = tally?.tallies.find((x) => x.option_index === i)?.count ?? 0
-          const pct = total > 0 ? Math.round((count / total) * 100) : 0
-          const mine = myVotes.includes(i)
-          return (
-            <button
-              key={i}
-              type="button"
-              disabled={closed}
-              onClick={() => void vote(i)}
-              className="relative text-left rounded-md overflow-hidden bg-field px-2 py-1.5 disabled:cursor-default"
-            >
-              <div className="absolute inset-y-0 left-0 bg-accent/20" style={{ width: `${pct}%` }} />
-              <div className="relative flex items-center gap-2 text-[0.8125rem]">
-                <span className="flex-1 truncate">{mine ? '✓ ' : ''}{opt}</span>
-                <span className="text-fg-secondary tabular-nums whitespace-nowrap">{count} · {pct}%</span>
-              </div>
-            </button>
-          )
-        })}
-      </div>
-      <div className="text-[0.6875rem] text-fg-dim mt-2">
-        {t('poll.votes', { n: total })}{closed ? ` · ${t('poll.closed')}` : ''}
-      </div>
-    </div>
-  )
 }
 
 /// Direction arrow for a call row: down-left for incoming, up-right for

@@ -1,5 +1,6 @@
 // Per-account choices for the kolobok picker: which emoticons appear in the
-// composer PANEL, and which (<=6) are the quick REACTIONS. Local-only UI
+// composer PANEL, and which are the quick REACTIONS (both capped by
+// PANEL_CAP / REACTION_CAP in emoticons.ts). Local-only UI
 // preference (no wire/backend change), persisted in localStorage per account
 // and kept in sync across tabs via the `storage` event — mirrors
 // useCollapsedSections in local-store.ts.
@@ -12,6 +13,7 @@
 
 import { useEffect, useState } from 'react'
 import { DEFAULT_REACTIONS, PALETTE, PANEL_CAP, REACTION_CAP } from './emoticons'
+import { orderByUsage, reactionWeights } from './reaction-usage'
 
 // Only assets a CURRENT pack can draw. A panel curated before a pack was
 // retired keeps its asset names, and a name with no glyph behind it renders
@@ -86,7 +88,19 @@ export function usePanelAssets(uin: number): string[] {
   useStoredChoice(panelKey(uin), () => [])
   return getPanelAssets(uin)
 }
+/// The quick bar's assets, most-used first (founder item 21).
+///
+/// ⚠ The usage weights are snapshotted ONCE per mount, not read on every
+/// render. The quick bar is mounted exactly while it is visible, so one opening
+/// = one order, and a tap can never re-sort the row under the finger that is
+/// pressing it. The CONFIGURED set stays reactive (the settings sheet can add
+/// or drop an asset and the bar follows); only the ordering is frozen.
+///
+/// This is also why the ordering lives here rather than in `ReactionPicker`:
+/// every reader of the quick set goes through this hook, so there is one place
+/// where "what is in the bar" and "in what order" are decided together.
 export function useReactionAssets(uin: number): string[] {
   useStoredChoice(reactionKey(uin), () => [...DEFAULT_REACTIONS])
-  return getReactionAssets(uin)
+  const [weights] = useState(reactionWeights)
+  return orderByUsage(getReactionAssets(uin), weights)
 }

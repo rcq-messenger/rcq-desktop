@@ -16,6 +16,9 @@ import { useI18n } from '../lib/i18n-context'
 import { useContactAliases } from '../lib/local-store'
 import { removeCrossIsland, type CrossIslandContact } from '../lib/crossisland-store'
 import { blockRequest, isBlocked, unblockRequest } from '../lib/crossisland-requests'
+import { peerKey } from '../lib/sections'
+import { forgetSectionMember } from '../lib/sections-vault'
+import { useIdentity } from '../lib/identity-context'
 
 interface Props {
   contact: CrossIslandContact
@@ -25,6 +28,7 @@ interface Props {
 
 export function CrossIslandActionsMenu({ contact, onClose, onChanged }: Props) {
   const { t } = useI18n()
+  const { identity } = useIdentity()
   const { aliasFor, setAlias } = useContactAliases()
   const ref = useRef<HTMLDivElement | null>(null)
   const [renaming, setRenaming] = useState(false)
@@ -106,6 +110,9 @@ export function CrossIslandActionsMenu({ contact, onClose, onChanged }: Props) {
             <button
               onClick={() => {
                 removeCrossIsland(contact.uin, contact.host)
+                // Deliberate local removal, so the section membership goes
+                // with a tombstone (see forgetSectionMember).
+                forgetSectionMember(identity, peerKey(contact.uin, contact.host))
                 onChanged()
                 onClose()
               }}

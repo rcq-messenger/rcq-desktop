@@ -107,7 +107,12 @@ function logFinishedCall(info: CallInfo | null, reason: string, connectedAt: num
   // language the app happened to be in when the call ended.
   // The island goes on the row so a call with `1234@is2.rcq.app` is not filed
   // in the conversation of a local #1234 — one thread key, two different people.
-  logCall(info.peerUin, `${parts[0]}|${parts[1]}|${tail}`, missed, Date.now(), info.peerHost)
+  // ⚠ The call id goes on the row. It is what lets a caller's `call_missed`
+  // marker for this same call (§5d, #678/#686) collapse into this line instead
+  // of adding a second one: the two arrive on different paths and can overlap
+  // whenever this client's socket comes back inside the second the caller
+  // spent depositing.
+  logCall(info.peerUin, `${parts[0]}|${parts[1]}|${tail}`, missed, Date.now(), info.peerHost, info.id)
 }
 
 const RING_TIMEOUT_MS = 60_000

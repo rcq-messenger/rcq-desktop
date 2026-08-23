@@ -19,6 +19,15 @@ import { tr } from './i18n'
 /// difference.
 const NOT_FOUND = new Set(['ENOTFOUND', 'EAI_AGAIN'])
 
+/// True when the failure was at the TRANSPORT level: nothing answered, rather
+/// than something answering with a refusal. The route ladder wants exactly
+/// this distinction - an island that says 403 is an island this road reaches,
+/// while one that never answers may mean the road itself is gone.
+export function isTransportFailure(e: unknown): boolean {
+  if (typeof e === 'object' && e !== null && (e as { name?: string }).name === 'TimeoutError') return true
+  return e instanceof TypeError && e.message === 'fetch failed'
+}
+
 /// One line of plain language for anything thrown at the user.
 export function humanError(e: unknown): string {
   // AbortSignal.timeout (see bootstrap.ts) rejects with a DOMException, which

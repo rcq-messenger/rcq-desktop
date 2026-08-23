@@ -14,10 +14,11 @@ import { adoptHomesFromOwnRecord, applyPushedRecord, drainBackupQueues, listBack
 import { aliasFor, drainVisitedQueues, listVisitedIslands } from './visited-islands'
 import { getCrossIsland } from './crossisland-store'
 import { ensureRequestsLoaded, holdRequestMessage, isBlocked } from './crossisland-requests'
-import { shouldQuarantineStranger } from './stranger-requests'
+import { isContact, shouldQuarantineStranger } from './stranger-requests'
 import { handleContactReq } from './crossisland-contactreq'
-import { CALL_OFFER_TTL_SEC, fileMissedCrossIslandOffer } from './crossisland-call'
+import { CALL_OFFER_TTL_SEC, fileMissedCall, fileMissedCrossIslandOffer } from './crossisland-call'
 import { deliverCrossIslandCallSignal } from './call'
+import { myCallPolicy } from './call-privacy'
 import { handleProfile, pushProfileTo } from './crossisland-profile'
 import { decodeGmsg, handleGmsg, handleSkdm, handleSknack, replayHeldGmsg } from './sender-key-receive'
 import { ackLiveGroupRow, drainGroupLog, forgetVouched, islandHasGroupLog, type GroupLogRequest } from './group-log'
@@ -80,7 +81,16 @@ function handleCallSignal(senderUin: number, senderHost: string, env: CallEnvelo
     }
   }
   if (sig === 'call_offer' && Math.floor(Date.now() / 1000) - ts > CALL_OFFER_TTL_SEC) {
-    fileMissedCrossIslandOffer(senderUin, senderHost, data.media ?? 'audio', ts)
+    // The call id goes on the row: the caller may ALSO have deposited a
+    // `call_missed` marker for this same call, and the two must collapse into
+    // one line rather than tell the conversation about two calls.
+    fileMissedCrossIslandOffer(senderUin, senderHost, data.media ?? 'audio', ts, cid)
+    return
+  }
+  // A caller-written missed-call marker: the call is long over, so it files the
+  // row and rings nothing. Dedupe is the row id, derived from `cid`.
+  if (sig === 'call_missed') {
+    fileMissedCall(senderUin, senderHost, data.media ?? 'audio', ts, cid)
     return
   }
   // Non-offer signals need no freshness rule of their own: they already no-op
@@ -92,6 +102,46 @@ function handleCallSignal(senderUin: number, senderHost: string, env: CallEnvelo
     call_id: cid,
     ...data,
   })
+}
+
+/// §5d: the ONE call envelope that arrives from our OWN island.
+///
+/// Everything else a same-island call needs rides the plaintext websocket
+/// relay, so an envelope that did not cross a boundary is normally ignored. The
+/// exception is `call_missed`: a marker the CALLER deposits when the island
+/// told them we could not be reached at all, so that a client which was not
+/// running still learns it was called (#678/#686). It never rings, since the
+/// call is long over: it files the row the live path would have filed.
+///
+/// ⚠⚠ THE GATES HERE ARE THE WHOLE OF THE CONSENT CHECK. This branch sits above
+/// the stranger quarantine in `route()` and is never reached by it, and a
+/// marker is an ORDINARY SEALED DEPOSIT that any number on the island can
+/// compose: nothing behind it was ever policed by the island, because no
+/// signalling happened. So it asks the same question the island asks before it
+/// lets a `call_offer` through (`_caller_allowed` in `routers/ws.py`), which it
+/// asks on the websocket path ONLY.
+///
+/// Under "everyone" a stranger passes, and that is honest rather than a hole:
+/// the same stranger may ring this account for real, and a ring nobody answers
+/// leaves the same row. What the policy stops is a number the user has already
+/// told the island may not call them.
+function handleSameIslandCallEnvelope(myUin: number, senderUin: number, env: CallEnvelope): void {
+  if (typeof env.sig !== 'string' || env.sig !== 'call_missed') return
+  // host '' is how a same-island row is keyed in the shared block store.
+  if (isBlocked(senderUin, '')) return
+  const policy = myCallPolicy()
+  if (policy === 'nobody') return
+  if (policy === 'contacts' && !isContact(myUin, senderUin)) return
+  const cid = typeof env.cid === 'string' ? env.cid : ''
+  // ⚠ No call id, no dedupe key: the same envelope redelivered (acks are
+  // best-effort) would file the row again, and again.
+  if (!cid) return
+  const ts = typeof env.ts === 'number' && Number.isFinite(env.ts) ? env.ts : 0
+  const media =
+    env.data && typeof env.data === 'object'
+      ? ((env.data as Record<string, unknown>).media as string | undefined)
+      : undefined
+  fileMissedCall(senderUin, null, media === 'video' ? 'video' : 'audio', ts, cid)
 }
 
 // Route a decrypted envelope to the 1:1 store or the group store by group_id.
@@ -166,11 +216,16 @@ function route(
   // message request it would be a call nobody can answer, sitting in a list,
   // and it must never reach the message store — the conversation gets the
   // one-line call summary the state machine writes when the call is over, not
-  // the SDP that set it up. A same-island call still rides the plaintext WS
-  // relay, so an envelope that did not cross an island boundary is ignored.
+  // the SDP that set it up. A same-island call otherwise rides the plaintext WS
+  // relay; the single envelope that arrives from our own island is the
+  // missed-call marker, which has its own handler and its own gates.
   if ((envelope as { kind?: string }).kind === 'call') {
-    if (senderHost && senderHost !== ownHost && senderUIN !== myUin) {
-      handleCallSignal(senderUIN, senderHost, envelope as unknown as CallEnvelope)
+    if (senderUIN !== myUin) {
+      if (senderHost && senderHost !== ownHost) {
+        handleCallSignal(senderUIN, senderHost, envelope as unknown as CallEnvelope)
+      } else {
+        handleSameIslandCallEnvelope(myUin, senderUIN, envelope as unknown as CallEnvelope)
+      }
     }
     return
   }

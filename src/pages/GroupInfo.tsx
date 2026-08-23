@@ -1,5 +1,19 @@
-// Group profile / settings — members list with status, owner badge,
+// Group profile / settings: members list with status, owner badge,
 // rename (owner only), leave / delete actions.
+//
+// Moderator rights are handed out from here (founder item 23). The island has
+// exactly one grant mechanism, `POST /groups/{id}/members/{uin}/permissions`
+// (owner-only, subset of delete|members|info), and until now nothing on
+// web/desktop called it: `Api.setMemberPermissions` shipped with zero callers
+// while both phones had the screen. There is no settable `admin` role on the
+// island (the column exists, nothing ever writes it), so this grants
+// capabilities rather than a rank.
+//
+// Ownership itself IS handed over from here now, through
+// `POST /groups/{id}/transfer-owner` (founder item 23, second half). It used to
+// be impossible, which made an owner who wanted out choose between deleting the
+// room and abandoning it; the migration the founder described is handing it
+// over and then leaving, so those two are offered as one flow.
 
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
@@ -7,11 +21,29 @@ import { PersonAvatar } from '../components/PersonAvatar'
 import { AddMemberSheet } from '../components/AddMemberSheet'
 import { GroupSettingsModal } from '../components/GroupSettingsModal'
 import { GroupAvatar } from '../components/GroupAvatar'
-import { Api, type RCQGroup } from '../lib/api'
+import { Api, ApiError, parseErrorCode, parseRetryAfter, type RCQGroup } from '../lib/api'
 import { groupShareLink } from '../lib/group-invite'
+import { useGroupChanged } from '../lib/group-events'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
 import { groupApiCtx } from '../lib/visited-islands'
+import { compactCount } from '../lib/format-count'
+
+/// The island's three granular moderator capabilities, in the order it
+/// canonicalises them (`_GROUP_PERMS` in groups.py). Anything outside this set
+/// is rejected with 400.
+const GROUP_PERMS = ['delete', 'members', 'info'] as const
+
+/// The island's refusals for a handover, mapped to what we say. Every one of
+/// them is a fact about the TARGET or about us, never a network hiccup, so each
+/// gets its own sentence instead of a shared "could not".
+const TRANSFER_ERRORS: Record<string, string> = {
+  owner_only: 'group.transfer.err.owner_only',
+  already_owner: 'group.transfer.err.already_owner',
+  not_a_member: 'group.transfer.err.not_a_member',
+  no_such_user: 'group.transfer.err.no_such_user',
+  target_suspended: 'group.transfer.err.target_suspended',
+}
 
 export function GroupInfo() {
   const { identity } = useIdentity()
@@ -28,6 +60,18 @@ export function GroupInfo() {
   const [confirmDestroy, setConfirmDestroy] = useState(false)
   const [membersExpanded, setMembersExpanded] = useState(false)
   const [copied, setCopied] = useState(false)
+  /// Which member's rights panel is open (uin), or null. Inline rather than a
+  /// modal on purpose: the settings sheet carries a backdrop-filter, and a
+  /// second overlay opened from inside one is the trap this repo has hit twice.
+  const [rightsFor, setRightsFor] = useState<number | null>(null)
+  /// Which member the "hand the group over" confirmation is open for, or null.
+  const [transferFor, setTransferFor] = useState<number | null>(null)
+  /// Who we just handed the group to, once the island has confirmed it. Kept
+  /// separately from `group.owner_uin` because this drives the follow-up offer
+  /// ("you can leave now"), which only makes sense to the person who just did
+  /// it, not to everyone who reloads the screen afterwards.
+  const [handedTo, setHandedTo] = useState<{ uin: number; name: string } | null>(null)
+  const [transferError, setTransferError] = useState<string | null>(null)
 
   // Cross-island group: a negative route id is the local alias — resolve the
   // guest identity + server-side id for every call (local groups pass through).
@@ -46,6 +90,26 @@ export function GroupInfo() {
     void refresh()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [identity?.uin, groupId])
+
+  // This screen is the one that is entirely gated on ownership: the rights
+  // buttons, the remove buttons, the settings gear, "delete" versus "leave".
+  // So a handover performed from another device, or by the previous owner
+  // while this page is open, has to land here live. Above 100 members the
+  // island sends only the id and the new owner; that half re-gates everything
+  // above immediately and the roster follows from the refetch behind it.
+  useGroupChanged(
+    { enabled: gctx != null && !gctx.host, ident: gctx?.ident ?? null, gid: gctx?.gid ?? null },
+    (patch) => {
+      setGroup((prev) => {
+        if (!prev) return prev
+        // ⚠ Keep the LOCAL alias id and host: the island's answer carries its
+        // own ids, and this route was opened with ours.
+        return patch.kind === 'snapshot'
+          ? { ...patch.group, id: prev.id, host: prev.host }
+          : { ...prev, owner_uin: patch.ownerUin }
+      })
+    },
+  )
 
   if (!identity) {
     navigate('/', { replace: true })
@@ -106,15 +170,93 @@ export function GroupInfo() {
     }
   }
 
-  async function leaveOrDelete() {
-    if (!group) return
+  /// Grant / revoke a member's moderator capabilities. Owner-only on the
+  /// island too, so the gate below is a courtesy rather than the enforcement.
+  /// The response is the whole group, roster included, and it carries the
+  /// ISLAND's ids: keep the local alias id + host the route was opened with.
+  async function setMemberRights(uin: number, permissions: string[]) {
+    if (!group || !gctx) return
+    setBusy(true)
+    setError(null)
+    try {
+      const updated = await Api.setMemberPermissions(gctx.ident, gctx.gid, uin, permissions)
+      setGroup({ ...updated, id: group.id, host: group.host })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /// Hand the group over. Owner only, and irreversible from here: the island
+  /// answers with the group as it now stands, and the moment that lands we are
+  /// a plain member of it.
+  ///
+  /// ⚠ The response replaces the WHOLE local group, not just `owner_uin`. The
+  /// roles moved with it (their row became the owner's, ours stopped being) and
+  /// every gate on this screen reads both, so patching the single field would
+  /// leave our own row still drawn with the rights it no longer has.
+  async function transferOwner(uin: number, name: string) {
+    if (!group || !gctx || busy) return
+    setBusy(true)
+    setTransferError(null)
+    try {
+      const updated = await Api.transferGroupOwner(gctx.ident, gctx.gid, uin)
+      setGroup({ ...updated, id: group.id, host: group.host })
+      setTransferFor(null)
+      // Any panel of ours that belonged to the owner closes with the rights we
+      // just gave away.
+      setRightsFor(null)
+      setHandedTo({ uin, name })
+    } catch (e) {
+      setTransferError(transferErrorText(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /// One sentence for each way the island can refuse a handover, and the wait
+  /// in seconds when it is a rate limit that carries one.
+  function transferErrorText(e: unknown): string {
+    if (e instanceof ApiError) {
+      const code = parseErrorCode(e.body)
+      if (code && TRANSFER_ERRORS[code]) return t(TRANSFER_ERRORS[code])
+      if (e.status === 429 || code === 'rate_limited') {
+        const wait = parseRetryAfter(e.body)
+        return wait != null
+          ? t('group.transfer.err.rate_limited_in', { s: String(wait) })
+          : t('group.transfer.err.rate_limited')
+      }
+    }
+    return t('group.transfer.err.failed')
+  }
+
+  /// Walk out of the group. Always a removal of MYSELF and never the owner's
+  /// delete. The handover flow below leans on that: its "leave" button sits
+  /// where "delete group" used to be for the same person seconds earlier, and
+  /// one of those two destroys the room for everyone.
+  async function leaveNow() {
+    if (!gctx) return
     setBusy(true)
     try {
-      if (isOwner) {
-        await Api.deleteGroup(gctx!.ident, gctx!.gid)
-      } else {
-        await Api.removeGroupMember(gctx!.ident, gctx!.gid, myUinThere)
-      }
+      await Api.removeGroupMember(gctx.ident, gctx.gid, myUinThere)
+      navigate('/contacts', { replace: true })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function leaveOrDelete() {
+    if (!group || !gctx) return
+    if (!isOwner) {
+      await leaveNow()
+      return
+    }
+    setBusy(true)
+    try {
+      await Api.deleteGroup(gctx.ident, gctx.gid)
       navigate('/contacts', { replace: true })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'failed')
@@ -192,7 +334,7 @@ export function GroupInfo() {
               <div className="flex-1 min-w-0">
                 <div className="font-bold text-lg truncate">{group.name}</div>
                 <div className="text-xs text-fg-dim">
-                  {t('section.groups.members', { n: group.members.length })}
+                  {t('section.groups.members', { n: compactCount(group.members.length) })}
                 </div>
               </div>
             </section>
@@ -213,8 +355,20 @@ export function GroupInfo() {
               </button>
               {membersExpanded && (
               <ul>
-                {roster.map((m) => (
-                  <li key={m.uin} className="relative">
+                {roster.map((m) => {
+                  const perms = m.permissions ?? []
+                  const isTheOwner = m.uin === group.owner_uin
+                  const isMe = m.uin === myUinThere
+                  // The island refuses this call from anyone but the owner, and
+                  // refuses the owner as a TARGET (400 "the owner already has
+                  // every permission"), so both cases are hidden rather than
+                  // offered and then rejected.
+                  const canSetRights = isOwner && !isTheOwner && !isMe
+                  const canRemove = canManageMembers && !isTheOwner && !isMe
+                  const memberName = m.nickname || `#${m.uin}`
+                  return (
+                  <li key={m.uin}>
+                    <div className="relative">
                     <Link
                       to={m.uin === identity.uin ? '/profile' : `/profile/${m.uin}`}
                       className="flex items-center gap-3 px-4 py-2.5 hover:bg-field"
@@ -222,7 +376,7 @@ export function GroupInfo() {
                       {/* A member's picture rides with the roster, gated by
                           membership; without one this is the plain status icon,
                           so the screen is unchanged for everyone who never set
-                          one. Presence stays on it as the badge — this is a
+                          one. Presence stays on it as the badge, this being a
                           list of people, which is exactly where it means
                           something. */}
                       <PersonAvatar
@@ -240,26 +394,150 @@ export function GroupInfo() {
                             </span>
                           )}
                         </div>
-                        <div className="font-mono text-[0.625rem] text-fg-dim">#{m.uin}</div>
+                        {/* The moderator mark rides UNDER the nickname, not at
+                            the right edge: the action buttons are absolutely
+                            positioned over that edge and would sit on top of
+                            it. The owner keeps the right-edge badge because the
+                            owner row never carries buttons. */}
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono text-[0.625rem] text-fg-dim">#{m.uin}</span>
+                          {!isTheOwner && perms.length > 0 && (
+                            <span className="text-[0.625rem] font-semibold text-fg-secondary uppercase tracking-wider">
+                              {t('group.info.moderator')}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      {m.uin === group.owner_uin && (
+                      {isTheOwner && (
                         <span className="text-[0.625rem] font-bold text-accent uppercase tracking-wider">
                           {t('group.info.owner')}
                         </span>
                       )}
                     </Link>
-                    {canManageMembers && m.uin !== group.owner_uin && m.uin !== myUinThere && (
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => void removeMember(m.uin)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 h-6 px-2 rounded-md bg-field text-[0.6875rem] font-medium text-fg-secondary hover:bg-line/60 disabled:opacity-40"
-                      >
-                        {t('group.settings.remove_member')}
-                      </button>
+                    {(canSetRights || canRemove) && (
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+                        {canSetRights && (
+                          <button
+                            type="button"
+                            disabled={busy}
+                            aria-expanded={rightsFor === m.uin}
+                            onClick={() => setRightsFor((v) => (v === m.uin ? null : m.uin))}
+                            className="h-6 px-2 rounded-md bg-field text-[0.6875rem] font-medium text-fg-secondary hover:bg-line/60 disabled:opacity-40"
+                          >
+                            {t('group.rights.title')}
+                          </button>
+                        )}
+                        {canRemove && (
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => void removeMember(m.uin)}
+                            className="h-6 px-2 rounded-md bg-field text-[0.6875rem] font-medium text-fg-secondary hover:bg-line/60 disabled:opacity-40"
+                          >
+                            {t('group.settings.remove_member')}
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    </div>
+                    {canSetRights && rightsFor === m.uin && (
+                      <div className="px-4 pb-3 pt-1 space-y-2 bg-field/40">
+                        <p className="text-xs text-fg-secondary">{t('group.rights.hint')}</p>
+                        <div className="space-y-1">
+                          {GROUP_PERMS.map((perm) => (
+                            <label key={perm} className="flex items-center gap-2 text-sm cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={perms.includes(perm)}
+                                disabled={busy}
+                                onChange={(e) =>
+                                  void setMemberRights(
+                                    m.uin,
+                                    e.target.checked
+                                      ? [...perms, perm]
+                                      : perms.filter((x) => x !== perm),
+                                  )
+                                }
+                                className="accent-accent"
+                              />
+                              <span>{t(`group.rights.${perm}`)}</span>
+                            </label>
+                          ))}
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            disabled={busy || perms.length === GROUP_PERMS.length}
+                            onClick={() => void setMemberRights(m.uin, [...GROUP_PERMS])}
+                            className="flex-1 h-8 rounded-md bg-field text-xs font-medium hover:bg-line/50 disabled:opacity-40 transition-colors"
+                          >
+                            {t('group.rights.grant_all')}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busy || perms.length === 0}
+                            onClick={() => void setMemberRights(m.uin, [])}
+                            className="flex-1 h-8 rounded-md bg-field text-xs font-medium hover:bg-line/50 disabled:opacity-40 transition-colors"
+                          >
+                            {t('group.rights.revoke_all')}
+                          </button>
+                        </div>
+                        <p className="text-xs text-fg-dim">{t('group.rights.owner_note')}</p>
+                        {/* Handing the group over lives at the bottom of the
+                            rights panel: it is the last and largest thing an
+                            owner can give this person, and it belongs with the
+                            rest of what they may do rather than as a third
+                            button crowding the row. */}
+                        <div className="pt-2 border-t border-line/60">
+                          {transferFor !== m.uin ? (
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => {
+                                setTransferError(null)
+                                setTransferFor(m.uin)
+                              }}
+                              className="w-full h-8 rounded-md text-xs font-semibold text-red-600 hover:bg-red-500/10 disabled:opacity-40 transition-colors"
+                            >
+                              {t('group.transfer.title')}
+                            </button>
+                          ) : (
+                            <div className="space-y-2 pt-1">
+                              <p className="text-xs text-fg-secondary">
+                                {t('group.transfer.confirm', { name: memberName })}
+                              </p>
+                              {transferError && (
+                                <p className="text-xs text-red-600">{transferError}</p>
+                              )}
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  disabled={busy}
+                                  onClick={() => {
+                                    setTransferFor(null)
+                                    setTransferError(null)
+                                  }}
+                                  className="flex-1 h-8 rounded-md bg-field text-xs font-medium hover:bg-line/50 disabled:opacity-40 transition-colors"
+                                >
+                                  {t('common.cancel')}
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={busy}
+                                  onClick={() => void transferOwner(m.uin, memberName)}
+                                  className="flex-1 h-8 rounded-md bg-red-600 hover:bg-red-700 text-white text-xs font-semibold disabled:opacity-40 transition-colors"
+                                >
+                                  {busy ? '…' : t('group.transfer.cta')}
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     )}
                   </li>
-                ))}
+                  )
+                })}
               </ul>
               )}
               </>
@@ -290,6 +568,40 @@ export function GroupInfo() {
                 <p className="px-3 pb-1 pt-0.5 text-center text-xs text-fg-dim">
                   {t('group.share.hint')}
                 </p>
+              </section>
+            )}
+
+            {/* The second half of the handover, and deliberately NOT inside
+                the rights panel it was started from: that panel is gated on
+                being the owner, and on `members_hidden` the entire roster is
+                gated on it too, so both unmount the instant the island answers.
+                Handing the group over and then walking out is the migration
+                this was built for, so the offer has to outlive the handover to be
+                made at all. It sits right above leave/delete because that is
+                where it leads. */}
+            {handedTo && (
+              <section className="bg-surface rounded-lg p-3 space-y-2">
+                <p className="text-sm text-fg-secondary">
+                  {t('group.transfer.done', { name: handedTo.name })}
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setHandedTo(null)}
+                    className="flex-1 h-9 rounded-md bg-field text-sm font-medium hover:bg-line/50 disabled:opacity-40 transition-colors"
+                  >
+                    {t('group.transfer.stay')}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void leaveNow()}
+                    className="flex-1 h-9 rounded-md bg-red-600 hover:bg-red-700 text-white text-sm font-semibold disabled:opacity-40 transition-colors"
+                  >
+                    {busy ? '…' : t('group.info.leave')}
+                  </button>
+                </div>
               </section>
             )}
 

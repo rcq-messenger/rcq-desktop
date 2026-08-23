@@ -1,5 +1,9 @@
-// TEMPORARY visual harness for the new poll composer + share-group sheets and
-// their entry points. Not wired into the app; delete after screenshotting.
+// TEMPORARY visual harness for the share-group sheet and its entry point. Not
+// wired into the app; delete after screenshotting.
+//
+// It used to stub the poll endpoints too. Polls were cut on 2026-08-23 (founder
+// item 14a) and `Api.createPoll` / `loadPoll` / `votePoll` no longer exist, so
+// those three stubs went with them.
 
 import ReactDOM from 'react-dom/client'
 import './index.css'
@@ -64,18 +68,6 @@ const demoGroups: RCQGroup[] = [
 Api.groups = async () => demoGroups
 Api.groupInfo = async () => demoGroup
 Api.contacts = async () => []
-Api.createPoll = async () => ({ poll_id: 55 })
-Api.loadPoll = async () => ({
-  poll_id: 55,
-  closed_at: null,
-  total_votes: 5,
-  my_votes: [0],
-  tallies: [
-    { option_index: 0, count: 3, voter_uins: [4242, 51, 88] },
-    { option_index: 1, count: 2, voter_uins: [7, 9] },
-  ],
-})
-Api.votePoll = Api.loadPoll as unknown as typeof Api.votePoll
 Api.myInfo = (async () => ({ uin: 4242, nickname: 'me', status: 'online' })) as unknown as typeof Api.myInfo
 
 ReactDOM.createRoot(document.getElementById('root')!).render(<App />)

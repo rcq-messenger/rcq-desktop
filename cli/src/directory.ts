@@ -26,6 +26,7 @@ import {
   persistSnapshot,
   restoreSnapshot,
 } from '../../src/lib/contacts-cache'
+import { mirrorContactsToVault } from '../../src/lib/contacts-vault'
 import { getCrossIsland } from '../../src/lib/crossisland-store'
 import type { WebIdentity } from '../../src/lib/crypto'
 import { tr } from './i18n'
@@ -104,7 +105,104 @@ async function fetchDirectory(identity: WebIdentity): Promise<Contact[]> {
     pending: pending ?? prev?.pending ?? [],
     me: prev?.me ?? null,
   })
+  await mirrorVault(identity, contacts)
   return contacts
+}
+
+// -----------------------------------------------------------------
+// The vault mirror (stage 4 of the metadata plan; the web shipped this in
+// f8eef3c and this is the same call at the same moment).
+//
+// The island's `contacts` table is still the truth in this phase and every
+// client still adds to and removes from it; the vault holds a sealed copy so
+// that the moment the island stops answering `/contacts`, a reinstall or a new
+// device recovers its roster from the slot and from nowhere else. A client
+// that ships the mirror today is a client whose copy is already current then.
+//
+// ⚠ Everything below is about NOT paying for it on every command. In a browser
+// the roster page is one long-lived tab, so `contacts-vault.ts` remembers what
+// it last folded in module state and the mirror costs nothing on a repeat. A
+// CLI process lives for one `rcq contacts`, so that memory is always cold and
+// every single command would read the slot back. Hence the fingerprint on
+// disk, which is the same fingerprint the shared module computes.
+// -----------------------------------------------------------------
+
+/// Scoped by hand, like the learned names above: this is the CLI's own
+/// bookkeeping, not one of the core's stores.
+function vaultFingerprintKey(myUin: number): string {
+  return `rcq.cli.vaultmirror.${myUin}`
+}
+
+/// The edges, sorted: uin, blocked, nickname, home host. Byte-identical in
+/// spirit to `contacts-vault.ts`'s own `listKey`, and for the same purpose.
+function listFingerprint(list: Contact[]): string {
+  return list
+    .map((c) => `${c.uin}:${c.blocked ? 1 : 0}:${c.nickname ?? ''}:${c.host ?? ''}`)
+    .sort()
+    .join('\n')
+}
+
+/// Forget what was last mirrored, so the next refresh folds again. Called when
+/// another device says the slot moved.
+export function forgetVaultMirror(myUin: number): void {
+  try {
+    localStorage.removeItem(vaultFingerprintKey(myUin))
+  } catch {
+    /* no storage; the next refresh folds anyway */
+  }
+}
+
+/// How long a command will wait for the mirror before carrying on without it.
+/// The vault is bookkeeping for a phase that has not arrived yet; a `rcq
+/// contacts` that printed its rows and then sat there would be a worse client
+/// for a better copy. What runs past the deadline keeps running, and if the
+/// process exits first the next command simply folds again.
+const MIRROR_DEADLINE_MS = 6000
+
+async function mirrorVault(identity: WebIdentity, contacts: Contact[]): Promise<void> {
+  const fp = listFingerprint(contacts)
+  let last: string | null = null
+  try {
+    last = localStorage.getItem(vaultFingerprintKey(identity.uin))
+  } catch {
+    /* no storage */
+  }
+  if (last === fp) return
+  const work = mirrorContactsToVault(identity, contacts).then((outcome) => {
+    // `skipped` is an island with no vault and `failed` is a vault that did
+    // not answer: neither is a reason to stop trying, so only a real fold is
+    // remembered. On an island without the capability that costs one cached
+    // `/server/info` per refresh and nothing else.
+    if (outcome === 'written' || outcome === 'unchanged') {
+      try {
+        localStorage.setItem(vaultFingerprintKey(identity.uin), fp)
+      } catch {
+        /* no storage */
+      }
+    }
+    if (process.env.RCQ_VERBOSE) process.stderr.write(`[vault] contacts ${outcome}\n`)
+  })
+  await Promise.race([
+    work,
+    new Promise<void>((resolve) => {
+      const t = setTimeout(resolve, MIRROR_DEADLINE_MS)
+      t.unref?.()
+    }),
+  ])
+}
+
+/// A `vault_changed` frame off the socket: another device wrote one of this
+/// account's slots.
+///
+/// The island excludes the WRITER by install name, so a frame that arrives
+/// here was somebody else's write, which is exactly why it is worth acting
+/// on at all. In this phase the server list is still the truth, so there is
+/// nothing to merge; what it costs us is the right to believe our copy is
+/// current, so the fingerprint goes and the next refresh folds again.
+export function noteVaultChanged(myUin: number, frame: { type?: unknown }): boolean {
+  if (frame.type !== 'vault_changed') return false
+  forgetVaultMirror(myUin)
+  return true
 }
 
 /// Pull the roster and the group names into the snapshot the labels read.

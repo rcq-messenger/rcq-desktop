@@ -47,7 +47,14 @@ export function allowStranger(uin: number): void {
   localStorage.setItem(ALLOWED(), JSON.stringify([...s]))
 }
 
-function isContact(myUin: number, uin: number): boolean {
+/// Is `uin` in this account's cached contact list? Exported for the
+/// missed-call-marker gate in `message-receiver`, which asks the same question
+/// the island's `call_policy: "contacts"` asks.
+///
+/// ⚠ Fails OPEN with no snapshot, which is the right default for both callers:
+/// eating messages (or a missed call) because the roster has not loaded yet is
+/// worse than letting one through.
+export function isContact(myUin: number, uin: number): boolean {
   const snap = contactsCache.get(myUin) ?? snapshotFor(myUin)
   if (!snap) return true // no snapshot at all — fail OPEN, never eat messages blind
   return snap.contacts.some((c) => c.uin === uin)

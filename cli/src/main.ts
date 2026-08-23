@@ -31,6 +31,7 @@ import {
   isContact,
   knownName,
   lookupUser,
+  noteVaultChanged,
   peerLabel,
   primeDirectory,
   refreshDirectory,
@@ -61,11 +62,41 @@ import { RcqSocket } from './socket'
 import { acquireStateLock } from './state'
 import { decryptIncoming, noteInboundFrom } from '../../src/lib/signal-device'
 import { canonical } from './aliases'
+import {
+  clearProxyUrl,
+  normalizeProxyUrl,
+  probeEnvIgnored,
+  probeThroughProxy,
+  readProxyConfig,
+  readProxyUrl,
+  redactProxyUrl,
+  runProbe,
+  saveProxyUrl,
+} from './env-proxy'
+import {
+  activeProxyLabel,
+  describeRoute,
+  describeRung,
+  ensureRoute,
+  lastWalk,
+  noteRouteTrouble,
+  walkLadder,
+} from './routes'
+import {
+  effectiveSources,
+  frontHost,
+  probeUrl,
+  refresh as refreshRelayConfig,
+  relays as relayList,
+  usingRemote,
+  version as relayConfigVersion,
+} from './relay-config'
+import { buildSingBox, DEFAULT_LOCAL_PORT, fetchBridges, findSingBox } from './singbox'
 import { currentLang, LANG_CODES, normalizeLang, setLang, tr } from './i18n'
 import { err, out } from './style'
 import { noteUpdateIfAny } from './update-check'
 import { CLI_VERSION } from './version'
-import { humanError } from './errors'
+import { humanError, isTransportFailure } from './errors'
 
 // ★ Before anything can provision: a CLI on a server must never steal the
 // account's primary slot from the phone (docs/console-client-design.md; the
@@ -98,7 +129,24 @@ function usageDie(msg?: string): never {
 
 /// Flags that stand alone, with no value after them. Everything else is
 /// `--flag value`, and a value flag with nothing behind it stays a usage error.
-const BOOL_FLAGS = new Set(['--yes', '--groups'])
+const BOOL_FLAGS = new Set([
+  '--yes',
+  '--groups',
+  '--test',
+  '--no-test',
+  // rcq routes
+  '--probe',
+  '--refresh',
+  '--singbox',
+  '--bridges',
+  '--onion',
+  '--no-onion',
+])
+
+/// Commands that never name the island, so the route ladder is not engaged
+/// for them. `routes` engages its own (and may be asked to walk it);
+/// `proxy`/`__probe` deliberately run outside the proxy they configure.
+const ROUTE_FREE = new Set(['lang', 'log', 'export', 'proxy', '__probe', 'routes'])
 
 /// Pull `--flag value` pairs out of argv; what remains are positionals.
 function parseArgs(argv: string[]): { pos: string[]; opts: Map<string, string>; flags: Set<string> } {
@@ -201,8 +249,12 @@ async function cmdWhoami(): Promise<void> {
   let nick: string | null = null
   if (id.jwt) nick = await Api.myInfo(id).then((m) => m.nickname ?? null).catch(() => null)
   // Labels localize, VALUES never do: scripts read the right-hand side.
+  // The proxy line is printed only when there is one, and REDACTED: it is the
+  // answer to "am I actually behind Tor right now", and it must not be the
+  // reason a proxy password ends up in a screenshot.
+  const proxy = readProxyUrl()
   process.stdout.write(
-    `uin: ${id.uin}\n${nick ? `${tr('label.nickname')}: ${nick}\n` : ''}${tr('label.island')}: ${id.apiBase}\n${tr('label.device')}: ${blob ? blob.deviceId : '-'}\n`,
+    `uin: ${id.uin}\n${nick ? `${tr('label.nickname')}: ${nick}\n` : ''}${tr('label.island')}: ${id.apiBase}\n${tr('label.device')}: ${blob ? blob.deviceId : '-'}\n${proxy ? `${tr('label.proxy')}: ${redactProxyUrl(proxy)}\n` : ''}`,
   )
 }
 
@@ -603,6 +655,7 @@ async function cmdWatch(flags: Set<string>): Promise<void> {
       void ingestGroupPacket(identity, frame.payload, frame.group_id, liveOut, frame.seq).catch(liveFailed)
     },
     onControl: (frame) => {
+      if (noteVaultChanged(identity.uin, frame)) return
       const line = describeRequestFrame(identity, frame)
       if (line) process.stderr.write(err.yellow(line) + '\n')
     },
@@ -662,6 +715,291 @@ function cmdLang(pos: string[]): void {
   process.stderr.write(tr('lang.set', { lang: pick }) + '\n')
 }
 
+/// Where a probe should knock: --island wins, then the island this account
+/// already talks to, then the default. Deliberately NOT requireIdentity() -
+/// checking a proxy BEFORE there is an account is the whole throwaway recipe.
+function probeIsland(opts: Map<string, string>): string {
+  const flag = opts.get('--island')?.trim()
+  if (flag) return flag.replace(/\/+$/, '')
+  return loadStoredIdentity()?.apiBase ?? DEFAULT_API_BASE
+}
+
+/// host:port of a proxy address, for the messages that name it.
+function proxyAddr(url: string): string {
+  try {
+    const u = new URL(url)
+    return `${u.hostname}:${u.port}`
+  } catch {
+    return url
+  }
+}
+
+/// Prove that the proxy really carries RCQ's traffic, and say so in one
+/// sentence, BEFORE anybody discovers it inside a socket reconnect loop.
+///
+/// Two runs, each in a child process that was STARTED with the proxy in its
+/// environment (the only moment it can take effect at all - see env-proxy.ts):
+///   1. a control run through an address nothing can ever be listening on,
+///      asking a server on this machine's own loopback. It MUST fail. If it
+///      succeeds, this Node ignores the proxy environment altogether
+///      (NODE_USE_ENV_PROXY is Node 24+), and a green answer from run 2 would
+///      have meant nothing. ⚠ That control run used to knock on the ISLAND,
+///      which meant the detector announced the problem by sending the island
+///      the one unproxied packet the proxy exists to prevent - and blamed the
+///      proxy whenever the island was blocked. It now touches nothing outside
+///      the machine.
+///   2. the real one, against the island's /health.
+/// stdout gets one machine line; stderr gets the sentence.
+///
+/// Three verdicts, because they are three different situations: `ok`, `fail`
+/// (this proxy did not carry the traffic - Tor may simply not be up yet, so
+/// the setting is kept), and `unsupported` (this RUNTIME cannot carry it, and
+/// nothing the person does to the proxy will change that).
+type ProxyVerdict = 'ok' | 'fail' | 'unsupported'
+
+async function runProxyTest(url: string, island: string): Promise<ProxyVerdict> {
+  process.stderr.write(err.dim(tr('proxy.testing', { url: redactProxyUrl(url), island })) + '\n')
+  if (await probeEnvIgnored()) {
+    process.stdout.write('fail\tproxy-env-ignored\n')
+    process.stderr.write(err.yellow(tr('proxy.ignored', { version: process.version })) + '\n')
+    process.stderr.write(err.yellow(tr('proxy.refusedUnsupported')) + '\n')
+    return 'unsupported'
+  }
+  const r = await probeThroughProxy(url, island)
+  if (r.ok) {
+    process.stdout.write(`ok\t${r.ms ?? 0}\t${r.island ?? '-'}\n`)
+    process.stderr.write(err.green(tr('proxy.ok', { island, ms: r.ms ?? 0 })) + '\n')
+    process.stderr.write(err.dim(tr('proxy.caveat')) + '\n')
+    return 'ok'
+  }
+  const addr = proxyAddr(url)
+  const say = (): string => {
+    switch (r.reason) {
+      case 'refused':
+        return tr('proxy.failRefused', { addr: r.detail || addr })
+      case 'notSocks':
+        return tr('proxy.failNotSocks', { addr })
+      case 'notHttp':
+        return tr('proxy.failNotHttp', { addr })
+      case 'timeout':
+        return tr('proxy.failTimeout', { ms: r.ms ?? 0, island })
+      case 'status':
+        return tr('proxy.failStatus', { island, status: r.status ?? 0 })
+      default:
+        return tr('proxy.failOther', { island, detail: r.detail || '?' })
+    }
+  }
+  process.stdout.write(`fail\t${r.reason ?? 'other'}\t${r.detail ?? ''}\n`)
+  process.stderr.write(err.yellow(say()) + '\n')
+  return 'fail'
+}
+
+/// `rcq proxy` - push every RCQ connection through a proxy the user runs
+/// themselves (Tor, i2pd, an `ssh -D` tunnel). Same idea and same vocabulary
+/// as LOCAL_PROXY on the phones (RCQ/docs/proxy-design.md).
+///
+/// Lock-free like `lang`, and the one command that deliberately runs OUTSIDE
+/// the proxy it configures (engageProxy skips it): a proxy that is down must
+/// never be able to take `rcq proxy clear` down with it.
+async function cmdProxy(pos: string[], opts: Map<string, string>, flags: Set<string>): Promise<void> {
+  // Subcommands are NOT run through canonical() - `set` and `show` are their
+  // own little namespace, and the top-level table would turn `s` into `send`.
+  const sub = pos[0]
+  const cfg = readProxyConfig()
+  const saved = cfg && 'url' in cfg ? cfg.url : null
+  // A stored value we cannot carry is NOT "no proxy". Every other command
+  // refuses to run on one (env-proxy.ts, engageProxy); this one is where the
+  // person is told what to fix, because it is the only command that still runs.
+  if (cfg && 'invalid' in cfg) {
+    process.stderr.write(
+      err.yellow(
+        tr(cfg.error === 'scheme' ? 'proxy.scheme' : 'proxy.syntax', { scheme: cfg.detail, arg: cfg.detail }),
+      ) + '\n',
+    )
+  }
+  switch (sub) {
+    case undefined:
+    case 'show': {
+      // stdout is data: the address, or the bare ASCII token `none`.
+      process.stdout.write(`${saved ? redactProxyUrl(saved) : 'none'}\n`)
+      process.stderr.write((saved ? tr('proxy.on') : tr('proxy.off')) + '\n')
+      if (flags.has('--test')) {
+        if (!saved) process.exit(1)
+        if ((await runProxyTest(saved, probeIsland(opts))) !== 'ok') process.exit(1)
+        return
+      }
+      process.stderr.write(err.dim(tr('proxy.usage')) + '\n')
+      return
+    }
+    case 'set': {
+      const raw = pos[1]
+      if (!raw) usageDie(tr('proxy.needsUrl'))
+      const parsed = normalizeProxyUrl(raw)
+      if ('error' in parsed) {
+        die(parsed.error === 'scheme' ? tr('proxy.scheme', { scheme: parsed.detail }) : tr('proxy.syntax', { arg: raw }))
+      }
+      saveProxyUrl(parsed.url)
+      process.stdout.write(`${redactProxyUrl(parsed.url)}\n`)
+      process.stderr.write(err.green(tr('proxy.set', { url: redactProxyUrl(parsed.url) })) + '\n')
+      // Checked right here unless a script says not to: a proxy saved and
+      // never tried is a proxy whose first news is a reconnect loop. The
+      // setting is KEPT either way (Tor may simply not be up yet), so a proxy
+      // that merely did not answer never exits non-zero.
+      //
+      // ⚠ `unsupported` is the exception, and it is not a bad moment: this
+      // runtime reads none of the variables, so nothing done to the proxy will
+      // help. It used to exit 0 with one yellow line, which is how somebody
+      // could go on to register a throwaway account from their real address
+      // believing they were on Tor. The setting stays saved (it becomes real
+      // on Node 24), the exit code does not pretend.
+      if (!flags.has('--no-test')) {
+        if ((await runProxyTest(parsed.url, probeIsland(opts))) === 'unsupported') process.exit(1)
+      }
+      return
+    }
+    case 'clear':
+    case 'off': {
+      process.stderr.write((clearProxyUrl() ? tr('proxy.cleared') : tr('proxy.nothingToClear')) + '\n')
+      return
+    }
+    case 'test': {
+      const url = pos[1] ? normalizeProxyUrl(pos[1]) : saved ? { url: saved } : null
+      if (!url) {
+        process.stdout.write('none\n')
+        die(tr('proxy.off'))
+      }
+      if ('error' in url) {
+        die(url.error === 'scheme' ? tr('proxy.scheme', { scheme: url.detail }) : tr('proxy.syntax', { arg: pos[1] }))
+      }
+      if ((await runProxyTest(url.url, probeIsland(opts))) !== 'ok') process.exit(1)
+      return
+    }
+    default:
+      usageDie(tr('proxy.usage'))
+  }
+}
+
+/// `rcq routes` - which roads to the island this client has, which one it is
+/// on, and what happened the last time it looked.
+///
+/// Lock-free on purpose: the answer to "why is my `rcq watch` not connecting"
+/// has to be available WHILE that watch is running, and it touches nothing but
+/// its own small file.
+async function cmdRoutes(opts: Map<string, string>, flags: Set<string>): Promise<void> {
+  const island = probeIsland(opts)
+  if (flags.has('--singbox')) return cmdSingBox(island, opts, flags)
+
+  if (flags.has('--refresh')) {
+    // The fetch itself has to ride the current route: a blocked user cannot
+    // reach the mirrors any other way.
+    await ensureRoute(island)
+    const r = await refreshRelayConfig()
+    for (const t of r.tried) {
+      process.stderr.write(err.dim(`  ${t.source.kind.padEnd(8)} ${t.source.value}  ${t.outcome}`) + '\n')
+    }
+    process.stderr.write(
+      (r.from
+        ? err.green(tr('routes.refreshOk', { version: r.version ?? '?' }))
+        : err.yellow(tr('routes.refreshFail'))) + '\n',
+    )
+  }
+
+  if (flags.has('--probe')) await walkLadder(island)
+  const route = await ensureRoute(island)
+  const walk = lastWalk()
+
+  // stdout is the machine contract: the rung, one bare token.
+  process.stdout.write(`${route.rung}\n`)
+
+  const lines: string[] = []
+  lines.push(`${tr('label.island')}: ${island}`)
+  lines.push(`${tr('label.route')}: ${describeRoute(route)}`)
+  // Both halves redacted: the second one is the CONFIGURED proxy printed when
+  // this run is not behind it, and it comes straight off the 0600 file where
+  // the password lives.
+  const configured = readProxyUrl()
+  lines.push(
+    `${tr('label.proxy')}: ${activeProxyLabel() ?? (configured ? redactProxyUrl(configured) : 'none')}`,
+  )
+  lines.push(`${tr('label.front')}: ${frontHost()}`)
+  const v = relayConfigVersion()
+  lines.push(
+    `${tr('label.relays')}: ${relayList().length} (${
+      usingRemote() && v !== null ? tr('routes.signedConfig', { version: v }) : tr('routes.bundledSeed')
+    })`,
+  )
+  lines.push(`${tr('label.sources')}: ${effectiveSources().map((s) => s.value).join(' ')}`)
+  lines.push(`${tr('label.probe')}: ${probeUrl()}`)
+  process.stderr.write(lines.join('\n') + '\n')
+
+  if (walk) {
+    process.stderr.write(`\n${tr('routes.lastWalk')} ${new Date(walk.at).toISOString()}\n`)
+    for (const r of walk.rungs) process.stderr.write(describeRung(r) + '\n')
+  } else {
+    process.stderr.write(`\n${tr('routes.neverWalked')}\n`)
+  }
+
+  // The honest part, said every time and not only when something is broken.
+  process.stderr.write('\n' + err.dim(tr('routes.noEmbeddedTransport')) + '\n')
+  const sb = findSingBox()
+  process.stderr.write(err.dim(`${tr('label.singbox')}: ${sb ?? tr('routes.singboxMissing')}`) + '\n')
+  process.stderr.write(err.dim(tr('routes.usage')) + '\n')
+}
+
+/// `rcq routes --singbox` - write the config for a sing-box the user installs
+/// themselves, then tell them the two commands that put it to work.
+async function cmdSingBox(island: string, opts: Map<string, string>, flags: Set<string>): Promise<void> {
+  const port = Number(opts.get('--port') ?? DEFAULT_LOCAL_PORT)
+  if (!Number.isInteger(port) || port < 1 || port > 65535) usageDie(tr('routes.badPort'))
+  const onion = flags.has('--onion') ? true : flags.has('--no-onion') ? false : undefined
+  let community: Awaited<ReturnType<typeof fetchBridges>> = []
+  if (flags.has('--bridges')) {
+    await ensureRoute(island)
+    community = await fetchBridges(island)
+  }
+  const built = await buildSingBox({ port, onion, community })
+  const text = JSON.stringify(built.config, null, 2) + '\n'
+  // 0600: the config carries every relay's uuid and password, which is the
+  // whole credential set of the pool this machine can reach.
+  const outFile = opts.get('--out')
+  if (outFile) {
+    fs.writeFileSync(outFile, text, { mode: 0o600 })
+    // ⚠ And again, explicitly: `mode` is honoured only when the call CREATES
+    // the file (verified locally - an existing 0644 file stays 0644 through a
+    // writeFileSync with mode 0o600). Rewriting a config that a hand, an
+    // editor or an earlier `rcq routes --singbox > file` under umask 022 had
+    // already made left every relay uuid, Reality key and Hysteria2 password
+    // world-readable on a shared box.
+    try {
+      fs.chmodSync(outFile, 0o600)
+    } catch {
+      /* Windows and some network filesystems have no mode to set */
+    }
+    process.stdout.write(`${outFile}\n`)
+  } else {
+    process.stdout.write(text)
+  }
+  const shape =
+    built.shape === 'onion'
+      ? tr('routes.shapeOnion', { entry: built.entry ?? '?' })
+      : built.shape === 'onion-degraded'
+        ? tr('routes.shapeOnionDegraded')
+        : tr('routes.shapeSingleHop')
+  process.stderr.write(
+    `${shape}\n${tr('routes.relayCounts', { trusted: built.trustedCount, community: built.communityCount })}\n`,
+  )
+  // Said out loud rather than implied: behind a proxy the entry is picked
+  // without a probe, because the probe is a raw socket that would have gone
+  // around the proxy (singbox.ts selectEntry).
+  if (built.entryProbed === false) process.stderr.write(err.dim(tr('routes.entryUnprobed')) + '\n')
+  if (flags.has('--bridges') && !community.length) process.stderr.write(err.yellow(tr('routes.noBridges')) + '\n')
+  const sb = findSingBox()
+  process.stderr.write(
+    (sb ? err.dim(`${tr('label.singbox')}: ${sb}`) : err.yellow(tr('routes.singboxMissing'))) + '\n',
+  )
+  process.stderr.write(err.dim(tr('routes.singboxHowto', { file: outFile ?? 'singbox.json', port })) + '\n')
+}
+
 async function cmdExport(): Promise<void> {
   const id = requireIdentity()
   const file = historyPath(id.uin)
@@ -702,7 +1040,9 @@ async function main(): Promise<void> {
     // Fire-and-forget: the daily driver is where an update notice earns its
     // keep, and it must never delay the prompt.
     void noteUpdateIfAny()
-    return runInteractive(await withToken(requireIdentity()))
+    const id = requireIdentity()
+    await ensureRoute(id.apiBase)
+    return runInteractive(await withToken(id))
   }
   // The short form and the full one are the same command (see aliases.ts), so
   // resolve once and drive the lock check, the switch and the unknown-command
@@ -711,8 +1051,20 @@ async function main(): Promise<void> {
   // One process per state dir for anything that can touch the ratchet store —
   // see acquireStateLock. whoami/export/log are read-only peeks and lang only
   // writes its own one-word file (atomic rename): all four stay lock-free.
-  if (verb !== 'whoami' && verb !== 'export' && verb !== 'lang' && verb !== 'log') acquireStateLock()
+  // `proxy` and its probe child join them: the proxy config is its own
+  // small file (atomic rename), and the child must not deadlock against a
+  // parent that is holding the dir.
+  // `routes` joins them for a sharper reason than tidiness: "why is my watch
+  // not connecting" has to be answerable WHILE that watch holds the dir.
+  const LOCK_FREE = new Set(['whoami', 'export', 'lang', 'log', 'proxy', '__probe', 'routes'])
+  if (!LOCK_FREE.has(verb)) acquireStateLock()
   const { pos, opts, flags } = parseArgs(argv.slice(1))
+  // Bring the route up before anything names the island. Cheap: a decision
+  // younger than half an hour is re-engaged without a probe, so the common
+  // case costs nothing and only a stale or blocked one pays for a walk.
+  // `routes` does its own; `lang`, `log`, `export` and the proxy pair never
+  // touch the network at all.
+  if (!ROUTE_FREE.has(verb)) await ensureRoute(probeIsland(opts))
   switch (verb) {
     case 'register':
       return cmdRegister(opts)
@@ -764,6 +1116,15 @@ async function main(): Promise<void> {
       return cmdExport()
     case 'lang':
       return cmdLang(pos)
+    case 'proxy':
+      return cmdProxy(pos, opts, flags)
+    case 'routes':
+      return cmdRoutes(opts, flags)
+    // Not in the usage text: the child half of `rcq proxy test`, started by
+    // probeThroughProxy with the proxy env already in place. It prints one
+    // JSON line and nothing else.
+    case '__probe':
+      return runProbe(probeIsland(opts))
     default:
       usageDie(tr('args.unknownCmd', { cmd }))
   }
@@ -778,5 +1139,13 @@ main().then(
     const verb = raw ? canonical(raw) : undefined
     if (verb !== undefined && verb !== 'watch') process.exit(0)
   },
-  (e) => die(humanError(e)),
+  (e) => {
+    // A road that carried nothing is not a road to keep. Forgetting the sticky
+    // decision costs one ladder walk on the next command and buys a client
+    // that notices a network which started blocking mid-day, instead of
+    // retrying the same dead route for half an hour. An island that ANSWERED,
+    // even with a refusal, leaves the decision alone.
+    if (isTransportFailure(e)) noteRouteTrouble()
+    die(humanError(e))
+  },
 )

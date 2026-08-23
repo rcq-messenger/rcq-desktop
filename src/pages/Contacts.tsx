@@ -29,6 +29,7 @@ import {
   type UserStatus,
 } from '../lib/api'
 import { contactsCache, persistSnapshot, restoreSnapshot } from '../lib/contacts-cache'
+import { mirrorContactsToVault } from '../lib/contacts-vault'
 import { memberCount } from '../lib/group-roster'
 import { usePeerUnread, useGroupUnread, useTotalUnread, peerUnreadCount, groupUnreadCount } from '../lib/incoming-store'
 import { useHasMention } from '../lib/mentions'
@@ -203,6 +204,11 @@ export function Contacts() {
       setMe(myInfo)
       setGroups(allGroups)
       persistSnapshot(identity.uin, { contacts: list, groups: allGroups, pending: pendingList, me: myInfo })
+      // Stage 4, mirror phase: the list the island just served is sealed into
+      // the account's vault slot so a reinstall has a roster once the island
+      // stops serving one. Behind the paint, never blocking, never throwing;
+      // a write only happens when the slot disagrees with the list.
+      void mirrorContactsToVault(identity, list)
     } catch (e) {
       // On a background refresh keep the cached view; only surface errors on a cold load.
       if (!background) setError(e instanceof Error ? e.message : t('contacts.error'))

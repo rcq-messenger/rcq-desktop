@@ -465,6 +465,32 @@ export const Api = {
     return request<unknown>(id, 'POST', `/contacts/${uin}/block`, { blocked })
   },
 
+  // Vault (stage 4 of the metadata plan) -------------------
+  //
+  // Opaque, versioned, client-sealed slots per account. See lib/vault.ts for
+  // the derivation and the read-merge-write loop; nothing should call these
+  // three directly except that module.
+
+  vaultGet(id: WebIdentity, slot: string): Promise<{ blob: string; version: number }> {
+    return request<{ blob: string; version: number }>(id, 'GET', `/vault/${slot}`)
+  },
+
+  /// `version` is the version the write is based on (0 = "does not exist
+  /// yet"). 409 with `{detail: {code: "stale", version}}` when it is not.
+  vaultPut(id: WebIdentity, slot: string, blob: string, version: number): Promise<{ version: number }> {
+    return request<{ version: number }>(id, 'PUT', `/vault/${slot}`, { blob, version })
+  },
+
+  /// `version` is required: a delete is a write and names what it is based on.
+  vaultDelete(id: WebIdentity, slot: string, version: number): Promise<void> {
+    return request<void>(id, 'DELETE', `/vault/${slot}?version=${version}`)
+  },
+
+  /// Live slots and their versions, no blobs.
+  vaultList(id: WebIdentity): Promise<{ slots: { slot: string; version: number }[] }> {
+    return request<{ slots: { slot: string; version: number }[] }>(id, 'GET', '/vault')
+  },
+
   // Messages ------------------------------------------------
 
   sendSealed(

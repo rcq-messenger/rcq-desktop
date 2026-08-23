@@ -1,4 +1,4 @@
-// English copy — source-of-truth dict. Other locales fall back to
+// English copy: source-of-truth dict. Other locales fall back to
 // any key missing from their own translation.
 
 export const en: Record<string, string> = {
@@ -17,14 +17,14 @@ export const en: Record<string, string> = {
   'common.back': 'Back',
   'common.done': 'Done',
 
-  // Login — two-mode entry surface
+  // Login: two-mode entry surface
   'login.tagline': 'Same soul, modern crypto.',
   'login.cancel_add': 'Cancel, back to {nick}',
   'login.mode.create': 'New account',
   'login.mode.recover': 'Recover',
   'login.mode.link': 'Connect phone',
   'login.recover.body':
-    'Enter your 24-word recovery phrase to restore your account on this browser — including an account you first created on a phone.',
+    'Enter your 24-word recovery phrase to restore your account on this browser, including an account you first created on a phone.',
   'login.recover.placeholder': 'word1 word2 word3 … word24',
   'login.recover.cta': 'Recover account',
   'login.recover.busy': 'Recovering…',
@@ -34,18 +34,18 @@ export const en: Record<string, string> = {
   'login.recover.error.network': 'Network error. Please try again.',
   'login.phrase.title': 'Save your recovery phrase',
   'login.phrase.body':
-    'These 24 words ARE your account. Write them down and keep them safe — you can use them to restore this account on a phone or another browser.',
+    'These 24 words ARE your account. Write them down and keep them safe. You can use them to restore this account on a phone or another browser.',
   'login.phrase.copy': 'Copy phrase',
   'login.phrase.copied': 'Copied',
   'login.phrase.warning':
-    'Anyone with these words can access your account. We can\'t recover them for you — if you lose them and clear this browser, the account is gone.',
-  'login.phrase.saved': "I've saved it — continue",
+    'Anyone with these words can access your account. We can\'t recover them for you. If you lose them and clear this browser, the account is gone.',
+  'login.phrase.saved': "I've saved it, continue",
   'settings.recovery.title': 'Recovery phrase',
   'settings.recovery.body':
     'Your 24-word phrase restores this account on a phone or another browser. Keep it private.',
   'settings.recovery.reveal': 'Show recovery phrase',
   'settings.recovery.forget': 'Forget the phrase on this device',
-  'settings.recovery.forget.warn': 'Only do this if the words are written down somewhere else. A browser cannot hide them from a script running on this page or from anyone holding an unlocked computer, and the phrase re-creates your account on any island, forever. Your account and messages here keep working — you just will not be able to read the words out of this browser again.',
+  'settings.recovery.forget.warn': 'Only do this if the words are written down somewhere else. A browser cannot hide them from a script running on this page or from anyone holding an unlocked computer, and the phrase re-creates your account on any island, forever. Your account and messages here keep working; you just will not be able to read the words out of this browser again.',
   'settings.recovery.forget.confirm': 'Forget it',
   'settings.recovery.forgotten': 'The phrase is no longer stored here.',
   'login.link.scan_body':
@@ -89,7 +89,7 @@ export const en: Record<string, string> = {
   'auth.error.invalid_json': 'That doesn\'t look like a valid linking blob.',
   'auth.error.missing_field': 'Linking blob is missing a required field.',
   'auth.error.expired': 'Linking QR expired. Generate a fresh one in iOS.',
-  'auth.error.mismatch': 'Linking blob is corrupt — keypair mismatch.',
+  'auth.error.mismatch': 'Linking blob is corrupt: keypair mismatch.',
   'auth.error.wrong_size': 'Linking blob has malformed key bytes.',
   'auth.error.network': 'Couldn\'t reach the server. Check your connection and try again.',
   'auth.error.register_failed': 'Could not create account: {detail}',
@@ -116,7 +116,7 @@ export const en: Record<string, string> = {
   'chat.send': 'Send',
   'chat.send_only.title': 'Send-only mode.',
   'chat.send_only.body':
-    'Anything you write here goes to the recipient\'s iOS app. Their replies arrive there, not here — that\'s the phase-1 limit while we add full browser crypto.',
+    'Anything you write here goes to the recipient\'s iOS app. Their replies arrive there, not here: that\'s the phase-1 limit while we add full browser crypto.',
   'chat.error.peer_not_in_contacts': 'UIN {uin} is not in your contacts.',
   'chat.error.peer_load_failed': 'Could not load peer.',
   'chat.error.send_failed': 'Send failed.',
@@ -248,9 +248,9 @@ export const en: Record<string, string> = {
   'how.q1': 'Who can read what I send?',
   'how.a1': 'Only the person you sent it to. The text is encrypted on your device and decrypted on theirs, and the island in between carries a sealed envelope it cannot open.\nWhat the island does see: that you were online, and who your envelopes were addressed to. What it does not see: what is inside them.',
   'how.q2': 'What is an island, and why is there more than one?',
-  'how.a2': 'An island is a server that holds your mail. RCQ is not one server but many independent ones: ours, other people’s, and yours if you run one.\nYour number is issued by an island, so the same number on two islands is two different people — an address is the number AND the island. People on different islands still write to each other, call, and share groups.',
+  'how.a2': 'An island is a server that holds your mail. RCQ is not one server but many independent ones: ours, other people’s, and yours if you run one.\nYour number is issued by an island, so the same number on two islands is two different people: an address is the number AND the island. People on different islands still write to each other, call, and share groups.',
   'how.q3': 'What do I do when it stops working?',
-  'how.a3': 'First find out whether you are being blocked: Settings → Network → Connection diagnostics, and run the full check with your VPN OFF.\nIt gives you one line. Send it through Report a bug — that line tells us exactly what is closed on your network, and without it we are guessing.',
+  'how.a3': 'First find out whether you are being blocked: Settings → Network → Connection diagnostics, and run the full check with your VPN OFF.\nIt gives you one line. Send it through Report a bug. That line tells us exactly what is closed on your network, and without it we are guessing.',
   'how.q4':
     'What are RCQ relays?',
   'how.a4':
@@ -271,7 +271,7 @@ export const en: Record<string, string> = {
   'storage.phrase.gone': 'not kept here',
   'storage.token.label': 'Session token',
   'storage.pin.label': 'PIN on this computer',
-  'storage.pin.on': 'set — the account and the conversations are sealed here',
+  'storage.pin.on': 'set: the account and the conversations are sealed here',
   'storage.pin.off': 'not set',
   'storage.token.none': 'not stored, asked for at start-up',
   'storage.token.kept': 'stored (this island cannot re-issue it)',
@@ -298,14 +298,14 @@ export const en: Record<string, string> = {
   'storage.requests.plain.desktop': 'plain text, {n} now (sealing is not available here)',
   'storage.limits.body.desktop': 'Anyone already running code on this computer sees exactly what you see. So does anyone holding your unlocked computer.\nThe PIN seals the account and the conversations on disk, but it cannot cover a window that is already open.',
   'storage.wipe.warn.desktop': 'Everything leaves this computer: keys, history, lists. If the recovery phrase is not written down somewhere else, there is nothing left to get the account back with.',
-  'settings.recovery.forget.warn.desktop': 'Only do this if the words are written down somewhere else. The phrase re-creates your account on any island, forever, and anyone holding this computer unlocked can read it. Your account and messages here keep working — you just will not be able to read the words off this computer again.',
-  'settings.session.unlink_footer.desktop': 'Signs out and clears only this computer (the messages, contacts and keys kept here). If you linked this device from your phone by QR, the account stays on the phone — just disconnect this device there, under "Linked devices". But if you signed in with the recovery phrase and this is the only copy, the account is lost for good after you leave.',
+  'settings.recovery.forget.warn.desktop': 'Only do this if the words are written down somewhere else. The phrase re-creates your account on any island, forever, and anyone holding this computer unlocked can read it. Your account and messages here keep working; you just will not be able to read the words off this computer again.',
+  'settings.session.unlink_footer.desktop': 'Signs out and clears only this computer (the messages, contacts and keys kept here). If you linked this device from your phone by QR, the account stays on the phone: just disconnect this device there, under "Linked devices". But if you signed in with the recovery phrase and this is the only copy, the account is lost for good after you leave.',
   'login.recover.body.desktop':
-    'Enter your 24-word recovery phrase to restore your account on this computer — including an account you first created on a phone.',
+    'Enter your 24-word recovery phrase to restore your account on this computer, including an account you first created on a phone.',
   'login.phrase.body.desktop':
-    'These 24 words ARE your account. Write them down and keep them safe — you can use them to restore this account on a phone or another device.',
+    'These 24 words ARE your account. Write them down and keep them safe. You can use them to restore this account on a phone or another device.',
   'login.phrase.warning.desktop':
-    "Anyone with these words can access your account. We can't recover them for you — if you lose them and remove the app's data, the account is gone.",
+    "Anyone with these words can access your account. We can't recover them for you. If you lose them and remove the app's data, the account is gone.",
   'settings.recovery.body.desktop':
     'Your 24-word phrase restores this account on a phone or another device. Keep it private.',
   'login.link.security_note.desktop':
@@ -318,12 +318,12 @@ export const en: Record<string, string> = {
     'The island list is signed with your key and published, so contacts on the latest app versions deliver to every island automatically. Only this app polls the backup mailbox.',
   'chat.error.no_geolocation.desktop': 'Sharing a location is not available here.',
   'pin.title': 'PIN on this computer',
-  'pin.off.body': 'Locks the app and takes your account off this disk: the keys, the recovery phrase and the session are sealed with your PIN and cannot be read without it — not while the app is closed, not by anyone who opens this laptop.\nThe message history goes with it: what you received, what you sent and the pictures in your chats are sealed under the same PIN. The device keys, the contact snapshot and the sender keys are not sealed yet.',
+  'pin.off.body': 'Locks the app and takes your account off this disk: the keys, the recovery phrase and the session are sealed with your PIN and cannot be read without it, not while the app is closed, not by anyone who opens this laptop.\nThe message history goes with it: what you received, what you sent and the pictures in your chats are sealed under the same PIN. The device keys, the contact snapshot and the sender keys are not sealed yet.',
   'pin.on.body': 'The app is locked with a PIN. Your account and your conversations are sealed on this disk and come back only when you type it.\nThe device keys, the contact snapshot and the sender keys are not sealed yet.',
   'pin.set': 'Set a PIN',
   'pin.set.confirm': 'Set it',
   'pin.set.done': 'PIN set.',
-  'pin.set.warn': 'There is no way to reset it. A back door for you is a back door for whoever takes this computer — if you forget the PIN, the account comes back only from its recovery phrase.',
+  'pin.set.warn': 'There is no way to reset it. A back door for you is a back door for whoever takes this computer. If you forget the PIN, the account comes back only from its recovery phrase.',
   'pin.placeholder': 'PIN (4 or more)',
   'pin.placeholder.again': 'Again',
   'pin.remove': 'Turn off',
@@ -349,10 +349,10 @@ export const en: Record<string, string> = {
   'pin.error.mismatch': 'The two do not match.',
   'pin.error.wait': 'Too many attempts. Try again in {n} s.',
   'pin.error.corrupt': 'This vault cannot be read. Restore the account from its recovery phrase.',
-  'pin.forgot': 'Forgotten it? Nothing here can open the account without it — restore it from the 24-word phrase instead.',
+  'pin.forgot': 'Forgotten it? Nothing here can open the account without it. Restore it from the 24-word phrase instead.',
   'settings.section.language': 'Language',
   'settings.language.footer':
-    'Translations roll out incrementally — missing strings fall back to English.',
+    'Translations roll out incrementally: missing strings fall back to English.',
   'settings.section.qr': 'My QR code',
   'settings.qr.hint': 'Scan this from the RCQ app on a phone to add you as a contact.',
   'settings.qr.zoom': 'Enlarge QR code',
@@ -361,7 +361,7 @@ export const en: Record<string, string> = {
   'settings.hof.add_image': 'Add image / GIF',
   'settings.hof.change_image': 'Change image',
   'settings.hof.remove_image': 'Remove image',
-  'settings.hof.footer': 'Consent to be considered for the public Hall of Fame at rcq.app — nickname, UIN and your optional image. Whether you appear is the founder’s call; you can turn this off any time.',
+  'settings.hof.footer': 'Consent to be considered for the public Hall of Fame at rcq.app: nickname, UIN and your optional image. Whether you appear is the founder’s call; you can turn this off any time.',
   'settings.hof.error': 'Could not save. Try again.',
   'settings.hof.too_large': 'Image is too large (max 256 KB). Pick a smaller one.',
   'settings.section.report': 'Report a problem',
@@ -369,13 +369,13 @@ export const en: Record<string, string> = {
   'settings.report.placeholder': 'Describe what happened…',
   'settings.report.send': 'Send report',
   'settings.report.busy': 'Sending…',
-  'settings.report.sent': 'Thanks — your report was sent.',
+  'settings.report.sent': 'Thanks, your report was sent.',
   'settings.report.error': 'Could not send the report. Try again.',
   'settings.report.rate_limited': 'Too many reports for now. Try again later.',
 
   'chat.unread_divider': 'Unread messages',
 
-  // My reports — the answers to what you sent (#475).
+  // My reports: the answers to what you sent (#475).
   'myreports.title': 'My reports',
   'settings.myreports.footer.short': 'Your reports and the answers to them.',
   'myreports.empty': 'You have not sent any reports. If you do, the answer appears here.',
@@ -397,26 +397,27 @@ export const en: Record<string, string> = {
   'myreports.edit.save': 'Save',
   'myreports.edit.placeholder': 'Your report',
   'myreports.edit_error': 'Could not save the change. Try again.',
-  'myreports.edit_unsupported': 'This island cannot change a report yet. Delete it and send a new one.',
+  'myreports.edit_unsupported': 'This island cannot change a report yet. Take it off your list and send a new one.',
   'myreports.edit_answered': 'There is an answer already, so the report itself can no longer be changed. Write back instead.',
-  'myreports.delete': 'Delete',
-  'myreports.delete_confirm': 'Delete this report? The answer goes with it.',
-  'myreports.delete_refused': 'This one is still under review, so it cannot be deleted yet.',
-  'myreports.delete_error': 'Could not delete it. Try again.',
+  'myreports.edit_not_editable': 'A crash report is sent by the app itself, so its text cannot be rewritten.',
+  'myreports.delete': 'Remove from my list',
+  'myreports.delete_confirm': 'Remove this report from your list? It stops showing here. Nothing is erased: the operators keep the report and the answer, and it still counts toward the Hall of Fame.',
+  'myreports.delete_refused': 'This one is still under review, so it stays on your list until there is a verdict.',
+  'myreports.delete_error': 'Could not remove it. Try again.',
   'myreports.load_error': 'Could not load your reports. Try again.',
   /// Shown next to the date so the reporter can quote the same number the
   /// operator sees in the queue.
   'myreports.number': 'Report #{n}',
   'settings.section.about': 'About',
   'settings.about.body':
-    'RCQ is an anonymous, end-to-end encrypted messenger — no phone number, no email. This is the web client; it runs its own account in this browser.',
-  // Desktop builds name their own OS — this is not the web client.
+    'RCQ is an anonymous, end-to-end encrypted messenger: no phone number, no email. This is the web client; it runs its own account in this browser.',
+  // Desktop builds name their own OS. This is not the web client.
   'settings.about.body_macos':
-    'RCQ is an anonymous, end-to-end encrypted messenger — no phone number, no email. This is the macOS app; its account lives on this Mac.',
+    'RCQ is an anonymous, end-to-end encrypted messenger: no phone number, no email. This is the macOS app; its account lives on this Mac.',
   'settings.about.body_windows':
-    'RCQ is an anonymous, end-to-end encrypted messenger — no phone number, no email. This is the Windows app; its account lives on this computer.',
+    'RCQ is an anonymous, end-to-end encrypted messenger: no phone number, no email. This is the Windows app; its account lives on this computer.',
   'settings.about.body_linux':
-    'RCQ is an anonymous, end-to-end encrypted messenger — no phone number, no email. This is the Linux app; its account lives on this computer.',
+    'RCQ is an anonymous, end-to-end encrypted messenger: no phone number, no email. This is the Linux app; its account lives on this computer.',
 
   // Connection diagnostics, the phones' ConnectionDiagnostics.
   'diag.title': 'Connection diagnostics',
@@ -480,10 +481,10 @@ export const en: Record<string, string> = {
   'settings.bypass.list_version': 'relay list v{version}',
   // Shown only by a build compiled without the `mac-bypass` feature. It used to
   // say "needs macOS 14 or newer", which read as an OS problem and was wrong on
-  // every Mac that saw it — the released builds simply had the feature off.
+  // every Mac that saw it: the released builds simply had the feature off.
   'settings.bypass.unsupported': 'This build was compiled without RCQ relay support.',
 
-  // Desktop build only — the browser has nothing to update.
+  // Desktop build only: the browser has nothing to update.
   'settings.about.version': 'Version',
   'settings.about.update_check': 'Check for updates',
   'settings.about.update_checking': 'Checking…',
@@ -493,7 +494,7 @@ export const en: Record<string, string> = {
   'settings.section.session': 'Session',
   'settings.session.unlink': 'Sign out',
   'settings.session.unlink_footer':
-    'Signs out and clears this browser only (messages, contacts, keys stored here). If you connected this web from your phone via QR, your account stays on the phone — just disconnect this browser there under Linked devices. But if you signed in with a recovery phrase and this is the only copy, signing out loses the account for good.',
+    'Signs out and clears this browser only (messages, contacts, keys stored here). If you connected this web from your phone via QR, your account stays on the phone: just disconnect this browser there under Linked devices. But if you signed in with a recovery phrase and this is the only copy, signing out loses the account for good.',
   'settings.section.island': 'This island',
   'settings.section.devices': 'Account devices',
   'settings.devices.body': 'Every install holding its own encryption keys: the phone, browsers, the console client. A recovery-phrase login shows up here too.',
@@ -510,7 +511,7 @@ export const en: Record<string, string> = {
   'settings.island.rules': 'House rules',
   'settings.section.multihome': 'Backup on another island',
   'settings.multihome.body':
-    'Your account can also live on a second, independent RCQ island (server). Messages are then delivered into both mailboxes, so if one island goes down, nothing is lost — the other keeps receiving.',
+    'Your account can also live on a second, independent RCQ island (server). Messages are then delivered into both mailboxes, so if one island goes down, nothing is lost: the other keeps receiving.',
   'settings.multihome.row_uin': 'your number there: #{uin}',
   'settings.multihome.auto_label': 'Keep a copy automatically',
   'settings.multihome.auto_sub':
@@ -532,7 +533,7 @@ export const en: Record<string, string> = {
   'settings.multihome.footer':
     'The island list is signed with your key and published, so contacts on the latest app versions deliver to every island automatically. Only this browser polls the backup mailbox.',
   'settings.multihome.error.catalogue':
-    'The island list did not load. This usually means the network is blocking where it is published — the app itself keeps working; try again on another network, or add an island manually below.',
+    'The island list did not load. This usually means the network is blocking where it is published. The app itself keeps working; try again on another network, or add an island manually below.',
   'settings.multihome.error.invalid': 'That does not look like an island host.',
   'settings.multihome.error.primary': 'That is already your primary island.',
   'settings.multihome.error.already': 'This island is already added.',
@@ -621,11 +622,11 @@ export const en: Record<string, string> = {
   'toast.photo': '📷 Photo',
   'toast.attachment': '📎 Attachment',
 
-  // Settings — profile link
+  // Settings: profile link
   'settings.section.profile': 'Profile',
   'settings.profile.cta': 'View and edit your profile',
 
-  // Chat — emoticon picker
+  // Chat: emoticon picker
   'chat.emoticons': 'Emoticons',
   'chat.picker.section.base': 'Kolobok',
   'chat.picker.empty.hint': 'Choose emoticons for your panel',
@@ -656,7 +657,7 @@ export const en: Record<string, string> = {
 
   'profile.cta.propose_trade': 'Propose trade',
 
-  // Settings — privacy + sound
+  // Settings: privacy + sound
   'settings.section.privacy': 'Privacy',
   'settings.privacy.last_seen': 'Last seen visible to',
   'settings.privacy.last_seen_desc': 'Who can see your last-seen timestamp.',
@@ -681,7 +682,7 @@ export const en: Record<string, string> = {
   'settings.privacy.trade_offers': 'Trade offers from',
   'settings.privacy.footer.short': 'Last seen, gender, profile card, group invites, calls.',
   'settings.privacy.footer':
-    'Last seen — who sees your online timestamp. Gender — opt-in info that respects its own visibility scope. Group invites — "Contacts only" lets people in your contacts add you to groups; "Nobody" blocks unsolicited adds entirely. Trade offers — same shape; "Nobody" blocks every incoming trade. Calls — "Nobody" hides every call button across the app.',
+    'Last seen: who sees your online timestamp. Gender: opt-in info that respects its own visibility scope. Group invites: "Contacts only" lets people in your contacts add you to groups; "Nobody" blocks unsolicited adds entirely. Trade offers: same shape; "Nobody" blocks every incoming trade. Calls: "Nobody" hides every call button across the app.',
   'settings.privacy.scope.everyone': 'Everyone',
   'settings.privacy.scope.contacts': 'Contacts only',
   'settings.privacy.scope.nobody': 'Nobody',
@@ -715,7 +716,7 @@ export const en: Record<string, string> = {
   'section.offline': 'Offline',
   'section.archive': 'Archive',
   'section.groups.create': '+ New',
-  'section.groups.empty': 'No groups yet — create one to chat with several people at once.',
+  'section.groups.empty': 'No groups yet. Create one to chat with several people at once.',
   'section.groups.members': '{n} members',
 
   // The user's own sections (founder item 1, 23.08). The vault keeps them, so
@@ -759,7 +760,7 @@ export const en: Record<string, string> = {
   'sections.err.too_many_members': 'Too many chats across your sections.',
   'sections.err.too_large': 'The section list is too large to save.',
   'sections.err.unreadable': 'Your sections were written by a newer version of RCQ.',
-  // Audio rooms — the corridor and the room itself.
+  // Audio rooms: the corridor and the room itself.
   'rooms.title': 'Audio rooms',
   'rooms.joinKey': 'Join key',
   'rooms.join': 'Join',
@@ -919,7 +920,7 @@ export const en: Record<string, string> = {
   // Group chat
   'chat.placeholder.group': 'Message {name}…',
 
-  // Settings — burn confirm typing
+  // Settings: burn confirm typing
   'settings.danger.type_uin': 'To confirm, type your UIN ({uin}) below.',
 
   // Brand
@@ -943,7 +944,7 @@ export const en: Record<string, string> = {
   'random.queueing.title': 'Looking for someone…',
   'random.queueing.body': "You'll connect as soon as another stranger joins the queue.",
   'random.placeholder': 'Say hi…',
-  'random.empty.body': 'No messages yet. Say hello — the timer is ticking.',
+  'random.empty.body': 'No messages yet. Say hello. The timer is ticking.',
   'random.expires_in': 'Time left',
   'random.state.idle': 'Not started',
   'random.state.queueing': 'Searching',
@@ -1034,7 +1035,7 @@ export const en: Record<string, string> = {
   // Calls. The wire is shared with the phones, so the reasons below are the
   // ones their clients send when they hang up.
   'call.start.audio': 'Call',
-  'call.offline': 'No connection to the island — calls need it.',
+  'call.offline': 'No connection to the island: calls need it.',
   'call.start.video': 'Video call',
   'call.accept': 'Answer',
   'call.decline': 'Decline',

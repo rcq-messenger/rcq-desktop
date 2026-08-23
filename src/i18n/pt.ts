@@ -1,4 +1,4 @@
-// pt — full translation of the client dictionary.
+// pt: full translation of the client dictionary.
 //
 // English stays the development language: anything missing here falls
 // back to en via translate() in i18n/index.ts. Brand names (RCQ, UIN,
@@ -19,7 +19,7 @@ export const pt: Record<string, string> = {
   'common.continue': 'Continuar',
   'common.back': 'Voltar',
   'common.done': 'Pronto',
-  // Login — two-mode entry surface
+  // Login: two-mode entry surface
   'login.tagline': 'A mesma alma, criptografia moderna.',
   'login.cancel_add': 'Cancelar, voltar para {nick}',
   'login.mode.create': 'Nova conta',
@@ -342,7 +342,7 @@ export const pt: Record<string, string> = {
   'settings.report.error': 'Não foi possível enviar o relato. Tente de novo.',
   'settings.report.rate_limited': 'Relatos demais por ora. Tente mais tarde.',
   'chat.unread_divider': 'Mensagens não lidas',
-  // My reports — the answers to what you sent (#475).
+  // My reports: the answers to what you sent (#475).
   'myreports.title': 'Meus relatos',
   'settings.myreports.footer.short': 'Seus relatos e as respostas a eles.',
   'myreports.empty': 'Você não enviou nenhum relato. Se enviar, a resposta aparece aqui.',
@@ -359,14 +359,14 @@ export const pt: Record<string, string> = {
   'myreports.status.dismissed': 'Recusado',
   'myreports.status.duplicate': 'Duplicado',
   'myreports.copy': 'Copiar',
-  'myreports.delete': 'Apagar',
-  'myreports.delete_confirm': 'Apagar este relato? A resposta vai junto.',
-  'myreports.delete_refused': 'Este ainda está em análise, então não dá para apagar agora.',
-  'myreports.delete_error': 'Não foi possível apagar. Tente de novo.',
+  'myreports.delete': 'Remover da minha lista',
+  'myreports.delete_confirm': 'Tirar este relato da sua lista? Ele para de aparecer aqui. Nada é apagado: os operadores mantêm o relato e a resposta, e ele continua contando para o hall da fama.',
+  'myreports.delete_refused': 'Este ainda está em análise, então ele fica na sua lista até haver um veredito.',
+  'myreports.delete_error': 'Não foi possível remover. Tente de novo.',
   'myreports.load_error': 'Não foi possível carregar seus relatos. Tente de novo.',
   'settings.section.about': 'Sobre',
   'settings.about.body': 'O RCQ é um mensageiro anônimo com criptografia de ponta a ponta: sem número de telefone, sem e-mail. Este é o cliente web; ele roda a própria conta neste navegador.',
-  // Desktop builds name their own OS — this is not the web client.
+  // Desktop builds name their own OS. This is not the web client.
   'settings.about.body_macos': 'O RCQ é um mensageiro anônimo com criptografia de ponta a ponta: sem número de telefone, sem e-mail. Este é o app para macOS; a conta dele fica neste Mac.',
   'settings.about.body_windows': 'O RCQ é um mensageiro anônimo com criptografia de ponta a ponta: sem número de telefone, sem e-mail. Este é o app para Windows; a conta dele fica neste computador.',
   'settings.about.body_linux': 'O RCQ é um mensageiro anônimo com criptografia de ponta a ponta: sem número de telefone, sem e-mail. Este é o app para Linux; a conta dele fica neste computador.',
@@ -427,9 +427,9 @@ export const pt: Record<string, string> = {
   'settings.bypass.list_version': 'lista de relays v{version}',
   // Shown only by a build compiled without the `mac-bypass` feature. It used to
   // say "needs macOS 14 or newer", which read as an OS problem and was wrong on
-  // every Mac that saw it — the released builds simply had the feature off.
+  // every Mac that saw it: the released builds simply had the feature off.
   'settings.bypass.unsupported': 'Esta build foi compilada sem suporte aos relays do RCQ.',
-  // Desktop build only — the browser has nothing to update.
+  // Desktop build only: the browser has nothing to update.
   'settings.about.version': 'Versão',
   'settings.about.update_check': 'Procurar atualizações',
   'settings.about.update_checking': 'Procurando…',
@@ -539,10 +539,10 @@ export const pt: Record<string, string> = {
   'toast.group': 'Grupo',
   'toast.photo': '📷 Foto',
   'toast.attachment': '📎 Anexo',
-  // Settings — profile link
+  // Settings: profile link
   'settings.section.profile': 'Perfil',
   'settings.profile.cta': 'Ver e editar seu perfil',
-  // Chat — emoticon picker
+  // Chat: emoticon picker
   'chat.emoticons': 'Emoticons',
   'chat.picker.section.base': 'Kolobok',
   'chat.picker.empty.hint': 'Escolha emoticons para o seu painel',
@@ -568,7 +568,7 @@ export const pt: Record<string, string> = {
   'pool.gems.title': 'Pacote de gemas',
   'pool.gems.range': '{min}–{max} gemas por drop',
   'profile.cta.propose_trade': 'Propor troca',
-  // Settings — privacy + sound
+  // Settings: privacy + sound
   'settings.section.privacy': 'Privacidade',
   'settings.privacy.last_seen': 'Visto por último visível para',
   'settings.privacy.last_seen_desc': 'Quem pode ver o horário do seu visto por último.',
@@ -628,7 +628,7 @@ export const pt: Record<string, string> = {
   'section.groups.create': '+ Novo',
   'section.groups.empty': 'Nenhum grupo ainda: crie um para conversar com várias pessoas de uma vez.',
   'section.groups.members': '{n} membros',
-  // Audio rooms — the corridor and the room itself.
+  // Audio rooms: the corridor and the room itself.
   'rooms.title': 'Salas de áudio',
   'rooms.joinKey': 'Chave de entrada',
   'rooms.join': 'Entrar',
@@ -775,7 +775,7 @@ export const pt: Record<string, string> = {
   'group_join.error.blocked': 'O dono do grupo bloqueou você aqui.',
   // Group chat
   'chat.placeholder.group': 'Mensagem para {name}…',
-  // Settings — burn confirm typing
+  // Settings: burn confirm typing
   'settings.danger.type_uin': 'Para confirmar, digite seu UIN ({uin}) abaixo.',
   // Brand
   'brand.name': 'RCQ',

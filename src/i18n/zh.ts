@@ -1,4 +1,4 @@
-// 简体中文 — full translation of the client dictionary.
+// 简体中文: full translation of the client dictionary.
 //
 // Assembled from the English source, which stays the development language:
 // anything missing here falls back to en via `translate()` in i18n/index.ts.
@@ -19,7 +19,7 @@ export const zh: Record<string, string> = {
   'common.continue': '继续',
   'common.back': '返回',
   'common.done': '完成',
-  // Login — two-mode entry surface
+  // Login: two-mode entry surface
   'login.tagline': '一样的灵魂，现代的加密。',
   'login.cancel_add': '取消，返回 {nick}',
   'login.mode.create': '新账号',
@@ -294,7 +294,7 @@ export const zh: Record<string, string> = {
     '岛屿列表用你的密钥签名并发布：使用新版应用的联系人会自动投递到所有岛屿。只有这个应用会轮询备用信箱。',
   'chat.error.no_geolocation.desktop': '这里无法分享位置。',
   'pin.title': '这台电脑上的 PIN',
-  'pin.off.body': '锁住应用，并把你的账号从这块磁盘上收走：密钥、恢复短语和会话都用你的 PIN 封存，没有它读不出来——应用关着时读不出，打开这台笔记本的人也读不出。\n聊天记录也一起封存：收到的、发出的，以及聊天里的图片，都用同一个 PIN 封存。设备密钥、联系人快照和发送方密钥还没有封存。',
+  'pin.off.body': '锁住应用，并把你的账号从这块磁盘上收走：密钥、恢复短语和会话都用你的 PIN 封存，没有它读不出来，应用关着时读不出，打开这台笔记本的人也读不出。\n聊天记录也一起封存：收到的、发出的，以及聊天里的图片，都用同一个 PIN 封存。设备密钥、联系人快照和发送方密钥还没有封存。',
   'pin.on.body': '应用已用 PIN 锁住。你的账号和聊天都封存在这块磁盘上，只有输入 PIN 才会回来。\n设备密钥、联系人快照和发送方密钥还没有封存。',
   'pin.set': '设置 PIN',
   'pin.set.confirm': '设置',
@@ -342,7 +342,7 @@ export const zh: Record<string, string> = {
   'settings.report.error': '无法发送反馈，请重试。',
   'settings.report.rate_limited': '暂时发送得太多了，请稍后再试。',
   'chat.unread_divider': '未读消息',
-  // My reports — the answers to what you sent (#475).
+  // My reports: the answers to what you sent (#475).
   'myreports.title': '我的反馈',
   'settings.myreports.footer.short': '你的反馈以及对应的回复。',
   'myreports.empty': '你还没有发送过反馈。发送之后，回复会出现在这里。',
@@ -359,14 +359,14 @@ export const zh: Record<string, string> = {
   'myreports.status.dismissed': '已驳回',
   'myreports.status.duplicate': '重复',
   'myreports.copy': '复制',
-  'myreports.delete': '删除',
-  'myreports.delete_confirm': '删除这条反馈？回复也会一并删除。',
-  'myreports.delete_refused': '这条还在处理中，暂时无法删除。',
-  'myreports.delete_error': '无法删除，请重试。',
+  'myreports.delete': '从我的列表中移除',
+  'myreports.delete_confirm': '把这条反馈从列表中移除？它不再显示在这里。什么都不会被删除：运营方保留反馈和回复，它仍然计入名人堂。',
+  'myreports.delete_refused': '这条还在处理中，在有结论之前会留在你的列表里。',
+  'myreports.delete_error': '移除失败，请重试。',
   'myreports.load_error': '无法加载你的反馈，请重试。',
   'settings.section.about': '关于',
   'settings.about.body': 'RCQ 是一款匿名的端到端加密聊天工具，不需要手机号，也不需要邮箱。这是网页客户端，它在这个浏览器里使用自己的账号。',
-  // Desktop builds name their own OS — this is not the web client.
+  // Desktop builds name their own OS. This is not the web client.
   'settings.about.body_macos': 'RCQ 是一款匿名的端到端加密聊天工具，不需要手机号，也不需要邮箱。这是 macOS 应用，它的账号保存在这台 Mac 上。',
   'settings.about.body_windows': 'RCQ 是一款匿名的端到端加密聊天工具，不需要手机号，也不需要邮箱。这是 Windows 应用，它的账号保存在这台电脑上。',
   'settings.about.body_linux': 'RCQ 是一款匿名的端到端加密聊天工具，不需要手机号，也不需要邮箱。这是 Linux 应用，它的账号保存在这台电脑上。',
@@ -427,9 +427,9 @@ export const zh: Record<string, string> = {
   'settings.bypass.list_version': '中继列表 v{version}',
   // Shown only by a build compiled without the `mac-bypass` feature. It used to
   // say "needs macOS 14 or newer", which read as an OS problem and was wrong on
-  // every Mac that saw it — the released builds simply had the feature off.
+  // every Mac that saw it: the released builds simply had the feature off.
   'settings.bypass.unsupported': '此版本在编译时没有包含 RCQ 中继支持。',
-  // Desktop build only — the browser has nothing to update.
+  // Desktop build only: the browser has nothing to update.
   'settings.about.version': '版本',
   'settings.about.update_check': '检查更新',
   'settings.about.update_checking': '检查中…',
@@ -459,7 +459,7 @@ export const zh: Record<string, string> = {
   'settings.multihome.promote_unreachable': '这个岛现在不可达，因此没有设为主岛。等它恢复后再试。',
   'settings.multihome.footer': '岛列表用你的密钥签名并公开发布，因此用最新版本应用的联系人会自动把消息投递到每个岛。只有这个浏览器会轮询备份信箱。',
   'settings.multihome.error.catalogue':
-    '岛屿列表没能加载。通常是网络屏蔽了它所在的地址——应用本身仍然可用。换个网络再试，或在下面手动添加一个岛屿。',
+    '岛屿列表没能加载。通常是网络屏蔽了它所在的地址。应用本身仍然可用，换个网络再试，或在下面手动添加一个岛屿。',
   'settings.multihome.error.invalid': '这看起来不是岛的地址。',
   'settings.multihome.error.primary': '这已经是你的主岛。',
   'settings.multihome.error.already': '这个岛已经添加过了。',
@@ -537,10 +537,10 @@ export const zh: Record<string, string> = {
   'toast.group': '群组',
   'toast.photo': '📷 照片',
   'toast.attachment': '📎 附件',
-  // Settings — profile link
+  // Settings: profile link
   'settings.section.profile': '个人资料',
   'settings.profile.cta': '查看和编辑个人资料',
-  // Chat — emoticon picker
+  // Chat: emoticon picker
   'chat.emoticons': '表情',
   'chat.picker.section.base': 'Kolobok',
   'chat.picker.empty.hint': '为你的面板挑选表情',
@@ -566,7 +566,7 @@ export const zh: Record<string, string> = {
   'pool.gems.title': '宝石包',
   'pool.gems.range': '每次掉落 {min}–{max} 颗宝石',
   'profile.cta.propose_trade': '发起交易',
-  // Settings — privacy + sound
+  // Settings: privacy + sound
   'settings.section.privacy': '隐私',
   'settings.privacy.last_seen': '最后上线时间可见范围',
   'settings.privacy.last_seen_desc': '谁可以看到你的最后上线时间。',
@@ -626,7 +626,7 @@ export const zh: Record<string, string> = {
   'section.groups.create': '+ 新建',
   'section.groups.empty': '还没有群组，创建一个就能同时和几个人聊天。',
   'section.groups.members': '{n} 名成员',
-  // Audio rooms — the corridor and the room itself.
+  // Audio rooms: the corridor and the room itself.
   'rooms.title': '语音房间',
   'rooms.joinKey': '房间密钥',
   'rooms.join': '加入',
@@ -773,7 +773,7 @@ export const zh: Record<string, string> = {
   'group_join.error.blocked': '群主已禁止你进入这个群组。',
   // Group chat
   'chat.placeholder.group': '给 {name} 发消息…',
-  // Settings — burn confirm typing
+  // Settings: burn confirm typing
   'settings.danger.type_uin': '请在下方输入你的 UIN（{uin}）以确认。',
   // Brand
   'brand.name': 'RCQ',

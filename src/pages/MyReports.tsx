@@ -49,9 +49,72 @@ const KNOWN_STATUSES = new Set(['resolved', 'dismissed', 'duplicate'])
 /// strips the marker the admin queue sorts by.
 const TAG_RE = /^\[(Web|Desktop [^\]]{0,24}|Android [^\]]{0,12}|iOS [^\]]{0,12})\]\s*/
 
+/// The marker an auto-submitted crash carries. It is what keeps those out of
+/// the Hall of Fame tally, so it is not a thing a person may put into, or take
+/// out of, their own text: the island refuses a PATCH on such a report flat
+/// (400 `not_editable`), whatever the text being saved. Both phones therefore
+/// show no pencil at all on a crash dump, and an icon that can only fail is
+/// worse than no icon. Matched anywhere in the reason, not just at the front:
+/// the platform tag is glued on ahead of it.
+const CRASH_MARKER = '[CRASH]'
+
 function splitTag(reason: string): { tag: string; body: string } {
   const tag = TAG_RE.exec(reason)?.[0] ?? ''
   return { tag, body: reason.slice(tag.length) }
+}
+
+/// A server stamp in milliseconds, or null when it cannot be read. A naive
+/// stamp (a self-hosted island on SQLite sends one) is read as UTC rather than
+/// as local time, so all three clients order the same exchange the same way.
+function stampOf(iso: string | null | undefined): number | null {
+  if (!iso) return null
+  const withZone = /(?:Z|[+-]\d{2}:?\d{2})$/.test(iso) ? iso : `${iso}Z`
+  const ms = new Date(withZone).getTime()
+  return Number.isNaN(ms) ? null : ms
+}
+
+/// The report's whole exchange as ONE conversation, oldest first.
+///
+/// ⚠⚠ THE ANSWER ARRIVES TWICE AND NEITHER COPY MAY BE DROPPED. `reply_text` is
+/// the field every already-installed client reads, and since 16.08 an operator's
+/// reply is ALSO written as an admin turn in `thread`. This screen used to render
+/// the thread when it had anything in it and the answer only otherwise, so on a
+/// report answered before 16.08 the operator's words vanished the moment the
+/// reporter wrote back: the reply lived only in `reply_text`, and the reporter's
+/// own line was enough to make the thread non-empty. Two people reported that on
+/// Android as us deleting an answer, which is the one thing this screen exists
+/// not to do.
+///
+/// So: the thread as the island sent it, plus `reply` folded in as an operator
+/// turn UNLESS an admin turn already carries the same text (on a current island
+/// `reply_text` mirrors the last operator turn, and editing that turn updates
+/// it, so equal text means the same answer and not a second one).
+///
+/// Where it goes: `replied_at`, before the first turn stamped later than it.
+/// With no usable stamp it goes FIRST, because an unstamped answer can only
+/// predate the thread it is missing from.
+function timelineOf(report: MyReport): ReportTurn[] {
+  const thread = report.thread ?? []
+  const reply = (report.reply ?? '').trim()
+  if (!reply) return thread
+  if (thread.some((t) => t.from_admin && (t.body ?? '').trim() === reply)) return thread
+  const answer: ReportTurn = {
+    // Not a row on the island: `reply_text` is a column, not a message. Turn
+    // ids are positive, so 0 cannot collide with a real one.
+    id: 0,
+    from_admin: true,
+    body: report.reply ?? '',
+    created_at: report.replied_at ?? '',
+  }
+  const at = stampOf(report.replied_at)
+  if (at === null) return [answer, ...thread]
+  const idx = thread.findIndex((t) => {
+    const stamp = stampOf(t.created_at)
+    return stamp !== null && stamp > at
+  })
+  return idx < 0
+    ? [...thread, answer]
+    : [...thread.slice(0, idx), answer, ...thread.slice(idx)]
 }
 
 export function MyReports() {
@@ -137,6 +200,11 @@ export function MyReports() {
         setActionError(t('myreports.edit_unsupported'))
       } else if (e instanceof ApiError && e.status === 409) {
         setActionError(t('myreports.edit_answered'))
+      } else if (e instanceof ApiError && e.status === 400) {
+        // A crash dump, or text carrying the `[CRASH]` marker by hand. The
+        // pencil is hidden on those, so this is the belt to that braces: an
+        // island can hold a marker the list was fetched without.
+        setActionError(t('myreports.edit_not_editable'))
       } else {
         setActionError(t('myreports.edit_error'))
       }
@@ -172,9 +240,11 @@ export function MyReports() {
 
   async function remove(report: MyReport) {
     if (!identity) return
-    // The backend deletes for real — no tombstone, and the evidence blob goes
-    // with it. On a mouse this is one stray click away from destroying both
-    // your own words and the answer to them.
+    // ⚠ It is a HIDE server-side, not a delete: the row stays on the island and
+    // still counts on the Hall of Fame, which is the whole point of the change
+    // (deleting the reports that came back `dismissed` used to raise the
+    // confirmed-to-filed ratio the wall ranks people by). The copy says
+    // "remove from my list" and never promises the report is destroyed.
     if (!window.confirm(t('myreports.delete_confirm'))) return
     setRefused(false)
     setActionError(null)
@@ -252,9 +322,11 @@ export function MyReports() {
         )}
 
         {items?.map((r) => {
-          const reply = (r.reply ?? '').trim()
-          const turns: ReportTurn[] = r.thread ?? []
-          const answered = reply.length > 0 || turns.some((x) => x.from_admin)
+          // One conversation, built once and used for both the label and the
+          // blocks below. See `timelineOf`: the operator's answer arrives in
+          // two places and neither may hide the other.
+          const turns: ReportTurn[] = timelineOf(r)
+          const answered = turns.some((x) => x.from_admin)
           const statusKey = KNOWN_STATUSES.has(r.status) ? r.status : 'open'
           const label =
             answered && statusKey === 'open'
@@ -265,8 +337,10 @@ export function MyReports() {
           // Rewriting is for a report nobody has read out yet. Once an
           // operator has answered, changing the words underneath the answer
           // would make the exchange read as a non-sequitur for both sides, so
-          // from then on the way to add something is `Write back`.
-          const editable = statusKey === 'open' && !answered
+          // from then on the way to add something is `Write back`. Never a
+          // crash dump either (see CRASH_MARKER): the island refuses those
+          // unconditionally, so the pencil could only ever fail.
+          const editable = statusKey === 'open' && !answered && !r.reason.includes(CRASH_MARKER)
           const isEditing = editing === r.id
           const num = reportNumber(r)
           // The tag rides along inside the stored string and still counts
@@ -359,62 +433,41 @@ export function MyReports() {
                 </div>
               )}
 
-              {/* The exchange. `thread` is what a current island sends; an
-                  older one sends only the single `reply`, and that is what the
-                  fallback below renders — the screen must not go blank against
-                  an island that has not updated. */}
-              {turns.length > 0
-                ? turns.map((turn) => (
+              {/* The exchange, oldest first, as ONE conversation: see
+                  `timelineOf`. */}
+              {turns.map((turn) => (
+                <div
+                  key={turn.id}
+                  className={`rounded-md p-3 space-y-1 ${
+                    turn.from_admin ? 'bg-surface-dim' : 'bg-field'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-3">
                     <div
-                      key={turn.id}
-                      className={`rounded-md p-3 space-y-1 ${
-                        turn.from_admin ? 'bg-surface-dim' : 'bg-field'
+                      className={`text-xs font-semibold ${
+                        turn.from_admin ? 'text-accent' : 'text-fg-secondary'
                       }`}
                     >
-                      <div className="flex items-center justify-between gap-3">
-                        <div
-                          className={`text-xs font-semibold ${
-                            turn.from_admin ? 'text-accent' : 'text-fg-secondary'
-                          }`}
-                        >
-                          {turn.from_admin ? t('myreports.answer') : t('myreports.you')}
-                        </div>
-                        {/* The answer gets its own copy, not just the report:
-                            people quote the operator's words when they follow
-                            up, and on the desktop build there is no selecting
-                            them by hand (see the `rcq-selectable` note up top). */}
-                        {turn.from_admin && (
-                          <IconButton
-                            label={t('myreports.copy_answer')}
-                            onClick={() => copy(turn.body)}
-                          >
-                            <CopyIcon />
-                          </IconButton>
-                        )}
-                      </div>
-                      <div className="text-sm whitespace-pre-wrap break-words rcq-selectable">
-                        {turn.body}
-                      </div>
+                      {turn.from_admin ? t('myreports.answer') : t('myreports.you')}
                     </div>
-                  ))
-                : answered && (
-                    <div className="bg-surface-dim rounded-md p-3 space-y-1">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="text-xs font-semibold text-accent">
-                          {t('myreports.answer')}
-                        </div>
-                        <IconButton
-                          label={t('myreports.copy_answer')}
-                          onClick={() => copy(reply)}
-                        >
-                          <CopyIcon />
-                        </IconButton>
-                      </div>
-                      <div className="text-sm whitespace-pre-wrap break-words rcq-selectable">
-                        {reply}
-                      </div>
-                    </div>
-                  )}
+                    {/* The answer gets its own copy, not just the report:
+                        people quote the operator's words when they follow
+                        up, and on the desktop build there is no selecting
+                        them by hand (see the `rcq-selectable` note up top). */}
+                    {turn.from_admin && (
+                      <IconButton
+                        label={t('myreports.copy_answer')}
+                        onClick={() => copy(turn.body)}
+                      >
+                        <CopyIcon />
+                      </IconButton>
+                    )}
+                  </div>
+                  <div className="text-sm whitespace-pre-wrap break-words rcq-selectable">
+                    {turn.body}
+                  </div>
+                </div>
+              ))}
 
               {/* Writing back only makes sense while the ticket is open. A
                   closed one keeps its whole exchange readable. Hidden while

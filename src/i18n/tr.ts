@@ -1,4 +1,4 @@
-// tr — full translation of the client dictionary.
+// tr: full translation of the client dictionary.
 //
 // English stays the development language: anything missing here falls
 // back to en via translate() in i18n/index.ts. Brand names (RCQ, UIN,
@@ -19,7 +19,7 @@ export const tr: Record<string, string> = {
   'common.continue': 'Devam',
   'common.back': 'Geri',
   'common.done': 'Tamam',
-  // Login — two-mode entry surface
+  // Login: two-mode entry surface
   'login.tagline': 'Aynı ruh, modern kriptografi.',
   'login.cancel_add': 'İptal, {nick} hesabına dön',
   'login.mode.create': 'Yeni hesap',
@@ -43,7 +43,7 @@ export const tr: Record<string, string> = {
   'settings.recovery.body': '24 kelimelik ifaden bu hesabı telefonda ya da başka bir tarayıcıda geri getirir. Kimseye söyleme.',
   'settings.recovery.reveal': 'Kurtarma ifadesini göster',
   'settings.recovery.forget': 'İfadeyi bu cihazda unut',
-  'settings.recovery.forget.warn': 'Bunu yalnızca kelimeler başka bir yere yazılmışsa yapın. Bir tarayıcı onları bu sayfadaki bir betikten de, kilidi açık bilgisayarı eline geçirenden de gizleyemez ve ifade hesabınızı herhangi bir adada, kalıcı olarak yeniden oluşturur. Buradaki hesabınız ve mesajlarınız çalışmaya devam eder — sadece kelimeleri bu tarayıcıdan bir daha okuyamazsınız.',
+  'settings.recovery.forget.warn': 'Bunu yalnızca kelimeler başka bir yere yazılmışsa yapın. Bir tarayıcı onları bu sayfadaki bir betikten de, kilidi açık bilgisayarı eline geçirenden de gizleyemez ve ifade hesabınızı herhangi bir adada, kalıcı olarak yeniden oluşturur. Buradaki hesabınız ve mesajlarınız çalışmaya devam eder; sadece kelimeleri bu tarayıcıdan bir daha okuyamazsınız.',
   'settings.recovery.forget.confirm': 'Unut',
   'settings.recovery.forgotten': 'İfade artık burada saklanmıyor.',
   'login.link.scan_body': 'Telefonunda RCQ uygulamasını aç ve bu kodu kamerayla tara; burada telefonundaki hesapla oturum açarsın.',
@@ -342,7 +342,7 @@ export const tr: Record<string, string> = {
   'settings.report.error': 'Bildirim gönderilemedi. Tekrar dene.',
   'settings.report.rate_limited': 'Şimdilik çok fazla bildirim var. Sonra tekrar dene.',
   'chat.unread_divider': 'Okunmamış mesajlar',
-  // My reports — the answers to what you sent (#475).
+  // My reports: the answers to what you sent (#475).
   'myreports.title': 'Bildirimlerim',
   'settings.myreports.footer.short': 'Bildirimlerin ve onlara gelen cevaplar.',
   'myreports.empty': 'Hiç bildirim göndermedin. Gönderirsen cevabı burada görünür.',
@@ -359,14 +359,14 @@ export const tr: Record<string, string> = {
   'myreports.status.dismissed': 'Reddedildi',
   'myreports.status.duplicate': 'Tekrar',
   'myreports.copy': 'Kopyala',
-  'myreports.delete': 'Sil',
-  'myreports.delete_confirm': 'Bu bildirim silinsin mi? Cevabı da gider.',
-  'myreports.delete_refused': 'Bu hâlâ inceleniyor, o yüzden şimdilik silinemez.',
-  'myreports.delete_error': 'Silinemedi. Tekrar dene.',
+  'myreports.delete': 'Listemden kaldır',
+  'myreports.delete_confirm': 'Bu bildirim listenden kaldırılsın mı? Burada görünmeyi bırakır. Hiçbir şey silinmez: operatörlerde bildirim de yanıt da kalır ve şeref listesinde saymaya devam eder.',
+  'myreports.delete_refused': 'Bu hâlâ inceleniyor, o yüzden bir karar çıkana kadar listende kalır.',
+  'myreports.delete_error': 'Kaldırılamadı. Tekrar dene.',
   'myreports.load_error': 'Bildirimlerin yüklenemedi. Tekrar dene.',
   'settings.section.about': 'Hakkında',
   'settings.about.body': 'RCQ anonim, uçtan uca şifreli bir mesajlaşma uygulaması: telefon numarası yok, e-posta yok. Bu, web istemcisi; kendi hesabını bu tarayıcıda çalıştırır.',
-  // Desktop builds name their own OS — this is not the web client.
+  // Desktop builds name their own OS. This is not the web client.
   'settings.about.body_macos': 'RCQ anonim, uçtan uca şifreli bir mesajlaşma uygulaması: telefon numarası yok, e-posta yok. Bu, macOS uygulaması; hesabı bu Mac üzerinde yaşıyor.',
   'settings.about.body_windows': 'RCQ anonim, uçtan uca şifreli bir mesajlaşma uygulaması: telefon numarası yok, e-posta yok. Bu, Windows uygulaması; hesabı bu bilgisayarda yaşıyor.',
   'settings.about.body_linux': 'RCQ anonim, uçtan uca şifreli bir mesajlaşma uygulaması: telefon numarası yok, e-posta yok. Bu, Linux uygulaması; hesabı bu bilgisayarda yaşıyor.',
@@ -427,9 +427,9 @@ export const tr: Record<string, string> = {
   'settings.bypass.list_version': 'röle listesi v{version}',
   // Shown only by a build compiled without the `mac-bypass` feature. It used to
   // say "needs macOS 14 or newer", which read as an OS problem and was wrong on
-  // every Mac that saw it — the released builds simply had the feature off.
+  // every Mac that saw it: the released builds simply had the feature off.
   'settings.bypass.unsupported': 'Bu sürüm RCQ röleleri desteği olmadan derlendi.',
-  // Desktop build only — the browser has nothing to update.
+  // Desktop build only: the browser has nothing to update.
   'settings.about.version': 'Sürüm',
   'settings.about.update_check': 'Güncelleme denetle',
   'settings.about.update_checking': 'Denetleniyor…',
@@ -539,10 +539,10 @@ export const tr: Record<string, string> = {
   'toast.group': 'Grup',
   'toast.photo': '📷 Fotoğraf',
   'toast.attachment': '📎 Ek',
-  // Settings — profile link
+  // Settings: profile link
   'settings.section.profile': 'Profil',
   'settings.profile.cta': 'Profilini gör ve düzenle',
-  // Chat — emoticon picker
+  // Chat: emoticon picker
   'chat.emoticons': 'İfadeler',
   'chat.picker.section.base': 'Kolobok',
   'chat.picker.empty.hint': 'Panelin için ifadeleri seç',
@@ -568,7 +568,7 @@ export const tr: Record<string, string> = {
   'pool.gems.title': 'Taş paketi',
   'pool.gems.range': 'her düşüşte {min}–{max} taş',
   'profile.cta.propose_trade': 'Takas öner',
-  // Settings — privacy + sound
+  // Settings: privacy + sound
   'settings.section.privacy': 'Gizlilik',
   'settings.privacy.last_seen': 'Son görülmeyi görenler',
   'settings.privacy.last_seen_desc': 'Son görülme zamanını kimler görebilir.',
@@ -628,7 +628,7 @@ export const tr: Record<string, string> = {
   'section.groups.create': '+ Yeni',
   'section.groups.empty': 'Henüz grup yok. Birkaç kişiyle birden konuşmak için bir tane oluştur.',
   'section.groups.members': '{n} üye',
-  // Audio rooms — the corridor and the room itself.
+  // Audio rooms: the corridor and the room itself.
   'rooms.title': 'Sesli odalar',
   'rooms.joinKey': 'Katılım anahtarı',
   'rooms.join': 'Katıl',
@@ -775,7 +775,7 @@ export const tr: Record<string, string> = {
   'group_join.error.blocked': 'Grup sahibi seni bu gruptan engelledi.',
   // Group chat
   'chat.placeholder.group': '{name} grubuna mesaj…',
-  // Settings — burn confirm typing
+  // Settings: burn confirm typing
   'settings.danger.type_uin': 'Onaylamak için UIN\'ini ({uin}) aşağıya yaz.',
   // Brand
   'brand.name': 'RCQ',

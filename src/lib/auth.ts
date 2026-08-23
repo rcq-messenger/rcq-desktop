@@ -704,10 +704,14 @@ export interface TokenMint {
 /// disconnected. A linked browser that asked under its own install id was
 /// simply handed a new session — the revoke had denylisted the id it used to
 /// carry, which by then it no longer used (report #607).
-export async function mintSessionToken(id: WebIdentity): Promise<TokenMint> {
+/// `deviceId` overrides the resolved one. The sign-out path needs it: it
+/// resolves the id while the stores still hold it and mints AFTER wiping
+/// them, and a mint that fell back to this browser's own install id would
+/// name a device the account's registry has never heard of.
+export async function mintSessionToken(id: WebIdentity, deviceIdOverride?: string): Promise<TokenMint> {
   const miss: TokenMint = { token: null, dead: false, unsupported: false }
   const skB64 = bytesToB64(id.signingPub)
-  const deviceId = sessionDeviceId(id)
+  const deviceId = deviceIdOverride ?? sessionDeviceId(id)
   try {
     const chRes = await fetch(`${id.apiBase}/auth/recover/challenge`, {
       method: 'POST',
@@ -767,9 +771,9 @@ export async function mintSessionToken(id: WebIdentity): Promise<TokenMint> {
 /// minted one. For calls made on behalf of an account that is not the active
 /// one (signing another account out, for instance), which under the tokenless
 /// scheme holds no token in memory either.
-export async function withSessionToken(id: WebIdentity): Promise<WebIdentity> {
+export async function withSessionToken(id: WebIdentity, deviceIdOverride?: string): Promise<WebIdentity> {
   if (id.jwt) return id
-  const mint = await mintSessionToken(id)
+  const mint = await mintSessionToken(id, deviceIdOverride)
   return mint.token ? { ...id, jwt: mint.token } : id
 }
 

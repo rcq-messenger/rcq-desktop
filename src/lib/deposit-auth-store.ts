@@ -12,10 +12,19 @@
 //
 // Tokens are minted a BATCH at a time into an in-memory reserve, which refills
 // in the background once a token is taken, so a session start pays the PoW
-// once and the fetches after it pay nothing. The solver yields between slices
-// (see solvePow), so the page stays responsive while it runs. Best-effort:
+// once and the fetches after it pay nothing. The first token of a batch is
+// handed over the moment it lands (the caller never waits for the whole
+// batch), and the reserve is pre-warmed at session start (prewarm) so the
+// first bundle fetch usually pays nothing at all. The solver yields between
+// slices (see solvePow), so the page stays responsive while it runs. One mint
+// per island at a time; a second caller joins the run in flight. Best-effort:
 // an island that issues no tokens, or a mint that fails, yields null, and the
 // caller makes the request the legacy authenticated way.
+//
+// Epochs: every token carries the epoch it was minted under and dies with it.
+// forget() and giveBack() compare a token's epoch with the cached params, so
+// a 403 on a token of an epoch already rotated out does not throw away the
+// fresh reserve, and a token of a dead epoch is never put back.
 //
 // In-memory only, never persisted: a reserve is cheap to re-mint, the tokens
 // die with the issuer epoch anyway, and a token on disk is a token that
@@ -35,11 +44,26 @@ export interface DepositToken {
 /// How many tokens the reserve is topped up to.
 const BATCH = 4
 
-/// How long an island that answered 404 on /params, or refused freshly
-/// minted tokens, is left alone before it is asked again. Long enough that a
-/// broken island does not cost a proof-of-work per message, short enough that
-/// an upgrade is noticed within the run.
+/// How long an island that answered 404 on /params (it issues no tokens) is
+/// left alone before it is asked again. Long enough that such an island does
+/// not cost a round trip per message, short enough that an upgrade is noticed
+/// within the run. Cleared early by forget().
 const DISABLED_MS = 10 * 60_000
+
+/// How long the island is left alone after a mint FAILED (the issue answered
+/// an error, the transport dropped, the signature did not verify) or after it
+/// refused a freshly minted token twice in a row. Shorter than the 404 rest:
+/// this is an island that is supposed to work and may be one reconnect away,
+/// but every attempt in between costs a full proof-of-work, and a room of
+/// peers would otherwise pay one or two per device before each authenticated
+/// fallback.
+const MINT_REST_MS = 90_000
+
+/// How many times one top-up run may re-read the params after they rotated
+/// under it (a 409 on issue, or a forget() from a 403 on spend) before it
+/// gives up. Rotation is rare; an island that keeps rotating is broken, and
+/// each round costs a proof-of-work.
+const MAX_PARAM_RELOADS = 2
 
 const REQUEST_TIMEOUT_MS = 15_000
 
@@ -94,14 +118,16 @@ function bytesToB64Url(b: Uint8Array): string {
 }
 
 /// Take a token for `apiBase`, minting when the reserve is empty. Null when the
-/// island issues none, is resting after a refusal, or the mint failed; the
-/// caller then falls back to the authenticated request. Waits for the FIRST
-/// token of a batch only, so a cold start costs one proof-of-work, not four;
-/// the rest of the batch lands in the background.
+/// island issues none, is resting after a failure with nothing left in the
+/// reserve, or the mint failed; the caller then falls back to the
+/// authenticated request. Waits for the FIRST token of a batch only, so a cold
+/// start costs one proof-of-work, not four; the rest of the batch lands in the
+/// background. A token already in the reserve is handed out even while the
+/// island rests: the rest is about not MINTING, and the token was paid for.
 export async function takeToken(apiBase: string): Promise<DepositToken | null> {
   const st = stateFor(apiBase)
-  if (Date.now() < st.disabledUntil) return null
   while (st.reserve.length === 0) {
+    if (Date.now() < st.disabledUntil) return null
     const mint = topUp(st, apiBase)
     await Promise.race([mint, new Promise<void>((resolve) => st.waiters.push(resolve))])
     if (st.reserve.length === 0 && !st.minting) return null
@@ -111,22 +137,50 @@ export async function takeToken(apiBase: string): Promise<DepositToken | null> {
   return token
 }
 
-/// Put back a token the island did NOT spend: a bundle fetch that answered 404
-/// never reached the verifier, and the token is as good as new. Goes to the
-/// front so it is the next one used.
-export function giveBack(apiBase: string, token: DepositToken): void {
-  stateFor(apiBase).reserve.unshift(token)
+/// Start one background batch for `apiBase` if the reserve is short, so the
+/// first bundle fetch of the session finds a token waiting instead of paying
+/// the proof-of-work in line. Called once the island's capabilities say it
+/// takes tokens; a no-op while a mint is in flight, the reserve is full or
+/// the island rests.
+export function prewarm(apiBase: string): void {
+  const st = stateFor(apiBase)
+  if (st.reserve.length < BATCH) void topUp(st, apiBase)
 }
 
-/// Drop everything cached for `apiBase`: the params and the reserve. Called
-/// when a spend answers 403, which means the epoch rotated under us (every
-/// token minted under the old key is dead with it) or the island stopped
-/// issuing. The next takeToken re-reads the params and mints afresh.
-export function forget(apiBase: string): void {
+/// Put back a token the island never VERIFIED: a bundle fetch that answered
+/// 404 or 429, or whose transport failed, never reached the verifier, and the
+/// token is as good as new. Goes to the front so it is the next one used.
+/// Only while its epoch is still the cached one: a token of an epoch that
+/// rotated out in the meantime is dead, and putting it back would only buy
+/// the next fetch a 403.
+export function giveBack(apiBase: string, token: DepositToken): void {
   const st = stateFor(apiBase)
+  if (st.params?.epochId !== token.epoch_id) return
+  st.reserve.unshift(token)
+}
+
+/// A spend answered 403 with `refused`: the epoch rotated under us (every
+/// token minted under the old key is dead with it) or the island stopped
+/// issuing. Drop the cached params and the reserve, and clear any rest, so
+/// the next takeToken re-reads the params and mints afresh. Epoch-aware: when
+/// the cached params are already NEWER than the refused token (another fetch
+/// rotated them a moment ago, and the reserve was cleared with them), they
+/// stay; only a straggler of the refused epoch is weeded out.
+export function forget(apiBase: string, refused: DepositToken): void {
+  const st = stateFor(apiBase)
+  if (st.params && st.params.epochId !== refused.epoch_id) {
+    st.reserve = st.reserve.filter((t) => t.epoch_id !== refused.epoch_id)
+    return
+  }
   st.params = null
   st.reserve = []
   st.disabledUntil = 0
+}
+
+/// Leave the island alone for MINT_REST_MS: a mint failed, or it refused a
+/// fresh token twice. Tokens already in the reserve stay usable.
+export function rest(apiBase: string): void {
+  stateFor(apiBase).disabledUntil = Date.now() + MINT_REST_MS
 }
 
 /// The `X-Deposit-Token` header value: base64url, no padding, of the token
@@ -140,20 +194,36 @@ export function headerValue(token: DepositToken): string {
 /// Mint until the reserve holds BATCH tokens. One run per island at a time; a
 /// second caller joins the run in flight. Every token that lands wakes the
 /// callers waiting in takeToken.
+///
+/// A token is pushed only while the params it was minted under are still the
+/// cached ones. A forget() from a 403 elsewhere, or a 409 on issue, can land
+/// while a mint is in flight; the token that then comes back belongs to a
+/// dead epoch, and pushing it would hand the very next fetch a 403 (the retry
+/// the contract asks for would then spend a dead token and fall back to the
+/// session token). Dropped instead, and the run re-reads the params and goes
+/// on, so the caller waiting in takeToken gets a token of the new epoch.
 function topUp(st: HostState, apiBase: string): Promise<void> {
   if (st.minting) return st.minting
   st.minting = (async () => {
     try {
-      const p = await ensureParams(st, apiBase)
-      if (!p) return
-      while (st.reserve.length < BATCH && st.params === p) {
-        const token = await mintOne(st, apiBase, p)
-        if (!token) return
-        st.reserve.push(token)
-        wake(st)
+      for (let reloads = 0; reloads <= MAX_PARAM_RELOADS; reloads++) {
+        if (Date.now() < st.disabledUntil) return
+        const p = await ensureParams(st, apiBase)
+        if (!p) return
+        while (st.reserve.length < BATCH && st.params === p) {
+          const token = await mintOne(st, apiBase, p)
+          if (!token) break
+          if (st.params !== p) break
+          st.reserve.push(token)
+          wake(st)
+        }
+        // Done, unless the params rotated under the run and the island is
+        // not resting: then one more round, with fresh params.
+        if (st.reserve.length >= BATCH || st.params === p) return
       }
     } catch (e) {
       console.warn('deposit-auth: mint failed:', e instanceof Error ? e.message : e)
+      rest(apiBase)
     } finally {
       st.minting = null
       wake(st)
@@ -171,7 +241,10 @@ async function ensureParams(st: HostState, apiBase: string): Promise<Params | nu
     st.disabledUntil = Date.now() + DISABLED_MS
     return null
   }
-  if (!res.ok) return null
+  if (!res.ok) {
+    rest(apiBase)
+    return null
+  }
   const o = (await res.json()) as {
     epoch_id?: string
     pubkey?: { n?: string; e?: number }
@@ -200,14 +273,25 @@ async function mintOne(st: HostState, apiBase: string, p: Params): Promise<Depos
   })
   if (res.status === 409) {
     // The epoch rotated between /params and /issue: the params are stale and
-    // so is every token minted under them. The next takeToken starts over.
-    if (st.params === p) st.params = null
-    st.reserve = []
+    // so is every token minted under them. The run re-reads them (topUp).
+    if (st.params === p) {
+      st.params = null
+      st.reserve = []
+    }
     return null
   }
-  if (!res.ok) return null
+  if (!res.ok) {
+    // The island would not issue: a rest, so the next fetches take the
+    // authenticated path at once instead of paying a proof-of-work each to
+    // hear the same answer.
+    rest(apiBase)
+    return null
+  }
   const o = (await res.json()) as { blind_sig?: string }
-  if (typeof o.blind_sig !== 'string') return null
+  if (typeof o.blind_sig !== 'string') {
+    rest(apiBase)
+    return null
+  }
   const sig = finalize(p.key, b64ToBytes(o.blind_sig), b.blindInv, prepared)
   return { epoch_id: p.epochId, prepared: bytesToB64(prepared), sig: bytesToB64(sig) }
 }

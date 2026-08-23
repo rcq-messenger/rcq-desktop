@@ -66,6 +66,7 @@ import { publishHomeIslandRecord } from '../lib/federation-publish'
 import { pushHomeRecordToContacts } from '../lib/federation-gossip'
 import { DEFAULT_CAPABILITIES } from '../lib/server-info'
 import { useServerInfo } from '../lib/use-server-info'
+import { useWS } from '../lib/ws'
 
 export function Settings() {
   const { identity, accounts, switchAccount, addAccount, signOutAccount, signOut } = useIdentity()
@@ -88,17 +89,31 @@ export function Settings() {
   const [revokeArmed, setRevokeArmed] = useState<number | null>(null)
   const [revokingSlot, setRevokingSlot] = useState<number | null>(null)
   const [splitArmed, setSplitArmed] = useState(false)
+  // `on` alone, not the context: the context value changes with every socket
+  // open and close, and the effect must not re-read the list on each flap.
+  const { on: onWs } = useWS()
   useEffect(() => {
     if (!identity) return
     let alive = true
-    void myAccountDevices(identity)
-      .then((list) => { if (alive) setAccountDevices(list) })
-      .catch(() => { if (alive) setAccountDevices([]) })
+    const loadDevices = () => {
+      void myAccountDevices(identity)
+        .then((list) => { if (alive) setAccountDevices(list) })
+        .catch(() => { if (alive) setAccountDevices([]) })
+    }
+    loadDevices()
     void myDeviceId(identity)
       .then((d) => { if (alive) setOwnDeviceId(d) })
       .catch(() => {})
-    return () => { alive = false }
-  }, [identity])
+    // The island announces every change to the account's registry to all of
+    // its sessions: a device linked or signed out elsewhere, a key slot
+    // retired from another screen. Re-read the list on each, so this screen
+    // shows the registry as it is, not as it was when it opened.
+    const offs = ['device_linked', 'device_revoked', 'device_slot_revoked'].map((ev) => onWs(ev, loadDevices))
+    return () => {
+      alive = false
+      for (const off of offs) off()
+    }
+  }, [identity, onWs])
 
   /// Retire a key slot. Two-tap confirm in place, no modal; a cooldown 403
   /// from the island turns into the human sentence it means.

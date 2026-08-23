@@ -792,6 +792,12 @@ export const Api = {
   /// Answer as a number already in the collection. The number in use goes
   /// into the collection in its place, so this is reversible and never loses
   /// one. Migrates, hence the fresh {new_uin, token}.
+  /// Give a held number back to the pool. The number you answer as cannot be
+  /// released (400); one that is not yours is 404.
+  uinRelease(id: WebIdentity, uin: number): Promise<void> {
+    return request<void>(id, 'DELETE', `/uin/mine/${uin}`)
+  },
+
   uinActivate(id: WebIdentity, uin: number): Promise<UinPurchaseResult> {
     return request<UinPurchaseResult>(id, 'POST', '/uin/activate', { uin })
   },

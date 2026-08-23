@@ -506,7 +506,7 @@ export const en: Record<string, string> = {
   'settings.multihome.body':
     'Your account can also live on a second, independent RCQ island (server). Messages are then delivered into both mailboxes, so if one island goes down, nothing is lost — the other keeps receiving.',
   'settings.multihome.row_uin': 'your number there: #{uin}',
-  'settings.multihome.auto_label': 'Keep a backup of my account on another island',
+  'settings.multihome.auto_label': 'Keep a copy automatically',
   'settings.multihome.auto_sub':
     'The island is picked automatically from the public catalogue. Turning this off disconnects the picked island.',
   'settings.multihome.auto_busy': 'Picking an island…',
@@ -926,6 +926,10 @@ export const en: Record<string, string> = {
   'uin_market.mine.active': 'You answer as',
   'uin_market.mine.empty': 'Nothing held yet. Numbers you take without moving onto them show up here.',
   'uin_market.mine.use': 'Switch',
+  'uin_market.mine.release': 'Release',
+  'uin_market.mine.release.confirm.body': 'The number goes back into the pool and anybody may take it. This cannot be undone.',
+  'uin_market.mine.release.confirm.cta': 'Release',
+  'uin_market.mine.release.done': 'Number released.',
   'uin_market.mine.note': 'While you answer as one number, the rest are simply reserved for you. Nobody else can take them.',
   'uin_market.mine.confirm.body':
     'Contacts, groups and your profile move onto this number. {prev} stays yours and stays on this screen, so you can move back whenever you like. Secure sessions reset and re-handshake on the next message.',

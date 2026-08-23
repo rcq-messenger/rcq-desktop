@@ -20,6 +20,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { Api, ApiError, type MyUins, type UinQuote, type UinSuggestion } from '../lib/api'
+import { useToast } from '../lib/toast'
 import { Logo } from '../components/Logo'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
@@ -74,6 +75,7 @@ export function Market() {
   const [buying, setBuying] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const { toast } = useToast()
   const [suggestions, setSuggestions] = useState<UinSuggestion[]>([])
   const [loadingSuggestions, setLoadingSuggestions] = useState(true)
   const [justBought, setJustBought] = useState<number | null>(null)
@@ -85,6 +87,10 @@ export function Market() {
   const [held, setHeld] = useState<number | null>(null)
   // The held number the user tapped Switch on, awaiting confirmation.
   const [switchTarget, setSwitchTarget] = useState<number | null>(null)
+  // #669: the phones can give a held number back and the web could not, so a
+  // number taken by mistake was stuck on the account forever.
+  const [releaseTarget, setReleaseTarget] = useState<number | null>(null)
+  const [releasing, setReleasing] = useState(false)
   const [switching, setSwitching] = useState(false)
 
   useEffect(() => {
@@ -232,6 +238,27 @@ export function Market() {
       if (e instanceof ApiError && e.status === 429) setError(t('uin_market.error.cooldown'))
       else setError(t('uin_market.error.generic'))
       void loadMine()
+    }
+  }
+
+  async function doRelease(uin: number) {
+    setReleasing(true)
+    setError(null)
+    try {
+      await Api.uinRelease(id, uin)
+      setReleaseTarget(null)
+      toast(t('uin_market.mine.release.done'))
+      await loadMine()
+      void loadSuggestions()
+    } catch (e) {
+      setError(
+        e instanceof ApiError && e.status === 400
+          ? t('uin_market.error.generic')
+          : t('uin_market.error.generic'),
+      )
+      setReleaseTarget(null)
+    } finally {
+      setReleasing(false)
     }
   }
 
@@ -443,14 +470,24 @@ export function Market() {
                       <div className="font-mono text-lg font-semibold tracking-tight tabular-nums truncate">#{o.uin}</div>
                       <div className="text-xs text-fg-dim">{t('uin_market.tiers.digits', { n: o.length })}</div>
                     </div>
-                    <button
-                      onClick={() => setSwitchTarget(o.uin)}
-                      disabled={switching}
-                      className="shrink-0 h-9 px-4 rounded-xl text-sm font-semibold text-accent bg-accent/10
-                                 hover:bg-accent/[0.18] active:scale-[0.98] disabled:opacity-40 transition"
-                    >
-                      {t('uin_market.mine.use')}
-                    </button>
+                    <div className="shrink-0 flex items-center gap-2">
+                      <button
+                        onClick={() => setReleaseTarget(o.uin)}
+                        disabled={switching || releasing}
+                        className="h-9 px-3 rounded-xl text-sm font-medium text-fg-secondary bg-fg-primary/[0.05]
+                                   hover:bg-fg-primary/[0.09] active:scale-[0.98] disabled:opacity-40 transition"
+                      >
+                        {t('uin_market.mine.release')}
+                      </button>
+                      <button
+                        onClick={() => setSwitchTarget(o.uin)}
+                        disabled={switching || releasing}
+                        className="h-9 px-4 rounded-xl text-sm font-semibold text-accent bg-accent/10
+                                   hover:bg-accent/[0.18] active:scale-[0.98] disabled:opacity-40 transition"
+                      >
+                        {t('uin_market.mine.use')}
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -674,6 +711,32 @@ export function Market() {
       {/* Switch — names the number being left, because it is the one everybody
           currently knows this account by. */}
       <AnimatePresence>
+        {releaseTarget != null && (
+          <Modal onDismiss={() => !releasing && setReleaseTarget(null)}>
+            <div className="text-center">
+              <div className="font-mono text-4xl font-bold tracking-tight">#{releaseTarget}</div>
+            </div>
+            <p className="mt-4 text-sm text-fg-secondary leading-relaxed text-center">
+              {t('uin_market.mine.release.confirm.body')}
+            </p>
+            <div className="mt-6 flex gap-2.5">
+              <button
+                onClick={() => setReleaseTarget(null)}
+                disabled={releasing}
+                className="flex-1 h-11 rounded-xl text-sm font-medium text-fg-secondary bg-fg-primary/[0.05] hover:bg-fg-primary/[0.09] active:scale-[0.99] transition"
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                onClick={() => void doRelease(releaseTarget)}
+                disabled={releasing}
+                className="flex-1 h-11 rounded-xl text-sm font-semibold text-white bg-red-500 hover:bg-red-600 active:scale-[0.99] transition flex items-center justify-center gap-2"
+              >
+                {releasing ? <Spinner light /> : t('uin_market.mine.release.confirm.cta')}
+              </button>
+            </div>
+          </Modal>
+        )}
         {switchTarget != null && (
           <Modal onDismiss={() => !switching && setSwitchTarget(null)}>
             <div className="text-center">

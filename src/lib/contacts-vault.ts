@@ -107,6 +107,12 @@ export async function mirrorContactsToVault(
   identity: WebIdentity,
   list: Contact[],
 ): Promise<'written' | 'unchanged' | 'skipped' | 'failed'> {
+  // The list is fetched on every visit to the contacts page (one active
+  // user was seen doing it every twenty seconds), and the mirror must not
+  // turn each of those into a vault read as well. Same list as last time
+  // this session: nothing to fold, no request.
+  const key = listKey(identity.uin, list)
+  if (key === lastMirrored) return 'unchanged'
   const info = await fetchServerInfo(identity.apiBase)
   if (info?.capabilities.vault !== true) return 'skipped'
   const slot = slotId(identity, VAULT_CONTACTS)
@@ -129,6 +135,7 @@ export async function mirrorContactsToVault(
       lastSeenVersion(),
     )
     rememberVaultVersion(version)
+    lastMirrored = key
     return outcome
   } catch (e) {
     if (e instanceof VaultError && e.code === 'rolled_back') {
@@ -140,6 +147,18 @@ export async function mirrorContactsToVault(
     }
     return 'failed'
   }
+}
+
+/// What the mirror last folded this session, as a cheap fingerprint of the
+/// edges (uin, blocked, nickname, host), sorted; keyed by account so a
+/// switch never compares across accounts.
+let lastMirrored: string | null = null
+
+function listKey(uin: number, list: Contact[]): string {
+  const parts = list
+    .map((c) => `${c.uin}:${c.blocked ? 1 : 0}:${c.nickname ?? ''}:${c.host ?? ''}`)
+    .sort()
+  return `${uin}|${parts.join('\n')}`
 }
 
 /// Pure: the slot after folding the server list in, or null when nothing

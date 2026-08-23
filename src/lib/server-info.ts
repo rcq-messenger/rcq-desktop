@@ -16,6 +16,8 @@
 // capabilities too, and that module is bundled into the CLI, which must not
 // drag React along. The hooks live in use-server-info.ts.
 
+import { rememberIslandCard } from './island-card'
+
 /// Optional surfaces an island may switch off. Defaults are PERMISSIVE, on
 /// purpose and in two directions: an older island that predates a flag keeps
 /// the surface visible, and so does a live island whose /server/info has not
@@ -77,7 +79,27 @@ export interface ServerCapabilities {
 export interface ServerInfo {
   name: string
   welcome: string
+  /// Digest of the island's logo; '' means it has none and the caller draws
+  /// the lettered tile (`IslandAvatar`).
+  ///
+  /// ⚠ A VERSION, NOT A URL AND NOT THE PICTURE. The island sends 12
+  /// characters and the client builds `${apiBase}/server/logo?v=<version>`
+  /// itself. Two reasons, and the second is the one that matters: this reply
+  /// is fetched on every connect AND awaited by the key-lookup path under the
+  /// cross-tab provisioning lock, so a data URI in here would put a picture on
+  /// that path every time; and a URL would let any island, including one we
+  /// are merely probing and have no account on, point the browser at a
+  /// third-party host and collect the request. An island only ever gets to say
+  /// WHETHER it has a logo and WHICH one.
+  logoVersion: string
   capabilities: ServerCapabilities
+}
+
+/// Where an island's logo actually lives. Built here so no caller can invent a
+/// second shape, and `version` rides as `?v=` so a changed logo is a changed
+/// URL and no cache in the chain can hold the old one.
+export function islandLogoURL(apiBase: string, logoVersion: string): string {
+  return `${apiBase}/server/logo?v=${encodeURIComponent(logoVersion)}`
 }
 
 /// Mirrors Android's `ServerCapabilities` defaults (net/RcqApi.kt) field for
@@ -131,6 +153,9 @@ function normalize(raw: unknown): ServerInfo | null {
   return {
     name: typeof o.name === 'string' ? o.name : '',
     welcome: typeof o.welcome === 'string' ? o.welcome : '',
+    // An island older than the logo omits the field, which reads as '' and
+    // draws the tile: the same permissive default the capability flags take.
+    logoVersion: typeof o.logo_version === 'string' ? o.logo_version : '',
     capabilities: {
       uin_shop: bool('uin_shop'),
       hall_of_fame: bool('hall_of_fame'),
@@ -164,7 +189,13 @@ export async function loadServerInfo(apiBase: string, init?: RequestInit): Promi
   try {
     const res = await fetch(`${apiBase}/server/info`, init)
     if (!res.ok) return null
-    return normalize(await res.json())
+    const info = normalize(await res.json())
+    // Written here, in the one place that parses this reply, so that no screen
+    // has to remember to keep its own copy and no two copies can disagree.
+    // What it buys is a login screen and an account list that are complete on
+    // their first frame instead of after a round trip.
+    if (info) rememberIslandCard(apiBase, { name: info.name, logoVersion: info.logoVersion })
+    return info
   } catch {
     return null
   }

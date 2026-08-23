@@ -13,10 +13,10 @@
 // last file to be caught by it. `scopedKey` is read at call time, which means
 // the store is only ever bound AFTER `setAccountScope` has run.
 //
-// The collapse set (KEYS.collapsed in local-store.ts) stays device-local and
-// picks up the new section ids for free: a section collapsed on the desktop is
-// not collapsed on the phone, which is the right answer for a per-screen view
-// preference.
+// The collapse set (local-store.ts) stays device-local and picks up the new
+// section ids for free: a section collapsed on the desktop is not collapsed on
+// the phone, which is the right answer for a per-screen view preference. It is
+// scoped by account there for the same reason this cache is.
 
 import { useSyncExternalStore } from 'react'
 import { scopedKey } from './account-scope'

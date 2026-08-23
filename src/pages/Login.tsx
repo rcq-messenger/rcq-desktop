@@ -29,6 +29,8 @@ import { defaultHome } from '../lib/routing'
 import { clientLabel } from '../lib/client-name'
 import { bytesToB64, newLinkEphemeral, openLinkSeal, type WebIdentity } from '../lib/crypto'
 import { islandLabel, normaliseIsland, rememberIsland, rememberedIsland } from '../lib/island-choice'
+import { IslandAvatar } from '../components/IslandAvatar'
+import { useIslandCard } from '../lib/use-server-info'
 import { useI18n } from '../lib/i18n-context'
 import { useToast } from '../lib/toast'
 import { showTransitionVeil } from '../lib/transition-veil'
@@ -508,6 +510,10 @@ function IslandField() {
   const [draft, setDraft] = useState(() => islandLabel(rememberedIsland()))
   const [open, setOpen] = useState(() => rememberedIsland() !== DEFAULT_API_BASE)
   const custom = base !== DEFAULT_API_BASE
+  // ⚠ The HOOK, not a bare read of the cache. The cache alone paints the first
+  // frame and then never moves, so an island whose name we learn a moment later
+  // kept saying "ISLAND" until the page was loaded a second time.
+  const islandName = useIslandCard(base).name
 
   /// Settle what was typed into a usable base URL. On blur and on submit, not
   /// on every keystroke: normalising as you type means an empty field fills
@@ -526,9 +532,17 @@ function IslandField() {
         onClick={() => setOpen(true)}
         className="flex items-center gap-2 w-full rounded-md bg-field px-3 py-2 text-left hover:bg-line/50 transition-colors"
       >
-        <GlobeIcon />
+        {/* Was a globe: the same picture whichever island you were about to
+            join, which made the one line that says WHERE you are signing up
+            say nothing at all. It carries the island's own face now, and its
+            name above the host, both off the cache when we have talked to it
+            before and both falling back to the lettered tile and the bare host
+            when we have not. Same fix iOS made to its switcher pill. */}
+        <IslandAvatar apiBase={base} size={28} />
         <span className="min-w-0 flex-1">
-          <span className="block text-[0.6875rem] uppercase tracking-wide text-fg-dim">{t('login.island')}</span>
+          <span className="block text-[0.6875rem] uppercase tracking-wide text-fg-dim">
+            {islandName || t('login.island')}
+          </span>
           <span className="block text-sm font-mono truncate">{islandLabel(base)}</span>
         </span>
         <span className="flex-none text-xs text-fg-dim">{t('login.island.change')}</span>

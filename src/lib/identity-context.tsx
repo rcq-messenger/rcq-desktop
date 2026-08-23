@@ -90,6 +90,11 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
     void mintSessionToken(stored).then((mint) => {
       if (cancelled) return
       if (mint.token) {
+        // #718: the island just minted a token for this account, so whatever
+        // ended the previous session is over. The mark has to go here too: this
+        // branch does not run through `adoptToken`, and an account that stayed
+        // marked wore "session ended" under its name forever while working.
+        clearSessionRevoked(stored.uin)
         setIdentity({ ...stored, jwt: mint.token })
       } else if (mint.dead) {
         // The island says this identity is gone. Same ending as a 401.
@@ -111,6 +116,11 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
   // Adopt a freshly minted token app-wide, and — the first time one works —
   // record that this account never needs to keep one on disk again.
   const adoptToken = (target: WebIdentity, token: string) => {
+    // #718: a freshly minted token IS the proof that the session is alive
+    // again. Signing the account out was the only caller that cleared the mark,
+    // so a token that expired once (or a phone that revoked this browser before
+    // it was relinked) left the account subtitled "session ended" for good.
+    clearSessionRevoked(target.uin)
     markTokenless(target.uin)
     persistIdentity({ ...target, jwt: token })
     setIdentity((cur) => (cur && cur.uin === target.uin ? { ...cur, jwt: token } : cur))

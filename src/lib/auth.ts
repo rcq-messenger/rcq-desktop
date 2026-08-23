@@ -943,7 +943,18 @@ export function wipeLocalAccountData() {
     if (!k) continue
     if (PRESERVED_KEYS.has(k)) continue
     // Everything else under our namespaces is account data.
-    if (k.startsWith('rcq.web.') || k.startsWith('rcq.privacy.')) toRemove.push(k)
+    //
+    // ⚠ `rcq.island.` is in this list even though an island card is not an
+    // account's data and is not a secret: the KEY is the host, so what stays
+    // behind is a list of every island this browser ever talked to, the
+    // correspondents' ones and a private self-hosted one included. This
+    // function is the deliberate destroy-everything path (sign-out, account
+    // removal, and "Forgot PIN -> reset vault"), and leaving that list on a
+    // laptop somebody is about to hand over is exactly the bug
+    // `dropFlatFederationData` deletes `visited.v1` for.
+    if (k.startsWith('rcq.web.') || k.startsWith('rcq.privacy.') || k.startsWith('rcq.island.')) {
+      toRemove.push(k)
+    }
   }
   for (const k of toRemove) localStorage.removeItem(k)
   // Held in memory behind the desktop PIN? Then the rows the loop above was

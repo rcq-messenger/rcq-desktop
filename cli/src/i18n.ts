@@ -1235,6 +1235,26 @@ RCQ_VERBOSE=1 显示协议细节; NO_COLOR 去掉颜色。
     uk: 'острову не вдалося повідомити, що чергу прочитано: {err}',
     'zh-Hans': '未能告知服务器队列已读取: {err}',
   },
+  // The room logs (Stage 5): the same two failures as the queue above, named
+  // apart from it so a person can tell which of the two drains did not run.
+  'drain.logHttp': {
+    en: 'rooms not read: HTTP {status}',
+    ru: 'группы не забраны: HTTP {status}',
+    es: 'los grupos no se leyeron: HTTP {status}',
+    pt: 'os grupos não foram lidos: HTTP {status}',
+    tr: 'gruplar alınamadı: HTTP {status}',
+    uk: 'групи не забрано: HTTP {status}',
+    'zh-Hans': '群消息未读取: HTTP {status}',
+  },
+  'drain.logError': {
+    en: 'rooms not read: {err}',
+    ru: 'группы не забраны: {err}',
+    es: 'los grupos no se leyeron: {err}',
+    pt: 'os grupos não foram lidos: {err}',
+    tr: 'gruplar alınamadı: {err}',
+    uk: 'групи не забрано: {err}',
+    'zh-Hans': '群消息未读取: {err}',
+  },
 
   // Rooms. One is OPEN and prints; the rest keep a count and say so once a
   // minute, because thirty rooms on one screen is not a conversation.

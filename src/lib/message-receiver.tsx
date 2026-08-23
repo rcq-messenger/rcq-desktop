@@ -20,6 +20,7 @@ import { CALL_OFFER_TTL_SEC, fileMissedCrossIslandOffer } from './crossisland-ca
 import { deliverCrossIslandCallSignal } from './call'
 import { handleProfile, pushProfileTo } from './crossisland-profile'
 import { handleGmsg, handleSkdm, handleSknack, replayHeldGmsg } from './sender-key-receive'
+import { ackLiveGroupRow, drainGroupLog, forgetVouched, islandHasGroupLog, type GroupLogRequest } from './group-log'
 import { Api, peerBundleFrom } from './api'
 import { encryptV1 } from './crypto'
 import type { CallEnvelope, ContactReqEnvelope, Envelope, ProfileEnvelope, WebIdentity } from './crypto'
@@ -360,73 +361,13 @@ function drainPrimaryQueue(identity: WebIdentity, catchUp: boolean): Promise<voi
       // that device, which is how a backlog disappears without being read. The
       // queue keeps everything until this install knows which device it is.
       if (myDev === null) return
-      const res = await fetchWithTimeout(`${identity.apiBase}/messages/queue?ack=1&dev=${myDev}`, {
-        headers: { Authorization: `Bearer ${identity.jwt}` },
-      })
-      if (!res.ok) return
-      const rows = (await res.json()) as Array<{
-        id: number
-        envelope_type: string
-        payload: string
-        group_id: number | null
-        to_device_id?: number | null
-        // Stage 2 (core-metadata plan): the island now labels each row with its
-        // retention/push class and a durable per-mailbox sequence. Read when
-        // present; both fall back to the legacy `envelope_type` / `id`.
-        //
-        // ⚠ The CURSOR stays on `id` (the ack below). `seq` is GAPPY per device
-        // (a sibling device of this account consumes numbers this device never
-        // sees), so a gap in `seq` is NOT a missing message and must never move
-        // the cursor.
-        cls?: number | null
-        seq?: number | null
-      }>
-      const directIds: number[] = []
-      const groupIds: number[] = []
-      for (const r of rows) {
-        try {
-          if (typeof r.to_device_id === 'number' && r.to_device_id !== myDev) {
-            // A fan-out copy for a sibling device of this account: it was
-            // encrypted against a ratchet that lives there, so no decrypt is
-            // attempted and it is acked away below. An island that predates the
-            // `dev` filter hands out every copy, so this is not dead code.
-          } else if (r.envelope_type === 'gmsg' && typeof r.group_id === 'number') {
-            // Sender-keys broadcast: not a sealed envelope — decode via the chain.
-            const got = await handleGmsg(identity, r.payload, r.group_id)
-            if (got) route(got.senderUIN, undefined, got.envelope, r.group_id, identity.uin, hostOf(identity.apiBase), undefined, identity)
-          } else {
-            const got = await decryptIncoming(identity, r.payload)
-            if (got) {
-              // A decrypted envelope proves the sending DEVICE can talk to us —
-              // its silence probe stands down (device-scoped; v=1 names none).
-              if (got.senderUIN !== identity.uin) noteInboundFrom(got.senderUIN, got.senderDeviceId)
-              route(got.senderUIN, got.senderHost, got.envelope, r.group_id, identity.uin, hostOf(identity.apiBase), got.senderSigningKey, identity)
-            }
-          }
-          // Processed to its end — including "decrypted to nothing", which is
-          // terminal. Only a THROW leaves a row unacked: the cursor then stops
-          // in front of it and the island redelivers from there next time.
-          ;(typeof r.group_id === 'number' ? groupIds : directIds).push(r.id)
-        } catch {
-          /* transient failure — leave unacked for redelivery */
-        }
-      }
-      if (directIds.length || groupIds.length) {
-        // ⚠ Before the ack, not after. An ack tells the island it may let go of
-        // these rows, and history writes are coalesced — promising that while
-        // their only copy is a scheduled write is how a crash in between loses
-        // messages for good.
-        await flushHistory()
-        // Best-effort, like Android: a lost ack redelivers, the dedup absorbs.
-        // ⚠ The SAME `dev` the drain above was served with. The island advances
-        // the cursor over the contiguous prefix of what it handed THAT device;
-        // computing that prefix over another device's rows wedges the queue.
-        await fetchWithTimeout(`${identity.apiBase}/messages/queue/ack?dev=${myDev}`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${identity.jwt}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ direct_ids: directIds, group_ids: groupIds }),
-        }).catch(() => {})
-      }
+      await drainLegacyQueue(identity, myDev)
+      // Stage 5: the rooms, from their logs, on an island that keeps them.
+      // AFTER the legacy queue on purpose: the web stamps a row when it
+      // ingests it, and everything the legacy queue still holds for this
+      // account predates everything in the log (the account's first log
+      // fetch is the line between them), so this order keeps the timeline.
+      await drainRoomLog(identity, myDev)
     } catch {
       /* network hiccup — nothing was acked, the next drain redelivers */
     } finally {
@@ -443,6 +384,127 @@ function drainPrimaryQueue(identity: WebIdentity, catchUp: boolean): Promise<voi
   })
   drainInFlight = run
   return run
+}
+
+// One row off the primary island, legacy queue or room log alike: the dispatch
+// by envelope_type that decides which decoder opens it. A `gmsg` is a
+// sender-keys broadcast (decoded via the chain; held in memory when the chain
+// has not arrived yet, see handleGmsg); everything else is a sealed envelope.
+// Throws only on a TRANSIENT failure, which the caller answers by leaving the
+// row unacked; everything terminal, "decrypted to nothing" included, returns.
+async function ingestPrimaryRow(
+  identity: WebIdentity,
+  myDev: number,
+  r: { envelope_type: string; payload: string; group_id: number | null; to_device_id?: number | null },
+): Promise<void> {
+  if (typeof r.to_device_id === 'number' && r.to_device_id !== myDev) {
+    // A fan-out copy for a sibling device of this account: it was
+    // encrypted against a ratchet that lives there, so no decrypt is
+    // attempted and it is acked away by the caller. An island that predates
+    // the `dev` filter hands out every copy, so this is not dead code.
+  } else if (r.envelope_type === 'gmsg' && typeof r.group_id === 'number') {
+    // Sender-keys broadcast: not a sealed envelope, decoded via the chain.
+    const got = await handleGmsg(identity, r.payload, r.group_id)
+    if (got) route(got.senderUIN, undefined, got.envelope, r.group_id, identity.uin, hostOf(identity.apiBase), undefined, identity)
+  } else {
+    const got = await decryptIncoming(identity, r.payload)
+    if (got) {
+      // A decrypted envelope proves the sending DEVICE can talk to us:
+      // its silence probe stands down (device-scoped; v=1 names none).
+      if (got.senderUIN !== identity.uin) noteInboundFrom(got.senderUIN, got.senderDeviceId)
+      route(got.senderUIN, got.senderHost, got.envelope, r.group_id, identity.uin, hostOf(identity.apiBase), got.senderSigningKey, identity)
+    }
+  }
+}
+
+// The legacy `/messages/queue` drain, exactly as it has always run (see the
+// notes above drainPrimaryQueue). Untouched by Stage 5: it keeps serving 1:1
+// rows, and whatever legacy group rows the island wrote for this account
+// before its first room-log fetch.
+async function drainLegacyQueue(identity: WebIdentity, myDev: number): Promise<void> {
+  const res = await fetchWithTimeout(`${identity.apiBase}/messages/queue?ack=1&dev=${myDev}`, {
+    headers: { Authorization: `Bearer ${identity.jwt}` },
+  })
+  if (!res.ok) return
+  const rows = (await res.json()) as Array<{
+    id: number
+    envelope_type: string
+    payload: string
+    group_id: number | null
+    to_device_id?: number | null
+    // Stage 2 (core-metadata plan): the island now labels each row with its
+    // retention/push class and a durable per-mailbox sequence. Read when
+    // present; both fall back to the legacy `envelope_type` / `id`.
+    //
+    // ⚠ The CURSOR stays on `id` (the ack below). `seq` is GAPPY per device
+    // (a sibling device of this account consumes numbers this device never
+    // sees), so a gap in `seq` is NOT a missing message and must never move
+    // the cursor.
+    cls?: number | null
+    seq?: number | null
+  }>
+  const directIds: number[] = []
+  const groupIds: number[] = []
+  for (const r of rows) {
+    try {
+      await ingestPrimaryRow(identity, myDev, r)
+      // Processed to its end — including "decrypted to nothing", which is
+      // terminal. Only a THROW leaves a row unacked: the cursor then stops
+      // in front of it and the island redelivers from there next time.
+      ;(typeof r.group_id === 'number' ? groupIds : directIds).push(r.id)
+    } catch {
+      /* transient failure — leave unacked for redelivery */
+    }
+  }
+  if (directIds.length || groupIds.length) {
+    // ⚠ Before the ack, not after. An ack tells the island it may let go of
+    // these rows, and history writes are coalesced — promising that while
+    // their only copy is a scheduled write is how a crash in between loses
+    // messages for good.
+    await flushHistory()
+    // Best-effort, like Android: a lost ack redelivers, the dedup absorbs.
+    // ⚠ The SAME `dev` the drain above was served with. The island advances
+    // the cursor over the contiguous prefix of what it handed THAT device;
+    // computing that prefix over another device's rows wedges the queue.
+    await fetchWithTimeout(`${identity.apiBase}/messages/queue/ack?dev=${myDev}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${identity.jwt}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ direct_ids: directIds, group_ids: groupIds }),
+    }).catch(() => {})
+  }
+}
+
+// The two room-log endpoints, authenticated and bounded like the legacy
+// drain's requests.
+function logRequestFor(identity: WebIdentity): GroupLogRequest {
+  return (path, body) =>
+    fetchWithTimeout(`${identity.apiBase}${path}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${identity.jwt}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+}
+
+// Stage 5 (core-metadata plan): on an island that keeps one log per room,
+// drain the rooms from their logs, next to the legacy queue. The rows are the
+// same envelope types and payloads the legacy group rows carry, so they go
+// through the same dispatch; the ack follows the history flush, per room,
+// over the contiguous prefix of what was processed (see group-log.ts). An
+// island without the capability is never asked: the first fetch is also what
+// flips the account to "log reader" there.
+async function drainRoomLog(identity: WebIdentity, myDev: number): Promise<void> {
+  if (!(await islandHasGroupLog(identity.apiBase))) return
+  try {
+    await drainGroupLog(
+      identity.apiBase,
+      identity.uin,
+      logRequestFor(identity),
+      (row) => ingestPrimaryRow(identity, myDev, { envelope_type: row.envelope_type, payload: row.payload, group_id: row.gid }),
+      flushHistory,
+    )
+  } catch {
+    /* nothing was acked for the page that failed; the next drain re-serves it */
+  }
 }
 
 export function MessageReceiver() {
@@ -568,18 +630,24 @@ export function MessageReceiver() {
       const catchingUp = firstTick
       firstTick = false
       if (catchingUp) beginCatchUp()
-      await drainBackupQueues(identity, async (row, host) => {
-        if (cancelled) return
-        // ⚠ Swallowed here, unlike the primary drain: this fetch is the legacy
-        // ack-less one, so the island has already let go of the whole page. A
-        // throw would abandon the rows behind this one for good.
-        const got = await decryptIncoming(identity, row.payload).catch(() => null)
-        if (!got) return
-        // A group row in a BACKUP mailbox = that island also hosts a group we
-        // joined (same identity, same mailbox) — alias it like the visited poll.
-        const gid = typeof row.group_id === 'number' ? aliasFor(host, row.group_id) : row.group_id
-        route(got.senderUIN, got.senderHost, got.envelope, gid, identity.uin, hostOf(identity.apiBase), got.senderSigningKey, identity)
-      })
+      await drainBackupQueues(
+        identity,
+        async (row, host) => {
+          if (cancelled) return
+          // ⚠ Swallowed here, unlike the primary drain: this fetch is the legacy
+          // ack-less one, so the island has already let go of the whole page. A
+          // throw would abandon the rows behind this one for good.
+          const got = await decryptIncoming(identity, row.payload).catch(() => null)
+          if (!got) return
+          // A group row in a BACKUP mailbox = that island also hosts a group we
+          // joined (same identity, same mailbox) — alias it like the visited poll.
+          const gid = typeof row.group_id === 'number' ? aliasFor(host, row.group_id) : row.group_id
+          route(got.senderUIN, got.senderHost, got.envelope, gid, identity.uin, hostOf(identity.apiBase), got.senderSigningKey, identity)
+        },
+        // Stage 5: a backup island that keeps room logs is acked only once the
+        // rows it served are on disk here.
+        flushHistory,
+      )
       if (catchingUp) endCatchUp()
     }
     void tick()
@@ -608,13 +676,18 @@ export function MessageReceiver() {
       const catchingUp = firstTick
       firstTick = false
       if (catchingUp) beginCatchUp()
-      await drainVisitedQueues(identity, async (row, host) => {
-        if (cancelled) return
-        const got = await decryptIncoming(identity, row.payload).catch(() => null) // ack-less fetch, as above
-        if (!got) return
-        const gid = typeof row.group_id === 'number' ? aliasFor(host, row.group_id) : row.group_id
-        route(got.senderUIN, got.senderHost, got.envelope, gid, identity.uin, hostOf(identity.apiBase), got.senderSigningKey, identity)
-      })
+      await drainVisitedQueues(
+        identity,
+        async (row, host) => {
+          if (cancelled) return
+          const got = await decryptIncoming(identity, row.payload).catch(() => null) // ack-less fetch, as above
+          if (!got) return
+          const gid = typeof row.group_id === 'number' ? aliasFor(host, row.group_id) : row.group_id
+          route(got.senderUIN, got.senderHost, got.envelope, gid, identity.uin, hostOf(identity.apiBase), got.senderSigningKey, identity)
+        },
+        // Same rule as the backup poll: the room-log ack waits for the write.
+        flushHistory,
+      )
       if (catchingUp) endCatchUp()
     }
     void tick()
@@ -689,15 +762,35 @@ export function MessageReceiver() {
       const payload = ev.payload as string | undefined
       const gid = ev.group_id
       if (!payload || typeof gid !== 'number') return
+      // Stage 5: the frame carries the row's `seq` when the island logged the
+      // post (absent when it did not, or on an older island).
+      const seq = ev.seq
       void (async () => {
         // Same hydration invariant as the sealed live path above: never ingest
         // into a store whose writes are still disabled.
         await ensureHydrated(identity.uin)
         const got = await handleGmsg(identity, payload, gid)
         if (got) route(got.senderUIN, undefined, got.envelope, gid, identity.uin, hostOf(identity.apiBase), undefined, identity)
+        if (typeof seq !== 'number') return
+        // Ack it like a fetched row, so the next fetch does not re-serve it:
+        // after the history write lands, and only when it is the next row
+        // after what this tab has vouched for in the room (group-log.ts). A
+        // broadcast held for a missing chain is acked too, as the drain acks
+        // it; a held row must never pin the room's cursor.
+        await flushHistory()
+        await ackLiveGroupRow(identity.apiBase, identity.uin, logRequestFor(identity), gid, seq)
       })().catch(() => {})
     })
   }, [identity, on])
+
+  // What this tab vouched for in each room is a fact about THIS session's
+  // cursor. A later sign-in under the same number starts from the island's
+  // cursor again, never from a stale local one.
+  useEffect(() => {
+    if (!identity) return
+    const { apiBase, uin } = identity
+    return () => forgetVouched(apiBase, uin)
+  }, [identity])
 
   return null
 }

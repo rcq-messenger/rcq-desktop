@@ -336,7 +336,7 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
     },
     onGroup: (frame) => {
       void (async () => {
-        await ingestGroupPacket(identity, frame.payload, frame.group_id, liveOut)
+        await ingestGroupPacket(identity, frame.payload, frame.group_id, liveOut, frame.seq)
         absorb(liveOut)
       })().catch(liveFailed)
     },

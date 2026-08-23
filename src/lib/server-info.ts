@@ -40,6 +40,16 @@
 /// path (signal-device.ts) stop naming itself; an island that lacks either
 /// still gets the legacy authenticated request, never a half-anonymous one.
 ///
+/// ⚠ `group_log` defaults to FALSE as well, and for the same reason: it says
+/// the island keeps one log per room (core-metadata plan, Stage 5) and serves
+/// `/messages/group-log/fetch` + `/messages/group-log/ack`. The receive paths
+/// (message-receiver.tsx, the backup and visited drains, the CLI) drain that
+/// log NEXT TO the legacy `/messages/queue` on islands that say so, and keep
+/// the old behaviour to the byte on islands that do not. An island that has
+/// no log must never be asked for one: the first fetch is also what flips the
+/// account to "log reader" there, so a wrong guess is not a 404 but a silenced
+/// room.
+///
 /// ⚠ `hood` and `stories` used to live here. Both surfaces were deleted from
 /// the server (routers, tables and flags), so no island answers with them any
 /// more and no client has anything left to gate. An unknown key in the
@@ -56,6 +66,7 @@ export interface ServerCapabilities {
   envelope_class: boolean
   anon_keys: boolean
   deposit_auth: boolean
+  group_log: boolean
 }
 
 export interface ServerInfo {
@@ -67,8 +78,8 @@ export interface ServerInfo {
 /// Mirrors Android's `ServerCapabilities` defaults (net/RcqApi.kt) field for
 /// field. uin_shop and hall_of_fame default OFF because a self-host island that
 /// says nothing runs neither; everything else defaults ON, except
-/// `envelope_class`, `anon_keys` and `deposit_auth` (see the interface
-/// comment: absent means the island predates that stage).
+/// `envelope_class`, `anon_keys`, `deposit_auth` and `group_log` (see the
+/// interface comment: absent means the island predates that stage).
 export const DEFAULT_CAPABILITIES: ServerCapabilities = {
   uin_shop: false,
   hall_of_fame: false,
@@ -80,6 +91,7 @@ export const DEFAULT_CAPABILITIES: ServerCapabilities = {
   envelope_class: false,
   anon_keys: false,
   deposit_auth: false,
+  group_log: false,
 }
 
 /// How long one GET /server/info may take before it reads as no answer.
@@ -101,6 +113,7 @@ type BoolCapability =
   | 'envelope_class'
   | 'anon_keys'
   | 'deposit_auth'
+  | 'group_log'
 
 function normalize(raw: unknown): ServerInfo | null {
   if (!raw || typeof raw !== 'object') return null
@@ -128,6 +141,7 @@ function normalize(raw: unknown): ServerInfo | null {
       envelope_class: bool('envelope_class'),
       anon_keys: bool('anon_keys'),
       deposit_auth: bool('deposit_auth'),
+      group_log: bool('group_log'),
     },
   }
 }

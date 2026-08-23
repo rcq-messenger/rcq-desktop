@@ -18,6 +18,14 @@ import { decryptIncoming, myDeviceId, noteInboundFrom, sendV2 } from '../../src/
 import { Api, peerBundleFrom } from '../../src/lib/api'
 import { encryptV1, type CarbonEnvelope, type Envelope, type WebIdentity } from '../../src/lib/crypto'
 import { handleSkdm, handleSknack, replayHeldGmsg } from '../../src/lib/sender-key-receive'
+import {
+  ackLiveGroupRow,
+  drainGroupLog,
+  GroupLogHttpError,
+  islandHasGroupLog,
+  type GroupLogRequest,
+  type GroupLogRow,
+} from '../../src/lib/group-log'
 import { foreignHost, groupLabel, isContact, knownName, labelForLine, peerLabel } from './directory'
 import { chatLine, when } from './format'
 import { openGroupPacket, replayStoredGroupPackets } from './held-groups'
@@ -471,14 +479,23 @@ async function replayStored(identity: WebIdentity, result: IngestResult): Promis
 
 /// One live group broadcast off the socket. Same path as the drain's, so a
 /// room reads identically whether the message arrived now or last week.
+///
+/// `seq` is the row's place in the room's log (Stage 5), on the frame when
+/// the island logged the post. After the packet is filed (or held on disk)
+/// it is acked like a fetched row, so the next fetch does not re-serve it,
+/// and only when it is the next row after what this process has vouched for
+/// in that room (group-log.ts); a lost ack costs a re-served row, which the
+/// id dedup absorbs.
 export async function ingestGroupPacket(
   identity: WebIdentity,
   payloadB64: string,
   gid: number,
   result: IngestResult,
+  seq?: number,
 ): Promise<void> {
   const got = await openGroupPacket(identity, payloadB64, gid)
   if (got) await ingestDecrypted(identity, { senderUIN: got.senderUIN, envelope: got.envelope }, gid, result)
+  if (typeof seq === 'number') await ackLiveGroupRow(identity.apiBase, identity.uin, logRequestFor(identity), gid, seq)
 }
 
 interface QueueRow {
@@ -502,7 +519,7 @@ interface QueueRow {
 
 /// The island's stamp for a row, or undefined when it did not send one (an
 /// older island): the caller then falls back to now, as it always did.
-function rowTime(r: QueueRow): Date | undefined {
+function rowTime(r: { received_at?: string }): Date | undefined {
   if (!r.received_at) return undefined
   const d = new Date(/(?:Z|[+-]\d{2}:?\d{2})$/i.test(r.received_at) ? r.received_at : `${r.received_at}Z`)
   return Number.isNaN(d.getTime()) ? undefined : d
@@ -552,38 +569,8 @@ export async function drainQueue(identity: WebIdentity): Promise<IngestResult | 
   const directIds: number[] = []
   const groupIds: number[] = []
   for (const r of rows) {
-    const at = rowTime(r)
     try {
-      if (typeof r.to_device_id === 'number' && r.to_device_id !== myDev) {
-        // A fan-out copy for a sibling device: encrypted against a ratchet
-        // that lives there. No decrypt attempted; acked away below. An island
-        // that predates the `dev` filter hands out every copy, so this is not
-        // dead code.
-      } else if (r.envelope_type === 'gmsg') {
-        // Sender-keys group broadcast: ONE ciphertext for the whole room,
-        // opened with the chain its sender distributed. Not a sealed envelope,
-        // so it never goes near decryptIncoming.
-        //
-        // ⚠ A row with no group id cannot be routed to a room and is acked
-        // away below; the island has never sent one, and guessing would file
-        // the message under a room the sender did not choose.
-        if (typeof r.group_id === 'number') {
-          // Returns null when the chain has not reached us yet, and in that
-          // case the raw packet is now on disk, so the ack below is honest.
-          const got = await openGroupPacket(identity, r.payload, r.group_id)
-          if (got) {
-            await ingestDecrypted(identity, { senderUIN: got.senderUIN, envelope: got.envelope }, r.group_id, result, at)
-          }
-        }
-      } else {
-        const got = await decryptIncoming(identity, r.payload)
-        if (got) {
-          // A decrypted envelope proves the sending DEVICE can talk to us —
-          // its silence probe stands down (v=1 names no device).
-          if (got.senderUIN !== identity.uin) noteInboundFrom(got.senderUIN, got.senderDeviceId)
-          await ingestDecrypted(identity, got, r.group_id, result, at)
-        }
-      }
+      await ingestQueueRow(identity, myDev, r, result)
       // Processed to its end — including "decrypted to nothing", which is
       // terminal. Only a THROW leaves a row unacked; the cursor then stops in
       // front of it and the island redelivers from there next time.
@@ -597,8 +584,6 @@ export async function drainQueue(identity: WebIdentity): Promise<IngestResult | 
       )
     }
   }
-  // One badge per room instead of its whole feed (see the note on openGroup).
-  announceGroupNews(identity.uin)
   if (directIds.length || groupIds.length) {
     // History is already on disk (synchronous appends above) — the ack may
     // now tell the island to let go. Best-effort like Android: a lost ack
@@ -615,5 +600,101 @@ export async function drainQueue(identity: WebIdentity): Promise<IngestResult | 
       sayOnce('ack', tr('drain.ackFailed', { err: humanError(e) }))
     })
   }
+  // Stage 5: the rooms, from their logs, on an island that keeps them. After
+  // the legacy queue: whatever that queue still holds for this account was
+  // written before the account's first log fetch, so this order prints the
+  // backlog in the order it was said.
+  await drainRoomLog(identity, myDev, result)
+  // One badge per room instead of its whole feed (see the note on openGroup),
+  // and one for both drains: a badge that counts half the backlog is a badge
+  // that lied.
+  announceGroupNews(identity.uin)
   return result
+}
+
+/// One row off the island, legacy queue or room log alike: the dispatch by
+/// envelope_type that decides which decoder opens it. Throws only on a
+/// TRANSIENT failure, which the caller answers by leaving the row unacked;
+/// everything terminal, "decrypted to nothing" included, returns.
+async function ingestQueueRow(
+  identity: WebIdentity,
+  myDev: number,
+  r: { envelope_type: string; payload: string; group_id: number | null; to_device_id?: number | null; received_at?: string },
+  result: IngestResult,
+): Promise<void> {
+  const at = rowTime(r)
+  if (typeof r.to_device_id === 'number' && r.to_device_id !== myDev) {
+    // A fan-out copy for a sibling device: encrypted against a ratchet
+    // that lives there. No decrypt attempted; acked away by the caller. An
+    // island that predates the `dev` filter hands out every copy, so this is
+    // not dead code.
+  } else if (r.envelope_type === 'gmsg') {
+    // Sender-keys group broadcast: ONE ciphertext for the whole room,
+    // opened with the chain its sender distributed. Not a sealed envelope,
+    // so it never goes near decryptIncoming.
+    //
+    // ⚠ A row with no group id cannot be routed to a room and is acked
+    // away by the caller; the island has never sent one, and guessing would
+    // file the message under a room the sender did not choose.
+    if (typeof r.group_id === 'number') {
+      // Returns null when the chain has not reached us yet, and in that
+      // case the raw packet is now on disk, so the caller's ack is honest.
+      const got = await openGroupPacket(identity, r.payload, r.group_id)
+      if (got) {
+        await ingestDecrypted(identity, { senderUIN: got.senderUIN, envelope: got.envelope }, r.group_id, result, at)
+      }
+    }
+  } else {
+    const got = await decryptIncoming(identity, r.payload)
+    if (got) {
+      // A decrypted envelope proves the sending DEVICE can talk to us:
+      // its silence probe stands down (v=1 names no device).
+      if (got.senderUIN !== identity.uin) noteInboundFrom(got.senderUIN, got.senderDeviceId)
+      await ingestDecrypted(identity, got, r.group_id, result, at)
+    }
+  }
+}
+
+/// The two room-log endpoints, with the same deadline as the queue read.
+function logRequestFor(identity: WebIdentity): GroupLogRequest {
+  return (path, body) =>
+    fetchWithTimeout(`${identity.apiBase}${path}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${identity.jwt}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+}
+
+/// Stage 5 (core-metadata plan): on an island that keeps one log per room,
+/// drain the rooms from their logs, next to the legacy queue. The rows carry
+/// the same envelope types and payloads the legacy group rows carry, so they
+/// go through the same dispatch, and the same rule holds for the ack: history
+/// is appended synchronously above, a held broadcast is on disk, so the ack
+/// may go out, per room over the contiguous prefix of what was processed
+/// (see group-log.ts). An island without the capability is never asked: the
+/// first fetch is also what flips the account to "log reader" there.
+async function drainRoomLog(identity: WebIdentity, myDev: number, result: IngestResult): Promise<void> {
+  if (!(await islandHasGroupLog(identity.apiBase))) return
+  try {
+    await drainGroupLog(identity.apiBase, identity.uin, logRequestFor(identity), async (row: GroupLogRow) => {
+      try {
+        await ingestQueueRow(
+          identity,
+          myDev,
+          { envelope_type: row.envelope_type, payload: row.payload, group_id: row.gid, received_at: row.received_at },
+          result,
+        )
+      } catch (e) {
+        // Left unacked on purpose (the island re-serves it), and said out
+        // loud, the same as a queue row: a row that keeps failing is a
+        // message nobody can read and nobody was told about.
+        process.stderr.write(err.dim(tr('drain.row', { id: `g${row.gid}/${row.seq}`, err: humanError(e) })) + '\n')
+        throw e
+      }
+    })
+  } catch (e) {
+    // Nothing was acked for the page that failed; the next drain re-serves it.
+    if (e instanceof GroupLogHttpError) process.stderr.write(tr('drain.logHttp', { status: e.status }) + '\n')
+    else process.stderr.write(tr('drain.logError', { err: humanError(e) }) + '\n')
+  }
 }

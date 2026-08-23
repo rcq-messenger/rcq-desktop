@@ -24,6 +24,7 @@ import {
 } from './multihome'
 
 import { scopedKey } from './account-scope'
+import { drainGroupLog, islandHasGroupLog, type GroupLogRequest } from './group-log'
 
 export interface VisitedIsland {
   host: string
@@ -166,18 +167,33 @@ export function refByAlias(aliasId: number): { host: string; remoteId: number } 
   return hit ? { host: hit.host, remoteId: hit.remoteId } : null
 }
 
+/// One row off a visited island's guest mailbox, legacy queue or room log.
+export interface GuestQueueRow {
+  envelope_type: string
+  payload: string
+  group_id: number | null
+  // Stage 2 (core-metadata plan): retention/push class + durable per-mailbox
+  // sequence, read when present. Cursoring is unchanged; `seq` is gappy per
+  // device, so it is never used as a missing-message detector.
+  cls?: number | null
+  seq?: number | null
+}
+
 /// Drain the guest mailbox on every visited island (the receive path for
 /// cross-island groups: the host island spools group fan-out into our guest
 /// mailbox there). The handler gets each row plus the island it came from so
 /// group rows can be filed under the local alias. A 401 re-proves the key
 /// (recover) once and retries; an unreachable island just waits for the next
 /// tick. The legacy /messages/queue fetch advances the cursor server-side.
+///
+/// Stage 5: a visited island that advertises `group_log` also gets the guest's
+/// room logs drained, right after its legacy queue, through the SAME handler.
+/// A room lives on its island, so the capability is read per island; one that
+/// lacks it is asked nothing new. `persisted` is awaited before the log ack.
 export async function drainVisitedQueues(
   identity: WebIdentity,
-  handle: (
-    row: { envelope_type: string; payload: string; group_id: number | null },
-    host: string,
-  ) => Promise<void>,
+  handle: (row: GuestQueueRow, host: string) => Promise<void>,
+  persisted?: () => Promise<void>,
 ): Promise<void> {
   for (const v of listVisitedIslands()) {
     try {
@@ -192,20 +208,56 @@ export async function drainVisitedQueues(
         res = await get(fresh.jwt)
       }
       if (!res.ok) continue
-      const rows = (await res.json()) as Array<{
-        envelope_type: string
-        payload: string
-        group_id: number | null
-        // Stage 2 (core-metadata plan): retention/push class + durable per-mailbox
-        // sequence, read when present. Cursoring is unchanged; `seq` is gappy per
-        // device, so it is never used as a missing-message detector.
-        cls?: number | null
-        seq?: number | null
-      }>
+      const rows = (await res.json()) as GuestQueueRow[]
       for (const r of rows) await handle(r, v.host)
     } catch {
       /* island unreachable — next tick */
     }
+    await drainVisitedLog(identity, v.host, handle, persisted)
+  }
+}
+
+/// The guest's room logs on one visited island (Stage 5), when it keeps them.
+/// Same guest token and the same 401 refresh as the queue above.
+async function drainVisitedLog(
+  identity: WebIdentity,
+  host: string,
+  handle: (row: GuestQueueRow, host: string) => Promise<void>,
+  persisted?: () => Promise<void>,
+): Promise<void> {
+  const apiBase = `https://${host}`
+  if (!(await islandHasGroupLog(apiBase))) return
+  // Read again rather than taken from the caller: the queue drain just before
+  // this may have refreshed the token.
+  const v = listVisitedIslands().find((x) => x.host === host)
+  if (!v) return
+  let jwt = v.jwt
+  const request: GroupLogRequest = async (path, body) => {
+    const post = () =>
+      fetch(`${apiBase}${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt}` },
+        body: JSON.stringify(body),
+      })
+    let res = await post()
+    if (res.status === 401) {
+      const fresh = await refreshGuestAuth(identity, host)
+      if (!fresh) return res
+      jwt = fresh.jwt
+      res = await post()
+    }
+    return res
+  }
+  try {
+    await drainGroupLog(
+      apiBase,
+      v.uin,
+      request,
+      (r) => handle({ envelope_type: r.envelope_type, payload: r.payload, group_id: r.gid, cls: r.cls, seq: r.seq }, host),
+      persisted,
+    )
+  } catch {
+    /* island unreachable, or the log answered an error: next tick */
   }
 }
 

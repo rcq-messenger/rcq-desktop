@@ -30,6 +30,7 @@ import { verifyHomeIslandRecord, type IslandHome } from './federation'
 import { verifySigned } from './signing-keys'
 import { scopedKey } from './account-scope'
 import { isFrontHost } from './front'
+import { drainGroupLog, islandHasGroupLog, type GroupLogRequest } from './group-log'
 
 // ⚠⚠ SCOPED, and it was not until now. A flat key is readable by every account
 // in this browser, and this one carried a BEARER TOKEN per backup island: sign
@@ -561,9 +562,16 @@ export interface QueueRow {
 /// gets the home's host: if a backup island ALSO hosts a group we joined
 /// (§5c — same identity, same mailbox there), group rows arrive through this
 /// drain and must be filed under the local alias, not the raw remote id.
+///
+/// Stage 5: a backup island that advertises `group_log` also gets its room
+/// logs drained, right after its legacy queue, through the SAME handler (the
+/// rows carry the same envelope types and payloads). `persisted` is awaited
+/// before the log ack goes out, so the ack never vouches for a scheduled
+/// write. An island without the capability is asked nothing new.
 export async function drainBackupQueues(
   identity: WebIdentity,
   handle: (row: QueueRow, host: string) => Promise<void>,
+  persisted?: () => Promise<void>,
 ): Promise<void> {
   for (const home of listBackupHomes()) {
     // ⚠ A phantom front home is OUR OWN island: draining it hits the real
@@ -590,6 +598,51 @@ export async function drainBackupQueues(
     } catch {
       /* island unreachable — next tick */
     }
+    await drainBackupLog(identity, home.host, handle, persisted)
+  }
+}
+
+/// The room logs of one backup home (Stage 5), on an island that keeps them.
+/// Same token, same 401 refresh as the queue above; a 401 on the ack is not
+/// retried (the rows are on disk here, the island re-serves them once).
+async function drainBackupLog(
+  identity: WebIdentity,
+  host: string,
+  handle: (row: QueueRow, host: string) => Promise<void>,
+  persisted?: () => Promise<void>,
+): Promise<void> {
+  const apiBase = `https://${host}`
+  if (!(await islandHasGroupLog(apiBase))) return
+  // Read again rather than taken from the caller: the queue drain just before
+  // this may have refreshed the token.
+  let jwt = listBackupHomes().find((h) => h.host === host)?.jwt ?? ''
+  const request: GroupLogRequest = async (path, body) => {
+    const post = () =>
+      fetch(`${apiBase}${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt}` },
+        body: JSON.stringify(body),
+      })
+    let res = await post()
+    if (res.status === 401) {
+      const fresh = await recoverOnIsland(host, identity)
+      if (!fresh) return res
+      updateStoredJwt(host, fresh)
+      jwt = fresh.token
+      res = await post()
+    }
+    return res
+  }
+  try {
+    await drainGroupLog(
+      apiBase,
+      identity.uin,
+      request,
+      (r) => handle({ envelope_type: r.envelope_type, payload: r.payload, group_id: r.gid, cls: r.cls, seq: r.seq }, host),
+      persisted,
+    )
+  } catch {
+    /* island unreachable, or the log answered an error: next tick */
   }
 }
 

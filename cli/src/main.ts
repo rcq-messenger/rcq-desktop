@@ -600,7 +600,7 @@ async function cmdWatch(flags: Set<string>): Promise<void> {
       })().catch(liveFailed)
     },
     onGroup: (frame) => {
-      void ingestGroupPacket(identity, frame.payload, frame.group_id, liveOut).catch(liveFailed)
+      void ingestGroupPacket(identity, frame.payload, frame.group_id, liveOut, frame.seq).catch(liveFailed)
     },
     onControl: (frame) => {
       const line = describeRequestFrame(identity, frame)

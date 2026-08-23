@@ -42,6 +42,9 @@ export interface SealedFrame {
 export interface GroupFrame {
   payload: string
   group_id: number
+  /// Stage 5: the row's seq in the room's log, when the island logged the
+  /// post. Absent on an older island, and when the post was not logged.
+  seq?: number
 }
 
 /// A control frame, verbatim. Shapes differ per type, so the reader picks the
@@ -143,9 +146,9 @@ export class RcqSocket {
       }
       if (ev.type === 'gmsg') {
         // Fanned to every capable member of the room, not to a device.
-        const gid = (data as { group_id?: unknown }).group_id
+        const { group_id: gid, seq } = data as { group_id?: unknown; seq?: unknown }
         if (typeof ev.payload === 'string' && ev.payload && typeof gid === 'number') {
-          this.handlers.onGroup?.({ payload: ev.payload, group_id: gid })
+          this.handlers.onGroup?.({ payload: ev.payload, group_id: gid, seq: typeof seq === 'number' ? seq : undefined })
         }
         return
       }

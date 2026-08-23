@@ -19,7 +19,7 @@ import { handleContactReq } from './crossisland-contactreq'
 import { CALL_OFFER_TTL_SEC, fileMissedCrossIslandOffer } from './crossisland-call'
 import { deliverCrossIslandCallSignal } from './call'
 import { handleProfile, pushProfileTo } from './crossisland-profile'
-import { handleGmsg, handleSkdm, handleSknack, replayHeldGmsg } from './sender-key-receive'
+import { decodeGmsg, handleGmsg, handleSkdm, handleSknack, replayHeldGmsg } from './sender-key-receive'
 import { ackLiveGroupRow, drainGroupLog, forgetVouched, islandHasGroupLog, type GroupLogRequest } from './group-log'
 import { Api, peerBundleFrom } from './api'
 import { encryptV1 } from './crypto'
@@ -448,17 +448,17 @@ async function drainLegacyQueue(identity: WebIdentity, myDev: number): Promise<v
   for (const r of rows) {
     try {
       await ingestPrimaryRow(identity, myDev, r)
-      // Processed to its end — including "decrypted to nothing", which is
+      // Processed to its end, including "decrypted to nothing", which is
       // terminal. Only a THROW leaves a row unacked: the cursor then stops
       // in front of it and the island redelivers from there next time.
       ;(typeof r.group_id === 'number' ? groupIds : directIds).push(r.id)
     } catch {
-      /* transient failure — leave unacked for redelivery */
+      /* transient failure: leave unacked for redelivery */
     }
   }
   if (directIds.length || groupIds.length) {
     // ⚠ Before the ack, not after. An ack tells the island it may let go of
-    // these rows, and history writes are coalesced — promising that while
+    // these rows, and history writes are coalesced: promising that while
     // their only copy is a scheduled write is how a crash in between loses
     // messages for good.
     await flushHistory()
@@ -491,7 +491,8 @@ function logRequestFor(identity: WebIdentity): GroupLogRequest {
 // through the same dispatch; the ack follows the history flush, per room,
 // over the contiguous prefix of what was processed (see group-log.ts). An
 // island without the capability is never asked: the first fetch is also what
-// flips the account to "log reader" there.
+// marks this device a "log reader" there. Runs inside drainPrimaryQueue's
+// single flight, right after the legacy drain, never concurrently with it.
 async function drainRoomLog(identity: WebIdentity, myDev: number): Promise<void> {
   if (!(await islandHasGroupLog(identity.apiBase))) return
   try {
@@ -621,34 +622,49 @@ export function MessageReceiver() {
     if (!identity) return
     let cancelled = false
     let firstTick = true
+    let running = false
+    // One row off a backup home, legacy queue or room log. `swallow` is the
+    // legacy queue's rule: that fetch is the ack-less one, so the island has
+    // already let go of the whole page, and a throw would abandon the rows
+    // behind this one for good. The room log is acked by position, the other
+    // way round: a transient failure (no libsignal device yet, say) must
+    // THROW so the row stays in front of the cursor and is re-served, and
+    // the strike ledger in group-log.ts acks past it only once it has failed
+    // the same way on several drains.
+    const ingest = async (row: { payload: string; group_id: number | null }, host: string, swallow: boolean) => {
+      if (cancelled) return
+      const got = swallow
+        ? await decryptIncoming(identity, row.payload).catch(() => null)
+        : await decryptIncoming(identity, row.payload)
+      if (!got) return
+      // A group row in a BACKUP mailbox = that island also hosts a group we
+      // joined (same identity, same mailbox): alias it like the visited poll.
+      const gid = typeof row.group_id === 'number' ? aliasFor(host, row.group_id) : row.group_id
+      route(got.senderUIN, got.senderHost, got.envelope, gid, identity.uin, hostOf(identity.apiBase), got.senderSigningKey, identity)
+    }
     const tick = async () => {
-      if (cancelled || listBackupHomes().length === 0) return
-      await ensureHydrated(identity.uin) // dedup needs the seen-set first
-      // Only the first sweep is backlog. Every later one IS the live delivery
-      // path whenever the primary island is down, and silencing those would
-      // mean the outage that makes this loop matter also makes it invisible.
-      const catchingUp = firstTick
-      firstTick = false
-      if (catchingUp) beginCatchUp()
-      await drainBackupQueues(
-        identity,
-        async (row, host) => {
-          if (cancelled) return
-          // ⚠ Swallowed here, unlike the primary drain: this fetch is the legacy
-          // ack-less one, so the island has already let go of the whole page. A
-          // throw would abandon the rows behind this one for good.
-          const got = await decryptIncoming(identity, row.payload).catch(() => null)
-          if (!got) return
-          // A group row in a BACKUP mailbox = that island also hosts a group we
-          // joined (same identity, same mailbox) — alias it like the visited poll.
-          const gid = typeof row.group_id === 'number' ? aliasFor(host, row.group_id) : row.group_id
-          route(got.senderUIN, got.senderHost, got.envelope, gid, identity.uin, hostOf(identity.apiBase), got.senderSigningKey, identity)
-        },
-        // Stage 5: a backup island that keeps room logs is acked only once the
-        // rows it served are on disk here.
-        flushHistory,
-      )
-      if (catchingUp) endCatchUp()
+      // Single-flight: a tick that outlives the interval (a slow island, a
+      // deep log) must not have the next one fetch the same page beside it.
+      if (cancelled || running || listBackupHomes().length === 0) return
+      running = true
+      try {
+        await ensureHydrated(identity.uin) // dedup needs the seen-set first
+        // Only the first sweep is backlog. Every later one IS the live delivery
+        // path whenever the primary island is down, and silencing those would
+        // mean the outage that makes this loop matter also makes it invisible.
+        const catchingUp = firstTick
+        firstTick = false
+        if (catchingUp) beginCatchUp()
+        await drainBackupQueues(identity, (row, host) => ingest(row, host, true), {
+          handle: (row, host) => ingest(row, host, false),
+          // Stage 5: a backup island that keeps room logs is acked only once
+          // the rows it served are on disk here.
+          persisted: flushHistory,
+        })
+        if (catchingUp) endCatchUp()
+      } finally {
+        running = false
+      }
     }
     void tick()
     const handle = setInterval(() => void tick(), 30_000)
@@ -668,27 +684,38 @@ export function MessageReceiver() {
     if (!identity) return
     let cancelled = false
     let firstTick = true
+    let running = false
+    // Same split as the backup poller: the legacy guest queue swallows (the
+    // ack-less fetch), the room log throws on a transient failure so the
+    // cursor stays in front of the row.
+    const ingest = async (row: { payload: string; group_id: number | null }, host: string, swallow: boolean) => {
+      if (cancelled) return
+      const got = swallow
+        ? await decryptIncoming(identity, row.payload).catch(() => null)
+        : await decryptIncoming(identity, row.payload)
+      if (!got) return
+      const gid = typeof row.group_id === 'number' ? aliasFor(host, row.group_id) : row.group_id
+      route(got.senderUIN, got.senderHost, got.envelope, gid, identity.uin, hostOf(identity.apiBase), got.senderSigningKey, identity)
+    }
     const tick = async () => {
-      if (cancelled || listVisitedIslands().length === 0) return
-      await ensureHydrated(identity.uin) // dedup needs the seen-set first
-      // Same as the backup poller: the first sweep is a mailbox we have not
-      // read yet, everything after it is live.
-      const catchingUp = firstTick
-      firstTick = false
-      if (catchingUp) beginCatchUp()
-      await drainVisitedQueues(
-        identity,
-        async (row, host) => {
-          if (cancelled) return
-          const got = await decryptIncoming(identity, row.payload).catch(() => null) // ack-less fetch, as above
-          if (!got) return
-          const gid = typeof row.group_id === 'number' ? aliasFor(host, row.group_id) : row.group_id
-          route(got.senderUIN, got.senderHost, got.envelope, gid, identity.uin, hostOf(identity.apiBase), got.senderSigningKey, identity)
-        },
-        // Same rule as the backup poll: the room-log ack waits for the write.
-        flushHistory,
-      )
-      if (catchingUp) endCatchUp()
+      if (cancelled || running || listVisitedIslands().length === 0) return
+      running = true
+      try {
+        await ensureHydrated(identity.uin) // dedup needs the seen-set first
+        // Same as the backup poller: the first sweep is a mailbox we have not
+        // read yet, everything after it is live.
+        const catchingUp = firstTick
+        firstTick = false
+        if (catchingUp) beginCatchUp()
+        await drainVisitedQueues(identity, (row, host) => ingest(row, host, true), {
+          handle: (row, host) => ingest(row, host, false),
+          // Same rule as the backup poll: the room-log ack waits for the write.
+          persisted: flushHistory,
+        })
+        if (catchingUp) endCatchUp()
+      } finally {
+        running = false
+      }
     }
     void tick()
     const handle = setInterval(() => void tick(), 30_000)
@@ -769,16 +796,24 @@ export function MessageReceiver() {
         // Same hydration invariant as the sealed live path above: never ingest
         // into a store whose writes are still disabled.
         await ensureHydrated(identity.uin)
-        const got = await handleGmsg(identity, payload, gid)
+        const { routed: got, held } = await decodeGmsg(identity, payload, gid)
         if (got) route(got.senderUIN, undefined, got.envelope, gid, identity.uin, hostOf(identity.apiBase), undefined, identity)
         if (typeof seq !== 'number') return
+        // ⚠ A broadcast HELD for a missing chain is not acked from here. The
+        // hold is in memory (held-gmsg.ts); acking it would tell the island
+        // this tab has a row that a reload before the kid owner's answer
+        // would lose for good. Left unacked, the next drain re-serves it,
+        // re-holds it (deduped by chain position) and acks it there, as the
+        // legacy drain always has: the cursor is pinned for one sweep at
+        // most, never forever.
+        if (held) return
         // Ack it like a fetched row, so the next fetch does not re-serve it:
-        // after the history write lands, and only when it is the next row
-        // after what this tab has vouched for in the room (group-log.ts). A
-        // broadcast held for a missing chain is acked too, as the drain acks
-        // it; a held row must never pin the room's cursor.
-        await flushHistory()
-        await ackLiveGroupRow(identity.apiBase, identity.uin, logRequestFor(identity), gid, seq)
+        // only when it is the next row after what this tab has vouched for
+        // in the room, and then after the history write lands (group-log.ts
+        // runs the flush only once that gate passes: a full-archive write per
+        // frame that the gate then refuses is the stutter the coalescing
+        // removed).
+        await ackLiveGroupRow(identity.apiBase, identity.uin, logRequestFor(identity), gid, seq, flushHistory)
       })().catch(() => {})
     })
   }, [identity, on])

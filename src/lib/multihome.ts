@@ -564,14 +564,17 @@ export interface QueueRow {
 /// drain and must be filed under the local alias, not the raw remote id.
 ///
 /// Stage 5: a backup island that advertises `group_log` also gets its room
-/// logs drained, right after its legacy queue, through the SAME handler (the
-/// rows carry the same envelope types and payloads). `persisted` is awaited
-/// before the log ack goes out, so the ack never vouches for a scheduled
-/// write. An island without the capability is asked nothing new.
+/// logs drained, right after its legacy queue, when `log` is given. The rows
+/// carry the same envelope types and payloads, but the log is acked by
+/// position, so its handler must THROW on a transient failure (the legacy
+/// handler swallows: that fetch is ack-less and the island has let go of the
+/// page already). `log.persisted` is awaited before the log ack goes out, so
+/// the ack never vouches for a scheduled write. An island without the
+/// capability is asked nothing new.
 export async function drainBackupQueues(
   identity: WebIdentity,
   handle: (row: QueueRow, host: string) => Promise<void>,
-  persisted?: () => Promise<void>,
+  log?: LogDrainHooks,
 ): Promise<void> {
   for (const home of listBackupHomes()) {
     // ⚠ A phantom front home is OUR OWN island: draining it hits the real
@@ -598,19 +601,22 @@ export async function drainBackupQueues(
     } catch {
       /* island unreachable — next tick */
     }
-    await drainBackupLog(identity, home.host, handle, persisted)
+    if (log) await drainBackupLog(identity, home.host, log)
   }
+}
+
+/// How a caller takes part in a room-log drain (Stage 5): the ingest for one
+/// row, throwing on a TRANSIENT failure so the row stays in front of the
+/// cursor, and what to await before the ack (the history flush).
+export interface LogDrainHooks {
+  handle: (row: QueueRow, host: string) => Promise<void>
+  persisted?: () => Promise<void>
 }
 
 /// The room logs of one backup home (Stage 5), on an island that keeps them.
 /// Same token, same 401 refresh as the queue above; a 401 on the ack is not
 /// retried (the rows are on disk here, the island re-serves them once).
-async function drainBackupLog(
-  identity: WebIdentity,
-  host: string,
-  handle: (row: QueueRow, host: string) => Promise<void>,
-  persisted?: () => Promise<void>,
-): Promise<void> {
+async function drainBackupLog(identity: WebIdentity, host: string, log: LogDrainHooks): Promise<void> {
   const apiBase = `https://${host}`
   if (!(await islandHasGroupLog(apiBase))) return
   // Read again rather than taken from the caller: the queue drain just before
@@ -638,8 +644,8 @@ async function drainBackupLog(
       apiBase,
       identity.uin,
       request,
-      (r) => handle({ envelope_type: r.envelope_type, payload: r.payload, group_id: r.gid, cls: r.cls, seq: r.seq }, host),
-      persisted,
+      (r) => log.handle({ envelope_type: r.envelope_type, payload: r.payload, group_id: r.gid, cls: r.cls, seq: r.seq }, host),
+      log.persisted,
     )
   } catch {
     /* island unreachable, or the log answered an error: next tick */

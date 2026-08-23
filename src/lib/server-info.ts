@@ -46,9 +46,9 @@
 /// (message-receiver.tsx, the backup and visited drains, the CLI) drain that
 /// log NEXT TO the legacy `/messages/queue` on islands that say so, and keep
 /// the old behaviour to the byte on islands that do not. An island that has
-/// no log must never be asked for one: the first fetch is also what flips the
-/// account to "log reader" there, so a wrong guess is not a 404 but a silenced
-/// room.
+/// no log must never be asked for one: the first fetch is also what marks
+/// this device a "log reader" there, so a wrong guess is not a 404 but a
+/// silenced room.
 ///
 /// ⚠ `hood` and `stories` used to live here. Both surfaces were deleted from
 /// the server (routers, tables and flags), so no island answers with them any

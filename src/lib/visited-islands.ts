@@ -187,13 +187,15 @@ export interface GuestQueueRow {
 /// tick. The legacy /messages/queue fetch advances the cursor server-side.
 ///
 /// Stage 5: a visited island that advertises `group_log` also gets the guest's
-/// room logs drained, right after its legacy queue, through the SAME handler.
-/// A room lives on its island, so the capability is read per island; one that
-/// lacks it is asked nothing new. `persisted` is awaited before the log ack.
+/// room logs drained, right after its legacy queue, when `log` is given. Its
+/// handler must THROW on a transient failure (the log is acked by position;
+/// the legacy handler swallows because that fetch is ack-less). A room lives
+/// on its island, so the capability is read per island; one that lacks it is
+/// asked nothing new. `log.persisted` is awaited before the log ack.
 export async function drainVisitedQueues(
   identity: WebIdentity,
   handle: (row: GuestQueueRow, host: string) => Promise<void>,
-  persisted?: () => Promise<void>,
+  log?: GuestLogDrainHooks,
 ): Promise<void> {
   for (const v of listVisitedIslands()) {
     try {
@@ -213,18 +215,19 @@ export async function drainVisitedQueues(
     } catch {
       /* island unreachable — next tick */
     }
-    await drainVisitedLog(identity, v.host, handle, persisted)
+    if (log) await drainVisitedLog(identity, v.host, log)
   }
+}
+
+/// The caller's half of a guest room-log drain: see multihome.ts LogDrainHooks.
+export interface GuestLogDrainHooks {
+  handle: (row: GuestQueueRow, host: string) => Promise<void>
+  persisted?: () => Promise<void>
 }
 
 /// The guest's room logs on one visited island (Stage 5), when it keeps them.
 /// Same guest token and the same 401 refresh as the queue above.
-async function drainVisitedLog(
-  identity: WebIdentity,
-  host: string,
-  handle: (row: GuestQueueRow, host: string) => Promise<void>,
-  persisted?: () => Promise<void>,
-): Promise<void> {
+async function drainVisitedLog(identity: WebIdentity, host: string, log: GuestLogDrainHooks): Promise<void> {
   const apiBase = `https://${host}`
   if (!(await islandHasGroupLog(apiBase))) return
   // Read again rather than taken from the caller: the queue drain just before
@@ -253,8 +256,8 @@ async function drainVisitedLog(
       apiBase,
       v.uin,
       request,
-      (r) => handle({ envelope_type: r.envelope_type, payload: r.payload, group_id: r.gid, cls: r.cls, seq: r.seq }, host),
-      persisted,
+      (r) => log.handle({ envelope_type: r.envelope_type, payload: r.payload, group_id: r.gid, cls: r.cls, seq: r.seq }, host),
+      log.persisted,
     )
   } catch {
     /* island unreachable, or the log answered an error: next tick */

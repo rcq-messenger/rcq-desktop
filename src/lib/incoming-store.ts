@@ -756,12 +756,30 @@ function writeNow(): Promise<void> {
   return write
 }
 
+/// Schedule the archive write, OFF the frame the user's action happened in.
+///
+/// ⚠ Every write is a FULL snapshot: the whole history for the account, sealed
+/// and stored as one blob. Building it is a copy of every thread plus a
+/// JSON pass, and that runs on the main thread. At 300ms it landed inside the
+/// send animation and inside the reaction popping in, which is exactly the
+/// freeze the founder reported on the desktop (24.08) at both moments.
+///
+/// Two changes, no new storage format. The wait is long enough that a burst
+/// (three messages, a handful of reactions) costs ONE snapshot instead of one
+/// each. And the work is handed to an idle slot, so it runs between frames
+/// rather than in the middle of one; the timeout on it means an app that never
+/// goes idle still writes on schedule. Anything that must not be lost already
+/// calls flushHistory, which bypasses all of this.
 function persist() {
   if (persistTimer) return
   persistTimer = setTimeout(() => {
     persistTimer = null
-    writeNow().catch(() => {})
-  }, 300)
+    const run = () => writeNow().catch(() => {})
+    const idle = (globalThis as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => void })
+      .requestIdleCallback
+    if (idle) idle(run, { timeout: 2000 })
+    else run()
+  }, 1500)
 }
 
 /// Write anything still pending and wait for it to land. The queue drain calls

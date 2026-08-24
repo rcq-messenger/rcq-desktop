@@ -39,6 +39,7 @@ import {
 import {
   advertiseSenderKeys,
   describeGroupError,
+  forgetRoster,
   listGroups,
   rosterFor,
   ruleRefusal,
@@ -94,7 +95,7 @@ import {
 import { buildSingBox, DEFAULT_LOCAL_PORT, fetchBridges, findSingBox } from './singbox'
 import { currentLang, LANG_CODES, normalizeLang, setLang, tr } from './i18n'
 import { err, out } from './style'
-import { noteUpdateIfAny } from './update-check'
+import { noteUpdateIfAny, runUpdate } from './update-check'
 import { CLI_VERSION } from './version'
 import { humanError, isTransportFailure } from './errors'
 
@@ -446,6 +447,7 @@ async function cmdLeave(pos: string[]): Promise<void> {
   if (!base) die(tr('group.notMember', { gid }))
   try {
     await Api.removeGroupMember(id, gid, id.uin)
+    forgetRoster(gid)
   } catch (e) {
     die(tr('leave.failed', { err: describeGroupError(e) }))
   }
@@ -464,6 +466,7 @@ async function cmdCreate(pos: string[]): Promise<void> {
   let group
   try {
     group = await Api.createGroup(id, name, members)
+    forgetRoster(group.id)
   } catch (e) {
     die(tr('create.failed', { err: describeGroupError(e) }))
   }
@@ -483,6 +486,7 @@ async function cmdInvite(pos: string[]): Promise<void> {
   if (!base) die(tr('group.notMember', { gid }))
   try {
     await Api.addGroupMember(id, gid, uin)
+    forgetRoster(gid)
   } catch (e) {
     die(tr('invite.failed', { who: peerLabel(id.uin, uin), err: describeGroupError(e) }))
   }
@@ -1029,6 +1033,12 @@ async function main(): Promise<void> {
     // read otherwise.
     await noteUpdateIfAny()
     process.exit(0)
+  }
+  // Replaces this install with the newest release. Above the lock and the
+  // route walk on purpose: it touches no account state and no island, and it
+  // has to work on a box whose island is the thing that is broken.
+  if (cmd !== undefined && canonical(cmd) === 'update') {
+    process.exit(await runUpdate())
   }
   if (cmd === '--version' || cmd === '-V' || cmd === 'version') {
     // Version on stdout (the machine contract), update notice on stderr.

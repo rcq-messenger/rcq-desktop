@@ -32,6 +32,7 @@ import {
   advertiseSenderKeys,
   describeGroup,
   describeGroupError,
+  forgetRoster,
   listGroups,
   rosterFor,
   ruleRefusal,
@@ -833,6 +834,7 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
         }
         try {
           await Api.removeGroupMember(identity, g.id, identity.uin)
+          forgetRoster(g.id)
         } catch (e) {
           // Not swallowed: the whole point of this verb is that leaving works or
           // says why it did not.
@@ -858,6 +860,10 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
         let group: RCQGroup
         try {
           group = await Api.createGroup(identity, arg, [])
+          // The answer names a room of one. Anything the island learns after
+          // this (an invite, someone accepting) has to be re-read, not taken
+          // from the reply that created it.
+          forgetRoster(group.id)
         } catch (e) {
           printAbove(out.red(tr('create.failed', { err: describeGroupError(e) })))
           return
@@ -865,6 +871,32 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
         await refreshDirectory(identity).catch(() => null)
         printAbove(out.dim(tr('create.done', { name: group.name, gid: group.id })))
         return openGroup(String(group.id))
+      }
+      // Owner's switch for who may walk in. The island already carries the
+      // flag (`is_closed`): a closed room is not returned by search and its
+      // link previews to nothing, so an invite is the only door. The console
+      // could read that state and never set it.
+      case 'closed': {
+        const g = active?.kind === 'group' ? groupById(identity.uin, active.gid) : null
+        const want = arg.trim().toLowerCase()
+        if (!g || (want !== 'on' && want !== 'off')) {
+          printAbove(tr('closed.usage'))
+          return
+        }
+        if (g.owner_uin !== identity.uin) {
+          printAbove(out.yellow(tr('closed.notOwner')))
+          return
+        }
+        try {
+          await Api.patchGroup(identity, g.id, { is_closed: want === 'on' })
+        } catch (e) {
+          printAbove(out.red(tr('fail.command', { cmd: typed, err: humanError(e) })))
+          return
+        }
+        forgetRoster(g.id)
+        await refreshDirectory(identity).catch(() => null)
+        printAbove(out.dim(tr(want === 'on' ? 'closed.on' : 'closed.off', { name: g.name })))
+        return
       }
       case 'invite': {
         // `/invite <uin>` into the active room, or `/invite g<id> <uin>` for any.
@@ -890,6 +922,7 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
         }
         try {
           await Api.addGroupMember(identity, gid, uin)
+          forgetRoster(gid)
         } catch (e) {
           printAbove(out.red(tr('invite.failed', { who: peerLabel(identity.uin, uin), err: describeGroupError(e) })))
           return

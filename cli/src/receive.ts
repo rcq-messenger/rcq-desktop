@@ -28,7 +28,7 @@ import {
   type StrikeEntry,
   type StrikeStore,
 } from '../../src/lib/group-log'
-import { foreignHost, groupLabel, isContact, knownName, labelForLine, peerLabel } from './directory'
+import { foreignHost, groupLabel, isBlocked, isContact, knownName, labelForLine, peerLabel } from './directory'
 import { chatLine, when } from './format'
 import { openGroupPacket, replayStoredGroupPackets } from './held-groups'
 import { tr } from './i18n'
@@ -328,6 +328,22 @@ export async function ingestDecrypted(
     emit(chatLine(at, out.green(`me -> ${dest}`), describeEnvelope(inner)) + '\n')
     return
   }
+  // ⚠ THE BLOCK IS ENFORCED HERE, AND NOWHERE ELSE IT CAN BE.
+  //
+  // `/block` writes the flag to the island, and there it does stop contact
+  // requests and group adds, which is every path where the island knows who
+  // is asking. A MESSAGE is not one of those paths: sealed sender means the
+  // island cannot see the sender, so it cannot drop anything on our behalf.
+  // Only the party holding the key can, right after the decrypt names them.
+  // Android and the web have done exactly this from the start; the console
+  // never did, so a blocked person kept printing into the reader's face while
+  // the roster said "blocked" next to their name.
+  //
+  // Content only, and silently: no line, no history row, no delivered
+  // receipt (the caller still acks the queue row, so it does not come back).
+  // Control frames are deliberately left alone — dropping a group frame from
+  // a blocked member desynchronises the room for everybody in it.
+  if (CONTENT_KINDS.has(env.kind) && isBlocked(identity.uin, got.senderUIN)) return
   if (env.kind === 'read' || env.kind === 'delivered') {
     const ids = Array.isArray(env.targetIDs) ? env.targetIDs.filter((t) => typeof t === 'string') : []
     result.receiptTargets.push(...ids)

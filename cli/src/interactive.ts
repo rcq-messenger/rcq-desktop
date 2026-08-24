@@ -863,7 +863,7 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
           return
         }
         await refreshDirectory(identity).catch(() => null)
-        printAbove(out.dim(tr('create.done', { name: group.name })))
+        printAbove(out.dim(tr('create.done', { name: group.name, gid: group.id })))
         return openGroup(String(group.id))
       }
       case 'invite': {

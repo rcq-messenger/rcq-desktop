@@ -253,6 +253,18 @@ export function isContact(myUin: number, uin: number): boolean {
   return cachedContacts(myUin).some((c) => c.uin === uin)
 }
 
+/// Does this account hold a block on `uin`?
+///
+/// ⚠ The ISLAND cannot answer this and never could. Sealed sender means it
+/// does not learn who sent an envelope, so a block can only ever be applied
+/// by the side that just decrypted one. The flag rides the roster row, which
+/// is also why blocking somebody who is not a contact is not a thing here:
+/// there is no row to carry it. Cross-island peers are not covered either,
+/// the local record has no such field yet.
+export function isBlocked(myUin: number, uin: number): boolean {
+  return cachedContacts(myUin).some((c) => c.uin === uin && c.blocked)
+}
+
 /// The account's groups as last seen. Same snapshot as the contacts, so a
 /// group list answers offline and before the first refresh lands.
 export function cachedGroups(myUin: number): RCQGroup[] {

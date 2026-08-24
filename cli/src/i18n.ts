@@ -1970,14 +1970,18 @@ RCQ_VERBOSE=1 显示协议细节; NO_COLOR 去掉颜色。
     uk: 'create чекає назву кімнати в лапках',
     'zh-Hans': 'create 需要带引号的群名称',
   },
+  // The id is what every other room command takes (`/g g12`, `/invite g12 396`,
+  // `/log g12`), so the one line that announces a new room has to hand it over.
+  // Without it the person who just created a room had to go and list rooms to
+  // find out what to call it.
   'create.done': {
-    en: 'created "{name}"',
-    ru: 'создана "{name}"',
-    es: 'creada "{name}"',
-    pt: 'criada "{name}"',
-    tr: '"{name}" oluşturuldu',
-    uk: 'створено "{name}"',
-    'zh-Hans': '已创建 "{name}"',
+    en: 'created "{name}" (g{gid})',
+    ru: 'создана "{name}" (g{gid})',
+    es: 'creada "{name}" (g{gid})',
+    pt: 'criada "{name}" (g{gid})',
+    tr: '"{name}" oluşturuldu (g{gid})',
+    uk: 'створено "{name}" (g{gid})',
+    'zh-Hans': '已创建 "{name}" (g{gid})',
   },
   'create.failed': {
     en: 'could not create the room: {err}',

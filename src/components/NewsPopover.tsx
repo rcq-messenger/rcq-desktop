@@ -268,7 +268,7 @@ export function NewsButton({ className }: { className?: string }) {
       {open && !narrow && (
         <div
           ref={panelRef}
-          className="absolute right-0 top-full mt-1 w-[min(22rem,calc(100vw-2rem))] max-h-[min(26rem,calc(100vh-8rem))] overflow-y-auto overscroll-contain rounded-lg bg-surface shadow-xl z-30 p-3 space-y-3"
+          className="absolute right-0 top-full mt-1 w-[min(22rem,calc(100vw-2rem))] max-h-[min(26rem,calc(100vh-8rem))] overflow-y-auto overscroll-contain rounded-lg border border-line/60 bg-surface/80 backdrop-blur-xl shadow-xl z-30 p-3 space-y-3"
         >
           {body}
         </div>

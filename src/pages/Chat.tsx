@@ -2860,7 +2860,11 @@ export function Chat() {
             )}
             <div className="flex-1 min-w-0">
               <div className="font-medium truncate">{headerName}</div>
-              <div className="font-mono text-xs text-fg-dim truncate">{headerSub}</div>
+              {/* Proportional, not mono. This line is a member count, a number
+                  or the word for Notes -- none of them a column that has to
+                  line up with anything, and mono made the header read like a
+                  terminal (founder, 24.08). */}
+              <div className="text-xs text-fg-dim truncate">{headerSub}</div>
             </div>
           </Link>
           {/* Calls are one to one only, and calling yourself is not a feature.
@@ -4550,7 +4554,7 @@ const OutgoingMessageRow = memo(function OutgoingMessageRow({
     <li id={`msg-${row.id}`} className={liClass} {...swipeReplyAttrs(() => h.startReply(row))}>
       <div className="relative max-w-[80%] flex flex-col items-end gap-1">
         {row.fwdName && (
-          <div className="font-mono text-[0.625rem] uppercase tracking-wider text-fg-dim">
+          <div className="text-[0.625rem] uppercase tracking-wider text-fg-dim">
             ↗ {t('chat.forwarded_label', { name: row.fwdName })}
           </div>
         )}

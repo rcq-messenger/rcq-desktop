@@ -40,7 +40,6 @@ import { PinSettings } from '../components/PinSettings'
 import { flushVaultWriter } from '../lib/pin-gate'
 import { useToast } from '../lib/toast'
 import type { UserInfo } from '../lib/api'
-import { DEFAULT_API_BASE } from '../lib/auth'
 import { snapshotFor } from '../lib/contacts-cache'
 import { PersonAvatar } from '../components/PersonAvatar'
 import { useIdentity } from '../lib/identity-context'
@@ -598,18 +597,18 @@ export function Settings() {
                     <span className="min-w-0 flex-1">
                       <span className="block text-sm font-medium truncate">{name}</span>
                       <span className="block font-mono text-xs text-fg-dim truncate">#{a.uin}</span>
-                      {/* The island, but only when it is not the usual one: a
-                          host on every row is noise for the people who never
-                          leave the flagship, which is most of them. When it IS
-                          shown it is shown properly now: the island's own face
-                          and the name its operator typed, not a bare hostname.
-                          The row's OWN base, never the active account's. */}
-                      {a.apiBase !== DEFAULT_API_BASE && (
-                        <span className="flex items-center gap-1.5 min-w-0 mt-0.5">
-                          <IslandAvatar apiBase={a.apiBase} size={14} />
-                          <AccountIslandName apiBase={a.apiBase} />
-                        </span>
-                      )}
+                      {/* Every row names its island, the flagship included.
+                          It used to be hidden for the default host on the
+                          grounds that it was noise, and the effect was the
+                          opposite: the one island most people are actually on
+                          was the only one without a face or a name, so the list
+                          looked broken for them and fine for everyone else
+                          (founder, 24.08). The row's OWN base, never the active
+                          account's. */}
+                      <span className="flex items-center gap-1.5 min-w-0 mt-0.5">
+                        <IslandAvatar apiBase={a.apiBase} size={14} />
+                        <AccountIslandName apiBase={a.apiBase} />
+                      </span>
                       {/* Without this the row just bounced to login on every
                           tap, with nothing on screen saying the session had
                           been ended from the phone. */}

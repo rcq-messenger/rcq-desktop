@@ -1385,7 +1385,15 @@ function ContactRow({
   const alias = aliasFor(contact.uin, contact.host)
   return (
     <li className="relative">
-      <div className={'flex items-center gap-3 px-4 py-3 lg:py-2 ' + (archived ? 'opacity-60' : '')}>
+      {/* The same hover the group rows and the cross-island rows have always
+          had. A person was the one row type that stayed flat under the cursor,
+          so the list looked half-interactive (founder, 24.08). */}
+      <div
+        className={
+          'flex items-center gap-3 px-4 py-3 lg:py-2 hover:bg-field transition-colors ' +
+          (archived ? 'opacity-60' : '')
+        }
+      >
         {/* Tapping the card opens the CHAT (the primary action). The
             profile is a dedicated button below. */}
         <Link

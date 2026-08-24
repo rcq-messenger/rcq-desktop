@@ -114,6 +114,7 @@ for scripts and one-shots (stdout is data, status goes to stderr):
   rcq routes (route) [--probe|--singbox]    roads to the island: what was tried, what answered
                                             (Tor, i2p, ssh -D); plain "rcq proxy" explains it
   rcq lang (lng) [{codes}]     show or set the language
+  rcq islands (isl)            the island catalogue, numbered for --island
   rcq update                   fetch the newest release over this install
   rcq --version                             version + update check
   rcq --help                                this text
@@ -155,6 +156,7 @@ RCQ_VERBOSE=1 shows protocol detail; NO_COLOR strips colour.
   rcq routes (route) [--probe|--singbox]    дороги к острову: что пробовали и что ответило
                                             (Tor, i2p, ssh -D); просто "rcq proxy" объяснит
   rcq lang (lng) [{codes}]     показать или сменить язык
+  rcq islands (isl)            каталог островов, с номерами для --island
   rcq update                   скачать свежую версию поверх этой установки
   rcq --version                             версия + проверка обновления
   rcq --help                                этот текст
@@ -196,6 +198,7 @@ para scripts y comandos únicos (stdout son datos, el estado va a stderr):
   rcq routes (route) [--probe|--singbox]    caminos a la isla: qué se probó y qué respondió
                                             (Tor, i2p, ssh -D); "rcq proxy" solo lo explica
   rcq lang (lng) [{codes}]     mostrar o cambiar el idioma
+  rcq islands (isl)            el catálogo de islas, numerado para --island
   rcq update                   descargar la versión más nueva sobre esta
   rcq --version                             versión + comprobación de actualización
   rcq --help                                este texto
@@ -237,6 +240,7 @@ para scripts e comandos avulsos (stdout são dados, o status vai para stderr):
   rcq routes (route) [--probe|--singbox]    caminhos até a ilha: o que se tentou e o que respondeu
                                             (Tor, i2p, ssh -D); "rcq proxy" sozinho explica
   rcq lang (lng) [{codes}]     mostrar ou trocar o idioma
+  rcq islands (isl)            o catálogo de ilhas, numerado para --island
   rcq update                   baixar a versão mais nova sobre esta
   rcq --version                             versão + verificação de atualização
   rcq --help                                este texto
@@ -278,6 +282,7 @@ betikler ve tek seferlik komutlar için (stdout veridir, durum stderr'e gider):
   rcq routes (route) [--probe|--singbox]    adaya giden yollar: ne denendi, ne yanıt verdi
                                             (Tor, i2p, ssh -D); tek başına "rcq proxy" anlatır
   rcq lang (lng) [{codes}]     dili göster veya ayarla
+  rcq islands (isl)            ada katalogu, --island icin numarali
   rcq update                   en yeni surumu bu kurulumun uzerine indir
   rcq --version                             sürüm + güncelleme kontrolü
   rcq --help                                bu metin
@@ -319,6 +324,7 @@ RCQ_VERBOSE=1 protokol ayrıntısını gösterir; NO_COLOR rengi kaldırır.
   rcq routes (route) [--probe|--singbox]    дороги до острова: що пробували і що відповіло
                                             (Tor, i2p, ssh -D); просто "rcq proxy" пояснить
   rcq lang (lng) [{codes}]     показати або змінити мову
+  rcq islands (isl)            каталог островів, з номерами для --island
   rcq update                   завантажити свіжу версію поверх цієї
   rcq --version                             версія + перевірка оновлення
   rcq --help                                цей текст
@@ -360,6 +366,7 @@ RCQ_VERBOSE=1 показує деталі протоколу; NO_COLOR приб�
   rcq routes (route) [--probe|--singbox]    通往服务器的路线：试过什么，什么给了回应
                                             (Tor, i2p, ssh -D); 单写 "rcq proxy" 会解释
   rcq lang (lng) [{codes}]     显示或设置语言
+  rcq islands (isl)            岛屿目录，编号用于 --island
   rcq update                   下载最新版本覆盖此安装
   rcq --version                             版本 + 更新检查
   rcq --help                                此文本
@@ -1981,6 +1988,46 @@ RCQ_VERBOSE=1 显示协议细节; NO_COLOR 去掉颜色。
   // `/log g12`), so the one line that announces a new room has to hand it over.
   // Without it the person who just created a room had to go and list rooms to
   // find out what to call it.
+  'islands.flagship': {
+    en: '(default)', ru: '(по умолчанию)', es: '(por defecto)', pt: '(padrão)',
+    tr: '(varsayilan)', uk: '(за замовчуванням)', 'zh-Hans': '（默认）',
+  },
+  'islands.unreachable': {
+    en: 'could not read the island catalogue: {err}',
+    ru: 'не удалось прочитать каталог островов: {err}',
+    es: 'no se pudo leer el catálogo de islas: {err}',
+    pt: 'não foi possível ler o catálogo de ilhas: {err}',
+    tr: 'ada katalogu okunamadi: {err}',
+    uk: 'не вдалося прочитати каталог островів: {err}',
+    'zh-Hans': '无法读取岛屿目录：{err}',
+  },
+  'islands.noSuchNumber': {
+    en: 'there is no island {n} in the catalogue (it lists {count})',
+    ru: 'острова {n} в каталоге нет (в нём {count})',
+    es: 'no hay isla {n} en el catálogo (contiene {count})',
+    pt: 'não há ilha {n} no catálogo (ele lista {count})',
+    tr: 'katalogda {n} numarali ada yok (toplam {count})',
+    uk: 'острова {n} у каталозі немає (у ньому {count})',
+    'zh-Hans': '目录中没有第 {n} 个岛屿（共 {count} 个）',
+  },
+  'islands.picked': {
+    en: 'island: {name} ({url})',
+    ru: 'остров: {name} ({url})',
+    es: 'isla: {name} ({url})',
+    pt: 'ilha: {name} ({url})',
+    tr: 'ada: {name} ({url})',
+    uk: 'острів: {name} ({url})',
+    'zh-Hans': '岛屿：{name}（{url}）',
+  },
+  'islands.howto': {
+    en: 'register on one with: rcq register --island <number|address>',
+    ru: 'зарегистрироваться на выбранном: rcq register --island <номер|адрес>',
+    es: 'regístrate en uno con: rcq register --island <número|dirección>',
+    pt: 'registre-se em um com: rcq register --island <número|endereço>',
+    tr: 'birine kaydolmak icin: rcq register --island <numara|adres>',
+    uk: 'зареєструватися на обраному: rcq register --island <номер|адреса>',
+    'zh-Hans': '在其中注册：rcq register --island <编号|地址>',
+  },
   'create.done': {
     en: 'created "{name}" (g{gid})',
     ru: 'создана "{name}" (g{gid})',

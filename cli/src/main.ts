@@ -95,6 +95,7 @@ import {
 import { buildSingBox, DEFAULT_LOCAL_PORT, fetchBridges, findSingBox } from './singbox'
 import { currentLang, LANG_CODES, normalizeLang, setLang, tr } from './i18n'
 import { err, out } from './style'
+import { fetchIslands, renderIslands, resolveIsland } from './islands'
 import { noteUpdateIfAny, runUpdate } from './update-check'
 import { CLI_VERSION } from './version'
 import { humanError, isTransportFailure } from './errors'
@@ -147,7 +148,7 @@ const BOOL_FLAGS = new Set([
 /// Commands that never name the island, so the route ladder is not engaged
 /// for them. `routes` engages its own (and may be asked to walk it);
 /// `proxy`/`__probe` deliberately run outside the proxy they configure.
-const ROUTE_FREE = new Set(['lang', 'log', 'export', 'proxy', '__probe', 'routes'])
+const ROUTE_FREE = new Set(['lang', 'log', 'export', 'proxy', '__probe', 'routes', 'islands'])
 
 /// Pull `--flag value` pairs out of argv; what remains are positionals.
 function parseArgs(argv: string[]): { pos: string[]; opts: Map<string, string>; flags: Set<string> } {
@@ -220,10 +221,22 @@ function printPhraseBlock(uin: number): void {
   }
 }
 
+/// The island catalogue, numbered. The phones draw this as a carousel of
+/// pictures; here it is a list, and the number it prints is what `--island`
+/// takes, so choosing one is two commands and no copying of URLs.
+async function cmdIslands(): Promise<void> {
+  const list = await fetchIslands().catch((e: unknown) => {
+    die(e instanceof Error ? e.message : String(e))
+  })
+  process.stdout.write(renderIslands(list as Awaited<ReturnType<typeof fetchIslands>>))
+  process.stderr.write(out.dim(tr('islands.howto')) + '\n')
+}
+
 async function cmdRegister(opts: Map<string, string>): Promise<void> {
   if (loadStoredIdentity()) die(tr('err.accountExists'))
   const nick = opts.get('--nick') ?? suggestNickname()
-  const island = (opts.get('--island') ?? DEFAULT_API_BASE).replace(/\/+$/, '')
+  // A number here is a row of `rcq islands`, an address is taken as typed.
+  const island = await resolveIsland(opts.get('--island'))
   const identity = await createNewAccount(nick, island)
   initDirectory(identity.uin)
   printPhraseBlock(identity.uin)
@@ -232,7 +245,7 @@ async function cmdRegister(opts: Map<string, string>): Promise<void> {
 async function cmdRestore(pos: string[], opts: Map<string, string>): Promise<void> {
   const phrase = pos[0]
   if (!phrase) usageDie(tr('restore.needsPhrase'))
-  const island = (opts.get('--island') ?? DEFAULT_API_BASE).replace(/\/+$/, '')
+  const island = await resolveIsland(opts.get('--island'))
   const identity = await recoverFromPhrase(phrase, island)
   initDirectory(identity.uin)
   process.stdout.write(`uin: ${identity.uin}\n`)
@@ -1073,7 +1086,9 @@ async function main(): Promise<void> {
   // parent that is holding the dir.
   // `routes` joins them for a sharper reason than tidiness: "why is my watch
   // not connecting" has to be answerable WHILE that watch holds the dir.
-  const LOCK_FREE = new Set(['whoami', 'export', 'lang', 'log', 'proxy', '__probe', 'routes'])
+  // `islands` reads a file on the website and nothing else: no account state,
+  // no island. It joins the peeks rather than waiting on a held state dir.
+  const LOCK_FREE = new Set(['whoami', 'export', 'lang', 'log', 'proxy', '__probe', 'routes', 'islands'])
   if (!LOCK_FREE.has(verb)) acquireStateLock()
   const { pos, opts, flags } = parseArgs(argv.slice(1))
   // Bring the route up before anything names the island. Cheap: a decision
@@ -1083,6 +1098,8 @@ async function main(): Promise<void> {
   // touch the network at all.
   if (!ROUTE_FREE.has(verb)) await ensureRoute(probeIsland(opts))
   switch (verb) {
+    case 'islands':
+      return cmdIslands()
     case 'register':
       return cmdRegister(opts)
     case 'restore':

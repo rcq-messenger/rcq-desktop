@@ -19,7 +19,11 @@
 // RCQ_NO_UPDATE_CHECK=1 turns the whole thing off, for a session that should
 // touch nobody but the island.
 
+import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { tr } from './i18n'
 import { statePath, writeFileAtomic } from './state'
 import { err } from './style'
@@ -114,4 +118,64 @@ export async function noteUpdateIfAny(force = false): Promise<void> {
       err.dim(` ${RELEASES_URL}\n  ${tr('update.how')}`) +
       '\n',
   )
+}
+
+/// `rcq update`: fetch the newest release and replace this install in place.
+///
+/// The client is one directory (`rcq`, `rcq.mjs`, `pkg-node/`) unpacked by
+/// hand, so updating it is unpacking it again over the top. Nothing here
+/// touches the state directory: the account, the ratchets and the history live
+/// in `~/.rcq` and are not ours to move.
+///
+/// ⚠ Replaces files INSIDE the install directory, never the directory itself:
+/// `rcq` is usually a symlink from somewhere on PATH, and swapping the folder
+/// out from under it would leave that link pointing at nothing. On POSIX the
+/// running rcq.mjs is already in memory, so overwriting it mid-run is safe.
+///
+/// The download rides the ordinary fetch, which means it rides `rcq proxy`
+/// when one is engaged: on a censored network github.com is blocked exactly
+/// like everything else.
+export async function runUpdate(): Promise<number> {
+  const latest = await latestVersion(true)
+  if (!latest) {
+    process.stderr.write(err.yellow(tr('update.unknown')) + '\n')
+    return 1
+  }
+  if (cmpVersions(latest, CLI_VERSION) <= 0) {
+    process.stderr.write(tr('update.already', { version: CLI_VERSION }) + '\n')
+    return 0
+  }
+  const here = path.dirname(fileURLToPath(import.meta.url))
+  const url = `https://github.com/rcq-messenger/rcq-cli/releases/download/v${latest}/rcq.tar.gz`
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), 'rcq-update-'))
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(120_000) })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const tarball = path.join(work, 'rcq.tar.gz')
+    fs.writeFileSync(tarball, Buffer.from(await res.arrayBuffer()))
+    // `tar` rather than a bundled decompressor: it is on macOS, on every Linux
+    // and in Windows since 10, and a wrong archive must fail here, before
+    // anything in the install directory has been touched.
+    execFileSync('tar', ['xzf', tarball, '-C', work], { stdio: 'ignore' })
+    const unpacked = path.join(work, 'rcq')
+    if (!fs.existsSync(path.join(unpacked, 'rcq.mjs'))) throw new Error('unexpected archive layout')
+    for (const entry of fs.readdirSync(unpacked)) {
+      const from = path.join(unpacked, entry)
+      const to = path.join(here, entry)
+      fs.rmSync(to, { recursive: true, force: true })
+      fs.cpSync(from, to, { recursive: true })
+    }
+    fs.chmodSync(path.join(here, 'rcq'), 0o755)
+    process.stderr.write(err.green(tr('update.done', { from: CLI_VERSION, to: latest })) + '\n')
+    return 0
+  } catch (e) {
+    process.stderr.write(
+      err.yellow(tr('update.failed', { err: e instanceof Error ? e.message : String(e) })) +
+        err.dim(` ${RELEASES_URL}\n  ${tr('update.how')}`) +
+        '\n',
+    )
+    return 1
+  } finally {
+    fs.rmSync(work, { recursive: true, force: true })
+  }
 }

@@ -57,6 +57,19 @@ export function advertiseSenderKeys(identity: WebIdentity): void {
 const ROSTER_TTL_MS = 60_000
 const rosters = new Map<number, { group: RCQGroup; at: number }>()
 
+/// Drop the held roster for one room, so the next send re-reads it.
+///
+/// ⚠ EVERY membership change has to call this, and until it did, this was the
+/// bug behind "I made a room, invited somebody, wrote, and it never arrived,
+/// but after a restart it works". `createGroup` answers a room whose member
+/// list is [you], `rosterFor` holds anything non-empty for a full minute, and
+/// an invite did not disturb it: for that minute the broadcast was sealed for
+/// a room of one and the person invited was not in it. A restart cleared the
+/// map, which is exactly why restarting "fixed" it.
+export function forgetRoster(gid: number): void {
+  rosters.delete(gid)
+}
+
 export async function rosterFor(identity: WebIdentity, group: RCQGroup): Promise<RCQGroup> {
   const held = rosters.get(group.id)
   if (held && Date.now() - held.at < ROSTER_TTL_MS) return held.group

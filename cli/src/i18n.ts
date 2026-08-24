@@ -114,6 +114,7 @@ for scripts and one-shots (stdout is data, status goes to stderr):
   rcq routes (route) [--probe|--singbox]    roads to the island: what was tried, what answered
                                             (Tor, i2p, ssh -D); plain "rcq proxy" explains it
   rcq lang (lng) [{codes}]     show or set the language
+  rcq update                   fetch the newest release over this install
   rcq --version                             version + update check
   rcq --help                                this text
 
@@ -154,6 +155,7 @@ RCQ_VERBOSE=1 shows protocol detail; NO_COLOR strips colour.
   rcq routes (route) [--probe|--singbox]    дороги к острову: что пробовали и что ответило
                                             (Tor, i2p, ssh -D); просто "rcq proxy" объяснит
   rcq lang (lng) [{codes}]     показать или сменить язык
+  rcq update                   скачать свежую версию поверх этой установки
   rcq --version                             версия + проверка обновления
   rcq --help                                этот текст
 
@@ -194,6 +196,7 @@ para scripts y comandos únicos (stdout son datos, el estado va a stderr):
   rcq routes (route) [--probe|--singbox]    caminos a la isla: qué se probó y qué respondió
                                             (Tor, i2p, ssh -D); "rcq proxy" solo lo explica
   rcq lang (lng) [{codes}]     mostrar o cambiar el idioma
+  rcq update                   descargar la versión más nueva sobre esta
   rcq --version                             versión + comprobación de actualización
   rcq --help                                este texto
 
@@ -234,6 +237,7 @@ para scripts e comandos avulsos (stdout são dados, o status vai para stderr):
   rcq routes (route) [--probe|--singbox]    caminhos até a ilha: o que se tentou e o que respondeu
                                             (Tor, i2p, ssh -D); "rcq proxy" sozinho explica
   rcq lang (lng) [{codes}]     mostrar ou trocar o idioma
+  rcq update                   baixar a versão mais nova sobre esta
   rcq --version                             versão + verificação de atualização
   rcq --help                                este texto
 
@@ -274,6 +278,7 @@ betikler ve tek seferlik komutlar için (stdout veridir, durum stderr'e gider):
   rcq routes (route) [--probe|--singbox]    adaya giden yollar: ne denendi, ne yanıt verdi
                                             (Tor, i2p, ssh -D); tek başına "rcq proxy" anlatır
   rcq lang (lng) [{codes}]     dili göster veya ayarla
+  rcq update                   en yeni surumu bu kurulumun uzerine indir
   rcq --version                             sürüm + güncelleme kontrolü
   rcq --help                                bu metin
 
@@ -314,6 +319,7 @@ RCQ_VERBOSE=1 protokol ayrıntısını gösterir; NO_COLOR rengi kaldırır.
   rcq routes (route) [--probe|--singbox]    дороги до острова: що пробували і що відповіло
                                             (Tor, i2p, ssh -D); просто "rcq proxy" пояснить
   rcq lang (lng) [{codes}]     показати або змінити мову
+  rcq update                   завантажити свіжу версію поверх цієї
   rcq --version                             версія + перевірка оновлення
   rcq --help                                цей текст
 
@@ -354,6 +360,7 @@ RCQ_VERBOSE=1 показує деталі протоколу; NO_COLOR приб�
   rcq routes (route) [--probe|--singbox]    通往服务器的路线：试过什么，什么给了回应
                                             (Tor, i2p, ssh -D); 单写 "rcq proxy" 会解释
   rcq lang (lng) [{codes}]     显示或设置语言
+  rcq update                   下载最新版本覆盖此安装
   rcq --version                             版本 + 更新检查
   rcq --help                                此文本
 
@@ -1983,6 +1990,42 @@ RCQ_VERBOSE=1 显示协议细节; NO_COLOR 去掉颜色。
     uk: 'створено "{name}" (g{gid})',
     'zh-Hans': '已创建 "{name}" (g{gid})',
   },
+  'closed.usage': {
+    en: 'usage: /closed on|off, inside a room you own',
+    ru: 'использование: /closed on|off, в своей комнате',
+    es: 'uso: /closed on|off, dentro de una sala tuya',
+    pt: 'uso: /closed on|off, dentro de uma sala sua',
+    tr: 'kullanim: /closed on|off, sahibi oldugun bir odada',
+    uk: 'використання: /closed on|off, у своїй кімнаті',
+    'zh-Hans': '用法：/closed on|off，在你拥有的房间里',
+  },
+  'closed.notOwner': {
+    en: 'only the room owner can change that',
+    ru: 'это может менять только владелец комнаты',
+    es: 'solo el dueño de la sala puede cambiar eso',
+    pt: 'só o dono da sala pode mudar isso',
+    tr: 'bunu yalnizca odanin sahibi degistirebilir',
+    uk: 'це може змінювати лише власник кімнати',
+    'zh-Hans': '只有房间的群主可以更改',
+  },
+  'closed.on': {
+    en: '"{name}" is closed: nobody finds it, and the only way in is an invite',
+    ru: '"{name}" закрыта: её не найти, войти можно только по приглашению',
+    es: '"{name}" está cerrada: nadie la encuentra y solo se entra por invitación',
+    pt: '"{name}" está fechada: ninguém a encontra e só se entra por convite',
+    tr: '"{name}" kapali: kimse bulamaz, girmenin tek yolu davet',
+    uk: '"{name}" закрита: її не знайти, увійти можна лише за запрошенням',
+    'zh-Hans': '"{name}" 已关闭：无法被搜索到，只能通过邀请加入',
+  },
+  'closed.off': {
+    en: '"{name}" is open: it can be found and joined by link',
+    ru: '"{name}" открыта: её можно найти и войти по ссылке',
+    es: '"{name}" está abierta: se puede encontrar y entrar por enlace',
+    pt: '"{name}" está aberta: pode ser encontrada e acessada por link',
+    tr: '"{name}" acik: bulunabilir ve baglantiyla girilebilir',
+    uk: '"{name}" відкрита: її можна знайти та увійти за посиланням',
+    'zh-Hans': '"{name}" 已开放：可被搜索到，也可通过链接加入',
+  },
   'create.failed': {
     en: 'could not create the room: {err}',
     ru: 'не удалось создать комнату: {err}',
@@ -2065,6 +2108,7 @@ rooms
   /leave (lv) [id]     leave the room you are in, or the one you name
   /create (cr) NAME    make a room
   /invite (inv) <uin>  add somebody to the room you are in
+  /closed on|off       owner only: on = the room is joinable by invite alone
 this account
   /whoami (me)         uin, nickname, island, device
   /nick (n) NAME       rename this account
@@ -2098,6 +2142,7 @@ and keeps the session.`,
   /leave (lv) [id]     выйти из открытой комнаты или из той, что вы назвали
   /create (cr) ИМЯ     создать комнату
   /invite (inv) <uin>  добавить человека в открытую комнату
+  /closed on|off       владельцу: on = войти можно только по приглашению
 этот аккаунт
   /whoami (me)         uin, ник, остров, устройство
   /nick (n) ИМЯ        переименовать аккаунт
@@ -2130,6 +2175,7 @@ salas
   /leave (lv) [id]     salir de la sala en la que estás, o de la que nombres
   /create (cr) NOMBRE  crear una sala
   /invite (inv) <uin>  agregar a alguien a la sala en la que estás
+  /closed on|off       solo el dueño: on = solo se entra por invitación
 esta cuenta
   /whoami (me)         uin, apodo, isla, dispositivo
   /nick (n) NOMBRE     renombrar esta cuenta
@@ -2163,6 +2209,7 @@ salas
   /leave (lv) [id]     sair da sala em que você está, ou da que você nomear
   /create (cr) NOME    criar uma sala
   /invite (inv) <uin>  adicionar alguém à sala em que você está
+  /closed on|off       só o dono: on = entra-se apenas por convite
 esta conta
   /whoami (me)         uin, apelido, ilha, dispositivo
   /nick (n) NOME       renomear esta conta
@@ -2196,6 +2243,7 @@ odalar
   /leave (lv) [id]     içinde olduğun odadan ya da adını verdiğin odadan ayrıl
   /create (cr) AD      bir oda kur
   /invite (inv) <uin>  içinde olduğun odaya birini ekle
+  /closed on|off       sadece sahibi: on = odaya yalnizca davetle girilir
 bu hesap
   /whoami (me)         uin, takma ad, ada, cihaz
   /nick (n) AD         bu hesabı yeniden adlandır
@@ -2229,6 +2277,7 @@ oturumu değil.`,
   /leave (lv) [id]     вийти з відкритої кімнати або з тієї, що ви назвали
   /create (cr) ІМʼЯ    створити кімнату
   /invite (inv) <uin>  додати людину до відкритої кімнати
+  /closed on|off       власнику: on = увійти лише за запрошенням
 цей акаунт
   /whoami (me)         uin, нік, острів, пристрій
   /nick (n) ІМʼЯ       перейменувати акаунт
@@ -2261,6 +2310,7 @@ oturumu değil.`,
   /leave (lv) [id]     退出你所在的群, 或你指定的群
   /create (cr) 名称    创建一个群
   /invite (inv) <uin>  把某人加入你所在的群
+  /closed on|off       仅群主：on = 仅可通过邀请加入
 本账号
   /whoami (me)         uin, 昵称, 服务器, 设备
   /nick (n) 名称       重命名此账号
@@ -2496,6 +2546,42 @@ oturumu değil.`,
     'zh-Hans': '还没有可发送的对象: /to <uin> 选一个人, /g 选一个群, /recent 列出你的会话',
   },
 
+  'update.unknown': {
+    en: 'could not ask github which version is newest (offline, or blocked here)',
+    ru: 'не удалось спросить github о свежей версии (нет сети или её блокируют)',
+    es: 'no se pudo preguntar a github cuál es la versión más nueva (sin red o bloqueado)',
+    pt: 'não foi possível perguntar ao github qual é a versão mais nova (sem rede ou bloqueado)',
+    tr: 'github`a en yeni surumun ne oldugu sorulamadi (ag yok ya da engelli)',
+    uk: 'не вдалося спитати github про свіжу версію (немає мережі або блокують)',
+    'zh-Hans': '无法向 github 查询最新版本（无网络或被封锁）',
+  },
+  'update.already': {
+    en: 'already on the newest release (v{version})',
+    ru: 'уже стоит свежая версия (v{version})',
+    es: 'ya tienes la versión más reciente (v{version})',
+    pt: 'você já está na versão mais recente (v{version})',
+    tr: 'zaten en yeni surumdesin (v{version})',
+    uk: 'уже стоїть свіжа версія (v{version})',
+    'zh-Hans': '已经是最新版本（v{version}）',
+  },
+  'update.done': {
+    en: 'updated v{from} -> v{to}. Restart rcq to run it.',
+    ru: 'обновлено v{from} -> v{to}. Перезапустите rcq.',
+    es: 'actualizado v{from} -> v{to}. Reinicia rcq.',
+    pt: 'atualizado v{from} -> v{to}. Reinicie o rcq.',
+    tr: 'guncellendi v{from} -> v{to}. rcq`yu yeniden baslat.',
+    uk: 'оновлено v{from} -> v{to}. Перезапустіть rcq.',
+    'zh-Hans': '已更新 v{from} -> v{to}。请重新启动 rcq。',
+  },
+  'update.failed': {
+    en: 'update failed: {err}. Nothing was changed.',
+    ru: 'обновление не удалось: {err}. Ничего не тронуто.',
+    es: 'la actualización falló: {err}. No se cambió nada.',
+    pt: 'a atualização falhou: {err}. Nada foi alterado.',
+    tr: 'guncelleme basarisiz: {err}. Hicbir sey degismedi.',
+    uk: 'оновлення не вдалося: {err}. Нічого не змінено.',
+    'zh-Hans': '更新失败：{err}。没有任何改动。',
+  },
   'update.available': {
     en: 'update: v{from} -> v{to}',
     ru: 'обновление: v{from} -> v{to}',

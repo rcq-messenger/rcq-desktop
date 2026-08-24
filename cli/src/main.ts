@@ -469,7 +469,7 @@ async function cmdCreate(pos: string[]): Promise<void> {
   }
   await refreshDirectory(id).catch(() => null)
   process.stdout.write(`${group.id}\t${group.name}\n`)
-  process.stderr.write(tr('create.done', { name: group.name }) + '\n')
+  process.stderr.write(tr('create.done', { name: group.name, gid: group.id }) + '\n')
 }
 
 /// Add somebody to a room you are in.
@@ -1021,6 +1021,13 @@ async function main(): Promise<void> {
   const cmd = argv[0] === '' ? undefined : argv[0]
   if (cmd === '--help' || cmd === '-h' || (cmd !== undefined && canonical(cmd) === 'help')) {
     process.stdout.write(usage())
+    // `help` prints the version at the top, so it is where a person looks to
+    // find out which one they are on — and it was the one command that never
+    // said a newer one exists. Awaited, not fired and forgotten, because the
+    // process exits on the next line; it costs nothing off a TTY-less run
+    // (noteUpdateIfAny returns before touching the network) and one cached
+    // read otherwise.
+    await noteUpdateIfAny()
     process.exit(0)
   }
   if (cmd === '--version' || cmd === '-V' || cmd === 'version') {

@@ -147,6 +147,9 @@ function usageDie(msg?: string): never {
 /// `--flag value`, and a value flag with nothing behind it stays a usage error.
 const BOOL_FLAGS = new Set([
   '--yes',
+  // Machine output. Accepted by every command so a script can pass it
+  // blindly; the ones with no document form simply ignore it.
+  '--json',
   '--groups',
   '--test',
   '--no-test',
@@ -250,7 +253,15 @@ async function cmdRelays(pos: string[], opts: Map<string, string>, flags: Set<st
   if (verb === 'status') {
     const st = relayState()
     if (!st.running) {
+      if (jsonMode) {
+        emitJson({ running: false, proxy: st.proxy ?? null })
+        return
+      }
       process.stderr.write(tr('relays.notRunning') + '\n')
+      return
+    }
+    if (jsonMode) {
+      emitJson({ running: true, pid: st.pid, port: st.port, proxy: st.proxy ?? null })
       return
     }
     process.stdout.write(`${st.pid}\t127.0.0.1:${st.port}\n`)
@@ -303,6 +314,17 @@ async function cmdSafety(pos: string[]): Promise<void> {
   } else if (res.firstSeen) {
     process.stderr.write(err.dim(tr('safety.firstSeen', { who })) + '\n')
   }
+  if (jsonMode) {
+    emitJson({
+      uin,
+      safety_number: res.number,
+      peer_identity_key: res.peerKey,
+      first_seen: res.firstSeen,
+      key_changed: !!res.changedFrom,
+      previous_seen_at: res.changedFrom?.at ?? null,
+    })
+    return
+  }
   process.stdout.write(res.number + '\n')
   process.stderr.write(tr('safety.howto', { who }) + '\n')
   process.stderr.write(err.dim(tr('safety.fromIsland')) + '\n')
@@ -342,7 +364,12 @@ async function cmdIslands(): Promise<void> {
   const list = await fetchIslands().catch((e: unknown) => {
     die(e instanceof Error ? e.message : String(e))
   })
-  process.stdout.write(renderIslands(list as Awaited<ReturnType<typeof fetchIslands>>))
+  const islands = list as Awaited<ReturnType<typeof fetchIslands>>
+  if (jsonMode) {
+    emitJson(islands.map((i) => ({ host: i.url.replace(/^https:\/\//, ''), url: i.url, name: i.name, region: i.region ?? null, description: i.description ?? null })))
+    return
+  }
+  process.stdout.write(renderIslands(islands))
   process.stderr.write(out.dim(tr('islands.howto')) + '\n')
 }
 
@@ -366,6 +393,27 @@ async function cmdRestore(pos: string[], opts: Map<string, string>): Promise<voi
   process.stderr.write(tr('restore.done') + '\n')
 }
 
+/// `--json` turns every reading command's stdout into one JSON document.
+///
+/// The point is not prettiness: `rcq contacts` prints tabs, `rcq whoami`
+/// prints labelled lines, and anything built on top of them was parsing text
+/// meant for a person, in a shape that quietly changes when a label is
+/// translated. A document does not. Human-facing notes stay on stderr in both
+/// modes, so a pipe is still byte-clean.
+///
+/// ⚠ One document per command, printed once at the end. Streaming JSON objects
+/// per row would be a different (and worse) contract: a consumer could not
+/// tell a truncated run from an empty one.
+let jsonMode = false
+
+export function wantsJson(): boolean {
+  return jsonMode
+}
+
+function emitJson(value: unknown): void {
+  process.stdout.write(JSON.stringify(value) + '\n')
+}
+
 async function cmdWhoami(): Promise<void> {
   const id = requireIdentity()
   // Read the persisted device blob directly — whoami must work offline, and
@@ -381,6 +429,17 @@ async function cmdWhoami(): Promise<void> {
   // answer to "am I actually behind Tor right now", and it must not be the
   // reason a proxy password ends up in a screenshot.
   const proxy = readProxyUrl()
+  if (jsonMode) {
+    emitJson({
+      uin: id.uin,
+      nickname: nick,
+      island: id.apiBase,
+      device_id: blob ? blob.deviceId : null,
+      proxy: proxy ? redactProxyUrl(proxy) : null,
+      sealed: isSealed(),
+    })
+    return
+  }
   process.stdout.write(
     `uin: ${id.uin}\n${nick ? `${tr('label.nickname')}: ${nick}\n` : ''}${tr('label.island')}: ${id.apiBase}\n${tr('label.device')}: ${blob ? blob.deviceId : '-'}\n${proxy ? `${tr('label.proxy')}: ${redactProxyUrl(proxy)}\n` : ''}`,
   )
@@ -407,6 +466,18 @@ async function cmdContacts(): Promise<void> {
     // so nobody mistakes a cached row for a live one.
     list = cachedContacts(id.uin)
     process.stderr.write(err.dim(tr('fail.contacts', { err: humanError(e) })) + '\n')
+  }
+  if (jsonMode) {
+    emitJson(
+      list.map((c) => ({
+        uin: c.uin,
+        nickname: c.nickname,
+        status: c.status,
+        blocked: !!c.blocked,
+        host: c.host ?? null,
+      })),
+    )
+    return
   }
   for (const c of list) {
     process.stdout.write(`${c.uin}\t${c.nickname}\t${c.status}${c.blocked ? '\tblocked' : ''}\n`)
@@ -567,6 +638,22 @@ async function cmdGroups(): Promise<void> {
   const id = await withToken(requireIdentity())
   await primeDirectory(id)
   const groups = listGroups(id.uin)
+  if (jsonMode) {
+    emitJson(
+      groups.map((g) => ({
+        id: g.id,
+        name: g.name,
+        members: groupSize(g),
+        host: g.host ?? null,
+        closed: !!g.is_closed,
+        post_policy: g.post_policy ?? 'all',
+        slowmode_sec: g.slowmode_sec ?? 0,
+        links_allowed: g.links_allowed !== false,
+        files_allowed: g.files_allowed !== false,
+      })),
+    )
+    return
+  }
   for (const g of groups) {
     const rules: string[] = []
     if (g.post_policy === 'owner_only') rules.push('owner_only')
@@ -1259,6 +1346,10 @@ async function main(): Promise<void> {
   const LOCK_FREE = new Set(['whoami', 'export', 'lang', 'log', 'proxy', '__probe', 'routes', 'islands', 'relays'])
   if (!LOCK_FREE.has(verb)) acquireStateLock()
   const { pos, opts, flags } = parseArgs(argv.slice(1))
+  // Set before any command runs, read by the ones that have a document form.
+  // A command with no JSON shape ignores it rather than failing: a script that
+  // passes --json to everything should not have to know which is which.
+  jsonMode = flags.has('--json')
   // Bring the route up before anything names the island. Cheap: a decision
   // younger than half an hour is re-engaged without a probe, so the common
   // case costs nothing and only a stale or blocked one pays for a walk.

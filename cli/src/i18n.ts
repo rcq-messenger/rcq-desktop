@@ -121,6 +121,7 @@ for scripts and one-shots (stdout is data, status goes to stderr):
   rcq relays (rl) on|off|status  start sing-box for you and send everything through it
   rcq --version                             version + update check
   rcq --help                                this text
+  --json                                    machine output: one JSON document instead of columns
 
 state lives in $RCQ_CLI_HOME (default ~/.config/rcq), chmod 0600/0700.
 RCQ_VERBOSE=1 shows protocol detail; NO_COLOR strips colour.
@@ -166,6 +167,7 @@ RCQ_VERBOSE=1 shows protocol detail; NO_COLOR strips colour.
   rcq relays (rl) on|off|status  поднять sing-box за вас и пустить через него всё
   rcq --version                             версия + проверка обновления
   rcq --help                                этот текст
+  --json                                    машинный вывод: один документ JSON вместо колонок
 
 состояние живёт в $RCQ_CLI_HOME (по умолчанию ~/.config/rcq), chmod 0600/0700.
 RCQ_VERBOSE=1 показывает детали протокола; NO_COLOR убирает цвет.
@@ -211,6 +213,7 @@ para scripts y comandos únicos (stdout son datos, el estado va a stderr):
   rcq relays (rl) on|off|status  levanta sing-box por ti y manda todo por ahí
   rcq --version                             versión + comprobación de actualización
   rcq --help                                este texto
+  --json                                    salida para máquinas: un documento JSON en vez de columnas
 
 el estado vive en $RCQ_CLI_HOME (por defecto ~/.config/rcq), chmod 0600/0700.
 RCQ_VERBOSE=1 muestra el detalle del protocolo; NO_COLOR quita el color.
@@ -256,6 +259,7 @@ para scripts e comandos avulsos (stdout são dados, o status vai para stderr):
   rcq relays (rl) on|off|status  sobe o sing-box por você e manda tudo por ele
   rcq --version                             versão + verificação de atualização
   rcq --help                                este texto
+  --json                                    saída para máquinas: um documento JSON em vez de colunas
 
 o estado fica em $RCQ_CLI_HOME (padrão ~/.config/rcq), chmod 0600/0700.
 RCQ_VERBOSE=1 mostra o detalhe do protocolo; NO_COLOR remove a cor.
@@ -301,6 +305,7 @@ betikler ve tek seferlik komutlar için (stdout veridir, durum stderr'e gider):
   rcq relays (rl) on|off|status  sing-box'u sizin icin baslatir ve her seyi oradan gecirir
   rcq --version                             sürüm + güncelleme kontrolü
   rcq --help                                bu metin
+  --json                                    makine ciktisi: sutunlar yerine tek bir JSON belgesi
 
 durum $RCQ_CLI_HOME içinde tutulur (varsayılan ~/.config/rcq), chmod 0600/0700.
 RCQ_VERBOSE=1 protokol ayrıntısını gösterir; NO_COLOR rengi kaldırır.
@@ -346,6 +351,7 @@ RCQ_VERBOSE=1 protokol ayrıntısını gösterir; NO_COLOR rengi kaldırır.
   rcq relays (rl) on|off|status  підняти sing-box за вас і пустити через нього все
   rcq --version                             версія + перевірка оновлення
   rcq --help                                цей текст
+  --json                                    машинний вивід: один документ JSON замість колонок
 
 стан живе в $RCQ_CLI_HOME (типово ~/.config/rcq), chmod 0600/0700.
 RCQ_VERBOSE=1 показує деталі протоколу; NO_COLOR прибирає колір.
@@ -391,6 +397,7 @@ RCQ_VERBOSE=1 показує деталі протоколу; NO_COLOR приб�
   rcq relays (rl) on|off|status  替你启动 sing-box，并让一切走它
   rcq --version                             版本 + 更新检查
   rcq --help                                此文本
+  --json                                    机器可读输出：一份 JSON 文档，而不是分栏
 
 状态存放在 $RCQ_CLI_HOME (默认 ~/.config/rcq), chmod 0600/0700。
 RCQ_VERBOSE=1 显示协议细节; NO_COLOR 去掉颜色。

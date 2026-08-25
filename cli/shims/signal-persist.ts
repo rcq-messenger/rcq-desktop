@@ -10,11 +10,11 @@
 // session gone.
 
 import fs from 'node:fs'
-import { stateDir, statePath, writeFileAtomic } from '../src/state'
+import { readState, stateDir, statePath, writeState } from '../src/state'
 
-function fileFor(key: string): string {
+function nameFor(key: string): string {
   const m = /:(\d+)$/.exec(key)
-  return statePath(m ? `signal-${m[1]}.json` : 'signal-misc.json')
+  return m ? `signal-${m[1]}.json` : 'signal-misc.json'
 }
 
 function encode(v: unknown): unknown {
@@ -42,38 +42,45 @@ function decode(v: unknown): unknown {
   return v
 }
 
-function readAll(file: string): Record<string, unknown> {
+// ⚠ Through the state layer, never fs: this file IS the ratchet. On a sealed
+// dir it is ciphertext, and a raw read would parse to {} — which to libsignal
+// looks like a device that has never had a session with anyone, so it would
+// build fresh ones and every peer would reject the reused counters.
+function readAll(name: string): Record<string, unknown> {
   try {
-    return JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>
-  } catch {
+    const text = readState(name)
+    return text ? (JSON.parse(text) as Record<string, unknown>) : {}
+  } catch (e) {
+    // A sealed dir with no key must NOT read as empty (see above).
+    if (e instanceof Error && /sealed/.test(e.message)) throw e
     return {}
   }
 }
 
 export async function idbGet<T>(key: string): Promise<T | undefined> {
-  const all = readAll(fileFor(key))
+  const all = readAll(nameFor(key))
   return key in all ? (decode(all[key]) as T) : undefined
 }
 
 export async function idbSet(key: string, val: unknown): Promise<void> {
-  const file = fileFor(key)
-  const all = readAll(file)
+  const name = nameFor(key)
+  const all = readAll(name)
   all[key] = encode(val)
-  writeFileAtomic(file, JSON.stringify(all))
+  writeState(name, JSON.stringify(all))
 }
 
 export async function idbDel(key: string): Promise<void> {
-  const file = fileFor(key)
-  const all = readAll(file)
+  const name = nameFor(key)
+  const all = readAll(name)
   if (!(key in all)) return
   delete all[key]
-  writeFileAtomic(file, JSON.stringify(all))
+  writeState(name, JSON.stringify(all))
 }
 
 export async function idbKeys(): Promise<string[]> {
   const out: string[] = []
   for (const name of fs.readdirSync(stateDir())) {
-    if (/^signal-.*\.json$/.test(name)) out.push(...Object.keys(readAll(statePath(name))))
+    if (/^signal-.*\.json$/.test(name)) out.push(...Object.keys(readAll(name)))
   }
   return out
 }

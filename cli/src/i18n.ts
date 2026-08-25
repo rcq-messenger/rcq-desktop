@@ -116,6 +116,7 @@ for scripts and one-shots (stdout is data, status goes to stderr):
   rcq lang (lng) [{codes}]     show or set the language
   rcq islands (isl)            the island catalogue, numbered for --island
   rcq update                   fetch the newest release over this install
+  rcq lock | unlock            seal this state dir under a passphrase, or take it off
   rcq --version                             version + update check
   rcq --help                                this text
 
@@ -158,6 +159,7 @@ RCQ_VERBOSE=1 shows protocol detail; NO_COLOR strips colour.
   rcq lang (lng) [{codes}]     показать или сменить язык
   rcq islands (isl)            каталог островов, с номерами для --island
   rcq update                   скачать свежую версию поверх этой установки
+  rcq lock | unlock            зашифровать каталог состояния паролем или снять шифрование
   rcq --version                             версия + проверка обновления
   rcq --help                                этот текст
 
@@ -200,6 +202,7 @@ para scripts y comandos únicos (stdout son datos, el estado va a stderr):
   rcq lang (lng) [{codes}]     mostrar o cambiar el idioma
   rcq islands (isl)            el catálogo de islas, numerado para --island
   rcq update                   descargar la versión más nueva sobre esta
+  rcq lock | unlock            sellar este directorio con una contraseña, o quitarlo
   rcq --version                             versión + comprobación de actualización
   rcq --help                                este texto
 
@@ -242,6 +245,7 @@ para scripts e comandos avulsos (stdout são dados, o status vai para stderr):
   rcq lang (lng) [{codes}]     mostrar ou trocar o idioma
   rcq islands (isl)            o catálogo de ilhas, numerado para --island
   rcq update                   baixar a versão mais nova sobre esta
+  rcq lock | unlock            selar este diretório com uma senha, ou remover
   rcq --version                             versão + verificação de atualização
   rcq --help                                este texto
 
@@ -284,6 +288,7 @@ betikler ve tek seferlik komutlar için (stdout veridir, durum stderr'e gider):
   rcq lang (lng) [{codes}]     dili göster veya ayarla
   rcq islands (isl)            ada katalogu, --island icin numarali
   rcq update                   en yeni surumu bu kurulumun uzerine indir
+  rcq lock | unlock            bu durum dizinini parolayla muhurle ya da muhru kaldir
   rcq --version                             sürüm + güncelleme kontrolü
   rcq --help                                bu metin
 
@@ -326,6 +331,7 @@ RCQ_VERBOSE=1 protokol ayrıntısını gösterir; NO_COLOR rengi kaldırır.
   rcq lang (lng) [{codes}]     показати або змінити мову
   rcq islands (isl)            каталог островів, з номерами для --island
   rcq update                   завантажити свіжу версію поверх цієї
+  rcq lock | unlock            зашифрувати каталог стану паролем або зняти шифрування
   rcq --version                             версія + перевірка оновлення
   rcq --help                                цей текст
 
@@ -368,6 +374,7 @@ RCQ_VERBOSE=1 показує деталі протоколу; NO_COLOR приб�
   rcq lang (lng) [{codes}]     显示或设置语言
   rcq islands (isl)            岛屿目录，编号用于 --island
   rcq update                   下载最新版本覆盖此安装
+  rcq lock | unlock            用密码加密状态目录，或解除加密
   rcq --version                             版本 + 更新检查
   rcq --help                                此文本
 
@@ -2027,6 +2034,85 @@ RCQ_VERBOSE=1 显示协议细节; NO_COLOR 去掉颜色。
     tr: 'birine kaydolmak icin: rcq register --island <numara|adres>',
     uk: 'зареєструватися на обраному: rcq register --island <номер|адреса>',
     'zh-Hans': '在其中注册：rcq register --island <编号|地址>',
+  },
+  'seal.needTty': {
+    en: 'this needs a terminal to type the passphrase into (or set RCQ_PASSPHRASE_FILE)',
+    ru: 'нужен терминал, чтобы ввести пароль (или задайте RCQ_PASSPHRASE_FILE)',
+    es: 'hace falta una terminal para escribir la contraseña (o define RCQ_PASSPHRASE_FILE)',
+    pt: 'é preciso um terminal para digitar a senha (ou defina RCQ_PASSPHRASE_FILE)',
+    tr: 'parolayi yazmak icin bir terminal gerekir (ya da RCQ_PASSPHRASE_FILE tanimla)',
+    uk: 'потрібен термінал, щоб ввести пароль (або задайте RCQ_PASSPHRASE_FILE)',
+    'zh-Hans': '需要终端来输入密码（或设置 RCQ_PASSPHRASE_FILE）',
+  },
+  'seal.prompt': {
+    en: 'passphrase:', ru: 'пароль:', es: 'contraseña:', pt: 'senha:',
+    tr: 'parola:', uk: 'пароль:', 'zh-Hans': '密码：',
+  },
+  'seal.promptAgain': {
+    en: 'passphrase again:', ru: 'пароль ещё раз:', es: 'contraseña otra vez:', pt: 'senha novamente:',
+    tr: 'parola tekrar:', uk: 'пароль ще раз:', 'zh-Hans': '再输入一次密码：',
+  },
+  'seal.mismatch': {
+    en: 'the two do not match; nothing was changed',
+    ru: 'пароли не совпали, ничего не изменено',
+    es: 'no coinciden; no se cambió nada',
+    pt: 'não coincidem; nada foi alterado',
+    tr: 'ikisi ayni degil; hicbir sey degismedi',
+    uk: 'паролі не збіглися, нічого не змінено',
+    'zh-Hans': '两次输入不一致，未做任何更改',
+  },
+  'seal.tooShort': {
+    en: 'too short: use at least 8 characters, and prefer a few words over a short jumble',
+    ru: 'слишком короткий: минимум 8 символов, а лучше несколько слов, чем короткая мешанина',
+    es: 'demasiado corta: al menos 8 caracteres, mejor varias palabras que un revoltijo corto',
+    pt: 'curta demais: ao menos 8 caracteres, e prefira algumas palavras a uma mistura curta',
+    tr: 'cok kisa: en az 8 karakter, kisa bir karisim yerine birkac kelime tercih edin',
+    uk: 'занадто короткий: щонайменше 8 символів, краще кілька слів, ніж коротка мішанина',
+    'zh-Hans': '太短：至少 8 个字符，几个单词比短乱码更好',
+  },
+  'seal.warn': {
+    en: 'There is no recovery. Nothing on any island knows this passphrase, so forgetting it is the same as deleting this directory: the account, its keys and its history go with it. Your 24-word phrase restores the ACCOUNT on another device; it does not open this dir.',
+    ru: 'Восстановления нет. Пароль не знает ни один остров, поэтому забыть его это то же самое, что удалить этот каталог: с ним уходят аккаунт, ключи и вся история. Фраза из 24 слов восстанавливает АККАУНТ на другом устройстве, но этот каталог она не открывает.',
+    es: 'No hay recuperación. Ninguna isla conoce esta contraseña, así que olvidarla equivale a borrar este directorio: la cuenta, sus claves y su historial se van con él. Tu frase de 24 palabras restaura la CUENTA en otro dispositivo; no abre este directorio.',
+    pt: 'Não há recuperação. Nenhuma ilha conhece esta senha, então esquecê-la é o mesmo que apagar este diretório: a conta, suas chaves e seu histórico vão junto. Sua frase de 24 palavras restaura a CONTA em outro dispositivo; ela não abre este diretório.',
+    tr: 'Kurtarma yok. Bu parolayi hicbir ada bilmiyor, yani unutmak bu dizini silmekle ayni sey: hesap, anahtarlari ve gecmisi onunla gider. 24 kelimelik ifade HESABI baska bir cihazda geri getirir; bu dizini acmaz.',
+    uk: 'Відновлення немає. Пароль не знає жоден острів, тому забути його це те саме, що видалити цей каталог: з ним підуть акаунт, ключі та вся історія. Фраза з 24 слів відновлює АКАУНТ на іншому пристрої, але цей каталог вона не відкриває.',
+    'zh-Hans': '无法找回。没有任何岛屿知道这个密码，忘记它等同于删除这个目录：账户、密钥和全部历史都会随之消失。24 个单词的助记词可以在别的设备上恢复账户，但打不开这个目录。',
+  },
+  'seal.done': {
+    en: 'state sealed. Every command from now on asks for the passphrase, or reads RCQ_PASSPHRASE_FILE.',
+    ru: 'состояние зашифровано. Каждая команда теперь спрашивает пароль или читает RCQ_PASSPHRASE_FILE.',
+    es: 'estado sellado. Cada comando pedirá la contraseña o leerá RCQ_PASSPHRASE_FILE.',
+    pt: 'estado selado. Cada comando vai pedir a senha ou ler RCQ_PASSPHRASE_FILE.',
+    tr: 'durum muhurlendi. Bundan sonra her komut parolayi sorar ya da RCQ_PASSPHRASE_FILE okur.',
+    uk: 'стан зашифровано. Кожна команда тепер питає пароль або читає RCQ_PASSPHRASE_FILE.',
+    'zh-Hans': '状态已加密。之后每条命令都会询问密码，或读取 RCQ_PASSPHRASE_FILE。',
+  },
+  'seal.already': {
+    en: 'this dir is already sealed', ru: 'этот каталог уже зашифрован',
+    es: 'este directorio ya está sellado', pt: 'este diretório já está selado',
+    tr: 'bu dizin zaten muhurlu', uk: 'цей каталог уже зашифровано',
+    'zh-Hans': '这个目录已经加密',
+  },
+  'seal.notSealed': {
+    en: 'this dir is not sealed', ru: 'этот каталог не зашифрован',
+    es: 'este directorio no está sellado', pt: 'este diretório não está selado',
+    tr: 'bu dizin muhurlu degil', uk: 'цей каталог не зашифровано',
+    'zh-Hans': '这个目录没有加密',
+  },
+  'seal.unsealed': {
+    en: 'state unsealed: the files are readable again with nothing but file permissions in front of them',
+    ru: 'шифрование снято: файлы снова читаются, и защищают их только права доступа',
+    es: 'estado sin sellar: los archivos vuelven a leerse con solo los permisos delante',
+    pt: 'estado dessellado: os arquivos voltam a ser legíveis apenas com as permissões na frente',
+    tr: 'muhur kaldirildi: dosyalar yalnizca izinlerle korunarak yeniden okunabilir',
+    uk: 'шифрування знято: файли знову читаються, і захищають їх лише права доступу',
+    'zh-Hans': '已解除加密：文件重新可读，前面只剩文件权限',
+  },
+  'seal.wrong': {
+    en: 'wrong passphrase', ru: 'неверный пароль', es: 'contraseña incorrecta',
+    pt: 'senha incorreta', tr: 'parola yanlis', uk: 'невірний пароль',
+    'zh-Hans': '密码错误',
   },
   'create.done': {
     en: 'created "{name}" (g{gid})',

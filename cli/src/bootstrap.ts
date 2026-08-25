@@ -5,9 +5,10 @@
 // not have imported.
 
 import fs from 'node:fs'
+import path from 'node:path'
 import { Console } from 'node:console'
 import { engageProxy } from './env-proxy'
-import { statePath, writeFileAtomic } from './state'
+import { readState, statePath, writeState } from './state'
 
 // FIRST, before this file's own shims and before any other module of main.ts
 // has been evaluated: if the user configured their own proxy, this process
@@ -37,34 +38,47 @@ if (!process.env.RCQ_VERBOSE) {
 // The data is a handful of small rows (identity, install id, accounts list);
 // a torn write here is an account lost, so correctness over speed.
 class FileStorage {
-  private data: Record<string, string>
-  constructor(private file: string) {
-    try {
-      this.data = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, string>
-    } catch {
-      this.data = {}
-    }
+  /// ⚠ LAZY, and that is not an optimisation. This module runs at import time,
+  /// long before `main` has asked anybody for a passphrase, so a constructor
+  /// that read the file would hit a sealed dir with no key, fall into the
+  /// catch, and hand back an empty store — which every caller reads as "this
+  /// device has no account" and offers to register a new one over the top.
+  /// Nothing is touched until somebody actually asks for a row.
+  private data: Record<string, string> | null = null
+
+  constructor(private file: string) {}
+
+  private rows(): Record<string, string> {
+    if (this.data) return this.data
+    // Through readState, not fs: on a sealed dir this file is ciphertext, and
+    // it holds the identity and its private keys. An unreadable file THROWS
+    // (state.ts), and it should: the alternative is the empty store above.
+    const text = readState(path.basename(this.file))
+    this.data = text ? (JSON.parse(text) as Record<string, string>) : {}
+    return this.data
   }
+
   private flush(): void {
-    writeFileAtomic(this.file, JSON.stringify(this.data, null, 1))
+    writeState(path.basename(this.file), JSON.stringify(this.rows(), null, 1))
   }
   getItem(k: string): string | null {
-    return Object.prototype.hasOwnProperty.call(this.data, k) ? this.data[k] : null
+    const rows = this.rows()
+    return Object.prototype.hasOwnProperty.call(rows, k) ? rows[k] : null
   }
   setItem(k: string, v: string): void {
-    this.data[k] = String(v)
+    this.rows()[k] = String(v)
     this.flush()
   }
   removeItem(k: string): void {
-    delete this.data[k]
+    delete this.rows()[k]
     this.flush()
   }
   key(i: number): string | null {
-    const ks = Object.keys(this.data)
+    const ks = Object.keys(this.rows())
     return i >= 0 && i < ks.length ? ks[i] : null
   }
   get length(): number {
-    return Object.keys(this.data).length
+    return Object.keys(this.rows()).length
   }
   clear(): void {
     this.data = {}

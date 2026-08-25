@@ -32,7 +32,7 @@ import { foreignHost, groupLabel, isBlocked, isContact, knownName, labelForLine,
 import { chatLine, when } from './format'
 import { openGroupPacket, replayStoredGroupPackets } from './held-groups'
 import { tr } from './i18n'
-import { statePath } from './state'
+import { appendState, readStateLines, statePath } from './state'
 import { err, out, peer } from './style'
 import { humanError } from './errors'
 
@@ -59,7 +59,12 @@ export function setInteractive(on: boolean): void {
 }
 
 export function historyPath(uin: number): string {
-  return statePath(`history-${uin}.jsonl`)
+  return statePath(historyName(uin))
+}
+
+/// The bare name, which is what the sealed state layer keys on.
+export function historyName(uin: number): string {
+  return `history-${uin}.jsonl`
 }
 
 // The one pass over the history file, which answers two questions: which
@@ -87,7 +92,7 @@ function ensureHistoryIndex(uin: number): void {
   if (indexLoadedFor === uin) return
   indexLoadedFor = uin
   try {
-    for (const line of fs.readFileSync(historyPath(uin), 'utf8').split('\n')) {
+    for (const line of readStateLines(historyName(uin))) {
       if (!line) continue
       try {
         const rec = JSON.parse(line) as HistoryRecord
@@ -246,7 +251,8 @@ export interface HistoryRecord {
 }
 
 export function appendHistory(uin: number, rec: HistoryRecord): void {
-  fs.appendFileSync(historyPath(uin), JSON.stringify(rec) + '\n', { mode: 0o600 })
+  // One envelope per line on a sealed dir, so the file stays append-only.
+  appendState(historyName(uin), JSON.stringify(rec))
   // Keep the in-memory index level with the file: the message just written IS
   // the thread, and the gate must not ask about this peer again.
   if (indexLoadedFor === uin) notePeers(uin, rec)

@@ -72,6 +72,7 @@ import {
   unsealDir,
 } from './state'
 import { passphraseFromEnv, promptSecret } from './passphrase'
+import { safetyNumber } from './safety'
 import { decryptIncoming, noteInboundFrom } from '../../src/lib/signal-device'
 import { canonical } from './aliases'
 import {
@@ -235,6 +236,29 @@ function printPhraseBlock(uin: number): void {
 /// The island catalogue, numbered. The phones draw this as a carousel of
 /// pictures; here it is a list, and the number it prints is what `--island`
 /// takes, so choosing one is two commands and no copying of URLs.
+/// `rcq safety <uin>`: the sixty digits that say nobody is in the middle.
+///
+/// Prints the number on stdout (the machine contract) and everything a person
+/// needs to know about it on stderr: how to compare it, that the comparison is
+/// the proof rather than this command, and whether the key has changed since
+/// this client last looked.
+async function cmdSafety(pos: string[]): Promise<void> {
+  const uin = Number(pos[0])
+  if (!Number.isInteger(uin) || uin <= 0) usageDie(tr('safety.needsUin'))
+  const id = await withToken(requireIdentity())
+  await primeDirectory(id)
+  const who = peerLabel(id.uin, uin)
+  const res = await safetyNumber(id, uin)
+  if (res.changedFrom) {
+    process.stderr.write(err.yellow(tr('safety.changed', { at: res.changedFrom.at.slice(0, 16).replace('T', ' ') })) + '\n')
+  } else if (res.firstSeen) {
+    process.stderr.write(err.dim(tr('safety.firstSeen', { who })) + '\n')
+  }
+  process.stdout.write(res.number + '\n')
+  process.stderr.write(tr('safety.howto', { who }) + '\n')
+  process.stderr.write(err.dim(tr('safety.fromIsland')) + '\n')
+}
+
 /// `rcq lock`: seal this state dir under a passphrase.
 ///
 /// Everything here is plaintext until somebody runs this: the identity and its
@@ -1162,6 +1186,8 @@ async function main(): Promise<void> {
   switch (verb) {
     case 'islands':
       return cmdIslands()
+    case 'safety':
+      return cmdSafety(pos)
     case 'lock':
       return cmdLock()
     case 'unlock':

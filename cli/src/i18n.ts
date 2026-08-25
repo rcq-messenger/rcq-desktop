@@ -117,6 +117,7 @@ for scripts and one-shots (stdout is data, status goes to stderr):
   rcq islands (isl)            the island catalogue, numbered for --island
   rcq update                   fetch the newest release over this install
   rcq lock | unlock            seal this state dir under a passphrase, or take it off
+  rcq safety (sn) <uin>        the safety number for this person: compare it out loud
   rcq --version                             version + update check
   rcq --help                                this text
 
@@ -160,6 +161,7 @@ RCQ_VERBOSE=1 shows protocol detail; NO_COLOR strips colour.
   rcq islands (isl)            каталог островов, с номерами для --island
   rcq update                   скачать свежую версию поверх этой установки
   rcq lock | unlock            зашифровать каталог состояния паролем или снять шифрование
+  rcq safety (sn) <uin>        безопасное число этого человека: сверьте его голосом
   rcq --version                             версия + проверка обновления
   rcq --help                                этот текст
 
@@ -203,6 +205,7 @@ para scripts y comandos únicos (stdout son datos, el estado va a stderr):
   rcq islands (isl)            el catálogo de islas, numerado para --island
   rcq update                   descargar la versión más nueva sobre esta
   rcq lock | unlock            sellar este directorio con una contraseña, o quitarlo
+  rcq safety (sn) <uin>        el número de seguridad de esta persona: compárenlo en voz alta
   rcq --version                             versión + comprobación de actualización
   rcq --help                                este texto
 
@@ -246,6 +249,7 @@ para scripts e comandos avulsos (stdout são dados, o status vai para stderr):
   rcq islands (isl)            o catálogo de ilhas, numerado para --island
   rcq update                   baixar a versão mais nova sobre esta
   rcq lock | unlock            selar este diretório com uma senha, ou remover
+  rcq safety (sn) <uin>        o número de segurança desta pessoa: comparem em voz alta
   rcq --version                             versão + verificação de atualização
   rcq --help                                este texto
 
@@ -289,6 +293,7 @@ betikler ve tek seferlik komutlar için (stdout veridir, durum stderr'e gider):
   rcq islands (isl)            ada katalogu, --island icin numarali
   rcq update                   en yeni surumu bu kurulumun uzerine indir
   rcq lock | unlock            bu durum dizinini parolayla muhurle ya da muhru kaldir
+  rcq safety (sn) <uin>        bu kisinin guvenlik numarasi: sesli olarak karsilastirin
   rcq --version                             sürüm + güncelleme kontrolü
   rcq --help                                bu metin
 
@@ -332,6 +337,7 @@ RCQ_VERBOSE=1 protokol ayrıntısını gösterir; NO_COLOR rengi kaldırır.
   rcq islands (isl)            каталог островів, з номерами для --island
   rcq update                   завантажити свіжу версію поверх цієї
   rcq lock | unlock            зашифрувати каталог стану паролем або зняти шифрування
+  rcq safety (sn) <uin>        безпечне число цієї людини: звірте його голосом
   rcq --version                             версія + перевірка оновлення
   rcq --help                                цей текст
 
@@ -375,6 +381,7 @@ RCQ_VERBOSE=1 показує деталі протоколу; NO_COLOR приб�
   rcq islands (isl)            岛屿目录，编号用于 --island
   rcq update                   下载最新版本覆盖此安装
   rcq lock | unlock            用密码加密状态目录，或解除加密
+  rcq safety (sn) <uin>        这个人的安全码：请口头核对
   rcq --version                             版本 + 更新检查
   rcq --help                                此文本
 
@@ -2034,6 +2041,57 @@ RCQ_VERBOSE=1 显示协议细节; NO_COLOR 去掉颜色。
     tr: 'birine kaydolmak icin: rcq register --island <numara|adres>',
     uk: 'зареєструватися на обраному: rcq register --island <номер|адреса>',
     'zh-Hans': '在其中注册：rcq register --island <编号|地址>',
+  },
+  'safety.needsUin': {
+    en: 'safety needs a numeric UIN', ru: 'safety ждёт числовой UIN',
+    es: 'safety necesita un UIN numérico', pt: 'safety precisa de um UIN numérico',
+    tr: 'safety sayisal bir UIN ister', uk: 'safety чекає числовий UIN',
+    'zh-Hans': 'safety 需要一个数字 UIN',
+  },
+  'safety.noKey': {
+    en: '#{uin} has no libsignal identity key on this island yet (an older client, or an account that has never opened a v2 session)',
+    ru: 'у #{uin} на этом острове ещё нет ключа libsignal (старый клиент или аккаунт, который ни разу не открывал сессию v2)',
+    es: '#{uin} aún no tiene clave de identidad libsignal en esta isla (cliente antiguo o cuenta que nunca abrió una sesión v2)',
+    pt: '#{uin} ainda não tem chave de identidade libsignal nesta ilha (cliente antigo, ou conta que nunca abriu uma sessão v2)',
+    tr: '#{uin} bu adada henuz libsignal kimlik anahtarina sahip degil (eski istemci ya da hic v2 oturumu acmamis hesap)',
+    uk: 'у #{uin} на цьому острові ще немає ключа libsignal (старий клієнт або акаунт, який жодного разу не відкривав сесію v2)',
+    'zh-Hans': '#{uin} 在这个岛上还没有 libsignal 身份密钥（旧客户端，或从未建立过 v2 会话的账户）',
+  },
+  'safety.howto': {
+    en: 'Read this aloud to {who} and have them read theirs back. The two must match digit for digit. Do it over a channel this island does not carry: a phone call, or in person. Matching numbers mean nobody is standing between you.',
+    ru: 'Прочитайте это вслух {who} и попросите прочитать своё. Числа должны совпасть цифра в цифру. Делайте это по каналу, который не идёт через этот остров: голосом по телефону или лично. Совпали значит между вами никого нет.',
+    es: 'Léelo en voz alta a {who} y pide que te lea el suyo. Deben coincidir dígito a dígito. Hazlo por un canal que no pase por esta isla: una llamada, o en persona. Si coinciden, nadie está en medio.',
+    pt: 'Leia isto em voz alta para {who} e peça que leia o dela. Devem coincidir dígito a dígito. Faça por um canal que não passe por esta ilha: uma ligação, ou pessoalmente. Se coincidem, ninguém está no meio.',
+    tr: 'Bunu {who} kisisine yuksek sesle okuyun ve onunkini okumasini isteyin. Rakam rakam ayni olmali. Bunu bu adadan gecmeyen bir kanaldan yapin: telefonla ya da yuz yuze. Ayniysa aranizda kimse yok.',
+    uk: 'Прочитайте це вголос {who} і попросіть прочитати своє. Числа мають збігтися цифра в цифру. Робіть це каналом, який не йде через цей острів: голосом телефоном або особисто. Збіглися означає між вами нікого немає.',
+    'zh-Hans': '把它读给 {who} 听，并让对方读出他们的。必须每一位都相同。请通过不经过这个岛的渠道核对：打电话，或者当面。数字一致就说明中间没有人。',
+  },
+  'safety.fromIsland': {
+    en: 'The key this is built from came from the island just now, so this command on its own proves nothing. The comparison is what proves it.',
+    ru: 'Ключ, из которого посчитано число, только что пришёл с острова, поэтому сама по себе эта команда ничего не доказывает. Доказывает сравнение.',
+    es: 'La clave con la que se calculó vino de la isla ahora mismo, así que este comando por sí solo no prueba nada. Lo que prueba es la comparación.',
+    pt: 'A chave usada veio da ilha agora mesmo, então este comando sozinho não prova nada. O que prova é a comparação.',
+    tr: 'Bu sayinin hesaplandigi anahtar az once adadan geldi, yani bu komut tek basina hicbir sey kanitlamaz. Kanitlayan sey karsilastirmadir.',
+    uk: 'Ключ, з якого пораховано число, щойно прийшов з острова, тож сама по собі ця команда нічого не доводить. Доводить порівняння.',
+    'zh-Hans': '算出这个数字的密钥是刚刚从岛上取来的，所以这条命令本身不能证明任何事。能证明的是核对。',
+  },
+  'safety.firstSeen': {
+    en: 'First time this client has seen a key for {who}. It is remembered now, and a change will be pointed out.',
+    ru: 'Этот клиент впервые видит ключ {who}. Он запомнен, и о смене вам скажут.',
+    es: 'Es la primera vez que este cliente ve una clave de {who}. Queda recordada, y un cambio se avisará.',
+    pt: 'É a primeira vez que este cliente vê uma chave de {who}. Ficou guardada, e uma mudança será avisada.',
+    tr: 'Bu istemci {who} icin ilk kez bir anahtar gordu. Artik hatirlaniyor ve degisiklik bildirilecek.',
+    uk: 'Цей клієнт уперше бачить ключ {who}. Він запам`ятаний, і про зміну вам скажуть.',
+    'zh-Hans': '这是本客户端第一次看到 {who} 的密钥。已记住，如有变化会提示。',
+  },
+  'safety.changed': {
+    en: 'THE KEY CHANGED. Last seen {at}. Usually this means they reinstalled or moved to a new device; it also looks exactly like somebody stepping in between. Verify the number below before you write anything you would not shout.',
+    ru: 'КЛЮЧ ИЗМЕНИЛСЯ. Прошлый видели {at}. Обычно это значит переустановку или новое устройство; ровно так же выглядит и появление посредника. Сверьте число ниже, прежде чем писать то, что не стали бы кричать вслух.',
+    es: 'LA CLAVE CAMBIÓ. La anterior se vio {at}. Suele significar una reinstalación o un dispositivo nuevo; también se ve exactamente así cuando alguien se mete en medio. Verifica el número antes de escribir algo que no gritarías.',
+    pt: 'A CHAVE MUDOU. A anterior foi vista {at}. Normalmente é reinstalação ou aparelho novo; também é exatamente assim que parece quando alguém entra no meio. Verifique o número antes de escrever algo que você não gritaria.',
+    tr: 'ANAHTAR DEGISTI. Onceki {at} tarihinde gorulmustu. Genelde yeniden kurulum ya da yeni cihaz demektir; araya birinin girmesi de tam olarak boyle gorunur. Bagirarak soylemeyeceginiz bir sey yazmadan once asagidaki sayiyi dogrulayin.',
+    uk: 'КЛЮЧ ЗМІНИВСЯ. Попередній бачили {at}. Зазвичай це перевстановлення або новий пристрій; так само виглядає й поява посередника. Звірте число, перш ніж писати те, чого не кричали б уголос.',
+    'zh-Hans': '密钥已更改。上一次见到是 {at}。通常意味着重装或换了设备；有人插到中间时看起来也完全一样。在写下你不会大声喊出的内容之前，请先核对下面的数字。',
   },
   'seal.needTty': {
     en: 'this needs a terminal to type the passphrase into (or set RCQ_PASSPHRASE_FILE)',

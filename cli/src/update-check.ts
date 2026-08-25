@@ -20,6 +20,7 @@
 // touch nobody but the island.
 
 import { execFileSync } from 'node:child_process'
+import crypto from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -120,6 +121,35 @@ export async function noteUpdateIfAny(force = false): Promise<void> {
   )
 }
 
+
+/// The key releases are signed with. Compiled in on purpose: a key fetched at
+/// runtime is a key an attacker can also serve.
+///
+/// ⚠ Rotating this is a two-release job. A build shipping a new public key can
+/// only verify archives signed with the matching private one, so the new key
+/// goes out FIRST (in a release signed with the old one), and only the release
+/// after that may switch. Skipping the middle step strands everybody on the
+/// version before it, since their client will refuse the update that would
+/// have taught it the new key.
+const RELEASE_PUBKEY_B64 = 'WKGvm2BjXCg7XjIMsob2Sb5lc8n/f0YGECFTxCu+YxY='
+
+/// Ed25519 over the archive's exact bytes. `crypto.verify` with a null
+/// algorithm is the Ed25519 shape in Node; the key is imported from its raw
+/// 32 bytes through the SPKI prefix that names the curve.
+function verifyRelease(archive: Buffer, signature: Buffer): boolean {
+  try {
+    const spkiPrefix = Buffer.from('302a300506032b6570032100', 'hex')
+    const key = crypto.createPublicKey({
+      key: Buffer.concat([spkiPrefix, Buffer.from(RELEASE_PUBKEY_B64, 'base64')]),
+      format: 'der',
+      type: 'spki',
+    })
+    return crypto.verify(null, archive, key, signature)
+  } catch {
+    return false
+  }
+}
+
 /// `rcq update`: fetch the newest release and replace this install in place.
 ///
 /// The client is one directory (`rcq`, `rcq.mjs`, `pkg-node/`) unpacked by
@@ -156,6 +186,17 @@ export async function runUpdate(): Promise<number> {
     // `tar` rather than a bundled decompressor: it is on macOS, on every Linux
     // and in Windows since 10, and a wrong archive must fail here, before
     // anything in the install directory has been touched.
+    // ⚠ VERIFY BEFORE UNPACKING. Everything else in this project assumes the
+    // network is hostile; an update that trusted whatever the download
+    // returned would be the one place where a middle gets to replace the
+    // client itself, which is the end of every other guarantee. The signature
+    // is Ed25519 over the exact bytes of the archive, made on the maintainer's
+    // machine (the key is not in CI: a key CI holds proves only that CI built
+    // it), and the public half is compiled in below.
+    const sigRes = await fetch(`${url}.sig`, { signal: AbortSignal.timeout(30_000) })
+    if (!sigRes.ok) throw new Error(tr('update.noSignature'))
+    const sig = Buffer.from((await sigRes.text()).trim(), 'base64')
+    if (!verifyRelease(fs.readFileSync(tarball), sig)) throw new Error(tr('update.badSignature'))
     execFileSync('tar', ['xzf', tarball, '-C', work], { stdio: 'ignore' })
     const unpacked = path.join(work, 'rcq')
     if (!fs.existsSync(path.join(unpacked, 'rcq.mjs'))) throw new Error('unexpected archive layout')

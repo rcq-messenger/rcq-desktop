@@ -30,6 +30,9 @@ export const generateRegistrationId = wasm.generateRegistrationId
 export const processPreKeyBundle = wasm.processPreKeyBundle
 export const encryptMessage = wasm.encryptMessage
 export const decryptMessage = wasm.decryptMessage
+// Safety numbers. Present in the crate but never re-exported here, because
+// until now no client of this shim asked for one.
+export const generateSafetyNumber = wasm.generateSafetyNumber
 
 // The browser default export resolves when instantiation finishes; here that
 // already happened inside require(), so only the shape has to match.

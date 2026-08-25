@@ -73,6 +73,7 @@ import {
 } from './state'
 import { passphraseFromEnv, promptSecret } from './passphrase'
 import { safetyNumber } from './safety'
+import { crossBlockedList, setCrossBlocked } from './blocklist'
 import { decryptIncoming, noteInboundFrom } from '../../src/lib/signal-device'
 import { canonical } from './aliases'
 import {
@@ -448,12 +449,45 @@ async function cmdFind(pos: string[]): Promise<void> {
   if (found.length === 0) process.stderr.write(tr('find.none', { q }) + '\n')
 }
 
+/// `rcq block <uin>` for somebody here, `rcq block <uin>@<island>` for
+/// somebody who is not.
+///
+/// ⚠ The two are enforced in different places and it matters. A peer on this
+/// island has a roster row, so the flag goes to the island (which then stops
+/// their contact requests and group adds) and the row is what ingest reads. A
+/// peer on ANOTHER island has no row anywhere we control: their block is a
+/// local list, enforced by this client on the way in and nowhere else. Before
+/// this, `block 500` on a cross-island peer wrote a flag onto a row that no
+/// incoming message ever consults, said "blocked", and changed nothing.
 async function cmdBlock(pos: string[], on: boolean): Promise<void> {
-  const uin = Number(pos[0])
+  const raw = (pos[0] ?? '').trim()
+  // Bare `rcq block` lists what this device refuses off-island. Nothing else
+  // shows that list: the roster's own blocks are visible in `rcq contacts`,
+  // but a cross-island block lives only here, and a list nobody can read is a
+  // setting nobody can undo.
+  if (!raw && on) {
+    const id = requireIdentity()
+    const rows = crossBlockedList(id.uin)
+    for (const r of rows) process.stdout.write(`${r.uin}@${r.host}\t${r.at.slice(0, 10)}\n`)
+    process.stderr.write(out.dim(tr(rows.length ? 'block.listHint' : 'block.listEmpty')) + '\n')
+    return
+  }
+  const at = raw.lastIndexOf('@')
+  const uin = Number(at > 0 ? raw.slice(0, at) : raw)
+  const host = at > 0 ? raw.slice(at + 1).trim().toLowerCase() : ''
   if (!Number.isInteger(uin) || uin <= 0) usageDie(tr('block.needsUin'))
   const id = await withToken(requireIdentity())
+  const who = host ? `#${uin}@${host}` : peerLabel(id.uin, uin)
+  if (host) {
+    const changed = setCrossBlocked(id.uin, uin, host, on)
+    if (!changed) {
+      process.stderr.write(out.dim(tr(on ? 'block.alreadyOn' : 'block.alreadyOff', { who })) + '\n')
+      return
+    }
+    process.stderr.write((on ? tr('block.doneLocal', { who }) : tr('block.undoneLocal', { who })) + '\n')
+    return
+  }
   await Api.blockContact(id, uin, on)
-  const who = peerLabel(id.uin, uin)
   process.stderr.write((on ? tr('block.done', { who }) : tr('block.undone', { who })) + '\n')
   await refreshDirectory(id).catch(() => null)
 }

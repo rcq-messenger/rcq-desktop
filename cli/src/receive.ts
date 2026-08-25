@@ -29,6 +29,7 @@ import {
   type StrikeStore,
 } from '../../src/lib/group-log'
 import { foreignHost, groupLabel, isBlocked, isContact, knownName, labelForLine, peerLabel } from './directory'
+import { isCrossBlocked } from './blocklist'
 import { chatLine, when } from './format'
 import { openGroupPacket, replayStoredGroupPackets } from './held-groups'
 import { tr } from './i18n'
@@ -349,7 +350,17 @@ export async function ingestDecrypted(
   // receipt (the caller still acks the queue row, so it does not come back).
   // Control frames are deliberately left alone — dropping a group frame from
   // a blocked member desynchronises the room for everybody in it.
-  if (CONTENT_KINDS.has(env.kind) && isBlocked(identity.uin, got.senderUIN)) return
+  // ⚠ Two lists, because there are two kinds of peer. Somebody on our island
+  // has a roster row and the flag rides it; somebody on another island has no
+  // row at all, so their block is a local list keyed by uin AND host. Checking
+  // only the first is what made `/block` on a cross-island peer a no-op that
+  // reported success.
+  if (
+    CONTENT_KINDS.has(env.kind) &&
+    (isBlocked(identity.uin, got.senderUIN) || isCrossBlocked(identity.uin, got.senderUIN, host))
+  ) {
+    return
+  }
   if (env.kind === 'read' || env.kind === 'delivered') {
     const ids = Array.isArray(env.targetIDs) ? env.targetIDs.filter((t) => typeof t === 'string') : []
     result.receiptTargets.push(...ids)

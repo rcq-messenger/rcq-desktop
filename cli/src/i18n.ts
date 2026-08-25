@@ -118,6 +118,7 @@ for scripts and one-shots (stdout is data, status goes to stderr):
   rcq update                   fetch the newest release over this install
   rcq lock | unlock            seal this state dir under a passphrase, or take it off
   rcq safety (sn) <uin>        the safety number for this person: compare it out loud
+  rcq relays (rl) on|off|status  start sing-box for you and send everything through it
   rcq --version                             version + update check
   rcq --help                                this text
 
@@ -162,6 +163,7 @@ RCQ_VERBOSE=1 shows protocol detail; NO_COLOR strips colour.
   rcq update                   скачать свежую версию поверх этой установки
   rcq lock | unlock            зашифровать каталог состояния паролем или снять шифрование
   rcq safety (sn) <uin>        безопасное число этого человека: сверьте его голосом
+  rcq relays (rl) on|off|status  поднять sing-box за вас и пустить через него всё
   rcq --version                             версия + проверка обновления
   rcq --help                                этот текст
 
@@ -206,6 +208,7 @@ para scripts y comandos únicos (stdout son datos, el estado va a stderr):
   rcq update                   descargar la versión más nueva sobre esta
   rcq lock | unlock            sellar este directorio con una contraseña, o quitarlo
   rcq safety (sn) <uin>        el número de seguridad de esta persona: compárenlo en voz alta
+  rcq relays (rl) on|off|status  levanta sing-box por ti y manda todo por ahí
   rcq --version                             versión + comprobación de actualización
   rcq --help                                este texto
 
@@ -250,6 +253,7 @@ para scripts e comandos avulsos (stdout são dados, o status vai para stderr):
   rcq update                   baixar a versão mais nova sobre esta
   rcq lock | unlock            selar este diretório com uma senha, ou remover
   rcq safety (sn) <uin>        o número de segurança desta pessoa: comparem em voz alta
+  rcq relays (rl) on|off|status  sobe o sing-box por você e manda tudo por ele
   rcq --version                             versão + verificação de atualização
   rcq --help                                este texto
 
@@ -294,6 +298,7 @@ betikler ve tek seferlik komutlar için (stdout veridir, durum stderr'e gider):
   rcq update                   en yeni surumu bu kurulumun uzerine indir
   rcq lock | unlock            bu durum dizinini parolayla muhurle ya da muhru kaldir
   rcq safety (sn) <uin>        bu kisinin guvenlik numarasi: sesli olarak karsilastirin
+  rcq relays (rl) on|off|status  sing-box'u sizin icin baslatir ve her seyi oradan gecirir
   rcq --version                             sürüm + güncelleme kontrolü
   rcq --help                                bu metin
 
@@ -338,6 +343,7 @@ RCQ_VERBOSE=1 protokol ayrıntısını gösterir; NO_COLOR rengi kaldırır.
   rcq update                   завантажити свіжу версію поверх цієї
   rcq lock | unlock            зашифрувати каталог стану паролем або зняти шифрування
   rcq safety (sn) <uin>        безпечне число цієї людини: звірте його голосом
+  rcq relays (rl) on|off|status  підняти sing-box за вас і пустити через нього все
   rcq --version                             версія + перевірка оновлення
   rcq --help                                цей текст
 
@@ -382,6 +388,7 @@ RCQ_VERBOSE=1 показує деталі протоколу; NO_COLOR приб�
   rcq update                   下载最新版本覆盖此安装
   rcq lock | unlock            用密码加密状态目录，或解除加密
   rcq safety (sn) <uin>        这个人的安全码：请口头核对
+  rcq relays (rl) on|off|status  替你启动 sing-box，并让一切走它
   rcq --version                             版本 + 更新检查
   rcq --help                                此文本
 
@@ -742,6 +749,83 @@ RCQ_VERBOSE=1 显示协议细节; NO_COLOR 去掉颜色。
   // rcq routes - the ladder of roads to the island. Verdicts and labels only;
   // hostnames, versions, milliseconds and rung names are DATA and stay bare.
   'routes.ok': { en: 'ok', ru: 'отвечает', es: 'responde', pt: 'responde', tr: 'yanit veriyor', uk: 'відповідає', 'zh-Hans': '可达' },
+  'relays.usage': {
+    en: 'usage: rcq relays on [--onion|--no-onion] [--port N] | off | status',
+    ru: 'использование: rcq relays on [--onion|--no-onion] [--port N] | off | status',
+    es: 'uso: rcq relays on [--onion|--no-onion] [--port N] | off | status',
+    pt: 'uso: rcq relays on [--onion|--no-onion] [--port N] | off | status',
+    tr: 'kullanim: rcq relays on [--onion|--no-onion] [--port N] | off | status',
+    uk: 'використання: rcq relays on [--onion|--no-onion] [--port N] | off | status',
+    'zh-Hans': '用法：rcq relays on [--onion|--no-onion] [--port N] | off | status',
+  },
+  'relays.noSingBox': {
+    en: 'sing-box is not on your PATH. It carries the packets we cannot: brew install sing-box, the official apt/rpm repository, or a static binary from its releases.',
+    ru: 'sing-box не найден в PATH. Он несёт то, что мы не умеем: brew install sing-box, официальный репозиторий apt или rpm, либо статический бинарь со страницы релизов.',
+    es: 'sing-box no está en tu PATH. Él lleva lo que nosotros no podemos: brew install sing-box, el repositorio oficial apt o rpm, o un binario estático de sus releases.',
+    pt: 'sing-box não está no seu PATH. Ele carrega o que nós não conseguimos: brew install sing-box, o repositório oficial apt ou rpm, ou um binário estático das releases.',
+    tr: 'sing-box PATH uzerinde yok. Bizim tasiyamadigimizi o tasir: brew install sing-box, resmi apt ya da rpm deposu, veya releases sayfasindan statik bir ikili.',
+    uk: 'sing-box не знайдено в PATH. Він несе те, чого ми не вміємо: brew install sing-box, офіційний репозиторій apt чи rpm, або статичний бінарник зі сторінки релізів.',
+    'zh-Hans': 'PATH 中没有 sing-box。我们无法承载的流量由它承载：brew install sing-box、官方 apt/rpm 源，或从其 releases 下载静态二进制。',
+  },
+  'relays.alreadyRunning': {
+    en: 'sing-box is already running for this state dir (pid {pid}). rcq relays off stops it.',
+    ru: 'sing-box уже запущен для этого каталога (pid {pid}). Остановить: rcq relays off.',
+    es: 'sing-box ya está corriendo para este directorio (pid {pid}). rcq relays off lo detiene.',
+    pt: 'sing-box já está rodando para este diretório (pid {pid}). rcq relays off para.',
+    tr: 'sing-box bu dizin icin zaten calisiyor (pid {pid}). rcq relays off durdurur.',
+    uk: 'sing-box уже запущений для цього каталогу (pid {pid}). Зупинити: rcq relays off.',
+    'zh-Hans': 'sing-box 已经在为这个目录运行（pid {pid}）。用 rcq relays off 停止。',
+  },
+  'relays.spawnFailed': {
+    en: 'could not start sing-box', ru: 'не удалось запустить sing-box',
+    es: 'no se pudo iniciar sing-box', pt: 'não foi possível iniciar o sing-box',
+    tr: 'sing-box baslatilamadi', uk: 'не вдалося запустити sing-box',
+    'zh-Hans': '无法启动 sing-box',
+  },
+  'relays.portNever': {
+    en: 'sing-box started but its port never opened, so it stopped on its own. Its output is in {file}.',
+    ru: 'sing-box запустился, но порт так и не открылся, значит он сам и завершился. Его вывод в {file}.',
+    es: 'sing-box arrancó pero su puerto nunca se abrió, así que terminó solo. Su salida está en {file}.',
+    pt: 'o sing-box iniciou mas a porta nunca abriu, então ele terminou sozinho. A saída está em {file}.',
+    tr: 'sing-box basladi ama portu hic acilmadi, yani kendisi durdu. Ciktisi {file} dosyasinda.',
+    uk: 'sing-box запустився, але порт так і не відкрився, отже він сам і завершився. Його вивід у {file}.',
+    'zh-Hans': 'sing-box 启动了但端口一直没打开，于是自行退出。输出在 {file}。',
+  },
+  'relays.started': {
+    en: 'relays up on 127.0.0.1:{port} (pid {pid}), {shape}, {trusted} signed + {community} community. Everything rcq does now goes through them.',
+    ru: 'релеи подняты на 127.0.0.1:{port} (pid {pid}), {shape}, подписанных {trusted} и общественных {community}. Теперь всё, что делает rcq, идёт через них.',
+    es: 'relés arriba en 127.0.0.1:{port} (pid {pid}), {shape}, {trusted} firmados y {community} comunitarios. Todo lo que hace rcq pasa por ellos.',
+    pt: 'relés no ar em 127.0.0.1:{port} (pid {pid}), {shape}, {trusted} assinados e {community} da comunidade. Tudo que o rcq faz passa por eles.',
+    tr: 'roleler 127.0.0.1:{port} uzerinde (pid {pid}), {shape}, {trusted} imzali ve {community} topluluk. rcq ne yapiyorsa artik bunlardan geciyor.',
+    uk: 'релеї підняті на 127.0.0.1:{port} (pid {pid}), {shape}, підписаних {trusted} і громадських {community}. Тепер усе, що робить rcq, іде через них.',
+    'zh-Hans': '中继已在 127.0.0.1:{port} 启动（pid {pid}），{shape}，已签名 {trusted} 个、社区 {community} 个。rcq 的一切现在都经由它们。',
+  },
+  'relays.stopped': {
+    en: 'relays stopped', ru: 'релеи остановлены', es: 'relés detenidos',
+    pt: 'relés parados', tr: 'roleler durduruldu', uk: 'релеї зупинені',
+    'zh-Hans': '中继已停止',
+  },
+  'relays.notRunning': {
+    en: 'no relays running from this state dir', ru: 'из этого каталога релеи не запущены',
+    es: 'no hay relés corriendo desde este directorio', pt: 'nenhum relé rodando a partir deste diretório',
+    tr: 'bu dizinden calisan role yok', uk: 'з цього каталогу релеї не запущені',
+    'zh-Hans': '这个目录没有在运行的中继',
+  },
+  'relays.statusRunning': {
+    en: 'running: pid {pid}, 127.0.0.1:{port}', ru: 'работают: pid {pid}, 127.0.0.1:{port}',
+    es: 'en marcha: pid {pid}, 127.0.0.1:{port}', pt: 'em execução: pid {pid}, 127.0.0.1:{port}',
+    tr: 'calisiyor: pid {pid}, 127.0.0.1:{port}', uk: 'працюють: pid {pid}, 127.0.0.1:{port}',
+    'zh-Hans': '运行中：pid {pid}，127.0.0.1:{port}',
+  },
+  'relays.proxyKept': {
+    en: 'the proxy setting was left alone: it does not point at the tunnel this stopped',
+    ru: 'настройка прокси не тронута: она указывает не на тот туннель, который остановлен',
+    es: 'la configuración de proxy quedó intacta: no apunta al túnel que se detuvo',
+    pt: 'a configuração de proxy ficou intacta: ela não aponta para o túnel que parou',
+    tr: 'proxy ayarina dokunulmadi: durdurulan tunele isaret etmiyor',
+    uk: 'налаштування проксі не чіпали: воно вказує не на той тунель, який зупинено',
+    'zh-Hans': '代理设置未改动：它指向的不是刚停止的隧道',
+  },
   'routes.blocked': { en: 'no answer', ru: 'нет ответа', es: 'sin respuesta', pt: 'sem resposta', tr: 'yanit yok', uk: 'немає відповіді', 'zh-Hans': '无响应' },
   'routes.skipped': { en: 'skipped', ru: 'пропущен', es: 'omitido', pt: 'ignorado', tr: 'atlandi', uk: 'пропущено', 'zh-Hans': '已跳过' },
   'routes.notTried': { en: 'not tried', ru: 'не понадобился', es: 'no hizo falta', pt: 'nao foi preciso', tr: 'gerekmedi', uk: 'не знадобився', 'zh-Hans': '未尝试' },
@@ -2129,7 +2213,7 @@ RCQ_VERBOSE=1 显示协议细节; NO_COLOR 去掉颜色。
     es: 'Es la primera vez que este cliente ve una clave de {who}. Queda recordada, y un cambio se avisará.',
     pt: 'É a primeira vez que este cliente vê uma chave de {who}. Ficou guardada, e uma mudança será avisada.',
     tr: 'Bu istemci {who} icin ilk kez bir anahtar gordu. Artik hatirlaniyor ve degisiklik bildirilecek.',
-    uk: 'Цей клієнт уперше бачить ключ {who}. Він запам`ятаний, і про зміну вам скажуть.',
+    uk: 'Цей клієнт уперше бачить ключ {who}. Його запамятали, і про зміну вам скажуть.',
     'zh-Hans': '这是本客户端第一次看到 {who} 的密钥。已记住，如有变化会提示。',
   },
   'safety.changed': {

@@ -74,6 +74,7 @@ import {
 import { passphraseFromEnv, promptSecret } from './passphrase'
 import { safetyNumber } from './safety'
 import { crossBlockedList, setCrossBlocked } from './blocklist'
+import { relayState, startRelays, stopRelays } from './relays'
 import { decryptIncoming, noteInboundFrom } from '../../src/lib/signal-device'
 import { canonical } from './aliases'
 import {
@@ -161,7 +162,7 @@ const BOOL_FLAGS = new Set([
 /// Commands that never name the island, so the route ladder is not engaged
 /// for them. `routes` engages its own (and may be asked to walk it);
 /// `proxy`/`__probe` deliberately run outside the proxy they configure.
-const ROUTE_FREE = new Set(['lang', 'log', 'export', 'proxy', '__probe', 'routes', 'islands'])
+const ROUTE_FREE = new Set(['lang', 'log', 'export', 'proxy', '__probe', 'routes', 'islands', 'relays'])
 
 /// Pull `--flag value` pairs out of argv; what remains are positionals.
 function parseArgs(argv: string[]): { pos: string[]; opts: Map<string, string>; flags: Set<string> } {
@@ -237,6 +238,53 @@ function printPhraseBlock(uin: number): void {
 /// The island catalogue, numbered. The phones draw this as a carousel of
 /// pictures; here it is a list, and the number it prints is what `--island`
 /// takes, so choosing one is two commands and no copying of URLs.
+/// `rcq relays on|off|status`: sing-box, started and stopped by us.
+///
+/// The four steps that were the person's problem and are ours: fetch the
+/// community list, write the config, start the process, point the proxy at it.
+/// Installing sing-box stays theirs — it is a separate program with its own
+/// releases, and shipping a Go binary inside a client distributed as one
+/// unpacked file is not a trade this project makes.
+async function cmdRelays(pos: string[], opts: Map<string, string>, flags: Set<string>): Promise<void> {
+  const verb = (pos[0] ?? 'status').toLowerCase()
+  if (verb === 'status') {
+    const st = relayState()
+    if (!st.running) {
+      process.stderr.write(tr('relays.notRunning') + '\n')
+      return
+    }
+    process.stdout.write(`${st.pid}\t127.0.0.1:${st.port}\n`)
+    process.stderr.write(tr('relays.statusRunning', { pid: String(st.pid), port: String(st.port) }) + '\n')
+    return
+  }
+  if (verb === 'off') {
+    const res = stopRelays()
+    if (!res.stopped) {
+      process.stderr.write(tr('relays.notRunning') + '\n')
+      return
+    }
+    process.stderr.write(tr('relays.stopped') + '\n')
+    if (!res.proxyCleared) process.stderr.write(out.dim(tr('relays.proxyKept')) + '\n')
+    return
+  }
+  if (verb !== 'on') usageDie(tr('relays.usage'))
+  const port = Number(opts.get('--port') ?? '')
+  const onion = flags.has('--onion') ? true : flags.has('--no-onion') ? false : undefined
+  const res = await startRelays(probeIsland(opts), {
+    port: Number.isInteger(port) && port > 0 ? port : undefined,
+    onion,
+  })
+  process.stderr.write(
+    tr('relays.started', {
+      port: String(res.port),
+      pid: String(res.pid),
+      shape: res.shape,
+      trusted: String(res.trustedCount),
+      community: String(res.communityCount),
+    }) + '\n',
+  )
+}
+
 /// `rcq safety <uin>`: the sixty digits that say nobody is in the middle.
 ///
 /// Prints the number on stdout (the machine contract) and everything a person
@@ -1202,13 +1250,13 @@ async function main(): Promise<void> {
   // let through without a key and then died reading the history it had just
   // been told it could not read. These are the verbs that touch no account
   // state at all, plus `lock`, which is the command that creates the seal.
-  const KEY_FREE = new Set(['lang', 'proxy', '__probe', 'routes', 'islands', 'update', 'lock'])
+  const KEY_FREE = new Set(['lang', 'proxy', '__probe', 'routes', 'islands', 'update', 'lock', 'relays'])
   if (isSealed() && !isUnlocked() && !KEY_FREE.has(verb)) {
     const supplied = passphraseFromEnv()
     const pass = supplied ?? (await promptSecret(tr('seal.prompt')))
     if (!unlockWith(pass)) die(tr('seal.wrong'))
   }
-  const LOCK_FREE = new Set(['whoami', 'export', 'lang', 'log', 'proxy', '__probe', 'routes', 'islands'])
+  const LOCK_FREE = new Set(['whoami', 'export', 'lang', 'log', 'proxy', '__probe', 'routes', 'islands', 'relays'])
   if (!LOCK_FREE.has(verb)) acquireStateLock()
   const { pos, opts, flags } = parseArgs(argv.slice(1))
   // Bring the route up before anything names the island. Cheap: a decision
@@ -1222,6 +1270,8 @@ async function main(): Promise<void> {
       return cmdIslands()
     case 'safety':
       return cmdSafety(pos)
+    case 'relays':
+      return cmdRelays(pos, opts, flags)
     case 'lock':
       return cmdLock()
     case 'unlock':

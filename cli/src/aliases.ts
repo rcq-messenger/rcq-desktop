@@ -18,6 +18,7 @@ const ALIASES: Record<string, string> = {
   reg: 'register',
   isl: 'islands',
   sn: 'safety',
+  rl: 'relays',
   res: 'restore',
   me: 'whoami',
   wi: 'whoami',

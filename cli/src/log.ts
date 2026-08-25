@@ -13,7 +13,8 @@ import fs from 'node:fs'
 import type { WebIdentity } from '../../src/lib/crypto'
 import { foreignHost, groupLabel, peerLabel } from './directory'
 import { chatLine, stripAnsi } from './format'
-import { describeEnvelope, historyPath, type HistoryRecord } from './receive'
+import { describeEnvelope, historyPath, type HistoryRecord, historyName } from './receive'
+import { readStateLines } from './state'
 import { out } from './style'
 
 /// Which thread to read: one person, one room, or everything.
@@ -58,14 +59,10 @@ function sameThread(a: Thread, b: Thread): boolean {
 /// and keep an older one. Whatever the clocks do, what prints must agree with
 /// the times printed beside it.
 export function readLog(myUin: number, thread: Thread, limit: number): LogRow[] {
-  let text: string
-  try {
-    text = fs.readFileSync(historyPath(myUin), 'utf8')
-  } catch {
-    return []
-  }
+  // Sealed or not, the state layer hands back plain lines.
+  const lines = readStateLines(historyName(myUin))
   const rows: LogRow[] = []
-  for (const line of text.split('\n')) {
+  for (const line of lines) {
     if (!line) continue
     let rec: HistoryRecord
     try {

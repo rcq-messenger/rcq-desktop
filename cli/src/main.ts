@@ -53,6 +53,7 @@ import {
   ingestGroupPacket,
   setOpenGroup,
   type IngestResult,
+  historyName,
 } from './receive'
 import { runInteractive } from './interactive'
 import { logRowData, parseThread, readLog, type Thread } from './log'
@@ -60,7 +61,17 @@ import { cancelRequest, describeRequestFrame, loadRequests, respondTo, sendReque
 import { sendText } from './send'
 import { isYes, strangerCheck } from './stranger'
 import { RcqSocket } from './socket'
-import { acquireStateLock } from './state'
+import {
+  acquireStateLock,
+  isSealed,
+  isUnlocked,
+  readStateLines,
+  sealDir,
+  sealableFiles,
+  unlockWith,
+  unsealDir,
+} from './state'
+import { passphraseFromEnv, promptSecret } from './passphrase'
 import { decryptIncoming, noteInboundFrom } from '../../src/lib/signal-device'
 import { canonical } from './aliases'
 import {
@@ -224,6 +235,36 @@ function printPhraseBlock(uin: number): void {
 /// The island catalogue, numbered. The phones draw this as a carousel of
 /// pictures; here it is a list, and the number it prints is what `--island`
 /// takes, so choosing one is two commands and no copying of URLs.
+/// `rcq lock`: seal this state dir under a passphrase.
+///
+/// Everything here is plaintext until somebody runs this: the identity and its
+/// private keys, every libsignal ratchet, the whole history. File permissions
+/// are the only thing in front of them, which is the right answer for a laptop
+/// nobody wants and the wrong one for a laptop somebody takes.
+async function cmdLock(): Promise<void> {
+  if (isSealed()) die(tr('seal.already'))
+  process.stderr.write(err.yellow(tr('seal.warn')) + '\n')
+  const first = passphraseFromEnv() ?? (await promptSecret(tr('seal.prompt')))
+  if (first.length < 8) die(tr('seal.tooShort'))
+  // Confirmed only when a human typed it. A passphrase handed in by the
+  // environment was already written down somewhere by definition.
+  if (!passphraseFromEnv()) {
+    const again = await promptSecret(tr('seal.promptAgain'))
+    if (again !== first) die(tr('seal.mismatch'))
+  }
+  sealDir(first, sealableFiles())
+  process.stderr.write(tr('seal.done') + '\n')
+}
+
+/// `rcq unlock`: take the seal off again, for somebody who decides the
+/// passphrase costs more than it buys. Needs the passphrase first, which the
+/// dispatcher below has already asked for.
+async function cmdUnlock(): Promise<void> {
+  if (!isSealed()) die(tr('seal.notSealed'))
+  unsealDir(sealableFiles())
+  process.stderr.write(tr('seal.unsealed') + '\n')
+}
+
 async function cmdIslands(): Promise<void> {
   const list = await fetchIslands().catch((e: unknown) => {
     die(e instanceof Error ? e.message : String(e))
@@ -1020,12 +1061,10 @@ async function cmdSingBox(island: string, opts: Map<string, string>, flags: Set<
 async function cmdExport(): Promise<void> {
   const id = requireIdentity()
   const file = historyPath(id.uin)
-  let lines = 0
-  try {
-    lines = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).length
-  } catch {
-    /* no history yet */
-  }
+  // Counted through the state layer so a sealed history reports its real
+  // length rather than the number of ciphertext lines (same number, but the
+  // day the format changes this stops being a coincidence).
+  const lines = readStateLines(historyName(id.uin)).length
   process.stdout.write(`${file}\t${lines} messages\n`)
 }
 
@@ -1066,6 +1105,14 @@ async function main(): Promise<void> {
   // must not hang on a hidden prompt.
   if (!cmd) {
     if (!process.stdin.isTTY || !process.stdout.isTTY) usageDie(tr('args.noCommand'))
+    // The daily driver asks once and holds the key for the whole session,
+    // which is the shape that makes a sealed dir livable: a passphrase per
+    // sent message would train anybody out of using one.
+    if (isSealed() && !isUnlocked()) {
+      const supplied = passphraseFromEnv()
+      const pass = supplied ?? (await promptSecret(tr('seal.prompt')))
+      if (!unlockWith(pass)) die(tr('seal.wrong'))
+    }
     acquireStateLock()
     // Fire-and-forget: the daily driver is where an update notice earns its
     // keep, and it must never delay the prompt.
@@ -1088,6 +1135,21 @@ async function main(): Promise<void> {
   // not connecting" has to be answerable WHILE that watch holds the dir.
   // `islands` reads a file on the website and nothing else: no account state,
   // no island. It joins the peeks rather than waiting on a held state dir.
+  // Sealed dir: get the key before anything reads a file. `lock` is exempt
+  // (it is the command that creates the seal) and so is every verb that
+  // touches no account state, which is what keeps `rcq islands` and the route
+  // ladder usable on a machine whose owner has not typed the passphrase yet.
+  // ⚠ NOT `ROUTE_FREE`. That set answers a different question (does this verb
+  // need a working path to an island), and using it here meant `rcq log` was
+  // let through without a key and then died reading the history it had just
+  // been told it could not read. These are the verbs that touch no account
+  // state at all, plus `lock`, which is the command that creates the seal.
+  const KEY_FREE = new Set(['lang', 'proxy', '__probe', 'routes', 'islands', 'update', 'lock'])
+  if (isSealed() && !isUnlocked() && !KEY_FREE.has(verb)) {
+    const supplied = passphraseFromEnv()
+    const pass = supplied ?? (await promptSecret(tr('seal.prompt')))
+    if (!unlockWith(pass)) die(tr('seal.wrong'))
+  }
   const LOCK_FREE = new Set(['whoami', 'export', 'lang', 'log', 'proxy', '__probe', 'routes', 'islands'])
   if (!LOCK_FREE.has(verb)) acquireStateLock()
   const { pos, opts, flags } = parseArgs(argv.slice(1))
@@ -1100,6 +1162,10 @@ async function main(): Promise<void> {
   switch (verb) {
     case 'islands':
       return cmdIslands()
+    case 'lock':
+      return cmdLock()
+    case 'unlock':
+      return cmdUnlock()
     case 'register':
       return cmdRegister(opts)
     case 'restore':

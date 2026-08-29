@@ -55,19 +55,34 @@ function isUsableIdentityKey(b64: string): boolean {
   return bytes.some((x) => x !== 0)
 }
 
+
+/// Hand the frame back to the browser every couple dozen encryptions.
+/// encryptV1 is an X25519 + ratchet step per member, all on the main
+/// thread: a send into a 2.1K room after a rotation (SKDMs for everyone),
+/// or one with a long legacy tail, used to freeze the UI for seconds
+/// (founder, 29.08). Yielding between batches keeps the send exactly as
+/// long but lets frames paint; 24 keeps the overhead of the timer hop
+/// under a percent of the crypto itself.
+const YIELD_EVERY = 24
+function uiYield(): Promise<void> {
+  return new Promise((r) => setTimeout(r, 0))
+}
+
 /// Build the per-member ciphertext list for a group send. Skips the
 /// caller themselves (`sender.uin`) and any member whose identity key
 /// is missing/invalid (collected in `skipped` rather than thrown) so
 /// one bad member can't fail delivery to everyone else.
-export function encryptGroupEnvelope(
+export async function encryptGroupEnvelope(
   envelope: Envelope,
   sender: WebIdentity,
   members: GroupMember[],
-): GroupEncryptResult {
+): Promise<GroupEncryptResult> {
   const payloads: GroupPayload[] = []
   const skipped: SkippedMember[] = []
+  let done = 0
   for (const m of members) {
     if (m.uin === sender.uin) continue
+    if (++done % YIELD_EVERY === 0) await uiYield()
     if (!isUsableIdentityKey(m.identity_key)) {
       skipped.push({ uin: m.uin, reason: 'invalid_identity_key' })
       continue
@@ -96,6 +111,21 @@ export function encryptGroupEnvelope(
   return { payloads, skipped }
 }
 
+
+/// One group send at a time per gid. Two quick sends used to be able to
+/// interleave at the network awaits (and now at the uiYield points too):
+/// both called prepareOwnSend before either committed, sealing two
+/// different messages under the SAME chain step, which a receiver can
+/// only read as a replay. The lock serializes build + POST + commit, so
+/// the SKDM-before-gmsg ordering holds across sends as well.
+const groupSendLocks = new Map<number, Promise<unknown>>()
+export function withGroupSendLock<T>(gid: number, fn: () => Promise<T>): Promise<T> {
+  const prev = groupSendLocks.get(gid) ?? Promise.resolve()
+  const run = prev.then(fn, fn)
+  groupSendLocks.set(gid, run.catch(() => {}))
+  return run
+}
+
 export interface GroupDualSend {
   /// base64(JSON gmsg wire) — ONE ciphertext for the whole group. Null when
   /// nobody in the group is sender-keys-capable (pure legacy send).
@@ -117,12 +147,12 @@ export interface GroupDualSend {
 /// the legacy per-member fan-out for non-capable members. Rotates the
 /// outbound chain when a previously-distributed member is gone (forward
 /// secrecy). `gid` is the SERVER group id (the chain is keyed by it).
-export function buildGroupDualSend(
+export async function buildGroupDualSend(
   envelope: Envelope,
   sender: WebIdentity,
   gid: number,
   members: GroupMember[],
-): GroupDualSend {
+): Promise<GroupDualSend> {
   const skipped: SkippedMember[] = []
   const capable: GroupMember[] = []
   const legacy: GroupMember[] = []
@@ -138,7 +168,9 @@ export function buildGroupDualSend(
 
   // Legacy fan-out (unchanged path) for everyone without the capability.
   const legacyPayloads: GroupPayload[] = []
+  let doneLegacy = 0
   for (const m of legacy) {
+    if (++doneLegacy % YIELD_EVERY === 0) await uiYield()
     try {
       legacyPayloads.push({
         to_uin: m.uin,
@@ -166,8 +198,10 @@ export function buildGroupDualSend(
   // SKDM to capable members who don't hold (kid, epoch) yet.
   const skdmPayloads: GroupPayload[] = []
   const distributedNow: number[] = []
+  let doneSkdm = 0
   for (const m of capable) {
     if (!step.needDistribution.includes(m.uin)) continue
+    if (++doneSkdm % YIELD_EVERY === 0) await uiYield()
     try {
       skdmPayloads.push({
         to_uin: m.uin,

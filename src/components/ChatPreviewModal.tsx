@@ -5,8 +5,11 @@ import { Link } from 'react-router-dom'
 import { useGroupIncoming, useIncoming, type IncomingRow } from '../lib/incoming-store'
 import { loadPersisted, storageKey, type OutgoingRow } from '../lib/outgoing-store'
 import { useI18n } from '../lib/i18n-context'
+import { parseGroupInvite } from '../lib/group-invite'
 import { PersonAvatar } from './PersonAvatar'
 import { GroupAvatar } from './GroupAvatar'
+import { GroupJoinCard } from './GroupJoinCard'
+import { EmoticonText } from './EmoticonText'
 import type { UserStatus } from '../lib/api'
 
 /**
@@ -94,20 +97,32 @@ export function ChatPreviewModal({
                 {t('chat.preview.empty')}
               </div>
             )}
-            {rows.map((r) => (
-              <div key={r.id} className={`flex ${r.mine ? 'justify-end' : 'justify-start'}`}>
-                <div
-                  className={`max-w-[80%] rounded-lg px-3 py-1.5 text-sm break-words ${
-                    r.mine ? 'bg-accent/20' : 'bg-field'
-                  }`}
-                >
-                  {r.text || <span className="italic text-fg-dim">{t('chat.preview.media')}</span>}
-                  <span className="ml-2 text-[0.625rem] text-fg-dim align-baseline">
-                    {new Date(r.at).toLocaleTimeString(lang === 'ru' ? 'ru-RU' : undefined, { hour: '2-digit', minute: '2-digit' })}
-                  </span>
+            {rows.map((r) => {
+              // The preview speaks the chat's own language (founder, 29.08):
+              // emoticon shortcodes render as emoticons, not as :codes:, and
+              // a group invite renders as the join card rather than a URL.
+              const invite = r.text ? parseGroupInvite(r.text) : null
+              return (
+                <div key={r.id} className={`flex ${r.mine ? 'justify-end' : 'justify-start'}`}>
+                  <div
+                    className={`max-w-[80%] rounded-lg px-3 py-1.5 text-sm break-words ${
+                      r.mine ? 'bg-accent/20' : 'bg-field'
+                    }`}
+                  >
+                    {invite ? (
+                      <GroupJoinCard groupId={invite.id} host={invite.host} compact />
+                    ) : r.text ? (
+                      <EmoticonText text={r.text} emoticonSize={16} link={{ enabled: true }} />
+                    ) : (
+                      <span className="italic text-fg-dim">{t('chat.preview.media')}</span>
+                    )}
+                    <span className="ml-2 text-[0.625rem] text-fg-dim align-baseline">
+                      {new Date(r.at).toLocaleTimeString(lang === 'ru' ? 'ru-RU' : undefined, { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
           <footer className="px-4 py-3 border-t border-line/40">
             <Link

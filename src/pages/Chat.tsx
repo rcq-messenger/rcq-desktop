@@ -3419,7 +3419,17 @@ export function Chat() {
                     isSelf={isSelf}
                     canPin={canPin}
                     canModerate={canModerate}
-                    linksAllowed={linksAllowed}
+                    // Links stay clickable when the READER is exempt or the
+                    // SENDER is: a links-off room is an anti-spam rule for
+                    // members, and it was eating the owner's own announcements
+                    // in everyone else's view (founder, 29.08).
+                    linksAllowed={
+                      linksAllowed ||
+                      (isGroup && group != null &&
+                        (group.owner_uin === m.from ||
+                          senderMember?.role === 'admin' ||
+                          (senderMember?.permissions?.length ?? 0) > 0))
+                    }
                     filesAllowed={filesAllowed}
                     downloading={downloadingRowId === m.id}
                     senderName={senderName}
@@ -3719,7 +3729,10 @@ export function Chat() {
                 if (file) void sendFile(file)
               }}
             />
-            <div className="relative flex-none">
+            {/* While a voice note records, the bar takes the whole row: the
+                attach / emoticon / mic buttons leave, which is also what lets
+                the row survive a minimized window (founder, 29.08). */}
+            <div className={`relative flex-none ${rec ? 'hidden' : ''}`}>
               <button
                 data-attach-menu
                 onClick={() => {
@@ -3887,7 +3900,7 @@ export function Chat() {
               onClick={() => setShowPicker((v) => !v)}
               className={`h-10 w-10 rounded-full flex items-center justify-center flex-none transition-colors ${
                 showPicker ? 'bg-accent/15 ring-1 ring-accent/40' : 'hover:bg-line/60'
-              }`}
+              } ${rec ? 'hidden' : ''}`}
               title={t('chat.emoticons')}
               aria-label={t('chat.emoticons')}
             >
@@ -3906,24 +3919,30 @@ export function Chat() {
             <button
               onClick={() => void startVoice()}
               disabled={(!peer && !group) || readOnlyHere || !!rec || uploadingFile}
-              className="h-10 w-10 rounded-full flex items-center justify-center flex-none hover:bg-line/60 transition-colors disabled:opacity-40"
+              className={`h-10 w-10 rounded-full flex items-center justify-center flex-none hover:bg-line/60 transition-colors disabled:opacity-40 ${rec ? 'hidden' : ''}`}
               title={t('voice.label')}
               aria-label={t('voice.label')}
             >
               <MicGlyph />
             </button>
             {rec ? (
-              <div className="flex-1 h-10 rounded-2xl bg-surface px-4 flex items-center gap-3">
+              // The pulsing dot and the timer already say "recording"; the
+              // word said it a third time and, in a narrow window, wrapped to
+              // a second line and shoved Send off the edge (founder, 29.08).
+              // min-w-0 lets the bar shrink with the window instead of
+              // overflowing it; the buttons never wrap or ellipsize.
+              <div className="flex-1 min-w-0 h-10 rounded-2xl bg-surface px-4 flex items-center gap-3">
                 <span className="h-2.5 w-2.5 rounded-full bg-red-500 animate-pulse flex-none" />
-                <span className="text-sm text-fg-secondary flex-1">
-                  {t('voice.recording')} {Math.floor(recElapsed / 60)}:{String(recElapsed % 60).padStart(2, '0')}
+                <span className="text-sm text-fg-secondary tabular-nums flex-none">
+                  {Math.floor(recElapsed / 60)}:{String(recElapsed % 60).padStart(2, '0')}
                 </span>
-                <button onClick={cancelVoice} className="text-xs text-fg-secondary hover:text-fg-primary">
+                <span className="flex-1" />
+                <button onClick={cancelVoice} className="text-xs text-fg-secondary hover:text-fg-primary flex-none whitespace-nowrap">
                   {t('common.cancel')}
                 </button>
                 <button
                   onClick={() => void finishVoice()}
-                  className="h-8 px-3 rounded-full bg-accent text-white text-xs font-semibold"
+                  className="h-8 px-3 rounded-full bg-accent text-white text-xs font-semibold flex-none whitespace-nowrap"
                 >
                   {t('chat.send')}
                 </button>
@@ -4410,9 +4429,12 @@ const IncomingMessageRow = memo(function IncomingMessageRow({
             <MediaPlaceholder mediaKind={m.mediaKind} />
             <BubbleMenuButton tone="chrome" label={t('chat.actions.more')} open={showActions} onOpen={(el) => h.toggleActions(m.id, el)} />
           </div>
-        ) : invite != null && linksAllowed ? (
-          // Links-off rooms drop to the plain-text bubble below:
-          // a join card is the most clickable link there is.
+        ) : invite != null ? (
+          // A join card renders in a links-off room too (founder, 29.08,
+          // reversing the "an invite IS a link" call): the card is RCQ's own
+          // join mechanic, not an external URL, and SENDING one in a
+          // links-off room is still gated to the owner and moderators, so
+          // what appears here already passed that gate.
           <div className="relative" data-chat-menu {...press()}>
             <GroupJoinCard groupId={invite.id} host={invite.host} menuSpace />
             <BubbleMenuButton tone="chrome" label={t('chat.actions.more')} open={showActions} onOpen={(el) => h.toggleActions(m.id, el)} />

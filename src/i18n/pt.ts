@@ -709,6 +709,7 @@ export const pt: Record<string, string> = {
   'contact_actions.blocked_tag': 'BLOQUEADO',
   // Group create + info
   'group.create.title': 'Novo grupo',
+  'group.create.cross_not_invited': 'Grupo criado, mas o convite não chegou a: {names}. Envie o link você mesmo.',
   'group.create.name': 'Nome do grupo',
   'group.create.name_placeholder': 'ex.: Turma 9-B',
   'group.create.members': 'Membros',

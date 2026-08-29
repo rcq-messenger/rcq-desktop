@@ -707,6 +707,7 @@ export const zh: Record<string, string> = {
   'contact_actions.blocked_tag': '已拉黑',
   // Group create + info
   'group.create.title': '新建群组',
+  'group.create.cross_not_invited': '群组已创建，但邀请未送达：{names}。请自行发送群组链接。',
   'group.create.name': '群组名称',
   'group.create.name_placeholder': '例如：九年级二班',
   'group.create.members': '成员',

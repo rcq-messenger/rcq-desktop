@@ -161,8 +161,14 @@ function withMentions(text: string, ctx: MentionContext, keyBase: string): React
 }
 
 export function EmoticonText({ text, emoticonSize = 18, className = '', mention, link }: Props) {
-  const side = `${emoticonSize / 16}rem`
   const tokens = tokenize(text)
+  // A message that IS one emoticon is a sticker (Android 0.152 set the
+  // precedent and testers liked it): render it big. Only in full-size
+  // contexts - previews and snippets pass their smaller emoticonSize and
+  // keep their compact scale.
+  const solo = tokens.length === 1 && tokens[0].kind === 'emoticon' && emoticonSize >= 18
+  const effectiveSize = solo ? 48 : emoticonSize
+  const side = `${effectiveSize / 16}rem`
   const plainRun = (run: string, key: string) => {
     if (mention) return <span key={key}>{withMentions(run, mention, `${key}-`)}</span>
     return <span key={key}>{run}</span>

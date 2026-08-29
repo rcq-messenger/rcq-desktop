@@ -46,7 +46,7 @@ export const zh: Record<string, string> = {
   'settings.recovery.forget.warn': '只有在别处抄写了这些词时才这样做。浏览器无法把它们藏起来，既躲不开本页运行的脚本，也躲不开拿到未锁定电脑的人；而这个短语可以在任何岛上永久重建你的账号。这里的账号和消息会继续正常工作，你只是无法再从这个浏览器里读出这些词。',
   'settings.recovery.forget.confirm': '忘记',
   'settings.recovery.forgotten': '该短语已不再保存在这里。',
-  'login.link.scan_body': '在手机上打开 RCQ，用摄像头扫描这个 QR 码，就能在这里用手机上的账号登录。',
+  'login.link.scan_body': '在手机上打开 RCQ,进入设置,然后进入已连接设备,扫描此二维码即可在此处登录手机上的账号。',
   'login.link.security_more': '为什么会更弱？',
   'login.link.security_note': '当手机和这个浏览器同时连接时，你的私聊消息会使用较简单的加密，好让两边都能收到（群组聊天不受影响）。随时可以在应用的“设置 → 已连接设备”里断开浏览器，安全性会重新回到最高。',
   'login.link.waiting': '正在等待你的手机…QR 码 2 分钟内有效。',

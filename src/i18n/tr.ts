@@ -754,6 +754,8 @@ export const tr: Record<string, string> = {
   'group.settings.closed.hint': 'Kimse bağlantıyla katılamaz; insanları sen eklersin.',
   'group.settings.hide_members': 'Üye listesini gizle',
   'group.settings.hide_members.hint': 'Üyeler grubu görür, birbirini görmez.',
+  'group.settings.catalog': 'Aramada göster',
+  'group.settings.catalog.hint': 'Odanın adı ve açıklaması, bulunabilmesi için adada yayımlanır. Kapalı: oda yalnızca bağlantıyla açılır.',
   'group.settings.no_links': 'Bağlantıları kapat',
   'group.settings.no_links.hint': 'Mesajlardaki bağlantılar düz metin kalır ve açılmaz.',
   'group.settings.no_files': 'Dosyaları kapat',

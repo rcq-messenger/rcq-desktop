@@ -49,6 +49,10 @@ export function GroupSettingsModal({
   const [noLinks, setNoLinks] = useState(group.links_allowed === false)
   const [noFiles, setNoFiles] = useState(group.files_allowed === false)
   const [slowmode, setSlowmode] = useState(group.slowmode_sec ?? 0)
+  // Voluntary catalog (stage 6): listing publishes the room's name and
+  // description to the island so search can match it. Admin-or-owner, same
+  // gate as editing the name itself - it is the same information.
+  const [listed, setListed] = useState(group.in_catalog === true)
   const [busy, setBusy] = useState(false)
   const [picBusy, setPicBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -61,6 +65,7 @@ export function GroupSettingsModal({
       if (name.trim() && name.trim() !== group.name) body.name = name.trim()
       if (description !== (group.description ?? '')) body.description = description
       if (pinned !== (group.pinned_text ?? '')) body.pinned_text = pinned
+      if (listed !== (group.in_catalog === true)) body.in_catalog = listed
       if (isOwner) {
         if (ownerOnly !== (group.post_policy === 'owner_only')) {
           body.post_policy = ownerOnly ? 'owner_only' : 'all'
@@ -170,6 +175,13 @@ export function GroupSettingsModal({
                 className="w-full rounded-md bg-field px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-accent resize-none"
               />
             </Field>
+
+            <Toggle
+              label={t('group.settings.catalog')}
+              hint={t('group.settings.catalog.hint')}
+              on={listed}
+              onChange={setListed}
+            />
 
             {isOwner && (
               <div className="space-y-1 pt-1">

@@ -894,6 +894,8 @@ export const en: Record<string, string> = {
   'group.settings.closed.hint': 'Nobody joins by link; you add people yourself.',
   'group.settings.hide_members': 'Hide the member list',
   'group.settings.hide_members.hint': 'Members see the group, not each other.',
+  'group.settings.catalog': 'Show in search',
+  'group.settings.catalog.hint': "The room's name and description are published on the island so people can find it. Off: the room opens by link only.",
   'group.settings.no_links': 'Disable links',
   'group.settings.no_links.hint': 'Links in messages stay plain text and do not open.',
   'group.settings.no_files': 'Disable files',

@@ -899,6 +899,8 @@ export const ru: Record<string, string> = {
   'group.settings.closed.hint': 'По ссылке не войти, участников добавляете вы.',
   'group.settings.hide_members': 'Скрыть список участников',
   'group.settings.hide_members.hint': 'Участники видят группу, но не друг друга.',
+  'group.settings.catalog': 'Показывать в поиске',
+  'group.settings.catalog.hint': 'Имя и описание комнаты публикуются на острове, чтобы её можно было найти. Выкл: комната открывается только по ссылке.',
   'group.settings.no_links': 'Отключить ссылки',
   'group.settings.no_links.hint': 'Ссылки в сообщениях остаются простым текстом и не открываются.',
   'group.settings.no_files': 'Отключить файлы',

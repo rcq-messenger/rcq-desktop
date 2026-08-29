@@ -295,6 +295,7 @@ export interface RCQGroup {
   /// Slowmode step in seconds (0/absent = off). One of 0/5/10/30/60.
   /// Server-enforced on group-sealed for identified non-moderators.
   slowmode_sec?: number
+  in_catalog?: boolean
 }
 
 /// Lightweight group info shown to a non-member who's about to join
@@ -639,6 +640,7 @@ export const Api = {
       is_closed?: boolean
       members_hidden?: boolean
       links_allowed?: boolean
+      in_catalog?: boolean
       files_allowed?: boolean
       slowmode_sec?: number
       avatar_media_id?: string

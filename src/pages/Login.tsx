@@ -12,7 +12,6 @@ import { LanguagePicker } from '../components/LanguagePicker'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { Logo } from '../components/Logo'
 import {
-  DEFAULT_API_BASE,
   RecoverError,
   activateStoredIdentity,
   adoptLinkBlob,
@@ -28,7 +27,8 @@ import { isTauri } from '../lib/desktop'
 import { defaultHome } from '../lib/routing'
 import { clientLabel } from '../lib/client-name'
 import { bytesToB64, newLinkEphemeral, openLinkSeal, type WebIdentity } from '../lib/crypto'
-import { islandLabel, normaliseIsland, rememberIsland, rememberedIsland } from '../lib/island-choice'
+import { IslandPickerModal } from '../components/IslandPickerModal'
+import { islandLabel, rememberIsland, rememberedIsland } from '../lib/island-choice'
 import { IslandAvatar } from '../components/IslandAvatar'
 import { useIslandCard } from '../lib/use-server-info'
 import { useI18n } from '../lib/i18n-context'
@@ -507,26 +507,19 @@ function Spinner() {
 function IslandField() {
   const { t } = useI18n()
   const [base, setBase] = useState(() => rememberedIsland())
-  const [draft, setDraft] = useState(() => islandLabel(rememberedIsland()))
-  const [open, setOpen] = useState(() => rememberedIsland() !== DEFAULT_API_BASE)
-  const custom = base !== DEFAULT_API_BASE
+  const [open, setOpen] = useState(false)
   // ⚠ The HOOK, not a bare read of the cache. The cache alone paints the first
   // frame and then never moves, so an island whose name we learn a moment later
   // kept saying "ISLAND" until the page was loaded a second time.
   const islandName = useIslandCard(base).name
 
-  /// Settle what was typed into a usable base URL. On blur and on submit, not
-  /// on every keystroke: normalising as you type means an empty field fills
-  /// itself back in and a half-typed host is rewritten under the cursor.
-  function commit(text: string) {
-    const next = normaliseIsland(text)
+  function commit(next: string) {
     setBase(next)
-    setDraft(islandLabel(next))
     rememberIsland(next)
   }
 
-  if (!open) {
-    return (
+  return (
+    <>
       <button
         type="button"
         onClick={() => setOpen(true)}
@@ -547,51 +540,10 @@ function IslandField() {
         </span>
         <span className="flex-none text-xs text-fg-dim">{t('login.island.change')}</span>
       </button>
-    )
-  }
-
-  return (
-    <div className="rounded-md bg-field px-3 py-2.5 space-y-2">
-      <div className="flex items-center gap-2">
-        <GlobeIcon />
-        <span className="text-[0.6875rem] uppercase tracking-wide text-fg-dim flex-1">{t('login.island')}</span>
-        {custom && (
-          <button
-            type="button"
-            onClick={() => commit('')}
-            className="text-xs text-fg-dim hover:text-fg-secondary transition-colors"
-          >
-            {t('login.island.reset')}
-          </button>
-        )}
-      </div>
-      <input
-        type="text"
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={(e) => commit(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault()
-            commit((e.target as HTMLInputElement).value)
-          }
-        }}
-        placeholder={islandLabel(DEFAULT_API_BASE)}
-        spellCheck={false}
-        autoCorrect="off"
-        autoCapitalize="off"
-        className="w-full h-9 px-3 rounded-md bg-surface outline-none focus:ring-1 focus:ring-accent text-sm"
-      />
-      <p className="text-xs text-fg-dim">{t('login.island.hint')}</p>
-    </div>
+      {open && (
+        <IslandPickerModal current={base} onPick={commit} onClose={() => setOpen(false)} />
+      )}
+    </>
   )
 }
 
-function GlobeIcon() {
-  return (
-    <svg className="flex-none text-fg-secondary" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <circle cx="12" cy="12" r="9" />
-      <path d="M3 12h18M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18z" />
-    </svg>
-  )
-}

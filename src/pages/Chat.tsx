@@ -326,7 +326,6 @@ export function Chat() {
   // find anything you had said, in a thread that can run for months.
   const [searchOpen, setSearchOpen] = useState(false)
   const [query, setQuery] = useState('')
-  const [matchIdx, setMatchIdx] = useState(0)
   // The own message currently being edited (composer is in edit mode), or null.
   const [editingRow, setEditingRow] = useState<OutgoingRow | null>(null)
   const [pinExpanded, setPinExpanded] = useState(false)
@@ -2624,9 +2623,9 @@ export function Chat() {
   /// Ids of the messages containing the query, newest last — the same order
   /// they sit in the thread, so stepping through them walks the conversation
   /// rather than jumping about.
-  const matches = useMemo(() => {
+  const searchHits = useMemo(() => {
     const q = query.trim().toLowerCase()
-    if (!q) return [] as string[]
+    if (!q) return [] as { id: string; text: string; at: number; mine: boolean; author?: string }[]
     return timeline.flatMap((it) => {
       if (it.kind === 'day' || it.kind === 'unread') return []
       // A call row's "text" is a pipe-joined list of i18n KEYS, not anything
@@ -2636,18 +2635,22 @@ export function Chat() {
       if (it.kind === 'out' && it.row.kind === 'call') return []
       const text = it.kind === 'out' ? it.row.text : it.msg.text
       const id = it.kind === 'out' ? it.row.id : it.msg.id
-      return text && text.toLowerCase().includes(q) ? [id] : []
+      const at = it.kind === 'out' ? it.row.sentAt : it.msg.at
+      if (!text || !text.toLowerCase().includes(q)) return []
+      return [{
+        id,
+        text,
+        at,
+        mine: it.kind === 'out',
+        author: it.kind === 'out'
+          ? undefined
+          : isGroup
+            ? (peerAliasFor(it.msg.from) || memberByUin.get(it.msg.from)?.nickname || `#${it.msg.from}`)
+            : undefined,
+      }]
     })
   }, [timeline, query])
 
-  /// Step to a match and take the view with you. Reuses the same jump the reply
-  /// quotes use, so a hit is marked the same way a quoted message is.
-  function gotoMatch(next: number) {
-    if (matches.length === 0) return
-    const i = ((next % matches.length) + matches.length) % matches.length
-    setMatchIdx(i)
-    jumpToMessage(matches[i])
-  }
 
   /** "Today" / "Yesterday" / a plain date, in the user's locale. */
   function dayLabel(at: number): string {
@@ -2888,7 +2891,7 @@ export function Chat() {
             type="button"
             onClick={() => {
               setSearchOpen((v) => !v)
-              if (searchOpen) { setQuery(''); setMatchIdx(0) }
+              if (searchOpen) setQuery('')
             }}
             aria-label={t('chat.search.open')}
             title={t('chat.search.open')}
@@ -2926,46 +2929,92 @@ export function Chat() {
         </div>
       </header>
 
-      {searchOpen && (
-        /* Same floating treatment as the header and the pin: the search strip
-           sits over the thread, and as a flat `bg-surface` fill it read as a
-           grey slab wedged between them, the one bar in the column that did not
-           belong to the theme. */
-        <div className="rcq-floating-bar flex-none px-4 py-2 flex items-center gap-2 max-w-2xl w-full mx-auto">
-          <input
-            autoFocus
-            value={query}
-            onChange={(e) => { setQuery(e.target.value); setMatchIdx(0) }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') { e.preventDefault(); gotoMatch(e.shiftKey ? matchIdx - 1 : matchIdx + 1) }
-              if (e.key === 'Escape') { setSearchOpen(false); setQuery('') }
-            }}
-            placeholder={t('chat.search.placeholder')}
-            className="flex-1 min-w-0 max-w-xs h-9 px-3 rounded-full bg-field text-sm outline-none focus:ring-1 focus:ring-accent"
-          />
-          <span className="text-xs text-fg-dim tabular-nums flex-none">
-            {query.trim() ? `${matches.length ? matchIdx + 1 : 0}/${matches.length}` : ''}
-          </span>
-          <button
-            type="button"
-            onClick={() => gotoMatch(matchIdx - 1)}
-            disabled={matches.length === 0}
-            aria-label={t('chat.search.prev')}
-            className="h-8 w-8 rounded-full bg-field text-fg-secondary disabled:opacity-30 flex-none"
-          >
-            ↑
-          </button>
-          <button
-            type="button"
-            onClick={() => gotoMatch(matchIdx + 1)}
-            disabled={matches.length === 0}
-            aria-label={t('chat.search.next')}
-            className="h-8 w-8 rounded-full bg-field text-fg-secondary disabled:opacity-30 flex-none"
-          >
-            ↓
-          </button>
-        </div>
-      )}
+      {searchOpen &&
+        createPortal(
+          /* In-chat search, the iOS way (megalist B10): not a strip that
+             steps the thread through hits, but a blurred sheet OVER the
+             thread with the hits listed on it — tap one, the sheet closes and
+             the thread jumps there. Portaled for the usual backdrop-filter
+             containing-block reason. */
+          <div className="fixed inset-0 z-40 flex flex-col bg-surface/60 backdrop-blur-2xl" role="dialog" aria-modal="true">
+            <div className="max-w-2xl w-full mx-auto flex-1 min-h-0 flex flex-col">
+              <div className="flex items-center gap-2 px-4 pt-4 pb-3">
+                <SearchGlyph />
+                <input
+                  autoFocus
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') { setSearchOpen(false); setQuery('') }
+                    if (e.key === 'Enter' && searchHits.length > 0) {
+                      const last = searchHits[searchHits.length - 1]
+                      setSearchOpen(false); setQuery('')
+                      jumpToMessage(last.id)
+                    }
+                  }}
+                  placeholder={t('chat.search.placeholder')}
+                  className="flex-1 min-w-0 h-10 bg-transparent text-lg outline-none placeholder:text-fg-dim"
+                />
+                {query && (
+                  <button
+                    type="button"
+                    onClick={() => setQuery('')}
+                    aria-label={t('common.cancel')}
+                    className="text-fg-secondary hover:text-fg-primary"
+                  >
+                    ×
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => { setSearchOpen(false); setQuery('') }}
+                  className="text-sm text-accent font-medium"
+                >
+                  {t('common.cancel')}
+                </button>
+              </div>
+              <div className="h-px bg-line/40" />
+              {query.trim() === '' ? (
+                <div className="flex-1 flex flex-col items-center pt-16 gap-2 text-fg-secondary">
+                  <SearchGlyph size={30} />
+                  <div className="text-xs text-center px-10">{t('chat.search.empty.idle')}</div>
+                </div>
+              ) : searchHits.length === 0 ? (
+                <div className="flex-1 flex flex-col items-center pt-16 text-xs text-fg-secondary">
+                  {t('chat.search.empty.none')}
+                </div>
+              ) : (
+                <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pb-8">
+                  <div className="px-4 pt-3 pb-1 text-[0.625rem] font-semibold uppercase tracking-wide text-fg-secondary">
+                    {t('chat.search.section')}
+                  </div>
+                  {[...searchHits].reverse().slice(0, 100).map((h) => (
+                    <button
+                      key={h.id}
+                      type="button"
+                      onClick={() => {
+                        setSearchOpen(false); setQuery('')
+                        jumpToMessage(h.id)
+                      }}
+                      className="w-full text-left px-4 py-2.5 hover:bg-fg-primary/[0.05] transition-colors"
+                    >
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="text-xs font-semibold text-fg-secondary truncate">
+                          {h.mine ? t('rooms.you') : (h.author ?? (isSelf ? '' : peer?.nickname ?? ''))}
+                        </span>
+                        <span className="text-[0.625rem] text-fg-dim flex-none">
+                          {new Date(h.at).toLocaleDateString(undefined, { day: '2-digit', month: '2-digit' })}
+                        </span>
+                      </div>
+                      <div className="text-sm text-fg-primary line-clamp-2 break-words">{h.text}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>,
+          document.body,
+        )}
 
       {isGroup && group?.pinned_text && (
         <PinnedBanner
@@ -5456,5 +5505,15 @@ function AltSubtitle({ uin, lastSeen }: { uin: number; lastSeen: string }) {
         {lastSeen}
       </span>
     </span>
+  )
+}
+
+
+function SearchGlyph({ size = 17 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-fg-secondary flex-none">
+      <circle cx="11" cy="11" r="7" />
+      <line x1="21" y1="21" x2="16.65" y2="16.65" />
+    </svg>
   )
 }

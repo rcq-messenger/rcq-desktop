@@ -28,6 +28,12 @@ import {
   type StrikeEntry,
   type StrikeStore,
 } from '../../src/lib/group-log'
+import {
+  aliasFor,
+  drainVisitedQueues,
+  listVisitedIslands,
+  type GuestQueueRow,
+} from '../../src/lib/visited-islands'
 import { foreignHost, groupLabel, isBlocked, isContact, knownName, labelForLine, peerLabel } from './directory'
 import { isCrossBlocked } from './blocklist'
 import { chatLine, when } from './format'
@@ -582,9 +588,11 @@ export async function drainQueue(identity: WebIdentity): Promise<IngestResult | 
   // skdm branch of ingestDecrypted, on both the drain and the live socket).
   await replayStored(identity, result)
   const myDev = await myDeviceId(identity)
-  // ⚠ No id, no drain — never guess (see the warning on myDeviceId).
+  // ⚠ No id, no drain - never guess (see the warning on myDeviceId). The
+  // guest mailboxes still drain: they are account-level and need no device.
   if (myDev === null) {
     process.stderr.write(tr('drain.noDevice') + '\n')
+    await drainVisited(identity, result)
     return null
   }
   let rows: QueueRow[]
@@ -594,11 +602,15 @@ export async function drainQueue(identity: WebIdentity): Promise<IngestResult | 
     })
     if (!res.ok) {
       process.stderr.write(tr('drain.http', { status: res.status }) + '\n')
+      // The HOME island refusing is no reason to leave the visited ones
+      // unread: §5c exists precisely for the day one island is down.
+      await drainVisited(identity, result)
       return null
     }
     rows = (await res.json()) as QueueRow[]
   } catch (e) {
     process.stderr.write(tr('drain.error', { err: humanError(e) }) + '\n')
+    await drainVisited(identity, result)
     return null
   }
   const directIds: number[] = []
@@ -640,9 +652,65 @@ export async function drainQueue(identity: WebIdentity): Promise<IngestResult | 
   // written before the account's first log fetch, so this order prints the
   // backlog in the order it was said.
   await drainRoomLog(identity, myDev, result)
+  // §5c: the guest mailboxes on every visited island - the receive path for
+  // cross-island rooms (they have no socket here, same as the web: polling).
+  await drainVisited(identity, result)
   // One badge per room instead of its whole feed (see the note on openGroup),
   // and one for both drains: a badge that counts half the backlog is a badge
   // that lied.
+  announceGroupNews(identity.uin)
+  return result
+}
+
+/// §5c receive half: drain the guest mailbox (and Stage-5 room logs) on every
+/// visited island, filing group rows under their local ALIAS ids. Rides the
+/// web's own drainVisitedQueues, so the 401 -> recover-once dance and the
+/// unreachable-island silence are the shared code's.
+///
+/// Two different ack disciplines, on purpose (visited-islands.ts contract):
+/// the legacy guest /messages/queue fetch is ACK-LESS - the island moved its
+/// cursor when it answered, throwing cannot bring a row back, so a failed row
+/// is said and swallowed, like the web. The room log IS acked by position, so
+/// there the handler THROWS on failure and the ack stops in front of the row.
+/// History appends are synchronous (appendState) and a chainless broadcast is
+/// held on disk by openGroupPacket before the handler returns, so durable-
+/// before-ack holds with no flush hook.
+export async function drainVisited(identity: WebIdentity, into?: IngestResult): Promise<IngestResult> {
+  const result = into ?? { receiptTargets: [] }
+  if (listVisitedIslands().length === 0) return result
+  // The guest mailbox is account-level v=1 fan-out: rows carry no
+  // to_device_id, so the device id only matters for the sibling-copy filter,
+  // which never fires here. 0 when this box has no provisioned device yet.
+  const myDev = (await myDeviceId(identity).catch(() => null)) ?? 0
+  const dispatch = async (row: GuestQueueRow, host: string): Promise<void> => {
+    // Remote group ids are per-island and collide with local ones: map to the
+    // stable negative alias BEFORE ingest, so history, unread, rosters and
+    // /log all key the same room the same way.
+    const gid = typeof row.group_id === 'number' ? aliasFor(host, row.group_id) : null
+    await ingestQueueRow(identity, myDev, { envelope_type: row.envelope_type, payload: row.payload, group_id: gid }, result)
+  }
+  await drainVisitedQueues(
+    identity,
+    async (row, host) => {
+      try {
+        await dispatch(row, host)
+      } catch (e) {
+        process.stderr.write(err.dim(tr('drain.row', { id: `@${host}`, err: humanError(e) })) + '\n')
+      }
+    },
+    {
+      handle: async (row, host) => {
+        try {
+          await dispatch(row, host)
+        } catch (e) {
+          process.stderr.write(
+            err.dim(tr('drain.row', { id: `g${row.group_id ?? '?'}@${host}`, err: humanError(e) })) + '\n',
+          )
+          throw e
+        }
+      },
+    },
+  )
   announceGroupNews(identity.uin)
   return result
 }

@@ -40,13 +40,17 @@ import {
   advertiseSenderKeys,
   describeGroupError,
   forgetRoster,
+  joinForeignRoom,
   listGroups,
   rosterFor,
   ruleRefusal,
   sendGroupText,
 } from './groups'
+import { dropForeignGroup, foreignGroupCtx, parseJoinTarget } from './foreign'
+import { refByAlias } from '../../src/lib/visited-islands'
 import {
   drainQueue,
+  drainVisited,
   hasThreadWith,
   historyPath,
   ingestDecrypted,
@@ -645,6 +649,9 @@ async function cmdGroups(): Promise<void> {
         name: g.name,
         members: groupSize(g),
         host: g.host ?? null,
+        // The id the room's own island knows it by (negative local ids are
+        // aliases); null for a room on this island, whose id IS the wire id.
+        remote_id: g.id < 0 ? (refByAlias(g.id)?.remoteId ?? null) : null,
         closed: !!g.is_closed,
         post_policy: g.post_policy ?? 'all',
         slowmode_sec: g.slowmode_sec ?? 0,
@@ -660,19 +667,38 @@ async function cmdGroups(): Promise<void> {
     if ((g.slowmode_sec ?? 0) > 0) rules.push(`slowmode=${g.slowmode_sec}`)
     if (g.links_allowed === false) rules.push('no_links')
     if (g.files_allowed === false) rules.push('no_files')
-    process.stdout.write(`${g.id}\t${g.name}\t${groupSize(g)}\t${rules.join(',')}\n`)
+    // A room on another island carries its host as a fifth column; local rows
+    // keep today's four so nothing parsing them has to change.
+    const host = g.host ? `\t@${g.host}` : ''
+    process.stdout.write(`${g.id}\t${g.name}\t${groupSize(g)}\t${rules.join(',')}${host}\n`)
   }
   // A room can now be left from here (the founder called being unable to a
   // trap). The list itself is machine data on stdout; the how-to is status.
   if (groups.length > 0) process.stderr.write(err.dim(tr('groups.leaveHint')) + '\n')
 }
 
-/// Join an open group by id. A closed one refuses, and says so rather than
+/// Join an open group by id, an invite link, or `<gid>@<host>` for a room on
+/// another island (§5c). A closed one refuses, and says so rather than
 /// handing over a 403.
 async function cmdJoin(pos: string[]): Promise<void> {
-  const gid = Number((pos[0] ?? '').replace(/^g/i, ''))
-  if (!Number.isInteger(gid) || gid <= 0) usageDie(tr('join.needsId'))
+  const target = parseJoinTarget(pos[0] ?? '')
+  if (!target) usageDie(tr('join.needsId'))
   const id = await withToken(requireIdentity())
+  if (target.host) {
+    // The typed command IS the consent to touch that island (see the privacy
+    // note on joinForeignRoom): the first packet to the host leaves here.
+    let joined: { alias: number; name: string; host: string }
+    try {
+      joined = await joinForeignRoom(id, target.gid, target.host)
+    } catch (e) {
+      die(e instanceof Error ? e.message : String(e))
+    }
+    await refreshDirectory(id).catch(() => null)
+    process.stdout.write(`${joined.alias}\t${joined.name}\t${joined.host}\n`)
+    process.stderr.write(tr('join.doneForeign', { name: joined.name, host: joined.host, gid: joined.alias }) + '\n')
+    return
+  }
+  const gid = target.gid
   const preview = await Api.groupPreview(id, gid).catch(() => null)
   if (!preview) die(tr('join.noSuchGroup', { gid }))
   if (preview.is_closed) die(tr('join.closed', { name: preview.name }))
@@ -687,17 +713,27 @@ async function cmdJoin(pos: string[]): Promise<void> {
 /// the web's group menu makes). A failure is said, not swallowed.
 async function cmdLeave(pos: string[]): Promise<void> {
   const gid = Number((pos[0] ?? '').replace(/^g/i, ''))
-  if (!Number.isInteger(gid) || gid <= 0) usageDie(tr('leave.needsId'))
+  // Negative ids are rooms on other islands (the §5c alias); zero is a typo.
+  if (!Number.isInteger(gid) || gid === 0) usageDie(tr('leave.needsId'))
   const id = await withToken(requireIdentity())
   await primeDirectory(id)
   const base = groupById(id.uin, gid)
   if (!base) die(tr('group.notMember', { gid }))
   try {
-    await Api.removeGroupMember(id, gid, id.uin)
+    if (gid < 0) {
+      // §5c: leaving a foreign room removes the GUEST uin from the roster on
+      // the host island. The guest account itself stays (harmless orphan,
+      // and rejoining recovers the same uin), like every other client.
+      const ctx = await foreignGroupCtx(id, gid)
+      await Api.removeGroupMember(ctx.ident, ctx.gid, ctx.ident.uin)
+    } else {
+      await Api.removeGroupMember(id, gid, id.uin)
+    }
     forgetRoster(gid)
   } catch (e) {
     die(tr('leave.failed', { err: describeGroupError(e) }))
   }
+  if (gid < 0) dropForeignGroup(id.uin, gid)
   await refreshDirectory(id).catch(() => null)
   process.stdout.write(`${gid}\tleft\n`)
   process.stderr.write(tr('leave.done', { name: base.name }) + '\n')
@@ -821,8 +857,9 @@ async function cmdSend(pos: string[], flags: Set<string>): Promise<void> {
   const target = pos[0] ?? ''
   const text = pos[1]
   // A room is `g<id>`; anything else is a uin. Unambiguous in both directions,
-  // and the same spelling `rcq log g21` uses.
-  if (/^g\d+$/i.test(target) && text) return cmdSendGroup(Number(target.slice(1)), text)
+  // and the same spelling `rcq log g21` uses. `g-1000` is a room on another
+  // island (negative alias id).
+  if (/^g-?\d+$/i.test(target) && text) return cmdSendGroup(Number(target.slice(1)), text)
   const uin = Number(target)
   if (!Number.isInteger(uin) || uin <= 0 || !text) usageDie(tr('send.needsArgs'))
   const identity = await withToken(requireIdentity())
@@ -921,7 +958,12 @@ async function cmdWatch(flags: Set<string>): Promise<void> {
   })
   sock.start()
   const poll = setInterval(() => {
+    // The home island rides the socket when it is up; the visited islands
+    // never have one (§5c is polling, same as the web's 30s tick), so their
+    // guest mailboxes are drained on every tick either way (drainQueue runs
+    // drainVisited at its tail).
     if (!sock.isOpen) void drainQueue(identity)
+    else void drainVisited(identity)
   }, 30_000)
   process.stderr.write(tr('watch.hello', { uin: identity.uin }) + '\n')
   const waiting = cachedPending(identity.uin)

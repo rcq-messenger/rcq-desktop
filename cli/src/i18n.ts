@@ -101,7 +101,7 @@ for scripts and one-shots (stdout is data, status goes to stderr):
   rcq block (b) <uin> | rcq unblock (ub) <uin>   stop / resume hearing from someone
   rcq remove (rm) <uin> [--yes]             drop a contact on both sides
   rcq groups (g)                            list your rooms (id, name, members, rules)
-  rcq join (j) <id>                         join an open group
+  rcq join (j) <id>[@<host>] | <link>       join an open group, here or on another island
   rcq leave (lv) <id>                       leave a room
   rcq create (cr) "NAME" [uin ...]          make a room with these people
   rcq invite (inv) <id> <uin>               add somebody to a room you are in
@@ -147,7 +147,7 @@ RCQ_VERBOSE=1 shows protocol detail; NO_COLOR strips colour.
   rcq block (b) <uin> | rcq unblock (ub) <uin>   перестать / снова получать сообщения
   rcq remove (rm) <uin> [--yes]             удалить контакт у обоих
   rcq groups (g)                            список ваших комнат (id, имя, участники, правила)
-  rcq join (j) <id>                         вступить в открытую группу
+  rcq join (j) <id>[@<host>] | <link>       вступить в открытую группу, здесь или на другом острове
   rcq leave (lv) <id>                       выйти из комнаты
   rcq create (cr) "ИМЯ" [uin ...]           создать комнату с этими людьми
   rcq invite (inv) <id> <uin>               добавить человека в вашу комнату
@@ -193,7 +193,7 @@ para scripts y comandos únicos (stdout son datos, el estado va a stderr):
   rcq block (b) <uin> | rcq unblock (ub) <uin>   dejar de / volver a recibir de alguien
   rcq remove (rm) <uin> [--yes]             quitar un contacto de ambos lados
   rcq groups (g)                            listar tus salas (id, nombre, miembros, reglas)
-  rcq join (j) <id>                         unirte a un grupo abierto
+  rcq join (j) <id>[@<host>] | <link>       unirte a un grupo abierto, aquí o en otra isla
   rcq leave (lv) <id>                       salir de una sala
   rcq create (cr) "NOMBRE" [uin ...]        crear una sala con estas personas
   rcq invite (inv) <id> <uin>               agregar a alguien a una sala en la que estás
@@ -239,7 +239,7 @@ para scripts e comandos avulsos (stdout são dados, o status vai para stderr):
   rcq block (b) <uin> | rcq unblock (ub) <uin>   parar de / voltar a receber de alguém
   rcq remove (rm) <uin> [--yes]             remover um contato dos dois lados
   rcq groups (g)                            listar suas salas (id, nome, membros, regras)
-  rcq join (j) <id>                         entrar em um grupo aberto
+  rcq join (j) <id>[@<host>] | <link>       entrar em um grupo aberto, aqui ou em outra ilha
   rcq leave (lv) <id>                       sair de uma sala
   rcq create (cr) "NOME" [uin ...]          criar uma sala com estas pessoas
   rcq invite (inv) <id> <uin>               adicionar alguém a uma sala em que você está
@@ -285,7 +285,7 @@ betikler ve tek seferlik komutlar için (stdout veridir, durum stderr'e gider):
   rcq block (b) <uin> | rcq unblock (ub) <uin>   birinden mesaj almayı durdur / sürdür
   rcq remove (rm) <uin> [--yes]             bir kişiyi iki taraftan da sil
   rcq groups (g)                            odalarını listele (id, ad, üyeler, kurallar)
-  rcq join (j) <id>                         açık bir gruba katıl
+  rcq join (j) <id>[@<host>] | <link>       açık bir gruba katıl, burada ya da başka bir adada
   rcq leave (lv) <id>                       bir odadan ayrıl
   rcq create (cr) "AD" [uin ...]            bu kişilerle bir oda kur
   rcq invite (inv) <id> <uin>              içinde olduğun bir odaya birini ekle
@@ -331,7 +331,7 @@ RCQ_VERBOSE=1 protokol ayrıntısını gösterir; NO_COLOR rengi kaldırır.
   rcq block (b) <uin> | rcq unblock (ub) <uin>   перестати / знову отримувати від когось
   rcq remove (rm) <uin> [--yes]             видалити контакт з обох боків
   rcq groups (g)                            список ваших кімнат (id, назва, учасники, правила)
-  rcq join (j) <id>                         приєднатися до відкритої групи
+  rcq join (j) <id>[@<host>] | <link>       приєднатися до відкритої групи, тут або на іншому острові
   rcq leave (lv) <id>                       вийти з кімнати
   rcq create (cr) "ІМʼЯ" [uin ...]          створити кімнату з цими людьми
   rcq invite (inv) <id> <uin>               додати людину до вашої кімнати
@@ -377,7 +377,7 @@ RCQ_VERBOSE=1 показує деталі протоколу; NO_COLOR приб�
   rcq block (b) <uin> | rcq unblock (ub) <uin>   停止 / 恢复接收某人的消息
   rcq remove (rm) <uin> [--yes]             双向删除一个联系人
   rcq groups (g)                            列出你的群 (id, 名称, 成员, 规则)
-  rcq join (j) <id>                         加入一个开放的群
+  rcq join (j) <id>[@<host>] | <link>       加入一个开放的群, 本服务器或其他服务器
   rcq leave (lv) <id>                       退出一个群
   rcq create (cr) "名称" [uin ...]          用这些人创建一个群
   rcq invite (inv) <id> <uin>               把某人加入你所在的群
@@ -2090,6 +2090,52 @@ RCQ_VERBOSE=1 显示协议细节; NO_COLOR 去掉颜色。
     uk: 'ви в "{name}"',
     'zh-Hans': '你已加入 "{name}"',
   },
+  // Rooms on other islands (federation §5c): join <gid>@<host> or a link.
+  'join.badHost': {
+    en: 'that does not look like an island host: {host}',
+    ru: 'это не похоже на адрес острова: {host}',
+    es: 'eso no parece un host de isla: {host}',
+    pt: 'isso não parece um host de ilha: {host}',
+    tr: 'bu bir ada adresine benzemiyor: {host}',
+    uk: 'це не схоже на адресу острова: {host}',
+    'zh-Hans': '这看起来不像一个服务器地址: {host}',
+  },
+  'join.ownIsland': {
+    en: 'group {gid} lives on this island - just: rcq join {gid}',
+    ru: 'группа {gid} на этом же острове, достаточно: rcq join {gid}',
+    es: 'el grupo {gid} vive en esta isla, basta con: rcq join {gid}',
+    pt: 'o grupo {gid} mora nesta ilha, basta: rcq join {gid}',
+    tr: '{gid} grubu zaten bu adada, yeterli: rcq join {gid}',
+    uk: 'група {gid} на цьому ж острові, досить: rcq join {gid}',
+    'zh-Hans': '群 {gid} 就在本服务器上, 直接: rcq join {gid}',
+  },
+  'join.noSuchGroupOn': {
+    en: 'there is no group {gid} on {host}',
+    ru: 'на {host} нет группы {gid}',
+    es: 'no existe el grupo {gid} en {host}',
+    pt: 'não existe o grupo {gid} em {host}',
+    tr: '{host} adasında {gid} grubu yok',
+    uk: 'на {host} немає групи {gid}',
+    'zh-Hans': '{host} 上没有群 {gid}',
+  },
+  'join.doneForeign': {
+    en: 'you are in "{name}" on {host} (here it is g{gid})',
+    ru: 'вы в "{name}" на {host} (здесь это g{gid})',
+    es: 'estás en "{name}" en {host} (aquí es g{gid})',
+    pt: 'você está em "{name}" em {host} (aqui é g{gid})',
+    tr: '{host} üzerindeki "{name}" içindesin (burada g{gid})',
+    uk: 'ви в "{name}" на {host} (тут це g{gid})',
+    'zh-Hans': '你已加入 {host} 上的 "{name}" (这里是 g{gid})',
+  },
+  'visited.noAuth': {
+    en: 'could not sign in to {host} as a guest (the island did not answer or refused this key)',
+    ru: 'не удалось войти на {host} гостем (остров не ответил или отверг этот ключ)',
+    es: 'no se pudo entrar en {host} como invitado (la isla no respondió o rechazó esta clave)',
+    pt: 'não foi possível entrar em {host} como convidado (a ilha não respondeu ou recusou esta chave)',
+    tr: '{host} adasına misafir olarak girilemedi (ada yanıt vermedi ya da bu anahtarı reddetti)',
+    uk: 'не вдалося увійти на {host} гостем (острів не відповів або відхилив цей ключ)',
+    'zh-Hans': '无法以访客身份登录 {host} (服务器没有响应或拒绝了此密钥)',
+  },
 
   // Leaving a room, and the other room verbs the CLI now wires in.
   'leave.needsId': {
@@ -2434,7 +2480,7 @@ people
   /block (b) <uin>     stop hearing from them   /unblock (ub) <uin>
   /remove (rm) <uin>   drop a contact on both sides
 rooms
-  /join (j) <id>       join an open room and walk into it
+  /join (j) <id>[@host] join an open room and walk in (@host or a link: another island)
   /leave (lv) [id]     leave the room you are in, or the one you name
   /create (cr) NAME    make a room
   /invite (inv) <uin>  add somebody to the room you are in
@@ -2468,7 +2514,7 @@ and keeps the session.`,
   /block (b) <uin>     перестать получать от них   /unblock (ub) <uin>
   /remove (rm) <uin>   удалить контакт у обоих
 комнаты
-  /join (j) <id>       вступить в открытую комнату и сразу войти в неё
+  /join (j) <id>[@host] вступить в открытую комнату и сразу войти (@host или ссылка: другой остров)
   /leave (lv) [id]     выйти из открытой комнаты или из той, что вы назвали
   /create (cr) ИМЯ     создать комнату
   /invite (inv) <uin>  добавить человека в открытую комнату
@@ -2501,7 +2547,7 @@ gente
   /block (b) <uin>     dejar de recibir de él   /unblock (ub) <uin>
   /remove (rm) <uin>   quitar un contacto de ambos lados
 salas
-  /join (j) <id>       unirte a una sala abierta y entrar en ella
+  /join (j) <id>[@host] unirte a una sala abierta y entrar (@host o un enlace: otra isla)
   /leave (lv) [id]     salir de la sala en la que estás, o de la que nombres
   /create (cr) NOMBRE  crear una sala
   /invite (inv) <uin>  agregar a alguien a la sala en la que estás
@@ -2535,7 +2581,7 @@ pessoas
   /block (b) <uin>     parar de receber dele   /unblock (ub) <uin>
   /remove (rm) <uin>   remover um contato dos dois lados
 salas
-  /join (j) <id>       entrar em uma sala aberta e ir para ela
+  /join (j) <id>[@host] entrar em uma sala aberta e ir para ela (@host ou um link: outra ilha)
   /leave (lv) [id]     sair da sala em que você está, ou da que você nomear
   /create (cr) NOME    criar uma sala
   /invite (inv) <uin>  adicionar alguém à sala em que você está
@@ -2569,7 +2615,7 @@ kişiler
   /block (b) <uin>     ondan almayı durdur   /unblock (ub) <uin>
   /remove (rm) <uin>   bir kişiyi iki taraftan da sil
 odalar
-  /join (j) <id>       açık bir odaya katıl ve içine gir
+  /join (j) <id>[@host] açık bir odaya katıl ve içine gir (@host ya da bağlantı: başka ada)
   /leave (lv) [id]     içinde olduğun odadan ya da adını verdiğin odadan ayrıl
   /create (cr) AD      bir oda kur
   /invite (inv) <uin>  içinde olduğun odaya birini ekle
@@ -2603,7 +2649,7 @@ oturumu değil.`,
   /block (b) <uin>     перестати отримувати від них   /unblock (ub) <uin>
   /remove (rm) <uin>   видалити контакт у обох
 кімнати
-  /join (j) <id>       приєднатися до відкритої кімнати і відразу увійти
+  /join (j) <id>[@host] приєднатися до відкритої кімнати і увійти (@host або посилання: інший острів)
   /leave (lv) [id]     вийти з відкритої кімнати або з тієї, що ви назвали
   /create (cr) ІМʼЯ    створити кімнату
   /invite (inv) <uin>  додати людину до відкритої кімнати
@@ -2636,7 +2682,7 @@ oturumu değil.`,
   /block (b) <uin>     停止接收对方消息   /unblock (ub) <uin>
   /remove (rm) <uin>   双向删除一个联系人
 群
-  /join (j) <id>       加入一个开放的群并进入它
+  /join (j) <id>[@host] 加入一个开放的群并进入它 (@host 或链接: 其他服务器)
   /leave (lv) [id]     退出你所在的群, 或你指定的群
   /create (cr) 名称    创建一个群
   /invite (inv) <uin>  把某人加入你所在的群

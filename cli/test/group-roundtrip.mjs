@@ -48,7 +48,9 @@ const roster = [alice, bob].map((p) => ({
 }))
 
 const hello = { kind: 'text', id: 'CCCCCCCC-1111-4222-8333-444444444444', text: 'standup at 10' }
-const ds = buildGroupDualSend(hello, alice, GID, roster)
+// Awaited since the 29.08 web change: the builder yields between encryption
+// batches (UI thread concern), so it is async now; the result is the same.
+const ds = await buildGroupDualSend(hello, alice, GID, roster)
 assert.ok(ds.broadcastPayload, 'a capable roster must produce one broadcast')
 assert.equal(ds.legacyPayloads.length, 0, 'nobody here needs the legacy fan-out')
 assert.equal(ds.skdmPayloads.length, 1, 'bob has never held this chain')
@@ -92,7 +94,7 @@ assert.equal(await handleGmsg(alice, ds.broadcastPayload, GID), null, 'own echo 
 // A member who never advertised keeps the per-member fan-out, and both halves
 // of a mixed room go out from one build.
 const carol = newTestIdentity(100003)
-const mixed = buildGroupDualSend(hello, alice, GID + 1, [
+const mixed = await buildGroupDualSend(hello, alice, GID + 1, [
   ...roster,
   { uin: carol.uin, nickname: 'carol', role: 'member', status: 'online', identity_key: carol.identityKeyB64, signing_key: carol.signingKeyB64 },
 ])

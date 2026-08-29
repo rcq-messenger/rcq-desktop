@@ -88,10 +88,11 @@ export function threadTag(t: Thread): string {
 }
 
 /// Parse `396` or `g21` into a thread. Null for anything else, including an
-/// empty string, so the caller can say what it wanted.
+/// empty string, so the caller can say what it wanted. `g-1000` is a room on
+/// another island (the negative alias id, §5c) and reads back like any other.
 export function parseThread(token: string): Thread {
   const s = token.trim()
-  if (/^g\d+$/i.test(s)) return { kind: 'group', gid: Number(s.slice(1)) }
+  if (/^g-?\d+$/i.test(s)) return { kind: 'group', gid: Number(s.slice(1)) }
   const uin = Number(s)
   return Number.isInteger(uin) && uin > 0 ? { kind: 'peer', uin } : null
 }

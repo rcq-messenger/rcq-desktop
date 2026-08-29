@@ -29,6 +29,7 @@ import {
 import { mirrorContactsToVault } from '../../src/lib/contacts-vault'
 import { getCrossIsland } from '../../src/lib/crossisland-store'
 import type { WebIdentity } from '../../src/lib/crypto'
+import { fetchForeignGroups } from './foreign'
 import { tr } from './i18n'
 import { err } from './style'
 import { humanError } from './errors'
@@ -97,11 +98,17 @@ async function fetchDirectory(identity: WebIdentity): Promise<Contact[]> {
     Api.pendingRequests(identity).catch(() => null),
   ])
   const prev = contactsCache.get(identity.uin)
+  const prevGroups = prev?.groups ?? []
+  // A failed group fetch keeps the names we had; blanking them would put the
+  // raw ids back on screen for the rest of the process.
+  const home = groups ?? prevGroups.filter((g) => g.id > 0)
+  // §5c: rooms on visited islands ride the same snapshot under their negative
+  // alias ids, refreshed from each island (an island that does not answer
+  // keeps its rooms from the last snapshot - see foreign.ts).
+  const foreign = await fetchForeignGroups(identity, prevGroups.filter((g) => g.id < 0))
   persistSnapshot(identity.uin, {
     contacts,
-    // A failed group fetch keeps the names we had; blanking them would put the
-    // raw ids back on screen for the rest of the process.
-    groups: groups ?? prev?.groups ?? [],
+    groups: [...home, ...foreign],
     pending: pending ?? prev?.pending ?? [],
     me: prev?.me ?? null,
   })
@@ -285,7 +292,11 @@ export function groupById(myUin: number, gid: number): RCQGroup | null {
 /// one place where a name is easier to type than to click.
 export function findGroup(myUin: number, token: string): RCQGroup | null {
   const groups = cachedGroups(myUin)
-  const asId = Number(token)
+  // The tag column prints rooms as g21 (and a foreign one as g-1000), so the
+  // tag itself must be typeable back. A room NAMED g21 still wins below when
+  // no id matches.
+  const tag = /^g(-?\d+)$/i.exec(token.trim())
+  const asId = Number(tag ? tag[1] : token)
   if (Number.isInteger(asId)) {
     const byId = groupById(myUin, asId)
     if (byId) return byId

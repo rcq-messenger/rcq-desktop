@@ -181,6 +181,36 @@ receive loop, and the capability is per ACCOUNT, not per device: advertising
 before the chains work makes every capable sender broadcast to an account
 that cannot open a broadcast.
 
+### Rooms on other islands (federation §5c)
+
+`rcq join 123@is2.rcq.app` (or a full invite link,
+`https://rcq.app/g/123@is2.rcq.app` / `rcq://group/123@...`) joins a room
+that lives on another island, with the web's own mechanism reused verbatim
+(`src/lib/visited-islands.ts`):
+
+* The typed `join` guest-registers this identity on the room's island -
+  recover-first with the same keypair, so the per-island uin is stable. The
+  first packet to that island leaves at the moment you type the command and
+  never earlier: merely seeing a link touches nothing (the web's privacy
+  rule, kept).
+* Locally the room gets a stable NEGATIVE alias id (`g-1000`): per-island
+  group ids collide, and everything here keys rooms by a number. `rcq groups`
+  prints a foreign room with `@host` as an extra column (`--json` carries
+  `host` and `remote_id`), and the alias works everywhere a gid does:
+  `rcq send g-1000 "text"`, `rcq log g-1000`, `/g -1000`, `rcq leave g-1000`.
+* Sends go to the HOST island as the guest, legacy per-member fan-out ONLY
+  (no sender-keys for cross-island rooms in v1, same as the web), and no
+  self-carbon (alias ids are per-device; another device would misread the
+  room id).
+* Receiving is POLLING, no second socket: every drain (one-shots, watch,
+  the interactive 30s tick) also drains the guest mailbox and Stage-5 room
+  logs on each visited island, mapping remote gids to the alias before
+  ingest, with the same durable-before-ack discipline.
+* Guest tokens are never written to disk (the web's rule): a fresh process
+  re-mints them through the recover handshake on first use.
+* `leave` removes the guest uin from the roster on the host island; the
+  guest account itself remains (harmless, and rejoining recovers it).
+
 ## Contact requests
 
 `rcq add <uin>` sends one and now reports what actually happened: the island
@@ -388,7 +418,14 @@ Local stores inside `localstorage.json` are keyed per account
 (`setAccountScope`, called from `cli/src/directory.ts`): the roster
 snapshot under `rcq.web.<uin>.contacts.snapshot`, learned names under
 `rcq.cli.names.<uin>`, and the fingerprint of the contact list last mirrored
-into the vault under `rcq.cli.vaultmirror.<uin>`.
+into the vault under `rcq.cli.vaultmirror.<uin>`. Cross-island rooms add two
+more of the web's own scoped stores, `visited.v1` (which islands this
+identity guest-registered on: host, per-island uin, when - the jwt field is
+always written empty) and `fgroup-alias.v1` (the host+remote-id behind each
+negative alias). Both therefore live inside `localstorage.json` and are
+sealed by `rcq lock` with everything else; guest TOKENS are memory-only and
+re-minted via the recover handshake, so no credential for another island
+ever rests on disk.
 
 **The vault mirror.** Every contact list the island answers with is folded
 into the account's encrypted `contacts` slot (stage 4 of
@@ -424,13 +461,15 @@ apologise vaguely for one, it now says which.
   WebCrypto and needs no DOM, so the receive half is portable, and simply
   not written. A room with `no_files` is reported as a rule but the CLI could
   not have posted a file anyway.
-* **Cross-island send.** Cross-island messages DO arrive, and are labelled
-  `#500@host` so they cannot be confused with a local uin, but there is no
-  way to answer one: `/to` takes no host, and `federation-send.ts` is
-  importable and unwired. Delivered receipts are deliberately NOT sent to a
-  cross-island sender for the same reason (the receipt would address whoever
-  holds that number on OUR island). Cross-island contact requests
-  (`contactreq`) and profile refreshes are dropped.
+* **Cross-island 1:1 send.** Cross-island GROUPS work now (see "Rooms on
+  other islands"), but 1:1 across islands is still half there: messages DO
+  arrive, and are labelled `#500@host` so they cannot be confused with a
+  local uin, but there is no way to answer one: `/to` takes no host, and
+  `federation-send.ts` is importable and unwired. Delivered receipts are
+  deliberately NOT sent to a cross-island sender for the same reason (the
+  receipt would address whoever holds that number on OUR island).
+  Cross-island contact requests (`contactreq`) and profile refreshes are
+  dropped.
 * **Reactions, edits, deletes, replies.** All of them are dropped as
   unsupported envelope kinds. The delete is the one that matters: a message
   retracted on the sender's phone stays readable in `history-<uin>.jsonl`
@@ -456,8 +495,10 @@ apologise vaguely for one, it now says which.
   ignored.
 * **Group administration.** Creating, renaming, deleting a room, moving
   members and setting its rules all belong where you can see the roster; the
-  CLI reads rooms, posts to them, and joins an OPEN one by id. An invite
-  LINK carrying a closed room's share token is not parsed.
+  CLI reads rooms, posts to them, and joins an OPEN one by id, an invite
+  link, or `<gid>@<host>` for a room on another island (§5c). A closed
+  room's share token (`?k=`) is still not parsed - a closed room refuses
+  from here, on any island.
 * **Polls** print the question with no options and no way to vote.
 * **Typing notifications** are dropped, and that one is deliberate: a prompt
   has nowhere to draw "alice is typing" except the line being edited, and

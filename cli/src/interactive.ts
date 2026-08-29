@@ -33,11 +33,13 @@ import {
   describeGroup,
   describeGroupError,
   forgetRoster,
+  joinForeignRoom,
   listGroups,
   rosterFor,
   ruleRefusal,
   sendGroupText,
 } from './groups'
+import { dropForeignGroup, foreignGroupCtx, parseJoinTarget } from './foreign'
 import { canonical } from './aliases'
 import { currentLang, LANG_CODES, normalizeLang, setLang, tr } from './i18n'
 import { logRowHuman, readLog, recentThreads, threadTag, type Thread } from './log'
@@ -48,6 +50,7 @@ import {
   announceGroupNews,
   describeEnvelope,
   drainQueue,
+  drainVisited,
   hasThreadWith,
   hasWrittenTo,
   historyPath,
@@ -797,11 +800,26 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
         return
       }
       case 'join': {
-        const gid = Number(arg.replace(/^g/i, ''))
-        if (!Number.isInteger(gid) || gid <= 0) {
+        const target = parseJoinTarget(arg)
+        if (!target) {
           printAbove(tr('join.needsId'))
           return
         }
+        if (target.host) {
+          // A room on another island: the typed /join is the consent to touch
+          // it (see joinForeignRoom). Errors are already whole sentences.
+          let joined: { alias: number; name: string; host: string }
+          try {
+            joined = await joinForeignRoom(identity, target.gid, target.host)
+          } catch (e) {
+            printAbove(out.red(e instanceof Error ? e.message : String(e)))
+            return
+          }
+          await refreshDirectory(identity).catch(() => null)
+          printAbove(out.dim(tr('join.doneForeign', { name: joined.name, host: joined.host, gid: joined.alias })))
+          return openGroup(String(joined.alias))
+        }
+        const gid = target.gid
         const preview = await Api.groupPreview(identity, gid).catch(() => null)
         if (!preview) {
           printAbove(out.yellow(tr('join.noSuchGroup', { gid })))
@@ -833,7 +851,14 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
           return
         }
         try {
-          await Api.removeGroupMember(identity, g.id, identity.uin)
+          if (g.id < 0) {
+            // §5c: the roster lives on the host island and our uin there is
+            // the guest one; the guest account itself stays behind, harmless.
+            const ctx = await foreignGroupCtx(identity, g.id)
+            await Api.removeGroupMember(ctx.ident, ctx.gid, ctx.ident.uin)
+          } else {
+            await Api.removeGroupMember(identity, g.id, identity.uin)
+          }
           forgetRoster(g.id)
         } catch (e) {
           // Not swallowed: the whole point of this verb is that leaving works or
@@ -841,6 +866,7 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
           printAbove(out.red(tr('leave.failed', { err: describeGroupError(e) })))
           return
         }
+        if (g.id < 0) dropForeignGroup(identity.uin, g.id)
         // Standing in the room we just left: step back to the bare prompt.
         if (active?.kind === 'group' && active.gid === g.id) {
           active = null
@@ -1060,7 +1086,11 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
   absorb(await drainQueue(identity))
   sock.start()
   poll = setInterval(() => {
+    // Visited islands have no socket (§5c is polling, like the web's 30s
+    // tick): when the home socket is up, only their guest mailboxes are
+    // polled; when it is down, drainQueue covers both.
     if (!sock.isOpen) void drainQueue(identity).then(absorb)
+    else void drainVisited(identity).then(absorb)
   }, 30_000)
   rl.prompt()
 }

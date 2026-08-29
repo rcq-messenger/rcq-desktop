@@ -17,7 +17,15 @@
 import { Api, ApiError, type GroupMember, type RCQGroup } from '../../src/lib/api'
 import type { Envelope, TextEnvelope, WebIdentity } from '../../src/lib/crypto'
 import { buildGroupDualSend, encryptGroupEnvelope } from '../../src/lib/group-crypto'
+import { hostOfApiBase, normalizeIslandHost } from '../../src/lib/multihome'
+import { aliasFor, ensureGuestAuth, ensureGuestOn } from '../../src/lib/visited-islands'
 import { cachedGroups, groupSize } from './directory'
+import {
+  foreignGroupCtx,
+  isForeignGroupId,
+  myUinInRoom,
+  rememberForeignGroup,
+} from './foreign'
 import { tr } from './i18n'
 import { appendHistory, markSent } from './receive'
 import { sendMessageCarbon } from './send'
@@ -79,7 +87,15 @@ export async function rosterFor(identity: WebIdentity, group: RCQGroup): Promise
   }
   let full: RCQGroup
   try {
-    full = await Api.groupInfo(identity, group.id)
+    if (isForeignGroupId(group.id)) {
+      // §5c: the room lives on its host island, so the roster is read THERE,
+      // with the guest identity (foreignGroupCtx re-mints the guest token via
+      // recover when this process has not touched that island yet).
+      const ctx = await foreignGroupCtx(identity, group.id)
+      full = await Api.groupInfo(ctx.ident, ctx.gid)
+    } else {
+      full = await Api.groupInfo(identity, group.id)
+    }
   } catch (e) {
     // Not a raw network error on the screen: what failed is a lookup nobody
     // asked for by name, and the consequence is the message, not the fetch.
@@ -92,9 +108,13 @@ export async function rosterFor(identity: WebIdentity, group: RCQGroup): Promise
 
 /// Owner, admin, or a member the owner granted a capability: the exact set the
 /// island exempts from slowmode and the content rules.
+///
+/// ⚠ Through myUinInRoom, not identity.uin: in a foreign room the roster and
+/// the owner field carry HOST-island uins, and ours there is the guest one.
 function exempt(identity: WebIdentity, group: RCQGroup): boolean {
-  if (group.owner_uin === identity.uin) return true
-  const me = group.members.find((m) => m.uin === identity.uin)
+  const my = myUinInRoom(identity, group)
+  if (group.owner_uin === my) return true
+  const me = group.members.find((m) => m.uin === my)
   return me?.role === 'admin' || (me?.permissions?.length ?? 0) > 0
 }
 
@@ -132,7 +152,9 @@ export function describeGroupError(e: unknown): string {
 /// with no rules should read as a room with no rules, not as a form.
 export function describeGroup(identity: WebIdentity, g: RCQGroup): string {
   const bits: string[] = [tr('group.members', { n: groupSize(g) })]
-  if (g.owner_uin === identity.uin) bits.push(tr('group.youOwn'))
+  // A foreign room says where it lives; a local one says nothing extra.
+  if (g.host) bits.unshift(`@${g.host}`)
+  if (g.owner_uin === myUinInRoom(identity, g)) bits.push(tr('group.youOwn'))
   if (g.post_policy === 'owner_only') bits.push(tr('group.ruleOwnerOnly'))
   if ((g.slowmode_sec ?? 0) > 0) bits.push(tr('group.ruleSlowmode', { sec: g.slowmode_sec ?? 0 }))
   if (g.links_allowed === false) bits.push(tr('group.ruleNoLinks'))
@@ -155,6 +177,7 @@ export async function sendGroupText(
 ): Promise<{ id: string; mode: string }> {
   const env: TextEnvelope = { kind: 'text', id: crypto.randomUUID().toUpperCase(), text }
   const gid = group.id
+  if (isForeignGroupId(gid)) return sendForeignGroupText(identity, group, env)
   const others = group.members.filter((m: GroupMember) => m.uin !== identity.uin)
   let mode: string
   if (others.length === 0) {
@@ -163,7 +186,9 @@ export async function sendGroupText(
     // history file is the whole of the message.
     mode = 'solo'
   } else if (others.some((m) => m.sender_keys)) {
-    const ds = buildGroupDualSend(env, identity, gid, group.members)
+    // Async since the web's 29.08 yield-batching change (the builders hand the
+    // frame back every two dozen encryptions); the result shape is unchanged.
+    const ds = await buildGroupDualSend(env, identity, gid, group.members)
     if (!ds.broadcastPayload && ds.legacyPayloads.length === 0) throw new Error(tr('group.noRecipients'))
     if (ds.skdmPayloads.length > 0) await Api.sendGroupSealed(identity, gid, ds.skdmPayloads, 'skdm')
     if (ds.broadcastPayload) {
@@ -173,7 +198,7 @@ export async function sendGroupText(
     if (ds.legacyPayloads.length > 0) await Api.sendGroupSealed(identity, gid, ds.legacyPayloads, 'message')
     mode = `gmsg+${ds.legacyPayloads.length}`
   } else {
-    const { payloads, skipped } = encryptGroupEnvelope(env, identity, group.members)
+    const { payloads, skipped } = await encryptGroupEnvelope(env, identity, group.members)
     if (payloads.length === 0) throw new Error(tr('group.noRecipients'))
     await Api.sendGroupSealed(identity, gid, payloads, 'message')
     mode = `v1 x${payloads.length}${skipped.length ? ` (skipped ${skipped.length})` : ''}`
@@ -185,6 +210,82 @@ export async function sendGroupText(
   await sendMessageCarbon(identity, { gid }, env)
   appendHistory(identity.uin, { at: new Date().toISOString(), from: identity.uin, gid, envelope: env as Envelope })
   return { id: env.id, mode }
+}
+
+/// One post into a room that lives on ANOTHER island (§5c). Everything goes
+/// to the host island as the guest, and two things are deliberately absent:
+///
+/// * NO sender-keys, no broadcast, no skdm - the LEGACY per-member fan-out
+///   only, sealed to the host island's roster. Same gate as the web
+///   (Chat.tsx: `!roster.host`, "cross-island groups keep the legacy
+///   per-member path in v1"): the sender-keys capability is advertised per
+///   ACCOUNT per island, the guest account never advertises it, and a
+///   broadcast in a room whose members straddle islands has nobody who could
+///   reliably open it yet.
+/// * NO self-carbon. Alias ids are per-device: our phone would read the
+///   carbon's gid as one of ITS local rooms (or none), so the web skips the
+///   carbon for foreign rooms and this client does the same. The history row
+///   below, keyed by the ALIAS gid, is this device's own copy.
+async function sendForeignGroupText(
+  identity: WebIdentity,
+  group: RCQGroup,
+  env: TextEnvelope,
+): Promise<{ id: string; mode: string }> {
+  const gid = group.id
+  const ctx = await foreignGroupCtx(identity, gid)
+  const others = group.members.filter((m: GroupMember) => m.uin !== ctx.ident.uin)
+  let mode: string
+  if (others.length === 0) {
+    // Same as the local path: no recipient, no wire, the history row is the
+    // whole of the message.
+    mode = 'solo'
+  } else {
+    // encryptGroupEnvelope skips the sender by uin, so it gets the GUEST
+    // identity: the guest uin is what the roster rows carry.
+    const { payloads, skipped } = await encryptGroupEnvelope(env, ctx.ident, group.members)
+    if (payloads.length === 0) throw new Error(tr('group.noRecipients'))
+    await Api.sendGroupSealed(ctx.ident, ctx.gid, payloads, 'message')
+    mode = `v1@${ctx.host} x${payloads.length}${skipped.length ? ` (skipped ${skipped.length})` : ''}`
+  }
+  // Before anything can echo it back (the guest room log serves our own post
+  // too): an unmarked id would print the line we just typed a second time.
+  markSent(env.id)
+  appendHistory(identity.uin, { at: new Date().toISOString(), from: identity.uin, gid, envelope: env as Envelope })
+  return { id: env.id, mode }
+}
+
+/// Join a room on ANOTHER island: guest-register there (recover-first, same
+/// keypair), preview, join, alias, and put the room into the snapshot. Throws
+/// human-readable lines; the callers print them and nothing else.
+///
+/// ⚠ The first packet to the host island leaves HERE and not earlier. The web
+/// refuses to touch an island just because a link was SEEN (auto-touch would
+/// let any sender map which islands you sit on); a typed `join` is the
+/// explicit tap that consents to the contact, so this is the right moment.
+export async function joinForeignRoom(
+  identity: WebIdentity,
+  remoteGid: number,
+  hostInput: string,
+): Promise<{ alias: number; name: string; host: string }> {
+  const host = normalizeIslandHost(hostInput)
+  if (!host) throw new Error(tr('join.badHost', { host: hostInput }))
+  if (host === hostOfApiBase(identity.apiBase)) throw new Error(tr('join.ownIsland', { gid: remoteGid }))
+  await ensureGuestOn(identity, host)
+  const guest = await ensureGuestAuth(identity, host)
+  if (!guest) throw new Error(tr('visited.noAuth', { host }))
+  const preview = await Api.groupPreview(guest, remoteGid).catch(() => null)
+  if (!preview) throw new Error(tr('join.noSuchGroupOn', { gid: remoteGid, host }))
+  if (preview.is_closed) throw new Error(tr('join.closed', { name: preview.name }))
+  let group: RCQGroup
+  try {
+    group = await Api.joinGroup(guest, remoteGid)
+  } catch (e) {
+    throw new Error(tr('join.failed', { err: describeGroupError(e) }))
+  }
+  const alias = aliasFor(host, remoteGid)
+  rememberForeignGroup(identity.uin, { ...group, id: alias, host })
+  forgetRoster(alias)
+  return { alias, name: group.name, host }
 }
 
 /// The rooms this account is in, by name, off the warm snapshot so the list is

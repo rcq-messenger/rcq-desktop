@@ -12,6 +12,7 @@
 /// whether the roster is hidden.
 
 import { AnimatePresence, motion } from 'framer-motion'
+import { ensureRoomKey, writeSealedState } from '../lib/group-state'
 import { useState } from 'react'
 import { Api, type RCQGroup } from '../lib/api'
 import type { WebIdentity } from '../lib/crypto'
@@ -78,6 +79,19 @@ export function GroupSettingsModal({
       }
       // Nothing changed: don't spend a round trip saying so.
       const updated = Object.keys(body).length ? await Api.patchGroup(ident, gid, body) : group
+      // Stage 6 phase 2: an UNLISTED room's identity is sealed after every
+      // save - the open columns still carry it for old clients (both-shapes
+      // migration), but the blob is what key-holding clients render, so it
+      // must never lag behind. Catalog rooms are public on purpose and skip
+      // this. Key minting fans gskey to the roster once, on first seal.
+      if (!updated.in_catalog && updated.members?.length) {
+        try {
+          await ensureRoomKey(ident, gid, updated.members)
+          await writeSealedState(ident, updated)
+        } catch {
+          /* the next save tries again; the open columns cover the meantime */
+        }
+      }
       onSaved(updated)
       onClose()
     } catch (e) {

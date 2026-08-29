@@ -22,6 +22,7 @@
 // that failed once would otherwise delete the account's sections.
 
 import { relativeLastSeen } from '../lib/last-seen'
+import { applySealedStateAll, loadRoomKeys } from '../lib/group-state'
 import { AnimatePresence } from 'framer-motion'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
@@ -205,6 +206,19 @@ export function Contacts() {
   // Cross-island requests are sealed at rest, so the store opens asynchronously
   // and the count has to be watched rather than read during a render.
   const [ciCount, setCiCount] = useState(() => requestCount())
+  // Stage 6 phase 2: the room-key store is per-account; load it before the
+  // first overlay, and re-run the refresh when a fresh key arrives live (a
+  // gskey can land seconds after the list painted the fallback name).
+  useEffect(() => {
+    if (identity) loadRoomKeys(identity.uin)
+  }, [identity])
+  useEffect(() => {
+    const nudge = () => void refresh()
+    window.addEventListener('rcq-room-keys-changed', nudge)
+    return () => window.removeEventListener('rcq-room-keys-changed', nudge)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [identity])
+
   useEffect(() => {
     const off = onRequestsChanged(() => setCiCount(requestCount()))
     void ensureRequestsLoaded().then(() => setCiCount(requestCount()))
@@ -334,8 +348,9 @@ export function Contacts() {
       setContacts(list)
       setPending(pendingList)
       setMe(myInfo)
-      setGroups(allGroups)
-      persistSnapshot(identity.uin, { contacts: list, groups: allGroups, pending: pendingList, me: myInfo })
+      const overlaid = await applySealedStateAll(allGroups)
+      setGroups(overlaid)
+      persistSnapshot(identity.uin, { contacts: list, groups: overlaid, pending: pendingList, me: myInfo })
       // Stage 4, mirror phase: the list the island just served is sealed into
       // the account's vault slot so a reinstall has a roster once the island
       // stops serving one. Behind the paint, never blocking, never throwing;

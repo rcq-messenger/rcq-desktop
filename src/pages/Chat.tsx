@@ -27,6 +27,7 @@ import { ReactionPicker } from '../components/ReactionPicker'
 import { PersonAvatar } from '../components/PersonAvatar'
 import { SenderAvatar } from '../components/SenderAvatar'
 import { Api, peerBundleFrom, type Contact, type RCQGroup, type UserInfo } from '../lib/api'
+import { applySealedState } from '../lib/group-state'
 import { isTauri, openExternal } from '../lib/desktop'
 import {
   useIncoming,
@@ -481,7 +482,9 @@ export function Chat() {
       try {
         if (isGroup && groupId != null) {
           const ctx = groupApiCtx(identity, groupId)
-          const g = await Api.groupInfo(ctx.ident, ctx.gid)
+          // Stage 6 phase 2: a room we hold the key for renders its SEALED
+          // identity; everyone else gets the open columns unchanged.
+          const g = await applySealedState(await Api.groupInfo(ctx.ident, ctx.gid))
           _groupCache.set(groupId, g)
           setGroup(g)
         } else if (isSelf && peerUIN != null) {

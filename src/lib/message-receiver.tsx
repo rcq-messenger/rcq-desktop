@@ -12,6 +12,8 @@ import { addIncoming, addGroupIncoming, hydrateIncoming, beginCatchUp, endCatchU
 } from './incoming-store'
 import { applyEditToOutgoing, carbonThreadKey, fileOutgoingCarbon } from './outgoing-store'
 import { publishHomeIslandRecord } from './federation-publish'
+import { answerKeyAsk, loadRoomKeys, putRoomKey } from './group-state'
+import { snapshotFor } from './contacts-cache'
 import { adoptHomesFromOwnRecord, applyPushedRecord, drainBackupQueues, listBackupHomes, scrubFrontAliasHomes } from './multihome'
 import { aliasFor, drainVisitedQueues, listVisitedIslands } from './visited-islands'
 import { getCrossIsland } from './crossisland-store'
@@ -38,6 +40,10 @@ function ensureHydrated(uin: number): Promise<void> {
   if (hydratedFor !== uin) {
     hydratedFor = uin
     hydration = hydrateIncoming(uin)
+    // The room-key store is per-account and every page needs it hydrated -
+    // a tab opened straight into a chat never mounts Contacts, and a key
+    // minted there was held in memory only and lost on reload.
+    loadRoomKeys(uin)
   }
   return hydration
 }
@@ -186,6 +192,38 @@ function route(
   // Sender-keys distribution / recovery (never rendered). SKDM stores the
   // chain bound to its authenticated sender; SKNACK asks the kid owner to
   // re-distribute. Both ride the per-member sealed path.
+  // Room state key hand-off / ask-back (stage 6 phase 2). Checked before
+  // skdm because both ride the same outer types; the inner kind decides.
+  if ((envelope as { kind?: string }).kind === 'gskey') {
+    const e = envelope as unknown as { gid?: number; ver?: number; key?: string }
+    if (identity && typeof e.gid === 'number' && typeof e.ver === 'number' && typeof e.key === 'string') {
+      // Membership gate: only a fellow member's key is worth holding, and the
+      // roster snapshot is the client's own view of who that is.
+      const snap = snapshotFor(identity.uin)
+      const g = snap?.groups.find((x) => x.id === e.gid)
+      const fromMember = !!g?.members?.some((m) => m.uin === senderUIN)
+      if (fromMember || senderUIN === myUin) {
+        if (putRoomKey(e.gid, e.ver, e.key)) {
+          // A fresh key makes the sealed blob readable: nudge whoever draws
+          // the group list to re-run the overlay.
+          window.dispatchEvent(new Event('rcq-room-keys-changed'))
+        }
+      }
+    }
+    return
+  }
+  if ((envelope as { kind?: string }).kind === 'gsknack') {
+    const e = envelope as unknown as { gid?: number }
+    if (identity && typeof e.gid === 'number') {
+      const snap = snapshotFor(identity.uin)
+      const g = snap?.groups.find((x) => x.id === e.gid)
+      const asker = g?.members?.find((m) => m.uin === senderUIN)
+      if (asker?.identity_key) {
+        void answerKeyAsk(identity, asker, e.gid)
+      }
+    }
+    return
+  }
   if ((envelope as { kind?: string }).kind === 'skdm') {
     // No identity means no account to file the chain under, and a chain filed
     // under the wrong one is exactly the bug this key shape exists to stop.

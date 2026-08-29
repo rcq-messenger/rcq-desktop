@@ -295,6 +295,28 @@ export interface HomeRecordEnvelope {
 /// /messages/group-sealed (envelope_type "skdm"); never rendered. The
 /// receiver binds the kid to the decrypt's authenticated sender. See
 /// RCQ/docs/sender-keys-design.md.
+/// Room state key hand-off (stage 6 phase 2, wire kind "gskey"). Carries the
+/// AES-256-GCM key the room's sealed identity blob is encrypted under, to one
+/// member, sealed 1:1. Rides the OUTER type "skdm": the island already files
+/// skdm as critical (survives the dormant sweep - losing this key makes the
+/// room's identity unreadable, same stakes as a sender chain), and reusing
+/// the token teaches it nothing new. `ver` is monotonic: a receiver never
+/// lets an older key overwrite a newer one.
+export interface GsKeyEnvelope {
+  kind: 'gskey'
+  gid: number
+  ver: number
+  key: string // b64 32B room state key
+}
+
+/// Room state key recovery (wire kind "gsknack", outer type "sknack"): I can
+/// see the room's sealed blob but hold no key for it; any member who does
+/// answers with a `gskey`. Same ask-anyone shape as sender-keys recovery.
+export interface GsKnackEnvelope {
+  kind: 'gsknack'
+  gid: number
+}
+
 export interface SkdmEnvelope {
   kind: 'skdm'
   gid: number
@@ -408,6 +430,8 @@ export type Envelope =
   | HomeRecordEnvelope
   | SkdmEnvelope
   | SknackEnvelope
+  | GsKeyEnvelope
+  | GsKnackEnvelope
   | CallEnvelope
   | ContactReqEnvelope
   | ProfileEnvelope
@@ -555,6 +579,12 @@ export function envelopeToObject(env: Envelope): Record<string, unknown> {
     obj.targetIDs = env.targetIDs
   } else if (env.kind === 'homerec') {
     obj.rec = env.rec
+  } else if (env.kind === 'gskey') {
+    obj.gid = env.gid
+    obj.ver = env.ver
+    obj.key = env.key
+  } else if (env.kind === 'gsknack') {
+    obj.gid = env.gid
   } else if (env.kind === 'skdm') {
     obj.gid = env.gid
     obj.kid = env.kid

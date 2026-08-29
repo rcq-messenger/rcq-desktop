@@ -74,7 +74,7 @@ import {
   setReceiptSink,
 } from '../lib/outgoing-store'
 import { noteThreadViewed } from '../lib/read-receipts'
-import { buildGroupDualSend, encryptGroupEnvelope } from '../lib/group-crypto'
+import { buildGroupDualSend, encryptGroupEnvelope, withGroupSendLock } from '../lib/group-crypto'
 import { parseGroupInvite } from '../lib/group-invite'
 import { ShareGroupSheet } from '../components/ShareGroupSheet'
 import {
@@ -1227,7 +1227,8 @@ export function Chat() {
           /* No other member to seal to: nothing goes on the group wire, and
              the row in this thread's log is the whole of it. */
         } else if (anyCapable) {
-          const ds = buildGroupDualSend(envelope, gctx.ident, gctx.gid, roster.members)
+          await withGroupSendLock(gctx.gid, async () => {
+          const ds = await buildGroupDualSend(envelope, gctx.ident, gctx.gid, roster.members)
           if (!ds.broadcastPayload && ds.legacyPayloads.length === 0) {
             throw new Error(
               ds.skipped.length > 0 ? t('chat.error.group_no_valid_members') : t('chat.error.group_empty'),
@@ -1247,10 +1248,11 @@ export function Chat() {
           if (ds.legacyPayloads.length > 0) {
             await Api.sendGroupSealed(gctx.ident, gctx.gid, ds.legacyPayloads, etype)
           }
+          })
         } else {
           // Foreign group, or a group where nobody is capable yet: original
           // per-member fan-out unchanged.
-          const { payloads, skipped } = encryptGroupEnvelope(envelope, gctx.ident, roster.members)
+          const { payloads, skipped } = await encryptGroupEnvelope(envelope, gctx.ident, roster.members)
           if (payloads.length === 0) {
             throw new Error(
               skipped.length > 0 ? t('chat.error.group_no_valid_members') : t('chat.error.group_empty'),
@@ -2222,7 +2224,7 @@ export function Chat() {
         const soloTarget =
           full.members.some((m) => m.uin === fctx.ident.uin) && !full.members.some((m) => m.uin !== fctx.ident.uin)
         if (!soloTarget) {
-          const { payloads, skipped } = encryptGroupEnvelope(env, fctx.ident, full.members)
+          const { payloads, skipped } = await encryptGroupEnvelope(env, fctx.ident, full.members)
           if (payloads.length === 0) {
             throw new Error(
               skipped.length > 0

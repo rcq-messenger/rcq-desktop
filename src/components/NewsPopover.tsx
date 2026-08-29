@@ -167,8 +167,14 @@ export function NewsButton({ className }: { className?: string }) {
     }
   }, [open])
 
+  const [anchor, setAnchor] = useState<{ top: number; right: number } | null>(null)
+
   function toggle() {
     const next = !open
+    if (next) {
+      const r = wrapRef.current?.getBoundingClientRect()
+      setAnchor(r ? { top: r.bottom + 4, right: window.innerWidth - r.right } : null)
+    }
     setOpen(next)
     if (next && posts && posts.length > 0) {
       // The MAX id, not the first row. The feed is ordered by publish time
@@ -266,14 +272,25 @@ export function NewsButton({ className }: { className?: string }) {
           rows sat below the viewport edge where nothing could reach them, so an
           expanded post simply ended mid-sentence. 8rem covers the header plus
           the panel's own offset. */}
-      {open && !narrow && (
-        <div
-          ref={panelRef}
-          className="absolute right-0 top-full mt-1 w-[min(22rem,calc(100vw-2rem))] max-h-[min(26rem,calc(100vh-8rem))] overflow-y-auto overscroll-contain rounded-lg border border-line/60 bg-surface/80 backdrop-blur-xl shadow-xl z-30 p-3 space-y-3"
-        >
-          {body}
-        </div>
-      )}
+      {/* ⚠⚠ Also through a portal, for the OTHER half of the same trap: a
+          backdrop-filter ancestor is a backdrop ROOT, so this panel's own
+          backdrop-blur, rendered inside the blurred header, had nothing to
+          sample and drew as plain translucency — the founder's "фон почему-то
+          прозрачный" (megalist B4). At body level the blur works, and the
+          border that tried to compensate for the missing depth goes. Anchored
+          to the button at open time; the header is sticky, so the anchor
+          cannot scroll away while open. */}
+      {open && !narrow && anchor &&
+        createPortal(
+          <div
+            ref={panelRef}
+            style={{ position: 'fixed', top: anchor.top, right: anchor.right }}
+            className="w-[min(22rem,calc(100vw-2rem))] max-h-[min(26rem,calc(100vh-8rem))] overflow-y-auto overscroll-contain rounded-lg bg-surface/80 backdrop-blur-xl shadow-xl z-50 p-3 space-y-3"
+          >
+            {body}
+          </div>,
+          document.body,
+        )}
     </div>
   )
 }

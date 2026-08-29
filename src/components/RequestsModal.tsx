@@ -16,6 +16,7 @@
 import { CenteredLoader } from './Spinner'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Api, type OutgoingRequest } from '../lib/api'
 import { useIdentity } from '../lib/identity-context'
 import { useI18n } from '../lib/i18n-context'
@@ -28,7 +29,11 @@ export function RequestsModal({ incomingCount, onClose }: { incomingCount: numbe
   const { t } = useI18n()
   const [tab, setTab] = useState<Tab>('in')
 
-  return (
+  // ⚠ Through a portal — the third surface to fall into the backdrop-filter
+  // trap the pin banner and the news sheet document: mounted inside the
+  // blurred header, `fixed inset-0` sizes to the header strip, and the modal
+  // rendered as a faint ghost UNDER the page content (megalist B4).
+  return createPortal(
     <AnimatePresence>
       <motion.div
         initial={{ opacity: 0 }}
@@ -80,7 +85,8 @@ export function RequestsModal({ incomingCount, onClose }: { incomingCount: numbe
           </div>
         </motion.div>
       </motion.div>
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   )
 }
 

@@ -987,6 +987,13 @@ export const ru: Record<string, string> = {
   'uin_market.suggest.empty': 'Сейчас вариантов нет. Попробуйте ввести номер выше.',
   'uin_market.tiers.label': 'Цена по длине',
   'uin_market.tiers.digits': 'цифр: {n}',
+  'uin_market.tiers.len3': 'трёхзначные',
+  'uin_market.tiers.len4': 'четырёхзначные',
+  'uin_market.tiers.len5': 'пятизначные',
+  'uin_market.tiers.len6': 'шестизначные',
+  'uin_market.tiers.len7': 'семизначные',
+  'uin_market.tiers.len8': 'восьмизначные',
+  'uin_market.tiers.len9': 'девятизначные',
   'uin_market.tiers.note': 'Чем короче, тем реже и дороже. Цена зависит только от числа цифр.',
   'uin_market.info.what.title': 'Что такое UIN',
   'uin_market.info.what.body':

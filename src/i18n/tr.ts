@@ -120,6 +120,7 @@ export const tr: Record<string, string> = {
   'chat.blocked.unblock': 'Engeli kaldır',
   'chat.owner_only.notice': 'Bu grupta yalnızca grup sahibi yazabilir.',
   'chat.attach': 'Ekle',
+  'chat.photo.caption_hint': 'Fotoğraf hazır. Alta bir açıklama yazıp tek mesaj olarak gönderin.',
   'chat.attach.photo': 'Fotoğraf',
   'chat.attach.file': 'Dosya',
   'chat.attach.location': 'Konum',

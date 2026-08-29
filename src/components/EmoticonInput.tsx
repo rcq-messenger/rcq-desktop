@@ -204,7 +204,19 @@ export const EmoticonInput = forwardRef<HTMLDivElement, Props>(function Emoticon
         emit()
       }}
       onKeyDown={(e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
+        if (e.key === 'Enter' && (e.shiftKey || e.ctrlKey || e.metaKey)) {
+          // Explicit, not left to the contenteditable's default: WebView2 was
+          // reported swallowing it outright («ни Enter ни Ctrl+Enter никак» —
+          // #799), and Ctrl+Enter never worked anywhere. Both chords now
+          // insert a line break; bare Enter still sends.
+          e.preventDefault()
+          if (!document.execCommand('insertLineBreak')) {
+            document.execCommand('insertText', false, '\n')
+          }
+          emit()
+          return
+        }
+        if (e.key === 'Enter') {
           e.preventDefault()
           onSubmit()
           return

@@ -106,7 +106,8 @@ import { GroupAvatar } from '../components/GroupAvatar'
 import { DecryptedImage } from '../components/DecryptedImage'
 import { DecryptedVideo } from '../components/DecryptedVideo'
 import { FileBubble } from '../components/FileBubble'
-import { uploadEncryptedImage, uploadEncryptedFile, downloadEncryptedFile } from '../lib/media'
+import { VoiceBubble } from '../components/VoiceBubble'
+import { uploadEncryptedImage, uploadEncryptedFile, uploadEncryptedAudio, downloadEncryptedFile } from '../lib/media'
 import { emoticonAssetURL } from '../lib/emoticons'
 import { useI18n } from '../lib/i18n-context'
 import { useToast } from '../lib/toast'
@@ -246,6 +247,16 @@ export function Chat() {
   // The attach button opens a small menu (Photo / File) — the web couldn't
   // send documents before (#16). Each picks a different hidden <input>.
   const [attachMenuOpen, setAttachMenuOpen] = useState(false)
+  /// Voice capture (megalist B2). null = idle; otherwise the live recorder.
+  /// AAC-in-MP4 where the platform can (both phones' native format), Opus/WebM
+  /// otherwise; button hidden when MediaRecorder can do neither.
+  const [rec, setRec] = useState<{ recorder: MediaRecorder; stream: MediaStream; startedAt: number } | null>(null)
+  const [recElapsed, setRecElapsed] = useState(0)
+  useEffect(() => {
+    if (!rec) return
+    const id = setInterval(() => setRecElapsed(Math.floor((Date.now() - rec.startedAt) / 1000)), 250)
+    return () => clearInterval(id)
+  }, [rec])
   // One of my groups, to hand over as an invite link. Existed on Android long
   // before the desktop had it (#578). The poll composer used to sit beside it
   // and is gone (founder item 14a).
@@ -1341,6 +1352,15 @@ export function Chat() {
         ...(row.replyTo ? { reply: row.replyTo } : {}),
         ...(row.fwdName ? { fwdName: row.fwdName } : {}),
       }
+    } else if (row.kind === 'voice' && row.mediaId && row.mediaKey) {
+      env = {
+        kind: 'voice',
+        id: row.id,
+        mediaID: row.mediaId,
+        mediaKey: row.mediaKey,
+        durationSec: row.durationSec ?? 0,
+        ...dying,
+      }
     } else if (row.kind === 'other' && row.mediaKind === 'location' && row.lat != null && row.lng != null) {
       env = {
         kind: 'location',
@@ -1692,6 +1712,95 @@ export function Chat() {
   /// Pick → encrypt → upload → send a document of any type (#16). Raw bytes
   /// (no canvas re-encode), sent as a `file` envelope; rendered as a download
   /// chip on both sides. Same upload-before-row pattern as sendPhoto.
+  function voiceMimeSupported(): string | null {
+    if (typeof MediaRecorder === 'undefined') return null
+    for (const m of ['audio/mp4;codecs=mp4a.40.2', 'audio/mp4', 'audio/webm;codecs=opus', 'audio/webm']) {
+      try { if (MediaRecorder.isTypeSupported(m)) return m } catch { /* jsdom etc. */ }
+    }
+    return null
+  }
+
+  async function startVoice() {
+    if (rec || uploadingFile || readOnlyHere) return
+    if (isGroup && !filesAllowed) {
+      toast(t('chat.files_off.notice'), 'error')
+      return
+    }
+    if (slowmodeBlocked()) return
+    const mime = voiceMimeSupported()
+    if (!mime) {
+      toast(t('voice.unsupported'), 'error')
+      return
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const recorder = new MediaRecorder(stream, { mimeType: mime, audioBitsPerSecond: 64_000 })
+      recorder.start()
+      setRec({ recorder, stream, startedAt: Date.now() })
+      setRecElapsed(0)
+    } catch (e) {
+      // Denied is not unsupported: the wrong word sends people hunting for a
+      // browser update when the fix is one permission prompt away.
+      const denied = e instanceof DOMException && (e.name === 'NotAllowedError' || e.name === 'SecurityError')
+      toast(t(denied ? 'voice.denied' : 'voice.unsupported'), 'error')
+    }
+  }
+
+  function stopVoiceTracks(r: { recorder: MediaRecorder; stream: MediaStream }) {
+    for (const tr of r.stream.getTracks()) tr.stop()
+  }
+
+  function cancelVoice() {
+    const r = rec
+    if (!r) return
+    setRec(null)
+    try { r.recorder.stop() } catch { /* already stopped */ }
+    stopVoiceTracks(r)
+  }
+
+  async function finishVoice() {
+    const r = rec
+    if (!r || !identity) return
+    setRec(null)
+    const durationSec = Math.max(1, Math.round((Date.now() - r.startedAt) / 1000))
+    const chunks: BlobPart[] = []
+    const done = new Promise<Blob>((resolve) => {
+      r.recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data) }
+      r.recorder.onstop = () => resolve(new Blob(chunks, { type: r.recorder.mimeType }))
+    })
+    try { r.recorder.stop() } catch { /* already stopped */ }
+    stopVoiceTracks(r)
+    const blob = await done
+    if (blob.size === 0) return
+    setUploadingFile(true)
+    try {
+      const bytes = await blob.arrayBuffer()
+      const up = await uploadEncryptedAudio(identity.apiBase, bytes, isGroup ? gctx?.host ?? undefined : peer?.host)
+      if (!up) {
+        toast(t('chat.error.file_upload_failed'), 'error')
+        return
+      }
+      armSlowmode()
+      const sentAt = Date.now()
+      const row: OutgoingRow = {
+        id: newUUIDv4(),
+        text: '',
+        sentAt,
+        state: 'sending',
+        kind: 'voice',
+        mediaId: up.mediaId,
+        mediaKey: up.keyB64,
+        durationSec,
+        ...dyingNow(sentAt),
+      }
+      setOutgoing((rows) => [...rows, row])
+      stickToBottom()
+      await attemptSendRow(row)
+    } finally {
+      setUploadingFile(false)
+    }
+  }
+
   async function sendFile(file: File) {
     if (!identity || uploadingFile) return
     if (readOnlyHere) {
@@ -3708,6 +3817,32 @@ export function Chat() {
                 className="select-none"
               />
             </button>
+            <button
+              onClick={() => void startVoice()}
+              disabled={(!peer && !group) || readOnlyHere || !!rec || uploadingFile}
+              className="h-10 w-10 rounded-full flex items-center justify-center flex-none hover:bg-line/60 transition-colors disabled:opacity-40"
+              title={t('voice.label')}
+              aria-label={t('voice.label')}
+            >
+              <MicGlyph />
+            </button>
+            {rec ? (
+              <div className="flex-1 h-10 rounded-2xl bg-surface px-4 flex items-center gap-3">
+                <span className="h-2.5 w-2.5 rounded-full bg-red-500 animate-pulse flex-none" />
+                <span className="text-sm text-fg-secondary flex-1">
+                  {t('voice.recording')} {Math.floor(recElapsed / 60)}:{String(recElapsed % 60).padStart(2, '0')}
+                </span>
+                <button onClick={cancelVoice} className="text-xs text-fg-secondary hover:text-fg-primary">
+                  {t('common.cancel')}
+                </button>
+                <button
+                  onClick={() => void finishVoice()}
+                  className="h-8 px-3 rounded-full bg-accent text-white text-xs font-semibold"
+                >
+                  {t('chat.send')}
+                </button>
+              </div>
+            ) : (
             <EmoticonInput
               ref={taRef}
               className="flex-1 rounded-2xl bg-surface px-4 py-2.5 text-sm outline-none leading-snug focus:ring-1 focus:ring-accent transition-colors max-h-[8.75rem] overflow-y-auto"
@@ -3741,6 +3876,7 @@ export function Chat() {
               onPasteImage={(file) => void sendPhoto(file)}
               disabled={(!peer && !group) || readOnlyHere}
             />
+            )}
             <button
               onClick={() => void send()}
               disabled={(!peer && !group) || !input.trim() || slowActive || readOnlyHere}
@@ -4152,6 +4288,18 @@ const IncomingMessageRow = memo(function IncomingMessageRow({
               </div>
             )}
           </div>
+        ) : m.kind === 'voice' && m.mediaId && m.mediaKey ? (
+          <div className="flex flex-col items-start gap-1" data-chat-menu {...press()}>
+            <div className="relative rounded-lg px-3 py-1.5 bg-bubble-other">
+              <VoiceBubble
+                apiBase={mediaBase}
+                mediaId={m.mediaId}
+                mediaKey={m.mediaKey}
+                durationSec={m.durationSec}
+              />
+              <BubbleMenuButton tone="over" label={t('chat.actions.more')} open={showActions} onOpen={(el) => h.toggleActions(m.id, el)} />
+            </div>
+          </div>
         ) : m.kind === 'file' && m.mediaId && m.mediaKey ? (
           <div className="flex flex-col items-start gap-1" data-chat-menu {...press()}>
             <FileBubble
@@ -4497,6 +4645,28 @@ const OutgoingMessageRow = memo(function OutgoingMessageRow({
               <EmoticonText text={row.text} emoticonSize={18} mention={mention} link={{ enabled: linksAllowed }} />
             </div>
           )}
+          {reactionChips(row.id, 'end', myUin, h)}
+          {mediaOverlays()}
+          {deliveryLine(true)}
+        </div>
+      </li>
+    )
+  }
+  if (row.kind === 'voice' && row.mediaId && row.mediaKey) {
+    // A voice note I sent (here, or elsewhere via a carbon).
+    return (
+      <li id={`msg-${row.id}`} className={liClass}>
+        <div className="relative max-w-[80%] flex flex-col items-end gap-1" {...pressAttrs()}>
+          <div className="relative rounded-lg px-3 py-1.5 bg-bubble-self">
+            <VoiceBubble
+              apiBase={mediaBase}
+              mediaId={row.mediaId}
+              mediaKey={row.mediaKey}
+              durationSec={row.durationSec}
+              accent
+            />
+            {menuButton('over')}
+          </div>
           {reactionChips(row.id, 'end', myUin, h)}
           {mediaOverlays()}
           {deliveryLine(true)}
@@ -5514,6 +5684,17 @@ function SearchGlyph({ size = 17 }: { size?: number }) {
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-fg-secondary flex-none">
       <circle cx="11" cy="11" r="7" />
       <line x1="21" y1="21" x2="16.65" y2="16.65" />
+    </svg>
+  )
+}
+
+
+function MicGlyph() {
+  return (
+    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-fg-secondary">
+      <path d="M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z" />
+      <path d="M19 10v1a7 7 0 0 1-14 0v-1" />
+      <line x1="12" y1="18" x2="12" y2="22" />
     </svg>
   )
 }

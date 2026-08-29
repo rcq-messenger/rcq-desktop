@@ -36,7 +36,7 @@ export interface OutgoingRow {
   /// 14a) and nothing composes one any more; rows written before that still
   /// carry the kind, and they draw as the "no longer supported" placeholder
   /// rather than disappearing out from under a conversation.
-  kind?: 'text' | 'photo' | 'video' | 'file' | 'other' | 'call' | 'poll'
+  kind?: 'text' | 'photo' | 'video' | 'file' | 'voice' | 'other' | 'call' | 'poll'
   /// For 'call': nobody picked up (or it was declined). Drives the icon.
   callMissed?: boolean
   /// For 'call': which call this row records. Present so two records of ONE
@@ -458,7 +458,22 @@ function outgoingRowFromInner(inner: Envelope): OutgoingRow | null {
       ...dying(inner.ttl, inner.ts),
     }
   }
-  // A still-unsupported media kind sent from another device (voice/location).
+  if (inner.kind === 'voice' && inner.id && inner.mediaID && inner.mediaKey) {
+    // A voice note sent from another device plays HERE too now (B2) — it used
+    // to carbon in as the "recorded elsewhere" placeholder.
+    return {
+      id: inner.id,
+      text: '',
+      sentAt: now,
+      state: 'sent',
+      kind: 'voice',
+      mediaId: inner.mediaID,
+      mediaKey: inner.mediaKey,
+      durationSec: typeof inner.durationSec === 'number' ? Math.round(inner.durationSec) : undefined,
+      ...dying(inner.ttl, inner.ts),
+    }
+  }
+  // A still-unsupported media kind sent from another device (location).
   // The web can't render these, but show a placeholder so the user sees that
   // they sent something here rather than a silent gap.
   const loose = inner as { kind?: string; id?: string; caption?: string; ttl?: unknown; ts?: unknown }

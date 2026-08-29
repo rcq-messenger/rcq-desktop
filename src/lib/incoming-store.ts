@@ -28,12 +28,12 @@ export interface IncomingRow {
   /// cut (founder item 14a) still carry it and because an old peer can still
   /// send one. It renders as the "no longer supported" placeholder; nothing
   /// composes it, and no ballot is stored with it any more.
-  kind?: 'text' | 'photo' | 'video' | 'file' | 'other' | 'poll'
+  kind?: 'text' | 'photo' | 'video' | 'file' | 'voice' | 'other' | 'poll'
   mediaId?: string
   mediaKey?: string
   mediaKind?: string // for 'other': the original envelope kind
   thumbnailB64?: string // for 'video': base64 JPEG poster
-  durationSec?: number // for 'video': length in seconds
+  durationSec?: number // for 'video'/'voice': length in seconds
   fileName?: string // for 'file': original name
   fileMime?: string // for 'file': content type
   fileSize?: number // for 'file': plaintext byte length
@@ -112,6 +112,22 @@ function rowFromEnvelope(from: number, env: Envelope): IncomingRow | null {
       fileMime: env.mime,
       fileSize: env.size,
       replyTo: env.reply,
+      ...dying(env.ttl, env.ts),
+    }
+  }
+  if (env.kind === 'voice' && env.id && env.mediaID && env.mediaKey) {
+    // A real bubble now (megalist B2) — the web spent a year rendering these
+    // as the "recorded on a phone" placeholder while every field needed to
+    // play them was right here in the envelope.
+    return {
+      id: env.id,
+      from,
+      text: '',
+      at: now,
+      kind: 'voice',
+      mediaId: env.mediaID,
+      mediaKey: env.mediaKey,
+      durationSec: typeof env.durationSec === 'number' ? Math.round(env.durationSec) : undefined,
       ...dying(env.ttl, env.ts),
     }
   }

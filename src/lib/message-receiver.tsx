@@ -7,7 +7,9 @@ import { useEffect } from 'react'
 import { useIdentity } from './identity-context'
 import { useWS } from './ws'
 import { currentDeviceId, decryptIncoming, getDevice, myDeviceId, noteInboundFrom, resetSilenceProbes, sendV2 } from './signal-device'
-import { addIncoming, addGroupIncoming, hydrateIncoming, beginCatchUp, endCatchUp, flushHistory, markDeleted } from './incoming-store'
+import { addIncoming, addGroupIncoming, hydrateIncoming, beginCatchUp, endCatchUp, flushHistory, markDeleted,
+  applyRemoteRead,
+} from './incoming-store'
 import { applyEditToOutgoing, carbonThreadKey, fileOutgoingCarbon } from './outgoing-store'
 import { publishHomeIslandRecord } from './federation-publish'
 import { adoptHomesFromOwnRecord, applyPushedRecord, drainBackupQueues, listBackupHomes, scrubFrontAliasHomes } from './multihome'
@@ -162,12 +164,19 @@ function route(
       // Control carbons first: an edit/delete made on another of our devices
       // targets a row we already have — filing it as a NEW row (the content
       // path below) would be wrong twice over.
-      const inner = envelope.env as { kind?: string; targetID?: string; text?: string } | undefined
+      const inner = envelope.env as
+        | { kind?: string; targetID?: string; text?: string; at?: number }
+        | undefined
       if (inner?.kind === 'edit' && inner.targetID != null) {
         const key = carbonThreadKey(envelope)
         if (key) applyEditToOutgoing(key, inner.targetID, inner.text ?? '')
       } else if (inner?.kind === 'delete' && inner.targetID != null) {
         markDeleted(inner.targetID, { fromSelf: true })
+      } else if (inner?.kind === 'readmark') {
+        // We read this thread on another device (A2): drop the badge here
+        // too, minus anything that arrived after that read. Not a message,
+        // so it must never reach fileOutgoingCarbon below.
+        applyRemoteRead(envelope.to ?? null, envelope.gid ?? null, inner.at ?? Date.now())
       } else {
         fileOutgoingCarbon(envelope)
       }

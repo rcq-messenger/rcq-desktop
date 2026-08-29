@@ -478,6 +478,29 @@ export function markGroupRead(id: number) {
   clearUnread(groupKey(id))
 }
 
+/// Another device of this account read a thread up to `at` (megalist A2).
+/// Recount rather than blind-clear: a message that landed AFTER the moment
+/// of that read is still unread here, and a marker crossing paths with a
+/// fresh message must not swallow it. Never grows the count, so a stale or
+/// out-of-order marker cannot un-read anything.
+export function applyRemoteRead(peerUin: number | null, groupId: number | null, at: number) {
+  const key = peerUin != null ? peerKey(peerUin) : groupId != null ? groupKey(groupId) : null
+  if (!key) return
+  const current = unread.get(key) ?? 0
+  if (current === 0) return
+  const rows = peerUin != null ? byPeer.get(peerUin) : byGroup.get(groupId!)
+  // Rows this device holds that arrived after the other device's read. The
+  // stored rows are the incoming ones only, which is exactly what the badge
+  // counts.
+  const after = rows ? rows.filter((r) => r.at > at).length : 0
+  const next = Math.min(current, after)
+  if (next === current) return
+  if (next === 0) unread.delete(key)
+  else unread.set(key, next)
+  persistUnread()
+  emitUnread()
+}
+
 export function onToast(cb: (t: Toast) => void): () => void {
   toastListeners.add(cb)
   return () => {

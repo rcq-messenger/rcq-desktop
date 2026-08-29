@@ -208,6 +208,21 @@ export interface CarbonEnvelope {
   env: Envelope // the original sent envelope (text/photo/…)
 }
 
+/// Cross-device READ marker (megalist A2). Rides INSIDE a self-carbon, so
+/// the island sees exactly the sealed self-addressed blob it already sees
+/// for every message mirror, edit and delete: no new envelope_type, no new
+/// legible token, nothing it did not know before. The founder's condition
+/// for this feature was precisely that.
+///
+/// `at` is the wall clock of the read, in ms. The receiving device clears
+/// the thread's unread down to whatever arrived AFTER that moment, so a
+/// marker that crosses paths with a fresh message cannot mark it read.
+/// Monotonic by construction: an older marker never un-reads a thread.
+export interface ReadMarkEnvelope {
+  kind: 'readmark'
+  at: number
+}
+
 /// Group poll announcement (iOS/Android kind "poll"). Terse wire keys to
 /// match the mobile clients: `poll` = server poll id, `q` = question,
 /// `opts` = option labels, `sc` = single-choice, `anon` = anonymous.
@@ -389,6 +404,7 @@ export type Envelope =
   | EditEnvelope
   | DeleteEnvelope
   | ReceiptEnvelope
+  | ReadMarkEnvelope
   | HomeRecordEnvelope
   | SkdmEnvelope
   | SknackEnvelope
@@ -530,6 +546,11 @@ export function envelopeToObject(env: Envelope): Record<string, unknown> {
     obj.text = env.text
   } else if (env.kind === 'delete') {
     obj.targetID = env.targetID
+  } else if (env.kind === 'readmark') {
+    // Cross-device read marker (A2). One field: when the read happened.
+    // Which thread it belongs to is the carbon's own to/gid, so nothing is
+    // repeated and nothing extra is written into the ciphertext.
+    obj.at = env.at
   } else if (env.kind === 'read' || env.kind === 'delivered') {
     obj.targetIDs = env.targetIDs
   } else if (env.kind === 'homerec') {

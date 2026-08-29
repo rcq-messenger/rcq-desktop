@@ -1065,6 +1065,38 @@ export function Chat() {
     return () => setActiveThread(null)
   }, [isGroup, groupId, peerUIN])
 
+  // A2: my other devices learn this thread is read. Keyed on the newest row
+  // so it also fires when a message lands while the thread is open and
+  // visible (that message is read the moment it renders), and debounced so a
+  // burst of arrivals sends one marker, not one per message. Hidden tab: no
+  // marker, because a thread nobody is looking at was not read.
+  const newestSeenAt = incoming.length > 0 ? incoming[incoming.length - 1].at : 0
+  const lastMarkerRef = useRef('')
+  useEffect(() => {
+    const stamp = `${isGroup ? 'g' : 'p'}:${isGroup ? groupId : peerUIN}:${newestSeenAt}`
+    // Nothing new since the last marker for this thread: re-opening a chat
+    // that has not moved says nothing, so it sends nothing.
+    if (lastMarkerRef.current === stamp) return
+    let timer = 0
+    const arm = () => {
+      // A hidden tab is not a reader: a chat left open behind another window
+      // was not read, so nothing is claimed until it comes back to the front.
+      if (document.visibilityState !== 'visible') return
+      window.clearTimeout(timer)
+      timer = window.setTimeout(() => {
+        lastMarkerRef.current = stamp
+        void sendReadMarker()
+      }, 900)
+    }
+    arm()
+    document.addEventListener('visibilitychange', arm)
+    return () => {
+      window.clearTimeout(timer)
+      document.removeEventListener('visibilitychange', arm)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isGroup, groupId, peerUIN, newestSeenAt])
+
   // Register a live sink so multi-device carbons (a message this user sent
   // from another device) for the OPEN thread appear instantly — merged into
   // state, deduped by id. Carbons for other threads go to localStorage.
@@ -1353,6 +1385,45 @@ export function Chat() {
       await Api.sendSealed(identity, identity.uin, wireB64, 'carbon')
     } catch {
       /* best-effort multi-device echo; ignore */
+    }
+  }
+
+  /// Tell my OTHER devices that I read this thread (megalist A2). Rides the
+  /// same self-carbon every message mirror uses, so the island sees the one
+  /// sealed self-addressed blob it has always seen: no new type, no new
+  /// legible token, nothing it did not know before. Best-effort and
+  /// fire-and-forget; a lost marker only means the other device clears its
+  /// badge when it is next opened, exactly as it does today.
+  ///
+  /// Never for Saved Messages (I am the peer there, so the carbon would be
+  /// the thread itself) and never for a foreign-island group (its id is
+  /// per-device, the §5c limit the message carbon documents).
+  async function sendReadMarker() {
+    if (!identity || gctx?.host) return
+    if (!isGroup && (peerUIN == null || isSelf)) return
+    if (isGroup && groupId == null) return
+    try {
+      const carbon: CarbonEnvelope = {
+        kind: 'carbon',
+        to: isGroup ? null : peerUIN ?? null,
+        gid: isGroup ? groupId ?? null : null,
+        env: { kind: 'readmark', at: Date.now() },
+      }
+      const selfBundle = peerBundleFrom({
+        uin: identity.uin,
+        identity_key: bytesToB64(identity.identityPub),
+        signing_key: bytesToB64(identity.signingPub),
+      })
+      // Outer type 'read', not 'carbon': the island files 'read' as ephemeral
+      // (cls 0), so this never pushes a "new message" banner to my own
+      // sleeping phone, and 'read' is a token it already sees on every peer
+      // receipt - no new fact, which was the condition for this feature.
+      // (A message carbon still ships as 'carbon', which IS cls 1 today; that
+      // mismatch with its own comment is a separate bug, filed as its own
+      // item rather than fixed under a read marker.)
+      await Api.sendSealed(identity, identity.uin, encryptV1(carbon, identity, selfBundle), 'read')
+    } catch {
+      /* best-effort */
     }
   }
 

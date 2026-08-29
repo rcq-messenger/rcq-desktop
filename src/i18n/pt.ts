@@ -571,6 +571,11 @@ export const pt: Record<string, string> = {
   // Settings: privacy + sound
   'settings.section.privacy': 'Privacidade',
   'settings.privacy.last_seen': 'Visto por último visível para',
+  'contact.last_seen': 'visto {when}',
+  'contact.last_seen.just_now': 'agora mesmo',
+  'contact.last_seen.minutes': 'há {n} min',
+  'contact.last_seen.hours': 'há {n} h',
+  'contact.last_seen.days': 'há {n} d',
   'settings.privacy.last_seen_desc': 'Quem pode ver o horário do seu visto por último.',
   'settings.privacy.gender_visible': 'Gênero visível para',
   'settings.privacy.gender_desc': 'Informação opcional do perfil, com visibilidade própria.',

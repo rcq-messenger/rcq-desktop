@@ -140,6 +140,9 @@ export interface Contact {
   nickname: string
   status: UserStatus
   status_message?: string
+  /// ISO timestamp, already gated by the peer's `last_seen_visibility` on the
+  /// island (null = hidden; online users get null too, the status says it).
+  last_seen?: string | null
   blocked: boolean
   identity_key: string
   signing_key: string

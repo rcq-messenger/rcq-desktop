@@ -12,6 +12,7 @@
 // incoming yet). Forwards write into the target thread's storage
 // so the forwarded message shows up there when the user navigates.
 
+import { relativeLastSeen } from '../lib/last-seen'
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { scopedKey } from '../lib/account-scope'
@@ -167,7 +168,7 @@ const DELIVERY_RANK: Record<OutgoingRow['state'], number> = {
 
 export function Chat() {
   const { identity } = useIdentity()
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const { toast } = useToast()
   const call = useCall()
   const navigate = useNavigate()
@@ -2525,7 +2526,7 @@ export function Chat() {
     }
   }, [ws, peerUIN, isGroup, isSelf])
 
-  const headerSub = isGroup
+  const headerSub: React.ReactNode = isGroup
     // Compact from 1000 up (founder item 27): "999", then "1K", "2.1K". The
     // thresholds live in `format-count.ts` so the phones can mirror the exact
     // same rules rather than each inventing their own rounding.
@@ -2535,7 +2536,12 @@ export function Chat() {
       : peerTyping
         ? t('chat.typing')
       // Cross-island: show the peer's island (presence doesn't cross islands).
-      : peer?.host ? `#${peerUIN} · ${peer.host}` : String(peerUIN)
+      : peer?.host ? `#${peerUIN} · ${peer.host}`
+      // B1: the '#' the founder asked for, and — like the iOS header — an
+      // offline peer's subtitle breathes between the uin and their last-seen.
+      : peer?.status === 'offline' && peer.last_seen
+        ? <AltSubtitle uin={peerUIN ?? 0} lastSeen={relativeLastSeen(peer.last_seen, t, lang)} />
+        : `#${peerUIN}`
   // One ordered timeline of both halves of the conversation, with a day
   // separator inserted wherever the date changes. Until now the list showed
   // only HH:MM, so a message from last week looked exactly like one from an
@@ -5421,5 +5427,34 @@ function CallLogIcon({ missed, outgoing }: { missed: boolean; outgoing: boolean 
         </>
       )}
     </svg>
+  )
+}
+
+
+/// The chat-header subtitle for an offline 1:1 peer (megalist B1): crossfades
+/// between `#uin` and the humanised last-seen every few seconds, the port of
+/// the iOS `peerSubtitle`. Both children stay mounted in one grid cell so the
+/// line's box never changes size mid-swap and the nickname above holds still.
+function AltSubtitle({ uin, lastSeen }: { uin: number; lastSeen: string }) {
+  const [alt, setAlt] = useState(false)
+  useEffect(() => {
+    const id = setInterval(() => setAlt((v) => !v), 4000)
+    return () => clearInterval(id)
+  }, [])
+  return (
+    <span className="grid">
+      <span
+        className="col-start-1 row-start-1 transition-opacity duration-500"
+        style={{ opacity: alt ? 0 : 1 }}
+      >
+        #{uin}
+      </span>
+      <span
+        className="col-start-1 row-start-1 truncate transition-opacity duration-500"
+        style={{ opacity: alt ? 1 : 0 }}
+      >
+        {lastSeen}
+      </span>
+    </span>
   )
 }

@@ -670,6 +670,11 @@ export const ru: Record<string, string> = {
   // Настройки: приватность + звук
   'settings.section.privacy': 'Приватность',
   'settings.privacy.last_seen': 'Был в сети, видят',
+  'contact.last_seen': 'был в сети {when}',
+  'contact.last_seen.just_now': 'только что',
+  'contact.last_seen.minutes': '{n} мин назад',
+  'contact.last_seen.hours': '{n} ч назад',
+  'contact.last_seen.days': '{n} дн назад',
   'settings.privacy.last_seen_desc': 'Кто видит ваш таймстамп онлайна.',
   'settings.privacy.gender_visible': 'Пол видят',
   'settings.privacy.gender_desc': 'Необязательная информация профиля со своей областью видимости.',

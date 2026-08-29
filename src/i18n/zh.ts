@@ -761,6 +761,8 @@ export const zh: Record<string, string> = {
   'group.settings.slowmode.off': '关',
   'group.settings.slowmode.sec': '{s} 秒',
   'group.settings.slowmode.min': '1 分钟',
+  'group.settings.slowmode.min5': '5 分钟',
+  'group.settings.slowmode.hour': '1 小时',
   'group.settings.error': '无法保存群组。',
   'group.settings.remove_member': '移除',
   'group.info.owner': '群主',

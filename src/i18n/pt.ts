@@ -763,6 +763,8 @@ export const pt: Record<string, string> = {
   'group.settings.slowmode.off': 'Não',
   'group.settings.slowmode.sec': '{s} s',
   'group.settings.slowmode.min': '1 min',
+  'group.settings.slowmode.min5': '5 min',
+  'group.settings.slowmode.hour': '1 h',
   'group.settings.error': 'Não foi possível salvar o grupo.',
   'group.settings.remove_member': 'Remover',
   'group.info.owner': 'Dono',

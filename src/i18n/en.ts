@@ -903,6 +903,8 @@ export const en: Record<string, string> = {
   'group.settings.slowmode.off': 'Off',
   'group.settings.slowmode.sec': '{s} s',
   'group.settings.slowmode.min': '1 min',
+  'group.settings.slowmode.min5': '5 min',
+  'group.settings.slowmode.hour': '1 h',
   'group.settings.error': 'Could not save the group.',
   'group.settings.remove_member': 'Remove',
   'group.info.owner': 'Owner',

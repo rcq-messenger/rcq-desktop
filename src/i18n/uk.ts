@@ -763,6 +763,8 @@ export const uk: Record<string, string> = {
   'group.settings.slowmode.off': 'Вимк',
   'group.settings.slowmode.sec': '{s} с',
   'group.settings.slowmode.min': '1 хв',
+  'group.settings.slowmode.min5': '5 хв',
+  'group.settings.slowmode.hour': '1 год',
   'group.settings.error': 'Не вдалося зберегти групу.',
   'group.settings.remove_member': 'Прибрати',
   'group.info.owner': 'Власник',

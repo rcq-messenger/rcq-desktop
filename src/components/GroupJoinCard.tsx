@@ -18,6 +18,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Api, ApiError, parseErrorCode, type GroupPreview } from '../lib/api'
 import { useIdentity } from '../lib/identity-context'
+import { snapshotFor } from '../lib/contacts-cache'
 import { useI18n } from '../lib/i18n-context'
 import { hostOfApiBase } from '../lib/multihome'
 import { aliasFor, ensureGuestAuth, ensureGuestOn } from '../lib/visited-islands'
@@ -72,6 +73,16 @@ export function GroupJoinCard({ groupId, host, compact = false, menuSpace = fals
 
   const [preview, setPreview] = useState<GroupPreview | null>(null)
   const [isMember, setIsMember] = useState(false)
+  // The avatar the card should draw. Since the island stopped handing the
+  // avatar key to non-members (it is the blob's cleartext AES key and
+  // /media has no auth), a preview carries the pair only for a room I am
+  // already in. For MY rooms the local roster has it anyway, so a link to a
+  // room I am in still shows its picture; a stranger's link shows the letter
+  // tile, which is the point.
+  const localGroup = identity ? snapshotFor(identity.uin)?.groups.find((g) => g.id === groupId) : null
+  const avatarId = preview?.avatar_media_id ?? localGroup?.avatar_media_id ?? null
+  const avatarKey = preview?.avatar_media_key ?? localGroup?.avatar_media_key ?? null
+
   const [loading, setLoading] = useState(true)
   // Foreign island we have never visited: no preview available (we refuse to
   // touch the island before the user taps Join) — render the minimal card.
@@ -210,7 +221,7 @@ export function GroupJoinCard({ groupId, host, compact = false, menuSpace = fals
           onClick={() => (isMember ? navigate(chatPath()) : void join())}
           className="w-full flex items-center gap-2.5 rounded-xl bg-field px-2.5 py-2 text-left transition-colors hover:bg-line/40 disabled:opacity-60"
         >
-          <GroupAvatar size={36} mediaId={preview.avatar_media_id} mediaKey={preview.avatar_media_key} />
+          <GroupAvatar size={36} mediaId={avatarId} mediaKey={avatarKey} />
           <span className="min-w-0 flex-1">
             <span className="block truncate text-[0.8125rem] font-medium">{preview.name}</span>
             <span className="block truncate text-[0.6875rem] text-fg-dim">
@@ -230,7 +241,7 @@ export function GroupJoinCard({ groupId, host, compact = false, menuSpace = fals
   return (
     <div className="w-64 max-w-full rounded-xl bg-surface p-3">
       <div className="flex items-center gap-3">
-        <GroupAvatar size={40} mediaId={preview.avatar_media_id} mediaKey={preview.avatar_media_key} />
+        <GroupAvatar size={40} mediaId={avatarId} mediaKey={avatarKey} />
         <div className={`min-w-0 flex-1${menuSpace ? ' pr-7' : ''}`}>
           <div className="truncate text-sm font-medium">{preview.name}</div>
           <div className="truncate text-[0.6875rem] text-fg-dim">

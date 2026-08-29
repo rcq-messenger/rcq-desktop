@@ -164,6 +164,18 @@ export interface LocationEnvelope {
 /// AES-256-GCM blob at `/media/{mediaID}`, decrypted with `mediaKey`; the
 /// terse wire keys `fname`/`mime`/`size` carry the display name, content type,
 /// and plaintext byte length (iOS CodingKeys fileName="fname", sizeBytes="size").
+export interface VoiceEnvelope {
+  kind: 'voice'
+  id: string
+  /// The phones' wire casing — mediaID, not mediaId (matches Photo/Video/File).
+  mediaID: string
+  mediaKey: string
+  /// Clip length in seconds; drives the bubble timer before the blob loads.
+  durationSec: number
+  ttl?: number
+  ts?: number
+}
+
 export interface FileEnvelope {
   kind: 'file'
   id: string // uppercase UUID
@@ -370,6 +382,7 @@ export type Envelope =
   | PhotoEnvelope
   | VideoEnvelope
   | FileEnvelope
+  | VoiceEnvelope
   | LocationEnvelope
   | CarbonEnvelope
   | PollEnvelope

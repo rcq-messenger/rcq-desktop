@@ -10,6 +10,7 @@ import { useState } from 'react'
 import { useIdentity } from '../lib/identity-context'
 import { downloadEncryptedFile } from '../lib/media'
 import { useI18n } from '../lib/i18n-context'
+import { VoiceBubble } from './VoiceBubble'
 
 interface Props {
   mediaId: string
@@ -48,6 +49,30 @@ export function FileBubble({ mediaId, mediaKey, fileName, mime, size, apiBase, o
   const { t } = useI18n()
   const [selfBusy, setSelfBusy] = useState(false)
   const [failed, setFailed] = useState(false)
+
+  // An audio FILE plays inline (megalist B2, "в целом аудио файлы"): the same
+  // lazy player the voice bubble uses, with the name + download chip beneath
+  // it so saving stays one press away.
+  if (!disabledNote && mime && mime.startsWith('audio/')) {
+    return (
+      <div className="rounded-lg bg-field px-3 py-2 max-w-[18rem] space-y-1">
+        <VoiceBubble apiBase={apiBase} mediaId={mediaId} mediaKey={mediaKey} />
+        <button
+          onClick={(e) => {
+            if (onPress) return onPress(e.currentTarget)
+            if (!identity || selfBusy) return
+            setSelfBusy(true)
+            void downloadEncryptedFile(apiBase ?? identity.apiBase, mediaId, mediaKey, fileName || 'audio', mime)
+              .then((ok) => { if (!ok) setFailed(true) })
+              .finally(() => setSelfBusy(false))
+          }}
+          className="block w-full truncate text-left text-[0.6875rem] text-fg-dim hover:text-fg-primary"
+        >
+          {failed ? t('chat.media.unavailable') : `${fileName || 'audio'}${fmtSize(size) ? ` · ${fmtSize(size)}` : ''}`}
+        </button>
+      </div>
+    )
+  }
 
   const name = fileName || 'file'
   const sizeLabel = fmtSize(size)

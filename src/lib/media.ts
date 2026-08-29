@@ -531,6 +531,54 @@ export async function uploadEncryptedFile(
   }
 }
 
+/// Fetch + decrypt a voice note / audio clip to a fresh object URL. The
+/// phones record AAC in an MPEG-4 container (audio/mp4); the web records the
+/// same where the platform's MediaRecorder can, WebM/Opus otherwise — the
+/// sniff tells them apart so the <audio> element gets an honest type. Caller
+/// revokes the URL when the player unmounts (megalist B2).
+export async function loadEncryptedAudio(
+  apiBase: string,
+  mediaId: string,
+  keyB64: string,
+): Promise<string | null> {
+  const blob = await fetchDecryptToBlob(apiBase, mediaId, keyB64, sniffAudioType)
+  if (!blob) return null
+  return URL.createObjectURL(blob)
+}
+
+function sniffAudioType(bytes: Uint8Array): string {
+  if (
+    bytes.length >= 12 &&
+    bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70 // "ftyp"
+  ) {
+    return 'audio/mp4'
+  }
+  if (bytes.length >= 4 && bytes[0] === 0x1a && bytes[1] === 0x45 && bytes[2] === 0xdf && bytes[3] === 0xa3) {
+    return 'audio/webm' // EBML — the web's own Opus recordings
+  }
+  if (bytes.length >= 3 && bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) return 'audio/mpeg' // ID3
+  if (bytes.length >= 4 && bytes[0] === 0x4f && bytes[1] === 0x67 && bytes[2] === 0x67 && bytes[3] === 0x53) return 'audio/ogg' // OggS
+  return 'audio/mp4'
+}
+
+/// Seal + upload already-recorded audio bytes (the composer's mic capture).
+/// Same sealed layout as every other blob; returns what the voice envelope
+/// needs. Null on failure.
+export async function uploadEncryptedAudio(
+  apiBase: string,
+  bytes: ArrayBuffer,
+  peerHost?: string,
+): Promise<{ mediaId: string; keyB64: string } | null> {
+  try {
+    const { combined, keyB64 } = await sealBytes(bytes)
+    const mediaId = await uploadBlob(apiBase, combined, 'voice.bin', peerHost)
+    if (!mediaId) return null
+    return { mediaId, keyB64 }
+  } catch {
+    return null
+  }
+}
+
 /// Fetch + decrypt a video to a fresh object URL for inline playback. NOT
 /// cached (videos are large — we don't pin many decrypted blobs in memory);
 /// the caller revokes the URL when the player unmounts. Null on failure.

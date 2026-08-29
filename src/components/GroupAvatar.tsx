@@ -7,7 +7,7 @@
 
 import { useEffect, useState } from 'react'
 import { useIdentity } from '../lib/identity-context'
-import { loadEncryptedImage } from '../lib/media'
+import { loadEncryptedAvatar } from '../lib/media'
 
 interface Props {
   size?: number
@@ -26,7 +26,7 @@ export function GroupAvatar({ size = 40, className = '', mediaId, mediaKey }: Pr
     setUrl(null)
     if (!identity || !mediaId || !mediaKey) return
     let alive = true
-    void loadEncryptedImage(identity.apiBase, mediaId, mediaKey).then((u) => {
+    void loadEncryptedAvatar(identity.apiBase, mediaId, mediaKey).then((u) => {
       if (alive) setUrl(u)
     })
     return () => {

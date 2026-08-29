@@ -420,6 +420,9 @@ export const ru: Record<string, string> = {
   'myreports.load_error': 'Не удалось загрузить обращения. Попробуйте ещё раз.',
   'myreports.number': 'Обращение №{n}',
   'settings.section.about': 'О RCQ',
+  'settings.section.display': 'Оформление',
+  'settings.display.animated_avatars': 'Анимированные аватарки',
+  'settings.display.animated_avatars_footer': 'Выключите, если движущиеся аватарки контактов и групп отвлекают. Применяется при следующей отрисовке.',
   'settings.about.body':
     'RCQ это анонимный мессенджер со сквозным шифрованием, без номера телефона и почты. Это веб-клиент, он работает со своим аккаунтом в этом браузере.',
   // Десктопные сборки называют свою ОС: это не веб-клиент.

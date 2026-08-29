@@ -424,6 +424,9 @@ export const en: Record<string, string> = {
   /// operator sees in the queue.
   'myreports.number': 'Report #{n}',
   'settings.section.about': 'About',
+  'settings.section.display': 'Display',
+  'settings.display.animated_avatars': 'Animated avatars',
+  'settings.display.animated_avatars_footer': 'Turn off if moving contact and group avatars distract you. Applies on the next paint.',
   'settings.about.body':
     'RCQ is an anonymous, end-to-end encrypted messenger: no phone number, no email. This is the web client; it runs its own account in this browser.',
   // Desktop builds name their own OS. This is not the web client.

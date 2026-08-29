@@ -380,6 +380,9 @@ export const zh: Record<string, string> = {
   'myreports.delete_error': '移除失败，请重试。',
   'myreports.load_error': '无法加载你的反馈，请重试。',
   'settings.section.about': '关于',
+  'settings.section.display': '显示',
+  'settings.display.animated_avatars': '动态头像',
+  'settings.display.animated_avatars_footer': '如果联系人和群组的动态头像让你分心，可以关闭。下次渲染时生效。',
   'settings.about.body': 'RCQ 是一款匿名的端到端加密聊天工具，不需要手机号，也不需要邮箱。这是网页客户端，它在这个浏览器里使用自己的账号。',
   // Desktop builds name their own OS. This is not the web client.
   'settings.about.body_macos': 'RCQ 是一款匿名的端到端加密聊天工具，不需要手机号，也不需要邮箱。这是 macOS 应用，它的账号保存在这台 Mac 上。',

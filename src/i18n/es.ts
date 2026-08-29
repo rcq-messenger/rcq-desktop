@@ -380,6 +380,9 @@ export const es: Record<string, string> = {
   'myreports.delete_error': 'No se pudo quitar. Inténtalo de nuevo.',
   'myreports.load_error': 'No se pudieron cargar tus informes. Inténtalo de nuevo.',
   'settings.section.about': 'Acerca de',
+  'settings.section.display': 'Pantalla',
+  'settings.display.animated_avatars': 'Avatares animados',
+  'settings.display.animated_avatars_footer': 'Desactívalo si los avatares en movimiento te distraen. Se aplica en el siguiente repintado.',
   'settings.about.body': 'RCQ es un mensajero anónimo con cifrado de extremo a extremo: sin número de teléfono, sin correo. Este es el cliente web; usa su propia cuenta en este navegador.',
   // Desktop builds name their own OS. This is not the web client.
   'settings.about.body_macos': 'RCQ es un mensajero anónimo con cifrado de extremo a extremo: sin número de teléfono, sin correo. Esta es la app de macOS; su cuenta vive en este Mac.',

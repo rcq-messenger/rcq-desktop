@@ -380,6 +380,9 @@ export const uk: Record<string, string> = {
   'myreports.delete_error': 'Не вдалося прибрати. Спробуй ще раз.',
   'myreports.load_error': 'Не вдалося завантажити твої звернення. Спробуй ще раз.',
   'settings.section.about': 'Про застосунок',
+  'settings.section.display': 'Оформлення',
+  'settings.display.animated_avatars': 'Анімовані аватарки',
+  'settings.display.animated_avatars_footer': 'Вимкніть, якщо рухомі аватарки відволікають. Застосовується під час наступного рендеру.',
   'settings.about.body': 'RCQ це анонімний месенджер з наскрізним шифруванням: без номера телефона, без пошти. Це вебклієнт, він тримає власний акаунт у цьому браузері.',
   // Desktop builds name their own OS. This is not the web client.
   'settings.about.body_macos': 'RCQ це анонімний месенджер з наскрізним шифруванням: без номера телефона, без пошти. Це застосунок для macOS, його акаунт живе на цьому Mac.',

@@ -471,6 +471,65 @@ export async function uploadEncryptedImage(
 
 /// Fetch + decrypt an encrypted image, returning an object URL (cached)
 /// or null on any failure. Safe to call repeatedly with the same args.
+/// #750: whether animated pictures (avatars above all) may move. A local
+/// display preference, read synchronously on every avatar load; the setter
+/// clears the frozen-frame cache so flipping it re-renders on next paint.
+const ANIMATED_AVATARS_KEY = 'rcq.display.animatedAvatars'
+export function animatedAvatarsEnabled(): boolean {
+  try { return localStorage.getItem(ANIMATED_AVATARS_KEY) !== '0' } catch { return true }
+}
+export function setAnimatedAvatarsEnabled(on: boolean): void {
+  try { localStorage.setItem(ANIMATED_AVATARS_KEY, on ? '1' : '0') } catch { /* display nicety */ }
+  _stillCache.clear()
+}
+
+/// Frozen first frames for the animations-off mode, keyed like _urlCache.
+const _stillCache = new Map<string, Promise<string | null>>()
+
+function isAnimatableType(mime: string): boolean {
+  return mime === 'image/gif' || mime === 'image/webp' || mime === 'image/apng' || mime === 'image/png'
+}
+
+/// The still first frame of an animated blob URL: decode, draw once, PNG.
+async function freezeFirstFrame(url: string): Promise<string | null> {
+  try {
+    const resp = await fetch(url)
+    const blob = await resp.blob()
+    if (!isAnimatableType(blob.type)) return url
+    const bmp = await createImageBitmap(blob)
+    const canvas = document.createElement('canvas')
+    canvas.width = bmp.width
+    canvas.height = bmp.height
+    canvas.getContext('2d')?.drawImage(bmp, 0, 0)
+    bmp.close()
+    const still = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/png'))
+    if (!still) return url
+    return URL.createObjectURL(still)
+  } catch {
+    return url
+  }
+}
+
+/// `loadEncryptedImage` for AVATARS: same cache and decrypt, but when the
+/// user turned animated avatars off (#750) the animation is frozen to its
+/// first frame. Chat media keeps moving — the toggle names avatars.
+export function loadEncryptedAvatar(
+  apiBase: string,
+  mediaId: string,
+  keyB64: string,
+): Promise<string | null> {
+  if (animatedAvatarsEnabled()) return loadEncryptedImage(apiBase, mediaId, keyB64)
+  const k = cacheKey(mediaId, keyB64)
+  const hit = _stillCache.get(k)
+  if (hit) return hit
+  const p = loadEncryptedImage(apiBase, mediaId, keyB64).then((url) =>
+    url ? freezeFirstFrame(url) : null,
+  )
+  _stillCache.set(k, p)
+  void p.then((url) => { if (url === null) _stillCache.delete(k) })
+  return p
+}
+
 export function loadEncryptedImage(
   apiBase: string,
   mediaId: string,

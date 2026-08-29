@@ -187,6 +187,14 @@ export function setOpenGroup(gid: number | 'all' | null): void {
   }
 }
 
+/// Another device of this account read a room (A2). The CLI's counter is
+/// "lines this process did not print", so the honest answer to a remote read
+/// is to drop the badge: what arrives afterwards starts counting again.
+export function clearGroupUnread(gid: number): void {
+  groupUnread.delete(gid)
+  groupAnnounced.delete(gid)
+}
+
 /// How many messages a room has been holding, for the recap when it opens: a
 /// badge that said "+40 new" and then shows eight lines is a badge that lied.
 export function unreadIn(gid: number): number {
@@ -317,6 +325,14 @@ export async function ingestDecrypted(
     if (got.senderUIN !== identity.uin) return
     const c = env as CarbonEnvelope
     const inner = c.env
+    // A2: I read this thread on another device. Not a message - drop the
+    // room's badge (minus nothing: the CLI counts only what it has not
+    // printed, and anything printed after this marker is still counted by
+    // the lines below). Never filed into history.
+    if ((inner as { kind?: string }).kind === 'readmark') {
+      if (c.gid != null) clearGroupUnread(c.gid)
+      return
+    }
     const id = (inner as { id?: string }).id
     if (typeof id === 'string') {
       if (seen.has(id)) return

@@ -64,7 +64,7 @@ import {
   type IngestResult,
 } from './receive'
 import { cancelRequest, describeRequestFrame, loadRequests, respondTo, sendRequest } from './requests'
-import { sendText } from './send'
+import { sendReadMarker, sendText } from './send'
 import { RcqSocket } from './socket'
 import { isYes, strangerCheck } from './stranger'
 import { out } from './style'
@@ -403,6 +403,9 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
     // What the room IS, then what was last said in it: a header under the
     // recap reads as a footnote to somebody else's conversation.
     printAbove(out.dim(`[${g.name}] ${describeGroup(identity, g)}`))
+    // A2: my other devices drop this room's badge too. Only when there WAS
+    // a backlog here; opening an already-read room says nothing.
+    if (unreadIn(g.id) > 0) void sendReadMarker(identity, { gid: g.id })
     switchTo({ kind: 'group', gid: g.id })
     // The roster in the background: the first line typed should not pay for it,
     // and a stale one is how a new member ends up unable to read the room.

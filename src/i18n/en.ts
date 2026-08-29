@@ -988,6 +988,13 @@ export const en: Record<string, string> = {
   'uin_market.suggest.empty': 'No suggestions right now. Try typing a number above.',
   'uin_market.tiers.label': 'Price by length',
   'uin_market.tiers.digits': '{n} digits',
+  'uin_market.tiers.len3': 'three-digit',
+  'uin_market.tiers.len4': 'four-digit',
+  'uin_market.tiers.len5': 'five-digit',
+  'uin_market.tiers.len6': 'six-digit',
+  'uin_market.tiers.len7': 'seven-digit',
+  'uin_market.tiers.len8': 'eight-digit',
+  'uin_market.tiers.len9': 'nine-digit',
   'uin_market.tiers.note': 'Shorter is rarer, so it costs more. The price depends only on the digit count.',
   'uin_market.info.what.title': 'What is a UIN',
   'uin_market.info.what.body':

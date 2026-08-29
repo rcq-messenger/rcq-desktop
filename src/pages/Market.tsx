@@ -340,7 +340,7 @@ export function Market() {
             {t('uin_market.subhead', { uin: `#${id.uin}` })}
           </p>
 
-          <div className="mt-6 flex items-center h-[88px] rounded-2xl bg-fg-primary/[0.04] px-5 transition-colors focus-within:bg-fg-primary/[0.07]">
+          <div className="mt-6 flex items-center h-[88px] rounded-2xl bg-fg-primary/[0.07] px-5 transition-colors focus-within:bg-fg-primary/[0.1]">
             <span aria-hidden className="text-3xl sm:text-4xl text-fg-dim/50 select-none">#</span>
             <input
               ref={inputRef}
@@ -355,9 +355,13 @@ export function Market() {
               aria-label={t('uin_market.input.aria')}
               className="ml-1 flex-1 min-w-0 bg-transparent outline-none text-4xl sm:text-5xl font-semibold tracking-tight tabular-nums caret-accent"
             />
-            <span className="ml-3 text-xs text-fg-dim tabular-nums whitespace-nowrap">
-              {len === 0 ? t('uin_market.plate.hint') : t('uin_market.plate.digits', { n: len })}
-            </span>
+            {/* The count next to the number said what the number already
+                says by being looked at (megalist B6); the hint stays. */}
+            {len === 0 && (
+              <span className="ml-3 text-xs text-fg-dim whitespace-nowrap">
+                {t('uin_market.plate.hint')}
+              </span>
+            )}
           </div>
 
           <AnimatePresence initial={false}>
@@ -452,7 +456,7 @@ export function Market() {
               {t('uin_market.mine.label')}
             </h2>
 
-            <div className="rounded-2xl bg-fg-primary/[0.04] px-5 py-4">
+            <div className="rounded-2xl bg-fg-primary/[0.07] px-5 py-4">
               <div className="text-[0.6875rem] uppercase tracking-wider text-fg-dim">{t('uin_market.mine.active')}</div>
               <div className="mt-1 text-3xl font-semibold tracking-tight tabular-nums">#{mine.active}</div>
             </div>
@@ -464,11 +468,10 @@ export function Market() {
                 {mine.owned.map((o) => (
                   <div
                     key={o.uin}
-                    className="flex items-center justify-between rounded-2xl bg-fg-primary/[0.035] px-4 py-3"
+                    className="flex items-center justify-between rounded-2xl bg-fg-primary/[0.06] px-4 py-3"
                   >
                     <div className="min-w-0">
                       <div className="text-lg font-semibold tracking-tight tabular-nums truncate">#{o.uin}</div>
-                      <div className="text-xs text-fg-dim">{t('uin_market.tiers.digits', { n: o.length })}</div>
                     </div>
                     <div className="shrink-0 flex items-center gap-2">
                       <button
@@ -528,13 +531,12 @@ export function Market() {
                 <button
                   key={s.uin}
                   onClick={() => pick(s.uin)}
-                  className="rounded-2xl p-3.5 text-left bg-fg-primary/[0.035] hover:bg-fg-primary/[0.07]
+                  className="rounded-2xl p-3.5 text-left bg-fg-primary/[0.06] hover:bg-fg-primary/[0.1]
                              active:scale-[0.98] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
                 >
                   <div className="text-lg font-semibold tracking-tight truncate">#{s.uin}</div>
-                  <div className="mt-1 flex items-center justify-between text-xs">
+                  <div className="mt-1 text-xs">
                     <span className="text-fg-secondary tabular-nums">{s.price_display}</span>
-                    <span className="text-fg-dim/70">{t('uin_market.tiers.digits', { n: s.length })}</span>
                   </div>
                 </button>
               ))}
@@ -556,7 +558,7 @@ export function Market() {
                     <motion.div layoutId="tierHL" transition={SPRING} className="absolute inset-0 rounded-xl bg-accent/[0.08]" />
                   )}
                   <span className={'relative text-sm transition-colors ' + (active ? 'font-semibold text-accent' : 'text-fg-secondary')}>
-                    {t('uin_market.tiers.digits', { n: d })}
+                    {t(`uin_market.tiers.len${d}`)}
                   </span>
                   <span className={'relative text-sm tabular-nums transition-colors ' + (active ? 'font-semibold text-accent' : 'text-fg-primary')}>
                     {priceDisplay(PRICE_CENTS_BY_LENGTH[d])}

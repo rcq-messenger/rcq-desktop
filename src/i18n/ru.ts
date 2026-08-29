@@ -849,6 +849,7 @@ export const ru: Record<string, string> = {
 
   // Группы: создание и инфо
   'group.create.title': 'Новая группа',
+  'group.create.cross_not_invited': 'Группа создана, но приглашение не дошло до: {names}. Отправьте им ссылку на группу сами.',
   'group.create.name': 'Имя группы',
   'group.create.name_placeholder': 'напр. 9-Б класс',
   'group.create.members': 'Участники',

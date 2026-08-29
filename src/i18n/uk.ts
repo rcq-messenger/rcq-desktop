@@ -709,6 +709,7 @@ export const uk: Record<string, string> = {
   'contact_actions.blocked_tag': 'ЗАБЛОКОВАНО',
   // Group create + info
   'group.create.title': 'Нова група',
+  'group.create.cross_not_invited': 'Групу створено, але запрошення не дійшло до: {names}. Надішліть їм посилання самі.',
   'group.create.name': 'Назва групи',
   'group.create.name_placeholder': 'напр. 9-Б клас',
   'group.create.members': 'Учасники',

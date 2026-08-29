@@ -844,6 +844,7 @@ export const en: Record<string, string> = {
 
   // Group create + info
   'group.create.title': 'New group',
+  'group.create.cross_not_invited': 'Group created, but the invite did not reach: {names}. Send them the group link yourself.',
   'group.create.name': 'Group name',
   'group.create.name_placeholder': 'e.g. Class 9-B',
   'group.create.members': 'Members',

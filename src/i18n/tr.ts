@@ -709,6 +709,7 @@ export const tr: Record<string, string> = {
   'contact_actions.blocked_tag': 'ENGELLİ',
   // Group create + info
   'group.create.title': 'Yeni grup',
+  'group.create.cross_not_invited': 'Grup oluşturuldu ama davet şu kişilere ulaşmadı: {names}. Bağlantıyı kendin gönder.',
   'group.create.name': 'Grup adı',
   'group.create.name_placeholder': 'örn. 9-B sınıfı',
   'group.create.members': 'Üyeler',

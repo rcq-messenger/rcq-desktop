@@ -296,6 +296,14 @@ export interface RCQGroup {
   /// Server-enforced on group-sealed for identified non-moderators.
   slowmode_sec?: number
   in_catalog?: boolean
+  // Pin metadata beside the text (who pinned, when) - served today, needed
+  // by the sealed-state blob so an overlay loses nothing.
+  pinned_at?: string | null
+  pinned_by?: number | null
+  // Sealed room identity (stage 6 phase 2): the opaque blob and its version.
+  // Clients holding the room key overlay it via applySealedState.
+  state_blob?: string | null
+  state_ver?: number
 }
 
 /// Lightweight group info shown to a non-member who's about to join
@@ -590,6 +598,21 @@ export const Api = {
   /// parameter and answer with the roster anyway, which is the safe direction.
   groups(id: WebIdentity, withMembers = true): Promise<RCQGroup[]> {
     return request<RCQGroup[]>(id, 'GET', withMembers ? '/groups' : '/groups?members=0')
+  },
+
+  /// Write the sealed room identity (stage 6 phase 2). The version must be
+  /// exactly the island's current + 1 or this rejects with a 409 carrying
+  /// what the island holds - see group-state.ts for the retry shape.
+  patchGroupState(id: WebIdentity, groupId: number, blobB64: string, ver: number): Promise<RCQGroup> {
+    return request<RCQGroup>(id, 'PATCH', `/groups/${groupId}/state`, {
+      state_blob: blobB64,
+      state_ver: ver,
+    })
+  },
+
+  /// One group with its roster - the read half of the 409 retry.
+  group(id: WebIdentity, groupId: number): Promise<RCQGroup> {
+    return request<RCQGroup>(id, 'GET', `/groups/${groupId}`)
   },
 
   groupInfo(id: WebIdentity, groupId: number): Promise<RCQGroup> {

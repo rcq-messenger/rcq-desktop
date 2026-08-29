@@ -538,6 +538,9 @@ export const tr: Record<string, string> = {
   // Contacts header
   'contacts.add': 'Kişi ekle',
   'contacts.open_chat': 'Sohbeti aç',
+  'contact_actions.preview': 'Sohbet önizleme',
+  'chat.preview.empty': 'Henüz bir şey yok',
+  'chat.preview.media': 'ek',
   'contacts.open_profile': 'Profili aç',
   'toast.group': 'Grup',
   'toast.photo': '📷 Fotoğraf',

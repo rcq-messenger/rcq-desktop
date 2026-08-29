@@ -538,6 +538,9 @@ export const pt: Record<string, string> = {
   // Contacts header
   'contacts.add': 'Adicionar contato',
   'contacts.open_chat': 'Abrir conversa',
+  'contact_actions.preview': 'Pré-visualizar',
+  'chat.preview.empty': 'Nada por aqui ainda',
+  'chat.preview.media': 'anexo',
   'contacts.open_profile': 'Abrir perfil',
   'toast.group': 'Grupo',
   'toast.photo': '📷 Foto',

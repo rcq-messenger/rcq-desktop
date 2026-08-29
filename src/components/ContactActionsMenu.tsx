@@ -23,9 +23,10 @@ interface Props {
   contact: Contact
   onClose: () => void
   onChanged: () => void
+  onPreview?: () => void
 }
 
-export function ContactActionsMenu({ contact, onClose, onChanged }: Props) {
+export function ContactActionsMenu({ contact, onClose, onChanged, onPreview }: Props) {
   const { identity } = useIdentity()
   const { t } = useI18n()
   const favorites = useFavorites()
@@ -145,6 +146,16 @@ export function ContactActionsMenu({ contact, onClose, onChanged }: Props) {
           device-only. It existed only there and on the profile page, so
           renaming an ordinary contact meant leaving the list — reported as
           "cannot set a name at all". */}
+      {onPreview && (
+        <Row
+          icon={<EyeIcon />}
+          label={t('contact_actions.preview')}
+          onClick={() => {
+            onPreview()
+            onClose()
+          }}
+        />
+      )}
       <Row icon={<PencilIcon />} label={t('ci.actions.rename')} onClick={() => setRenaming(true)} />
       <Row
         icon={<StarIcon filled={isFav} />}
@@ -311,6 +322,16 @@ function TrashIcon() {
       <path d="M10 11v6" />
       <path d="M14 11v6" />
       <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2" />
+    </svg>
+  )
+}
+
+
+function EyeIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" />
+      <circle cx="12" cy="12" r="3" />
     </svg>
   )
 }

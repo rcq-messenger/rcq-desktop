@@ -538,6 +538,9 @@ export const uk: Record<string, string> = {
   // Contacts header
   'contacts.add': 'Додати контакт',
   'contacts.open_chat': 'Відкрити чат',
+  'contact_actions.preview': 'Прев\'ю розмови',
+  'chat.preview.empty': 'Поки порожньо',
+  'chat.preview.media': 'вкладення',
   'contacts.open_profile': 'Відкрити профіль',
   'toast.group': 'Група',
   'toast.photo': '📷 Фото',

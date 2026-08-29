@@ -26,6 +26,7 @@ import { AnimatePresence } from 'framer-motion'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { BypassShield } from '../components/BypassShield'
+import { ChatPreviewModal } from '../components/ChatPreviewModal'
 import { ContactActionsMenu } from '../components/ContactActionsMenu'
 import { GroupActionsMenu } from '../components/GroupActionsMenu'
 import { CreateGroupSheet } from '../components/CreateGroupSheet'
@@ -1376,6 +1377,7 @@ function ContactRow({
   onChanged: () => void
 }) {
   const { t, lang } = useI18n()
+  const [previewOpen, setPreviewOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const unread = usePeerUnread(contact.uin)
   // My own name for this person wins over the nickname they chose. Device-only
@@ -1458,9 +1460,21 @@ function ContactRow({
           contact={contact}
           onClose={() => setMenuOpen(false)}
           onChanged={onChanged}
+          onPreview={() => setPreviewOpen(true)}
         />
       )}
     </AnimatePresence>
+      {previewOpen && (
+        <ChatPreviewModal
+          kind="peer"
+          id={contact.uin}
+          title={alias || contact.nickname || `#${contact.uin}`}
+          status={contact.status}
+          avatarMediaId={contact.avatar_media_id}
+          avatarMediaKey={contact.avatar_media_key}
+          onClose={() => setPreviewOpen(false)}
+        />
+      )}
     </li>
   )
 }
@@ -1542,6 +1556,7 @@ function GroupRow({ group, onChanged }: { group: RCQGroup; onChanged: () => void
   const favorites = useFavoriteGroups()
   const archive = useArchiveGroups()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [previewOpen, setPreviewOpen] = useState(false)
   const isMuted = muted.has(group.id)
   const isFav = favorites.has(group.id)
   const isArchived = archive.has(group.id)
@@ -1586,9 +1601,24 @@ function GroupRow({ group, onChanged }: { group: RCQGroup; onChanged: () => void
       </div>
       <AnimatePresence>
       {menuOpen && (
-        <GroupActionsMenu group={group} onClose={() => setMenuOpen(false)} onChanged={onChanged} />
+        <GroupActionsMenu
+          group={group}
+          onClose={() => setMenuOpen(false)}
+          onChanged={onChanged}
+          onPreview={() => setPreviewOpen(true)}
+        />
       )}
     </AnimatePresence>
+      {previewOpen && (
+        <ChatPreviewModal
+          kind="group"
+          id={group.id}
+          title={group.name}
+          avatarMediaId={group.avatar_media_id}
+          avatarMediaKey={group.avatar_media_key}
+          onClose={() => setPreviewOpen(false)}
+        />
+      )}
     </li>
   )
 }

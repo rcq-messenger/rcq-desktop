@@ -908,6 +908,8 @@ export const ru: Record<string, string> = {
   'group.settings.slowmode.off': 'Выкл',
   'group.settings.slowmode.sec': '{s} с',
   'group.settings.slowmode.min': '1 мин',
+  'group.settings.slowmode.min5': '5 мин',
+  'group.settings.slowmode.hour': '1 ч',
   'group.settings.error': 'Не удалось сохранить группу.',
   'group.settings.remove_member': 'Убрать',
   'group.info.owner': 'Владелец',

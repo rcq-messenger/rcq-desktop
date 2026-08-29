@@ -763,6 +763,8 @@ export const tr: Record<string, string> = {
   'group.settings.slowmode.off': 'Kapalı',
   'group.settings.slowmode.sec': '{s} sn',
   'group.settings.slowmode.min': '1 dk',
+  'group.settings.slowmode.min5': '5 dk',
+  'group.settings.slowmode.hour': '1 sa',
   'group.settings.error': 'Grup kaydedilemedi.',
   'group.settings.remove_member': 'Çıkar',
   'group.info.owner': 'Grup sahibi',

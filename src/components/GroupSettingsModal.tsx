@@ -210,7 +210,7 @@ export function GroupSettingsModal({
                   <span className="block text-sm">{t('group.settings.slowmode')}</span>
                   <span className="block text-xs text-fg-dim">{t('group.settings.slowmode.hint')}</span>
                   <div className="mt-2 flex gap-1.5">
-                    {[0, 5, 10, 30, 60].map((s) => (
+                    {[0, 5, 10, 30, 60, 300, 3600].map((s) => (
                       <button
                         key={s}
                         type="button"
@@ -225,7 +225,11 @@ export function GroupSettingsModal({
                           ? t('group.settings.slowmode.off')
                           : s < 60
                             ? t('group.settings.slowmode.sec', { s: String(s) })
-                            : t('group.settings.slowmode.min')}
+                            : s === 60
+                              ? t('group.settings.slowmode.min')
+                              : s === 300
+                                ? t('group.settings.slowmode.min5')
+                                : t('group.settings.slowmode.hour')}
                       </button>
                     ))}
                   </div>

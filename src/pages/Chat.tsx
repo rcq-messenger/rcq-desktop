@@ -248,6 +248,24 @@ export function Chat() {
   // The attach button opens a small menu (Photo / File) — the web couldn't
   // send documents before (#16). Each picks a different hidden <input>.
   const [attachMenuOpen, setAttachMenuOpen] = useState(false)
+  /// A picture waiting for its caption (#798): pasting or picking one no
+  /// longer fires the send — it parks here, a strip above the composer shows
+  /// it, whatever gets typed becomes the caption, and the send button ships
+  /// both as ONE message. ✕ or Escape lets go.
+  const [pendingPhoto, setPendingPhoto] = useState<{ file: File; url: string } | null>(null)
+  function stagePhoto(file: File) {
+    setPendingPhoto((prev) => {
+      if (prev) URL.revokeObjectURL(prev.url)
+      return { file, url: URL.createObjectURL(file) }
+    })
+  }
+  function unstagePhoto() {
+    setPendingPhoto((prev) => {
+      if (prev) URL.revokeObjectURL(prev.url)
+      return null
+    })
+  }
+
   /// Voice capture (megalist B2). null = idle; otherwise the live recorder.
   /// AAC-in-MP4 where the platform can (both phones' native format), Opus/WebM
   /// otherwise; button hidden when MediaRecorder can do neither.
@@ -591,6 +609,7 @@ export function Chat() {
     function onKey(e: KeyboardEvent) {
       if (e.key !== 'Escape') return
       if (searchOpen) { setSearchOpen(false); setQuery(''); return }
+      if (pendingPhoto) return unstagePhoto()
       if (attachMenuOpen && attachView === 'ttl') return setAttachView('main')
       if (attachMenuOpen) return setAttachMenuOpen(false)
       if (showPicker) return setShowPicker(false)
@@ -1548,6 +1567,12 @@ export function Chat() {
   }
 
   async function send() {
+    if (pendingPhoto) {
+      const staged = pendingPhoto
+      unstagePhoto()
+      await sendPhoto(staged.file)
+      return
+    }
     if (!identity) return
     if (editingRow) {
       await saveEdit()
@@ -2928,7 +2953,7 @@ export function Chat() {
         e.preventDefault()
         setDragOver(false)
         const file = e.dataTransfer.files[0]
-        if (file.type.startsWith('image/')) void sendPhoto(file)
+        if (file.type.startsWith('image/')) stagePhoto(file)
         else void sendFile(file)
       }}
     >
@@ -3681,7 +3706,7 @@ export function Chat() {
               onChange={(e) => {
                 const file = e.target.files?.[0]
                 e.target.value = '' // allow re-picking the same file
-                if (file) void sendPhoto(file)
+                if (file) stagePhoto(file)
               }}
             />
             <input
@@ -3839,6 +3864,24 @@ export function Chat() {
                 )}
               </AnimatePresence>
             </div>
+            {pendingPhoto && (
+              <div className="absolute bottom-full left-0 right-0 mb-1">
+                <div className="max-w-2xl mx-auto flex items-center gap-3 rounded-xl bg-surface/90 backdrop-blur-md px-3 py-2 shadow-lg">
+                  <img src={pendingPhoto.url} alt="" className="h-12 w-12 rounded-md object-cover flex-none" />
+                  <span className="flex-1 min-w-0 text-xs text-fg-secondary truncate">
+                    {t('chat.photo.caption_hint')}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={unstagePhoto}
+                    aria-label={t('common.cancel')}
+                    className="text-fg-secondary hover:text-fg-primary px-1"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            )}
             <button
               data-emoji-panel
               onClick={() => setShowPicker((v) => !v)}
@@ -3916,13 +3959,13 @@ export function Chat() {
                   .find((r) => (r.state === 'sent' || r.state === 'delivered' || r.state === 'read') && (!r.kind || r.kind === 'text'))
                 if (last) startEdit(last)
               }}
-              onPasteImage={(file) => void sendPhoto(file)}
+              onPasteImage={stagePhoto}
               disabled={(!peer && !group) || readOnlyHere}
             />
             )}
             <button
               onClick={() => void send()}
-              disabled={(!peer && !group) || !input.trim() || slowActive || readOnlyHere}
+              disabled={(!peer && !group) || (!input.trim() && !pendingPhoto) || slowActive || readOnlyHere}
               className="h-10 w-10 rounded-full bg-accent hover:bg-accent-dim text-white flex items-center justify-center flex-none disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               aria-label={slowActive ? t('chat.slowmode.wait', { s: String(slowLeft) }) : t('chat.send')}
               title={slowActive ? t('chat.slowmode.wait', { s: String(slowLeft) }) : t('chat.send')}

@@ -120,6 +120,7 @@ export const zh: Record<string, string> = {
   'chat.blocked.unblock': '解除拉黑',
   'chat.owner_only.notice': '这个群组里只有群主可以发言。',
   'chat.attach': '附件',
+  'chat.photo.caption_hint': '照片已就绪。在下方输入说明后作为一条消息发送。',
   'chat.attach.photo': '照片',
   'chat.attach.file': '文件',
   'chat.attach.location': '位置',

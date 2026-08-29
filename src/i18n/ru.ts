@@ -615,6 +615,9 @@ export const ru: Record<string, string> = {
   // Шапка контактов
   'contacts.add': 'Добавить контакт',
   'contacts.open_chat': 'Открыть чат',
+  'contact_actions.preview': 'Превью диалога',
+  'chat.preview.empty': 'Пока пусто',
+  'chat.preview.media': 'вложение',
   'contacts.open_profile': 'Открыть профиль',
   'toast.group': 'Группа',
   'toast.photo': '📷 Фото',

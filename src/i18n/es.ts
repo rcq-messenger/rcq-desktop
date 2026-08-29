@@ -538,6 +538,9 @@ export const es: Record<string, string> = {
   // Contacts header
   'contacts.add': 'Añadir contacto',
   'contacts.open_chat': 'Abrir el chat',
+  'contact_actions.preview': 'Vista previa',
+  'chat.preview.empty': 'Aún no hay nada',
+  'chat.preview.media': 'adjunto',
   'contacts.open_profile': 'Abrir el perfil',
   'toast.group': 'Grupo',
   'toast.photo': '📷 Foto',

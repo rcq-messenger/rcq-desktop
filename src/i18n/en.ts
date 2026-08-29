@@ -620,6 +620,9 @@ export const en: Record<string, string> = {
   // Contacts header
   'contacts.add': 'Add contact',
   'contacts.open_chat': 'Open chat',
+  'contact_actions.preview': 'Preview chat',
+  'chat.preview.empty': 'Nothing here yet',
+  'chat.preview.media': 'attachment',
   'contacts.open_profile': 'Open profile',
   'toast.group': 'Group',
   'toast.photo': '📷 Photo',

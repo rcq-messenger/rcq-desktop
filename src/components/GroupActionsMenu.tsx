@@ -16,9 +16,10 @@ interface Props {
   group: RCQGroup
   onClose: () => void
   onChanged: () => void
+  onPreview?: () => void
 }
 
-export function GroupActionsMenu({ group, onClose, onChanged }: Props) {
+export function GroupActionsMenu({ group, onClose, onChanged, onPreview }: Props) {
   const { identity } = useIdentity()
   const { t } = useI18n()
   const navigate = useNavigate()
@@ -66,6 +67,16 @@ export function GroupActionsMenu({ group, onClose, onChanged }: Props) {
 
   return (
     <MenuPanel panelRef={ref} className="right-0 w-56 py-1 text-sm" onClick={(e) => e.stopPropagation()}>
+      {onPreview && (
+        <Row
+          icon={<EyeIcon />}
+          label={t('contact_actions.preview')}
+          onClick={() => {
+            onPreview()
+            onClose()
+          }}
+        />
+      )}
       <Row
         icon={<InfoIcon />}
         label={t('group_actions.info')}
@@ -217,6 +228,16 @@ function LeaveIcon() {
       <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
       <polyline points="16 17 21 12 16 7" />
       <line x1="21" y1="12" x2="9" y2="12" />
+    </svg>
+  )
+}
+
+
+function EyeIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" />
+      <circle cx="12" cy="12" r="3" />
     </svg>
   )
 }

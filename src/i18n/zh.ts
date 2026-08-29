@@ -536,6 +536,9 @@ export const zh: Record<string, string> = {
   // Contacts header
   'contacts.add': '添加联系人',
   'contacts.open_chat': '打开聊天',
+  'contact_actions.preview': '预览会话',
+  'chat.preview.empty': '暂时没有内容',
+  'chat.preview.media': '附件',
   'contacts.open_profile': '打开个人资料',
   'toast.group': '群组',
   'toast.photo': '📷 照片',

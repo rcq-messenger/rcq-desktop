@@ -959,12 +959,18 @@ export interface AudioRoomOut {
 // News — the operator's announcement feed, same one the phones read.
 // -----------------------------------------------------------
 
+export interface NewsAttachment {
+  media_id: string
+  mime: string
+  kind: 'image' | 'video' | string
+}
+
 export interface NewsPost {
   id: number
   body: string
   author_label: string | null
   published_at: string
-  attachments?: unknown
+  attachments?: NewsAttachment[] | null
 }
 
 /// The feed is public and the GET is unauthenticated server-side; it rides the

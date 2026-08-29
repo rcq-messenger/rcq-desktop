@@ -21,6 +21,7 @@
 // right now simply does not render: it is never pruned, because a roster fetch
 // that failed once would otherwise delete the account's sections.
 
+import { AnimatePresence } from 'framer-motion'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { BypassShield } from '../components/BypassShield'
@@ -1444,6 +1445,7 @@ function ContactRow({
           <MoreIcon />
         </button>
       </div>
+      <AnimatePresence>
       {menuOpen && (
         <ContactActionsMenu
           contact={contact}
@@ -1451,6 +1453,7 @@ function ContactRow({
           onChanged={onChanged}
         />
       )}
+    </AnimatePresence>
     </li>
   )
 }
@@ -1508,6 +1511,7 @@ function CrossIslandRow({
           <MoreIcon />
         </button>
       </div>
+      <AnimatePresence>
       {menuOpen && (
         <CrossIslandActionsMenu
           contact={ci}
@@ -1515,6 +1519,7 @@ function CrossIslandRow({
           onChanged={onChanged}
         />
       )}
+    </AnimatePresence>
     </li>
   )
 }
@@ -1572,9 +1577,11 @@ function GroupRow({ group, onChanged }: { group: RCQGroup; onChanged: () => void
           <MoreIcon />
         </button>
       </div>
+      <AnimatePresence>
       {menuOpen && (
         <GroupActionsMenu group={group} onClose={() => setMenuOpen(false)} onChanged={onChanged} />
       )}
+    </AnimatePresence>
     </li>
   )
 }

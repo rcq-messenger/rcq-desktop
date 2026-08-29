@@ -5,6 +5,7 @@
 // Three local-only states (Favorite / Mute / Archive) write to
 // localStorage; Block + Remove hit the backend.
 
+import { MenuPanel } from './MenuPanel'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Api, type Contact } from '../lib/api'
 import { useI18n } from '../lib/i18n-context'
@@ -103,11 +104,7 @@ export function ContactActionsMenu({ contact, onClose, onChanged }: Props) {
       onClose()
     }
     return (
-      <div
-        ref={ref}
-        className="rcq-menu absolute right-0 top-full mt-1 w-56 rounded-lg shadow-lg z-30 text-sm"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <MenuPanel panelRef={ref} className="right-0 w-56 text-sm" onClick={(e) => e.stopPropagation()}>
         <div className="p-3 space-y-2">
           <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
             {t('ci.actions.rename')}
@@ -138,16 +135,12 @@ export function ContactActionsMenu({ contact, onClose, onChanged }: Props) {
             </button>
           </div>
         </div>
-      </div>
+      </MenuPanel>
     )
   }
 
   return (
-    <div
-      ref={ref}
-      className="rcq-menu absolute right-0 top-full mt-1 w-56 rounded-lg shadow-lg py-1 z-30 text-sm"
-      onClick={(e) => e.stopPropagation()}
-    >
+    <MenuPanel panelRef={ref} className="right-0 w-56 py-1 text-sm" onClick={(e) => e.stopPropagation()}>
       {/* Same first row as the cross-island menu: my own name for them,
           device-only. It existed only there and on the profile page, so
           renaming an ordinary contact meant leaving the list — reported as
@@ -215,7 +208,7 @@ export function ContactActionsMenu({ contact, onClose, onChanged }: Props) {
       {error && (
         <div className="px-3 py-1 text-xs text-red-600">{error}</div>
       )}
-    </div>
+    </MenuPanel>
   )
 }
 

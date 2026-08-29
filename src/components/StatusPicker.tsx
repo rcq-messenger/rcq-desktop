@@ -4,6 +4,8 @@
 // the WS `presence` push the backend fires after every status
 // change.
 
+import { AnimatePresence } from 'framer-motion'
+import { MenuPanel } from './MenuPanel'
 import { useEffect, useRef, useState } from 'react'
 import { Api, type UserStatus } from '../lib/api'
 import { useI18n } from '../lib/i18n-context'
@@ -78,22 +80,24 @@ export function StatusPickerButton({ current, onChange, avatarMediaId, avatarMed
           <StatusIcon status={current} size={20} />
         )}
       </button>
-      {open && (
-        <div className="absolute top-full left-0 mt-1 bg-surface rounded-lg shadow-lg py-1 z-30 min-w-[160px]">
-          {STATES.map((s) => (
-            <button
-              key={s}
-              onClick={() => void pick(s)}
-              className="w-full px-3 py-2 flex items-center gap-2 text-sm hover:bg-field text-left"
-            >
-              <StatusIcon status={s} size={18} />
-              <span className={s === current ? 'font-semibold' : ''}>
-                {t(`status.${s}`)}
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
+      <AnimatePresence>
+        {open && (
+          <MenuPanel className="left-0 py-1 min-w-[160px]">
+            {STATES.map((s) => (
+              <button
+                key={s}
+                onClick={() => void pick(s)}
+                className="w-full px-3 py-2 flex items-center gap-2 text-sm hover:bg-field text-left"
+              >
+                <StatusIcon status={s} size={18} />
+                <span className={s === current ? 'font-semibold' : ''}>
+                  {t(`status.${s}`)}
+                </span>
+              </button>
+            ))}
+          </MenuPanel>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

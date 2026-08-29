@@ -1647,6 +1647,14 @@ export function Chat() {
       toast(t('chat.owner_only.notice'), 'error')
       return
     }
+    // A photo is media like any other: the files-off room refused documents,
+    // voice and drag-drop but let plain photos through - the one hole in the
+    // policy, found when Android grew the same gates (29.08). Guarded here,
+    // at the single choke point every photo path funnels into.
+    if (isGroup && !filesAllowed) {
+      toast(t('chat.files_off.chip'), 'error')
+      return
+    }
     if (slowmodeBlocked()) return
     setUploadingPhoto(true)
     try {

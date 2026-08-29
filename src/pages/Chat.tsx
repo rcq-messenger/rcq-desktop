@@ -17,7 +17,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode
 import { createPortal } from 'react-dom'
 import { scopedKey } from '../lib/account-scope'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { EmoticonInput, insertEmoticonAt, serialize as serializeComposer } from '../components/EmoticonInput'
 import { EmoticonPicker } from '../components/EmoticonPicker'
 import { EmoticonText } from '../components/EmoticonText'
@@ -2061,6 +2061,22 @@ export function Chat() {
     setHighlightId(id)
     window.setTimeout(() => setHighlightId((cur) => (cur === id ? null : cur)), 1400)
   }
+
+  /// Arriving from the home screen's global search: land on the message the
+  /// hit named. Delayed until the list has painted; a row older than the
+  /// loaded window gets jumpToMessage's honest "not loaded" toast. Deduped by
+  /// value, not by a one-shot flag, so a second search into this same mounted
+  /// screen still jumps.
+  const location = useLocation()
+  const handledJump = useRef<string | null>(null)
+  useEffect(() => {
+    const jump = (location.state as { jump?: string } | null)?.jump
+    if (!jump || handledJump.current === jump) return
+    handledJump.current = jump
+    const timer = window.setTimeout(() => jumpToMessage(jump), 450)
+    return () => window.clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state])
 
   /// Copy a message's text to the clipboard (action-menu "copy").
   function copyText(text: string) {

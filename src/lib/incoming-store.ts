@@ -1082,3 +1082,14 @@ export function useIncoming(peerUin: number | null): IncomingRow[] {
 export function useGroupIncoming(groupId: number | null): IncomingRow[] {
   return useSyncExternalStore(subscribe, () => (groupId == null ? EMPTY : byGroup.get(groupId) ?? EMPTY))
 }
+
+/// One-shot read of EVERY thread's incoming rows, for the home screen's
+/// global search (megalist H2/29.08). The live maps, not copies: the caller
+/// reads and forgets within the same tick, and copying every thread on every
+/// keystroke is exactly the work a search box cannot afford.
+export function incomingSnapshots(): {
+  peers: ReadonlyMap<number, IncomingRow[]>
+  groups: ReadonlyMap<number, IncomingRow[]>
+} {
+  return { peers: byPeer, groups: byGroup }
+}

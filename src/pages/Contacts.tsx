@@ -27,6 +27,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { BypassShield } from '../components/BypassShield'
 import { ChatPreviewModal } from '../components/ChatPreviewModal'
+import { GlobalSearchOverlay } from '../components/GlobalSearchOverlay'
 import { ContactActionsMenu } from '../components/ContactActionsMenu'
 import { GroupActionsMenu } from '../components/GroupActionsMenu'
 import { CreateGroupSheet } from '../components/CreateGroupSheet'
@@ -194,6 +195,7 @@ export function Contacts() {
   // A silent background refresh still runs to pick up changes in place.
   if (identity) restoreSnapshot(identity.uin)
   const _cachedAtMount = identity ? contactsCache.get(identity.uin) : undefined
+  const [showGlobalSearch, setShowGlobalSearch] = useState(false)
   const [contacts, setContacts] = useState<Contact[]>(() => _cachedAtMount?.contacts ?? [])
   const [groups, setGroups] = useState<RCQGroup[]>(() => _cachedAtMount?.groups ?? [])
   const [pending, setPending] = useState<PendingRequest[]>(() => _cachedAtMount?.pending ?? [])
@@ -910,6 +912,18 @@ export function Contacts() {
                 alive for deep links and for a phone-sized screen. */}
             <button
               type="button"
+              onClick={() => setShowGlobalSearch(true)}
+              className="text-fg-secondary hover:text-fg-primary p-2 rounded-md hover:bg-field"
+              title={t('home.search.title')}
+              aria-label={t('home.search.title')}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <circle cx="11" cy="11" r="7" />
+                <path d="M20 20l-3.5-3.5" />
+              </svg>
+            </button>
+            <button
+              type="button"
               onClick={() => setShowAdd(true)}
               className="text-fg-secondary hover:text-fg-primary p-2 rounded-md hover:bg-field"
               title={t('contacts.add')}
@@ -964,6 +978,12 @@ export function Contacts() {
           </div>
         </div>
       </header>
+      {/* Global search over every chat and message (founder, 29.08). A
+          portal, so its place in this tree is cosmetic; it lives here for
+          the page's contacts/groups scope. */}
+      {showGlobalSearch && (
+        <GlobalSearchOverlay contacts={contacts} groups={groups} onClose={() => setShowGlobalSearch(false)} />
+      )}
 
       <main className="max-w-2xl mx-auto px-4 py-4 space-y-4">
         {loading && contacts.length === 0 && (

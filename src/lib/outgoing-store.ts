@@ -184,6 +184,31 @@ function rawRows(key: string): OutgoingRow[] {
   }
 }
 
+/// Every outgoing thread of the ACTIVE account, for the global search.
+/// Enumerates the scoped keys (localStorage plus, under a PIN seal, the
+/// in-memory overlay) rather than asking the server anything: the search
+/// runs over what this device already holds, nothing else.
+export function allOutgoingThreads(): { isGroup: boolean; id: number; rows: OutgoingRow[] }[] {
+  const prefix = scopedKey('outgoing.')
+  const keys = new Set<string>()
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)
+      if (k && k.startsWith(prefix)) keys.add(k)
+    }
+  } catch {
+    /* storage can be unavailable (private mode teardown); mem still serves */
+  }
+  if (mem) for (const k of mem.keys()) if (k.startsWith(prefix)) keys.add(k)
+  const out: { isGroup: boolean; id: number; rows: OutgoingRow[] }[] = []
+  for (const k of keys) {
+    const m = k.slice(prefix.length).match(/^(peer|group)\.(\d+)$/)
+    if (!m) continue
+    out.push({ isGroup: m[1] === 'group', id: Number(m[2]), rows: loadPersisted(k) })
+  }
+  return out
+}
+
 export function loadPersisted(key: string): OutgoingRow[] {
   const now = Date.now()
   return (

@@ -43,6 +43,7 @@ import {
   useDeletedVersion,
   noteOwnEnvelope,
   sweepExpiredIncoming,
+  takePendingUnreadFor,
   type IncomingRow,
 } from '../lib/incoming-store'
 import { PartialFanOutError, sendV2 } from '../lib/signal-device'
@@ -728,11 +729,17 @@ export function Chat() {
    *  and driven through `scrollRef` rather than `scrollIntoView`, which was
    *  tried for the open scroll before and landed short (see the note on
    *  `scrollRef` above). */
-  function scrollToUnreadDivider() {
+  function scrollToUnreadDivider(initial = false) {
     const el = scrollRef.current
     const div = unreadDividerRef.current
     if (!el || !div) return
     el.scrollTop += div.getBoundingClientRect().top - el.getBoundingClientRect().top
+    // The correction below may only run on the INITIAL jump. Re-derived on
+    // every ResizeObserver re-pin it fired transiently while the photos under
+    // the divider were still skeletons: "we're at the bottom" for one layout
+    // pass, clearUnseenBelow(), pin gone — and the count on the jump button
+    // with it (B8 flicker, second mechanism).
+    if (!initial) return
 
     // Where we ACTUALLY ended up, which is not always where we aimed: a thread
     // barely longer than the pane cannot scroll the divider to the top, and
@@ -749,10 +756,20 @@ export function Chat() {
     }
   }
 
-  /** The user took the wheel. Stop holding the view against the divider, or
-   *  the next image that finishes decrypting drags them back to it. */
+  /** Reaching the bottom naturally puts the divider behind you: the unread
+   *  pin has served. The BOTTOM pin is different — it IS "we're at the
+   *  bottom, keep following growth" and must survive this. */
   function releaseUnreadPin() {
     if (pinTargetRef.current === 'unread') pinTargetRef.current = null
+  }
+
+  /** The user took the wheel. Whatever we were holding the view against —
+   *  the divider or the bottom — their hand wins now, or the next image that
+   *  finishes decrypting drags them back (B8). */
+  function releasePinByUser() {
+    if (pinTargetRef.current === 'unread' || pinTargetRef.current === 'bottom') {
+      pinTargetRef.current = null
+    }
   }
 
   // Where reading stopped. Decided once per thread, and only once the store
@@ -764,7 +781,16 @@ export function Chat() {
     if (incoming.length === 0) return
     anchorDecidedRef.current = persistKey
 
-    const n = unreadOnOpenRef.current?.key === persistKey ? unreadOnOpenRef.current.n : 0
+    // The claimed-at-render count, upgraded by whatever hydration parked: on
+    // a cold open straight onto a chat URL the render-time read runs before
+    // hydration and claims 0, while the REAL count arrives with the store —
+    // the divider then never showed at all (B8, cold-open half).
+    const parked = takePendingUnreadFor(persistKey)
+    let n = unreadOnOpenRef.current?.key === persistKey ? unreadOnOpenRef.current.n : 0
+    if (parked != null && parked > n) {
+      n = parked
+      unreadOnOpenRef.current = { key: persistKey, n }
+    }
     // n larger than the history we still hold means the counter outran it — a
     // restored backup, a pruned log, a fresh install replaying a month of
     // queue. We genuinely do not know where reading stopped there, so the
@@ -781,10 +807,10 @@ export function Chat() {
     let anchor: string | null = null
     const run: string[] = []
     for (let i = incoming.length - 1; i >= 0; i--) {
-      // Count back over other people's messages only. `addGroupIncoming` has
-      // no self-echo guard, so a carbon of our own can sit in here, and
-      // counting it puts the divider inside the unread run rather than above
-      // it — the exact complaint Android's own comment records.
+      // Count back over other people's messages only. Rows persisted before
+      // addGroupIncoming grew its self-echo guard can still hold carbons of
+      // our own, and counting one puts the divider inside the unread run
+      // rather than above it.
       if (identity && incoming[i].from === identity.uin) continue
       run.push(incoming[i].id)
       seen += 1
@@ -808,6 +834,13 @@ export function Chat() {
     didUnreadScrollRef.current = persistKey
 
     if (!unreadAnchor.id) {
+      // A null anchor decided AFTER hydration landed used to shove the view
+      // to the bottom over a position the resume path had just restored —
+      // and the programmatic scroll's own onScroll then DELETED the saved
+      // spot 250ms later (dist < 80 clears the key). If a resume happened
+      // for this thread, the reader is where they chose to be; leave them
+      // there (B8: «не запоминается, где остановился»).
+      if (posRestoredRef.current === persistKey) return
       pinTargetRef.current = 'bottom'
       atBottomRef.current = true
       setAtBottom(true)
@@ -824,7 +857,7 @@ export function Chat() {
     setUnseenBelow(unseenIdsRef.current.length)
     // May correct all of the above on the spot, if the thread turns out to be
     // too short to scroll.
-    scrollToUnreadDivider()
+    scrollToUnreadDivider(true)
   }, [persistKey, unreadAnchor])
 
   const lastCountRef = useRef(0)
@@ -935,8 +968,11 @@ export function Chat() {
         return
       }
       if (!atBottomRef.current) return
-      const distance = el.scrollHeight - el.scrollTop - el.clientHeight
-      el.scrollTo({ top: el.scrollHeight, behavior: distance > el.clientHeight ? 'auto' : 'smooth' })
+      // ⚠ Always instant. The smooth variant animated across several frames,
+      // onScroll read a mid-flight distance > 80, dropped atBottom, and the
+      // jump-button count flashed in and out on every arrival — the founder's
+      // «оно то есть, то его нет» (B8). iOS scrolls instantly here too.
+      el.scrollTo({ top: el.scrollHeight, behavior: 'auto' })
     })
   }, [outgoing.length, incoming.length, persistKey])
 
@@ -3139,8 +3175,8 @@ export function Chat() {
       </div>
       <main
         ref={scrollRef}
-        onWheel={releaseUnreadPin}
-        onTouchStart={releaseUnreadPin}
+        onWheel={releasePinByUser}
+        onTouchStart={releasePinByUser}
         onScroll={(e) => {
           const el = e.currentTarget
           const bottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
@@ -3148,8 +3184,15 @@ export function Chat() {
           // the list — a wheel, a key, or the jump a reply quote performs. The
           // wheel/touch handlers cannot see those.
           if (bottom) releaseUnreadPin()
-          atBottomRef.current = bottom
-          setAtBottom(bottom)
+          if (pinTargetRef.current === 'bottom' && !bottom) {
+            // Mid-layout distance while the follow pin holds: content just
+            // grew and the re-pin has not landed yet. Believing this instant
+            // reading is what flashed the jump button on every arrival (B8);
+            // the pin answers "are we at the bottom" while it exists.
+          } else {
+            atBottomRef.current = bottom
+            setAtBottom(bottom)
+          }
           // Remember where reading is, debounced (item 13a). At the bottom the
           // spot is cleared — "resume at the newest" is just opening normally.
           if (posSaveTimer.current) clearTimeout(posSaveTimer.current)

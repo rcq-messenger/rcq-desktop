@@ -135,7 +135,7 @@ export function DecryptedVideo({ mediaId, mediaKey, thumbnailB64, durationSec, a
         </span>
       </button>
       {dur && (
-        <span className="absolute bottom-1.5 right-1.5 rounded bg-ink-black/70 px-1.5 py-0.5 font-mono text-[0.625rem] text-white">
+        <span className="absolute bottom-1.5 right-1.5 rounded bg-ink-black/70 px-1.5 py-0.5 text-[0.625rem] text-white">
           {dur}
         </span>
       )}

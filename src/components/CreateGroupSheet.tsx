@@ -76,7 +76,7 @@ export function CreateGroupSheet({ contacts, onClose, onCreated }: Props) {
             <label className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
               {t('group.create.members')}
             </label>
-            <span className="text-xs text-fg-dim font-mono">{picked.size}</span>
+            <span className="text-xs text-fg-dim">{picked.size}</span>
           </div>
         </div>
 

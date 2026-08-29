@@ -236,7 +236,7 @@ export function AddContact({ embedded = false }: { embedded?: boolean } = {}) {
                   about the phones and pointed out, fairly, that the web then
                   did the opposite (#610 → #612). */}
               <div className="flex-1 min-w-0">
-                <div className="font-mono font-medium truncate">#{u.uin}</div>
+                <div className="font-medium truncate">#{u.uin}</div>
                 {/* No nickname is an absence, so the row simply carries nothing
                     where the name would be. A dash glyph reads as a value the
                     person chose, and it was the one em-dash left in the app. */}

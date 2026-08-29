@@ -13,6 +13,7 @@
 /// screen behind an overflow menu; here it is the second tab, because a window
 /// with two tabs is cheaper than a window and a screen.
 
+import { CenteredLoader } from './Spinner'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useEffect, useState } from 'react'
 import { Api, type OutgoingRequest } from '../lib/api'
@@ -116,7 +117,7 @@ function OutgoingList() {
   }
 
   if (error) return <div className="px-4 pb-4 text-sm text-red-500">{error}</div>
-  if (!rows) return <div className="px-4 pb-4 text-sm text-fg-secondary">{t('contacts.loading')}</div>
+  if (!rows) return <CenteredLoader className="py-8" />
   if (rows.length === 0)
     return <div className="px-4 pb-6 text-center text-sm text-fg-secondary">{t('pending.outgoing.empty')}</div>
 
@@ -127,7 +128,7 @@ function OutgoingList() {
           <PersonAvatar status="offline" size={32} />
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-medium">{r.nickname || `#${r.to_uin}`}</div>
-            <div className="truncate font-mono text-[0.6875rem] text-fg-dim">
+            <div className="truncate text-[0.6875rem] text-fg-dim">
               #{r.to_uin} ·{' '}
               {r.state === 'declined' ? t('pending.outgoing.declined') : t('pending.outgoing.waiting')}
             </div>

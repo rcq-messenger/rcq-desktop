@@ -282,7 +282,7 @@ export function AddMemberSheet({ group, ident, gid, host, onAdded, onClose }: Pr
                     />
                     <span className="flex-1 min-w-0">
                       <span className="block truncate text-sm">{c.nickname}</span>
-                      <span className="block font-mono text-[0.625rem] text-fg-dim">
+                      <span className="block text-[0.625rem] text-fg-dim">
                         #{c.uin}
                         {c.host ? ` · ${c.host}` : ''}
                       </span>

@@ -889,7 +889,7 @@ export function Contacts() {
                 <span className="font-semibold text-sm truncate">
                   {me.nickname || `#${me.uin}`}
                 </span>
-                <span className="font-mono text-[0.625rem] text-fg-dim">#{me.uin}</span>
+                <span className="text-[0.625rem] text-fg-dim">#{me.uin}</span>
               </Link>
               {/* Desktop only, and only while a relay is actually carrying us. */}
               <BypassShield />
@@ -1213,7 +1213,7 @@ function Section({
             </span>
           ) : (
             <>
-              <span className="text-fg-dim font-mono">·{count}</span>
+              <span className="text-fg-dim">·{count}</span>
               {unread > 0 && (
                 <span className="ml-1 inline-flex items-center justify-center min-w-[1rem] h-4 px-1 rounded-full bg-red-500 text-white text-[0.625rem] font-bold tracking-normal">
                   {unread > 99 ? '99+' : unread}
@@ -1419,7 +1419,7 @@ function ContactRow({
               {contact.blocked && <BlockedIcon />}
             </div>
             <div className="flex items-center gap-1.5 text-xs text-fg-dim min-w-0">
-              <span className="font-mono flex-none">#{contact.uin}</span>
+              <span className="flex-none">#{contact.uin}</span>
               {contact.status_message && (
                 <span className="truncate">· {contact.status_message}</span>
               )}
@@ -1494,7 +1494,7 @@ function CrossIslandRow({
             <div className="truncate font-medium">
               {aliasFor(ci.uin, ci.host) || ci.nickname || `${ci.uin}@${ci.host}`}
             </div>
-            <div className="text-xs text-fg-dim font-mono truncate">
+            <div className="text-xs text-fg-dim truncate">
               #{ci.uin} · {ci.host}
             </div>
           </div>
@@ -1549,7 +1549,7 @@ function GroupRow({ group, onChanged }: { group: RCQGroup; onChanged: () => void
             </div>
             <div className="text-xs text-fg-dim">
               {t('section.groups.members', { n: compactCount(memberCount(group)) })}
-              {group.host && <span className="font-mono"> · {group.host}</span>}
+              {group.host && <span className=""> · {group.host}</span>}
             </div>
           </div>
         </Link>

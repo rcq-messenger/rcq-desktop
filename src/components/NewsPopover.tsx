@@ -9,6 +9,7 @@
 // the last one this account acknowledged, and the pointer is per-account
 // (`scopedKey`) because two accounts in one browser have separate read state.
 
+import { CenteredLoader } from './Spinner'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { fetchNews, type NewsPost } from '../lib/api'
@@ -65,7 +66,7 @@ function NewsItem({ post, lang, t }: { post: NewsPost; lang: string; t: (k: stri
     <article className="space-y-1">
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-xs font-semibold text-fg-secondary">{post.author_label || 'RCQ'}</span>
-        <span className="text-[0.625rem] font-mono text-fg-dim">
+        <span className="text-[0.625rem] text-fg-dim">
           {new Date(post.published_at).toLocaleDateString(lang === 'ru' ? 'ru-RU' : undefined, {
             day: '2-digit', month: '2-digit', year: '2-digit',
           })}
@@ -188,7 +189,7 @@ export function NewsButton({ className }: { className?: string }) {
       </div>
 
       {posts == null && !error && (
-        <div className="text-sm text-fg-dim py-4 text-center">{t('common.loading')}</div>
+        <CenteredLoader className="py-8" />
       )}
       {error && (
         <div className="text-sm text-fg-dim py-4 text-center">{t('news.failed')}</div>

@@ -155,7 +155,7 @@ function PhraseGrid({ words }: { words: string[] }) {
     <div className="grid grid-cols-3 gap-1.5 rounded-lg bg-surface-dim p-3">
       {words.map((w, i) => (
         <div key={i} className="flex items-baseline gap-1 text-sm">
-          <span className="font-mono text-[0.625rem] text-fg-dim w-5 text-right shrink-0">{i + 1}</span>
+          <span className="text-[0.625rem] text-fg-dim w-5 text-right shrink-0">{i + 1}</span>
           <span className="font-medium break-all">{w}</span>
         </div>
       ))}
@@ -543,7 +543,7 @@ function IslandField() {
           <span className="block text-[0.6875rem] uppercase tracking-wide text-fg-dim">
             {islandName || t('login.island')}
           </span>
-          <span className="block text-sm font-mono truncate">{islandLabel(base)}</span>
+          <span className="block text-sm truncate">{islandLabel(base)}</span>
         </span>
         <span className="flex-none text-xs text-fg-dim">{t('login.island.change')}</span>
       </button>
@@ -580,7 +580,7 @@ function IslandField() {
         spellCheck={false}
         autoCorrect="off"
         autoCapitalize="off"
-        className="w-full h-9 px-3 rounded-md bg-surface outline-none focus:ring-1 focus:ring-accent text-sm font-mono"
+        className="w-full h-9 px-3 rounded-md bg-surface outline-none focus:ring-1 focus:ring-accent text-sm"
       />
       <p className="text-xs text-fg-dim">{t('login.island.hint')}</p>
     </div>

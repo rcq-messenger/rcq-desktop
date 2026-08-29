@@ -12,6 +12,7 @@
 // delete here. The island drops both keys from a PUT rather than refusing it,
 // so shipped iOS and Android builds keep saving their profiles.
 
+import { CenteredLoader } from '../components/Spinner'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Api, type UserInfo } from '../lib/api'
@@ -109,9 +110,7 @@ export function Privacy() {
         )}
 
         {!info && !error && (
-          <div className="text-center text-sm text-fg-secondary py-12">
-            {t('contacts.loading')}
-          </div>
+          <CenteredLoader />
         )}
 
         {info && (

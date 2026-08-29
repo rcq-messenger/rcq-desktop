@@ -1987,13 +1987,14 @@ export function Chat() {
   /// bar reflects it immediately.
   function pinMessage(text: string) {
     if (!gctx || !canPin || !group) return
-    // ⚠ The slot is 500 chars on the island (GroupPatchIn.pinned_text). Pinning
-    // a longer message used to 422 BEFORE the row was written, and the optimistic
-    // swap below then showed the new pin until the next refresh quietly restored
-    // the old one: a pin that looked like it worked and did nothing. Clamp here,
-    // and roll the swap back on any refusal instead of swallowing it.
+    // ⚠ The slot is 4096 chars on the island (GroupPatchIn.pinned_text, raised
+    // from 500 on 2026-08-29, megalist A6). Pinning a longer message used to
+    // 422 BEFORE the row was written, and the optimistic swap below then
+    // showed the new pin until the next refresh quietly restored the old one:
+    // a pin that looked like it worked and did nothing. Clamp here, and roll
+    // the swap back on any refusal instead of swallowing it.
     const trimmed = text.trim() || t('chat.pin.attachment')
-    const pinned = trimmed.length > 500 ? trimmed.slice(0, 499) + '…' : trimmed
+    const pinned = trimmed.length > 4096 ? trimmed.slice(0, 4095) + '…' : trimmed
     const previous = group
     setActionsForRowId(null)
     setPinExpanded(false)
@@ -2936,7 +2937,7 @@ export function Chat() {
             placeholder={t('chat.search.placeholder')}
             className="flex-1 min-w-0 max-w-xs h-9 px-3 rounded-full bg-field text-sm outline-none focus:ring-1 focus:ring-accent"
           />
-          <span className="font-mono text-xs text-fg-dim tabular-nums flex-none">
+          <span className="text-xs text-fg-dim tabular-nums flex-none">
             {query.trim() ? `${matches.length ? matchIdx + 1 : 0}/${matches.length}` : ''}
           </span>
           <button
@@ -3395,14 +3396,14 @@ export function Chat() {
                   className="flex items-start gap-2 rounded-2xl bg-surface shadow-lg px-3 py-2 text-xs"
                 >
                   <div className="border-l-2 border-accent/60 pl-2 flex-1 min-w-0">
-                    <div className="font-mono text-[0.625rem] text-accent uppercase tracking-wider">
+                    <div className="text-[0.625rem] text-accent uppercase tracking-wider">
                       {t('chat.edit.editing')}
                     </div>
                     <div className="text-fg-secondary truncate">{editingRow.text}</div>
                   </div>
                   <button
                     onClick={cancelEdit}
-                    className="font-mono text-[0.625rem] uppercase tracking-wider text-fg-dim hover:text-fg-primary"
+                    className="text-[0.625rem] uppercase tracking-wider text-fg-dim hover:text-fg-primary"
                   >
                     × {t('chat.reply.cancel')}
                   </button>
@@ -3418,14 +3419,14 @@ export function Chat() {
                   className="flex items-start gap-2 rounded-2xl bg-surface shadow-lg px-3 py-2 text-xs"
                 >
                   <div className="border-l-2 border-accent/60 pl-2 flex-1 min-w-0">
-                    <div className="font-mono text-[0.625rem] text-fg-dim">
+                    <div className="text-[0.625rem] text-fg-dim">
                       {t('chat.reply.replying_to', { name: replyTo.authorName })}
                     </div>
                     <div className="text-fg-secondary truncate"><EmoticonText text={replyTo.snippet} emoticonSize={14} /></div>
                   </div>
                   <button
                     onClick={cancelReply}
-                    className="font-mono text-[0.625rem] uppercase tracking-wider text-fg-dim hover:text-fg-primary"
+                    className="text-[0.625rem] uppercase tracking-wider text-fg-dim hover:text-fg-primary"
                   >
                     × {t('chat.reply.cancel')}
                   </button>
@@ -3446,7 +3447,7 @@ export function Chat() {
                     className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-field transition-colors"
                   >
                     <span className="flex-1 truncate text-sm">{m.nickname}</span>
-                    <span className="font-mono text-[0.6875rem] text-fg-dim">#{m.uin}</span>
+                    <span className="text-[0.6875rem] text-fg-dim">#{m.uin}</span>
                   </button>
                 ))}
               </div>
@@ -3617,7 +3618,7 @@ export function Chat() {
                       >
                         <ClockIcon className="text-fg-secondary" />
                         <span className="flex-1">{t('chat.ttl.title')}</span>
-                        <span className={`font-mono text-[0.625rem] ${threadTtlSec ? 'text-accent' : 'text-fg-dim'}`}>
+                        <span className={`text-[0.625rem] ${threadTtlSec ? 'text-accent' : 'text-fg-dim'}`}>
                           {/* A number some future build wrote and this one has
                               no label for prints as seconds rather than as
                               "Off", which would be a lie about a live timer. */}
@@ -3891,7 +3892,7 @@ function reactionChips(targetId: string, align: 'start' | 'end', myUin: number, 
             className="h-4 w-auto max-w-6 select-none object-contain"
             draggable={false}
           />
-          {c.count > 1 && <span className="font-mono text-[0.625rem] text-fg-secondary">{c.count}</span>}
+          {c.count > 1 && <span className="text-[0.625rem] text-fg-secondary">{c.count}</span>}
         </button>
       ))}
     </div>
@@ -4037,7 +4038,7 @@ const IncomingMessageRow = memo(function IncomingMessageRow({
         {senderName && !cont && (
           <Link
             to={`/profile/${m.from}`}
-            className="flex items-center gap-1.5 font-mono text-[0.625rem] text-fg-dim px-1 hover:text-accent transition-colors"
+            className="flex items-center gap-1.5 text-[0.625rem] text-fg-dim px-1 hover:text-accent transition-colors"
           >
             {/* Beside the nick, never instead of it, and only
                 when there is a picture. */}
@@ -4051,7 +4052,7 @@ const IncomingMessageRow = memo(function IncomingMessageRow({
             onClick={() => h.jumpToMessage(m.replyTo!.id)}
             className="border-l-2 border-accent/60 pl-2 max-w-full text-left rounded-r hover:bg-line/30 transition-colors cursor-pointer"
           >
-            <div className="font-mono text-[0.625rem] text-fg-dim">{m.replyTo.authorName}</div>
+            <div className="text-[0.625rem] text-fg-dim">{m.replyTo.authorName}</div>
             <div className="text-[0.6875rem] text-fg-secondary line-clamp-3 break-words max-w-[18rem]"><EmoticonText text={m.replyTo.snippet} emoticonSize={14} /></div>
           </button>
         )}
@@ -4139,7 +4140,7 @@ const IncomingMessageRow = memo(function IncomingMessageRow({
           </button>
         )}
         {reactionChips(m.id, 'start', myUin, h)}
-        <div className="flex items-center gap-1 text-[0.625rem] font-mono text-fg-dim">
+        <div className="flex items-center gap-1 text-[0.625rem] text-fg-dim">
           {new Date(m.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           {m.expiresAt != null && <ExpiryMark expiresAt={m.expiresAt} t={t} />}
         </div>
@@ -4373,7 +4374,7 @@ const OutgoingMessageRow = memo(function OutgoingMessageRow({
   /// all (a legacy poll): offering ↻ there promises a send that `attemptSendRow`
   /// refuses, and used to promise a worse one than that.
   const deliveryLine = (withDismiss: boolean, retryable = true) => (
-    <div className="flex items-center justify-end gap-1 text-[0.625rem] font-mono text-fg-dim">
+    <div className="flex items-center justify-end gap-1 text-[0.625rem] text-fg-dim">
       {new Date(row.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
       {row.expiresAt != null && <ExpiryMark expiresAt={row.expiresAt} t={t} />}
       {row.state === 'sending' && <ClockMark />}
@@ -4471,7 +4472,7 @@ const OutgoingMessageRow = memo(function OutgoingMessageRow({
           )}
           {reactionChips(row.id, 'end', myUin, h)}
           {mediaOverlays()}
-          <div className="flex items-center justify-end gap-1 text-[0.625rem] font-mono text-fg-dim">
+          <div className="flex items-center justify-end gap-1 text-[0.625rem] text-fg-dim">
             {new Date(row.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             {row.expiresAt != null && <ExpiryMark expiresAt={row.expiresAt} t={t} />}
             <span className="text-accent">✓</span>
@@ -4541,7 +4542,7 @@ const OutgoingMessageRow = memo(function OutgoingMessageRow({
           </div>
           {reactionChips(row.id, 'end', myUin, h)}
           {mediaOverlays()}
-          <div className="flex items-center justify-end gap-1 text-[0.625rem] font-mono text-fg-dim">
+          <div className="flex items-center justify-end gap-1 text-[0.625rem] text-fg-dim">
             {new Date(row.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             {row.expiresAt != null && <ExpiryMark expiresAt={row.expiresAt} t={t} />}
             <span className="text-accent">✓</span>
@@ -4564,7 +4565,7 @@ const OutgoingMessageRow = memo(function OutgoingMessageRow({
             onClick={() => h.jumpToMessage(row.replyTo!.id)}
             className="border-l-2 border-accent/60 pl-2 max-w-full text-left rounded-r hover:bg-line/30 transition-colors cursor-pointer"
           >
-            <div className="font-mono text-[0.625rem] text-fg-dim">{row.replyTo.authorName}</div>
+            <div className="text-[0.625rem] text-fg-dim">{row.replyTo.authorName}</div>
             <div className="text-[0.6875rem] text-fg-secondary line-clamp-3 break-words max-w-[18rem]">
               <EmoticonText text={row.replyTo.snippet} emoticonSize={14} />
             </div>
@@ -5184,15 +5185,12 @@ function MediaPlaceholder({ mediaKind }: { mediaKind?: string }) {
 /// Group pinned announcement (#4 — web showed no pin at all). Collapsed to a
 /// single truncated line; tapping expands it into a FIXED-height scrollable box
 /// (#5 — a long pin must not push the whole chat down / become unscrollable).
-/// One-line collapsed preview: strip invite links / URLs so the pinned bar
-/// reads as clean text instead of raw `https://rcq.app/g/…` noise.
+/// One-line collapsed preview. Links are KEPT: stripping them meant a pin
+/// like "Запуск своего релея: <ссылка>" showed no trace of the link until
+/// expanded (megalist B9, founder). The bar truncates, which is all the
+/// protection a long URL needs.
 function pinPreview(text: string): string {
-  return text
-    .replace(/(?:https?:\/\/)?(?:www\.|chat\.)?rcq\.app\/g\/\d+/gi, '')
-    .replace(/rcq:\/\/group\/\d+/gi, '')
-    .replace(/https?:\/\/\S+/gi, '')
-    .replace(/\s+/g, ' ')
-    .trim()
+  return text.replace(/\s+/g, ' ').trim()
 }
 
 /// The pinned message: a one-line bar under the header, and the whole text in

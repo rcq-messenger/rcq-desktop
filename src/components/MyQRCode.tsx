@@ -102,7 +102,7 @@ export function MyQRCode({
           <div className="w-44 h-44 animate-pulse bg-gray-200 rounded" />
         )}
       </button>
-      <div className="font-mono text-sm">#{identity.uin}</div>
+      <div className="text-sm">#{identity.uin}</div>
       <p className="text-xs text-fg-dim text-center max-w-xs">{t('settings.qr.hint')}</p>
 
       <AnimatePresence>

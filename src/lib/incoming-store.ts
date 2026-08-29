@@ -831,6 +831,17 @@ if (typeof document !== 'undefined') {
 }
 
 /// Load this account's persisted history into the store (call once on mount).
+/// The unread count hydration removed for the ACTIVE thread, parked for Chat
+/// to claim exactly once (B8). See the note inside hydrateIncoming.
+let pendingUnreadOnHydrate: { key: string; n: number } | null = null
+
+export function takePendingUnreadFor(threadKey: string): number | null {
+  if (pendingUnreadOnHydrate?.key !== threadKey) return null
+  const n = pendingUnreadOnHydrate.n
+  pendingUnreadOnHydrate = null
+  return n
+}
+
 export async function hydrateIncoming(uin: number): Promise<void> {
   _activeUin = uin
   // Restore persisted unread counts (badges survive reload).
@@ -848,7 +859,19 @@ export async function hydrateIncoming(uin: number): Promise<void> {
       // conversation the user is looking at stayed stuck forever, showing as a
       // phantom in the tab title and, once there is an unread divider, putting
       // it N messages from the end of a thread that has been read.
-      if (_activeThread && unread.delete(_activeThread)) persistUnread()
+      if (_activeThread) {
+        const n = unread.get(_activeThread)
+        if (n != null) {
+          // Not swallowed any more — parked. Chat's open-position anchor reads
+          // the count on first render, which on a cold open onto a chat URL
+          // runs long BEFORE this hydration: it claimed n=0, the divider never
+          // showed, and the true count died right here (B8, cold-open half).
+          // The one-shot slot below lets Chat pick the real number up late.
+          pendingUnreadOnHydrate = { key: _activeThread, n }
+          unread.delete(_activeThread)
+          persistUnread()
+        }
+      }
       emitUnread()
     }
   } catch {
@@ -1012,7 +1035,16 @@ export function addGroupIncoming(groupId: number, from: number, env: Envelope): 
   byGroup.set(groupId, [...prev, row])
   persist()
   emit()
-  bumpUnread(groupKey(groupId), row, groupId)
+  // ⚠ Not for my own broadcasts. A message sent from my phone arrives here as
+  // the group's sender-keys fan-out with `from == me`, and unguarded it
+  // counted as unread — the 1:1 path (addIncoming) has had this guard since
+  // the self-note bug, the group path never did. The drifted-up count is what
+  // aimed the unread divider a screen too high and made the open position
+  // look random in busy groups (B8: «якорь непрочитанного был счётчиком» —
+  // the same lesson iOS already paid for).
+  if (row.from !== _activeUin) {
+    bumpUnread(groupKey(groupId), row, groupId)
+  }
   noteMentionInGroup(groupId, row)
 }
 

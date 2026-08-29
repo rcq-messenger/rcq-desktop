@@ -46,7 +46,7 @@ export const tr: Record<string, string> = {
   'settings.recovery.forget.warn': 'Bunu yalnızca kelimeler başka bir yere yazılmışsa yapın. Bir tarayıcı onları bu sayfadaki bir betikten de, kilidi açık bilgisayarı eline geçirenden de gizleyemez ve ifade hesabınızı herhangi bir adada, kalıcı olarak yeniden oluşturur. Buradaki hesabınız ve mesajlarınız çalışmaya devam eder; sadece kelimeleri bu tarayıcıdan bir daha okuyamazsınız.',
   'settings.recovery.forget.confirm': 'Unut',
   'settings.recovery.forgotten': 'İfade artık burada saklanmıyor.',
-  'login.link.scan_body': 'Telefonunda RCQ uygulamasını aç ve bu kodu kamerayla tara; burada telefonundaki hesapla oturum açarsın.',
+  'login.link.scan_body': "Telefonunuzda RCQ'yu açın, Ayarlar'a girin, ardından Bağlı cihazlar'a gidin ve telefondaki hesapla burada oturum açmak için bu kodu tarayın.",
   'login.link.security_more': 'Neden daha zayıf?',
   'login.link.security_note': 'Telefonun ve bu tarayıcı aynı anda bağlıyken özel mesajların daha basit bir şifreleme kullanır, böylece ikisi de alabilir (grup sohbetleri etkilenmez). En yüksek güvenliğe dönmek için tarayıcıyı istediğin zaman uygulamada Ayarlar → Bağlı cihazlar altından ayırabilirsin.',
   'login.link.waiting': 'Telefonun bekleniyor… kod 2 dakika geçerli.',

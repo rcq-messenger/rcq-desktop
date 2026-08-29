@@ -49,7 +49,7 @@ export const en: Record<string, string> = {
   'settings.recovery.forget.confirm': 'Forget it',
   'settings.recovery.forgotten': 'The phrase is no longer stored here.',
   'login.link.scan_body':
-    "Open the RCQ app on your phone and scan this code with your camera to sign in here as your phone's account.",
+    "On your phone open RCQ, go to Settings, then Linked devices, and scan this code to sign in here as your phone's account.",
   'login.link.security_more': 'What changes?',
   'login.link.security_note':
     'Linking hands this browser your account keys, so link only on a computer you trust and disconnect it when you are done (in the app: Settings → Linked devices). The encryption itself is unaffected: every device holds its own keys and receives its own copy of each message.',

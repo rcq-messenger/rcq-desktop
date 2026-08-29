@@ -46,7 +46,7 @@ export const es: Record<string, string> = {
   'settings.recovery.forget.warn': 'Hazlo solo si las palabras están anotadas en otro sitio. Un navegador no puede ocultarlas de un script en esta página ni de quien tenga el ordenador desbloqueado, y la frase vuelve a crear tu cuenta en cualquier isla, para siempre. Tu cuenta y tus mensajes aquí siguen funcionando: solo dejarás de poder leer las palabras desde este navegador.',
   'settings.recovery.forget.confirm': 'Olvidarla',
   'settings.recovery.forgotten': 'La frase ya no se guarda aquí.',
-  'login.link.scan_body': 'Abre la app RCQ en tu teléfono y escanea este código con la cámara para entrar aquí con la cuenta del teléfono.',
+  'login.link.scan_body': 'Abre RCQ en tu teléfono, entra en Ajustes, luego en Dispositivos vinculados, y escanea este código para entrar aquí con la cuenta del teléfono.',
   'login.link.security_more': '¿Por qué es más débil?',
   'login.link.security_note': 'Mientras tu teléfono y este navegador estén conectados a la vez, tus mensajes directos usan un cifrado más simple para que los dos puedan recibirlos (los grupos no se ven afectados). Desconecta el navegador cuando quieras desde la app, en Ajustes → Dispositivos vinculados, para volver a la máxima seguridad.',
   'login.link.waiting': 'Esperando a tu teléfono… el código vale 2 minutos.',

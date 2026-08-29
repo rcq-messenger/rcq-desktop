@@ -39,6 +39,32 @@ export async function sendMessageCarbon(identity: WebIdentity, dest: CarbonDest,
   }
 }
 
+/// Tell my OTHER devices that I read a thread (megalist A2). Same frame the
+/// web, Android and iOS speak: a `readmark` inside the ordinary self-carbon,
+/// under the outer type the island already files as EPHEMERAL, so it reaches
+/// my other devices without pushing a banner to my own phone and without
+/// teaching the island one new fact. Best-effort and silent: a lost marker
+/// only means the other device clears its badge when it is next opened.
+export async function sendReadMarker(identity: WebIdentity, dest: CarbonDest): Promise<void> {
+  if (dest.to != null && dest.to === identity.uin) return
+  try {
+    const carbon: CarbonEnvelope = {
+      kind: 'carbon',
+      to: dest.to ?? null,
+      gid: dest.gid ?? null,
+      env: { kind: 'readmark', at: Date.now() },
+    }
+    const selfBundle = peerBundleFrom({
+      uin: identity.uin,
+      identity_key: bytesToB64(identity.identityPub),
+      signing_key: bytesToB64(identity.signingPub),
+    })
+    await Api.sendSealed(identity, identity.uin, encryptV1(carbon, identity, selfBundle), 'read')
+  } catch {
+    /* best-effort: the badge on the other device is not worth a line here */
+  }
+}
+
 /// Encrypt + ship one text to a peer. Throws on failure. Prefer v=2 (one
 /// ciphertext per device of the peer). reached === 0 means the peer published
 /// no libsignal bundle — fall back to v=1 ECIES. A PARTIAL fan-out is a

@@ -62,7 +62,7 @@ import {
 import { runInteractive } from './interactive'
 import { logRowData, parseThread, readLog, type Thread } from './log'
 import { cancelRequest, describeRequestFrame, loadRequests, respondTo, sendRequest } from './requests'
-import { sendText } from './send'
+import { sendText, sendReadMarker } from './send'
 import { isYes, strangerCheck } from './stranger'
 import { RcqSocket } from './socket'
 import {
@@ -795,6 +795,12 @@ async function cmdLog(pos: string[]): Promise<void> {
   const rows = readLog(id.uin, thread, n)
   for (const r of rows) process.stdout.write(logRowData(r) + '\n')
   if (rows.length === 0) process.stderr.write(tr('log.empty') + '\n')
+  // A2: printing a room's log IS reading it, so my other devices may drop its
+  // badge. Only for a room (the CLI counts unread per room) and only when the
+  // log had something to show.
+  if (thread && typeof thread === 'object' && 'gid' in thread && rows.length > 0) {
+    await sendReadMarker(id, { gid: (thread as { gid: number }).gid })
+  }
 }
 
 /// The one-shot half of the stranger gate; the interactive loop runs the same

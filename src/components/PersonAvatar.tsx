@@ -14,7 +14,7 @@
 import { useEffect, useState } from 'react'
 import type { UserStatus } from '../lib/api'
 import { useIdentity } from '../lib/identity-context'
-import { loadEncryptedImage } from '../lib/media'
+import { loadEncryptedAvatar } from '../lib/media'
 import { StatusIcon } from './StatusIcon'
 
 interface Props {
@@ -70,7 +70,7 @@ export function PersonAvatar({
     setUrl(null)
     if (!identity || !mediaId || !mediaKey) return
     let alive = true
-    void loadEncryptedImage(apiBase ?? identity.apiBase, mediaId, mediaKey).then((u) => {
+    void loadEncryptedAvatar(apiBase ?? identity.apiBase, mediaId, mediaKey).then((u) => {
       if (alive) setUrl(u)
     })
     return () => {

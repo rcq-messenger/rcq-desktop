@@ -380,6 +380,9 @@ export const tr: Record<string, string> = {
   'myreports.delete_error': 'Kaldırılamadı. Tekrar dene.',
   'myreports.load_error': 'Bildirimlerin yüklenemedi. Tekrar dene.',
   'settings.section.about': 'Hakkında',
+  'settings.section.display': 'Görünüm',
+  'settings.display.animated_avatars': 'Hareketli avatarlar',
+  'settings.display.animated_avatars_footer': 'Hareketli avatarlar dikkatinizi dağıtıyorsa kapatın. Bir sonraki çizimde uygulanır.',
   'settings.about.body': 'RCQ anonim, uçtan uca şifreli bir mesajlaşma uygulaması: telefon numarası yok, e-posta yok. Bu, web istemcisi; kendi hesabını bu tarayıcıda çalıştırır.',
   // Desktop builds name their own OS. This is not the web client.
   'settings.about.body_macos': 'RCQ anonim, uçtan uca şifreli bir mesajlaşma uygulaması: telefon numarası yok, e-posta yok. Bu, macOS uygulaması; hesabı bu Mac üzerinde yaşıyor.',

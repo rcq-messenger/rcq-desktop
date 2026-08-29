@@ -4351,7 +4351,7 @@ const IncomingMessageRow = memo(function IncomingMessageRow({
               <BubbleMenuButton tone="over" label={t('chat.actions.more')} open={showActions} onOpen={(el) => h.toggleActions(m.id, el)} />
             </div>
             {m.text && (
-              <div className="rounded-lg px-3 py-2 text-sm bg-bubble-other" onClick={(e) => h.toggleActions(m.id, e.currentTarget, e)}>
+              <div className="rounded-lg px-3 py-2 text-sm bg-bubble-other rcq-selectable" onClick={(e) => h.toggleActions(m.id, e.currentTarget, e)}>
                 <EmoticonText text={m.text} emoticonSize={18} mention={mention} link={{ enabled: linksAllowed }} />
               </div>
             )}
@@ -4369,14 +4369,14 @@ const IncomingMessageRow = memo(function IncomingMessageRow({
               <BubbleMenuButton tone="over" label={t('chat.actions.more')} open={showActions} onOpen={(el) => h.toggleActions(m.id, el)} />
             </div>
             {m.text && (
-              <div className="rounded-lg px-3 py-2 text-sm bg-bubble-other" onClick={(e) => h.toggleActions(m.id, e.currentTarget, e)}>
+              <div className="rounded-lg px-3 py-2 text-sm bg-bubble-other rcq-selectable" onClick={(e) => h.toggleActions(m.id, e.currentTarget, e)}>
                 <EmoticonText text={m.text} emoticonSize={18} mention={mention} link={{ enabled: linksAllowed }} />
               </div>
             )}
           </div>
         ) : m.kind === 'voice' && m.mediaId && m.mediaKey ? (
           <div className="flex flex-col items-start gap-1" data-chat-menu {...press()}>
-            <div className="relative rounded-lg px-3 py-1.5 bg-bubble-other">
+            <div className="relative rounded-lg px-3 py-1.5 bg-bubble-other rcq-selectable">
               <VoiceBubble
                 apiBase={mediaBase}
                 mediaId={m.mediaId}
@@ -4400,7 +4400,7 @@ const IncomingMessageRow = memo(function IncomingMessageRow({
               disabledNote={filesAllowed ? undefined : t('chat.files_off.chip')}
             />
             {m.text && (
-              <div className="rounded-lg px-3 py-2 text-sm bg-bubble-other" onClick={(e) => h.toggleActions(m.id, e.currentTarget, e)}>
+              <div className="rounded-lg px-3 py-2 text-sm bg-bubble-other rcq-selectable" onClick={(e) => h.toggleActions(m.id, e.currentTarget, e)}>
                 <EmoticonText text={m.text} emoticonSize={18} mention={mention} link={{ enabled: linksAllowed }} />
               </div>
             )}
@@ -4422,7 +4422,7 @@ const IncomingMessageRow = memo(function IncomingMessageRow({
             data-chat-menu
             onClick={(e) => h.toggleActions(m.id, e.currentTarget, e)}
             onContextMenu={(e) => { e.preventDefault(); h.toggleActions(m.id, e.currentTarget, e) }}
-            className="rounded-lg px-3 py-2 text-sm text-left bg-bubble-other hover:brightness-110 transition-colors"
+            className="rounded-lg px-3 py-2 text-sm text-left bg-bubble-other rcq-selectable hover:brightness-110 transition-colors"
           >
             <EmoticonText text={m.text} emoticonSize={18} mention={mention} link={{ enabled: linksAllowed }} />
             {m.edited && <span className="ml-1 text-[0.625rem] text-fg-dim italic">{t('chat.edit.edited')}</span>}
@@ -4727,7 +4727,7 @@ const OutgoingMessageRow = memo(function OutgoingMessageRow({
             {menuButton('over')}
           </div>
           {row.text && (
-            <div className="rounded-lg px-3 py-2 text-sm bg-bubble-self" onClick={vouchedOut(row) ? (e) => h.toggleActions(row.id, e.currentTarget, e) : undefined}>
+            <div className="rounded-lg px-3 py-2 text-sm bg-bubble-self rcq-selectable" onClick={vouchedOut(row) ? (e) => h.toggleActions(row.id, e.currentTarget, e) : undefined}>
               <EmoticonText text={row.text} emoticonSize={18} mention={mention} link={{ enabled: linksAllowed }} />
             </div>
           )}
@@ -4743,7 +4743,7 @@ const OutgoingMessageRow = memo(function OutgoingMessageRow({
     return (
       <li id={`msg-${row.id}`} className={liClass}>
         <div className="relative max-w-[80%] flex flex-col items-end gap-1" {...pressAttrs()}>
-          <div className="relative rounded-lg px-3 py-1.5 bg-bubble-self">
+          <div className="relative rounded-lg px-3 py-1.5 bg-bubble-self rcq-selectable">
             <VoiceBubble
               apiBase={mediaBase}
               mediaId={row.mediaId}
@@ -4777,7 +4777,7 @@ const OutgoingMessageRow = memo(function OutgoingMessageRow({
             {menuButton('over')}
           </div>
           {row.text && (
-            <div className="rounded-lg px-3 py-2 text-sm bg-bubble-self" onClick={vouchedOut(row) ? (e) => h.toggleActions(row.id, e.currentTarget, e) : undefined}>
+            <div className="rounded-lg px-3 py-2 text-sm bg-bubble-self rcq-selectable" onClick={vouchedOut(row) ? (e) => h.toggleActions(row.id, e.currentTarget, e) : undefined}>
               <EmoticonText text={row.text} emoticonSize={18} mention={mention} link={{ enabled: linksAllowed }} />
             </div>
           )}
@@ -4809,7 +4809,7 @@ const OutgoingMessageRow = memo(function OutgoingMessageRow({
             disabledNote={filesAllowed ? undefined : t('chat.files_off.chip')}
           />
           {row.text && (
-            <div className="rounded-lg px-3 py-2 text-sm bg-bubble-self" onClick={vouchedOut(row) ? (e) => h.toggleActions(row.id, e.currentTarget, e) : undefined}>
+            <div className="rounded-lg px-3 py-2 text-sm bg-bubble-self rcq-selectable" onClick={vouchedOut(row) ? (e) => h.toggleActions(row.id, e.currentTarget, e) : undefined}>
               <EmoticonText text={row.text} emoticonSize={18} mention={mention} link={{ enabled: linksAllowed }} />
             </div>
           )}
@@ -4895,7 +4895,7 @@ const OutgoingMessageRow = memo(function OutgoingMessageRow({
           className={`rounded-lg px-3 py-2 text-sm text-left transition-colors ${
             row.state === 'failed'
               ? 'bg-red-50 border border-red-200'
-              : 'bg-bubble-self hover:bg-bubble-self/90'
+              : 'bg-bubble-self rcq-selectable hover:bg-bubble-self rcq-selectable/90'
           }`}
         >
           <EmoticonText text={row.text} emoticonSize={18} mention={mention} link={{ enabled: linksAllowed }} />
@@ -5484,7 +5484,7 @@ function MediaPlaceholder({ mediaKind }: { mediaKind?: string }) {
   // `pr-9` leaves the top-right corner to the ⋯ handle: this bubble is sized to
   // a two-word label, so without the gap the handle would sit on top of it.
   return (
-    <div className="rounded-lg py-2 pl-3 pr-9 bg-bubble-other">
+    <div className="rounded-lg py-2 pl-3 pr-9 bg-bubble-other rcq-selectable">
       <div className="text-sm">{icon} {label}</div>
       <div className="text-[0.625rem] text-fg-dim">
         {t(retired ? 'chat.media.retired' : 'chat.media.in_app_only')}

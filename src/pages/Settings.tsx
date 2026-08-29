@@ -39,6 +39,7 @@ import type { UserInfo } from '../lib/api'
 import { snapshotFor } from '../lib/contacts-cache'
 import { PersonAvatar } from '../components/PersonAvatar'
 import { useIdentity } from '../lib/identity-context'
+import { animatedAvatarsEnabled, setAnimatedAvatarsEnabled } from '../lib/media'
 import { isPresenceSoundEnabled, isSentSoundEnabled, isSoundEnabled, setPresenceSoundEnabled, setSentSoundEnabled, setSoundEnabled } from '../lib/sounds'
 import {
   FONT_SCALES,
@@ -139,6 +140,7 @@ export function Settings() {
   const [burning, setBurning] = useState(false)
   const { toast } = useToast()
   const [soundOn, setSoundOnState] = useState<boolean>(() => isSoundEnabled())
+  const [animAvatars, setAnimAvatars] = useState(() => animatedAvatarsEnabled())
   const [presenceSoundOn, setPresenceSoundOnState] = useState<boolean>(() => isPresenceSoundEnabled())
   const [sentSoundOn, setSentSoundOnState] = useState<boolean>(() => isSentSoundEnabled())
   const { pref: themePref, setPref: setThemePref } = useTheme()
@@ -1012,6 +1014,25 @@ export function Settings() {
             variant="row"
           />
           <p className="text-xs text-fg-dim">{t('settings.textsize.footer')}</p>
+        </section>
+
+        <section className="bg-surface rounded-lg p-4 space-y-3">
+          <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+            {t('settings.section.display')}
+          </div>
+          <label className="flex items-center justify-between cursor-pointer">
+            <span className="text-sm">{t('settings.display.animated_avatars')}</span>
+            <input
+              type="checkbox"
+              checked={animAvatars}
+              onChange={(e) => {
+                setAnimatedAvatarsEnabled(e.target.checked)
+                setAnimAvatars(e.target.checked)
+              }}
+              className="w-5 h-5 accent-accent cursor-pointer"
+            />
+          </label>
+          <p className="text-xs text-fg-dim">{t('settings.display.animated_avatars_footer')}</p>
         </section>
 
         <section className="bg-surface rounded-lg p-4 space-y-3">

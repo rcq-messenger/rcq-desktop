@@ -166,7 +166,7 @@ export function GroupJoinCard({ groupId, host, compact = false, menuSpace = fals
           <GroupAvatar size={40} />
           <div className={`min-w-0 flex-1${menuSpace ? ' pr-7' : ''}`}>
             <div className="truncate text-sm font-medium">{t('group_join.island_title')}</div>
-            <div className="truncate font-mono text-[0.6875rem] text-fg-dim">{foreignHost}</div>
+            <div className="truncate text-[0.6875rem] text-fg-dim">{foreignHost}</div>
           </div>
         </div>
         <div className="mt-3">
@@ -238,7 +238,7 @@ export function GroupJoinCard({ groupId, host, compact = false, menuSpace = fals
             {preview.owner_nickname ? ` · ${t('group_join.owner', { name: preview.owner_nickname })}` : ''}
           </div>
           {foreignHost && (
-            <div className="truncate font-mono text-[0.625rem] text-fg-dim">{foreignHost}</div>
+            <div className="truncate text-[0.625rem] text-fg-dim">{foreignHost}</div>
           )}
         </div>
       </div>

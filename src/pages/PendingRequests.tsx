@@ -3,6 +3,7 @@
 // the backend pushes a `contact_response` to the proposer over
 // WS so they don't have to refresh.
 
+import { CenteredLoader } from '../components/Spinner'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Api, type PendingRequest } from '../lib/api'
@@ -241,10 +242,10 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
                         {r.nickname ? (
                           <>
                             <div className="font-medium break-words">{r.nickname}</div>
-                            <div className="font-mono text-xs text-fg-dim break-all">{tag}</div>
+                            <div className="text-xs text-fg-dim break-all">{tag}</div>
                           </>
                         ) : (
-                          <div className="font-mono text-sm break-all">{tag}</div>
+                          <div className="text-sm break-all">{tag}</div>
                         )}
                         <div className="text-xs text-fg-dim break-words line-clamp-2">{subtitle}</div>
                       </div>
@@ -281,9 +282,7 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
         )}
 
         {loading && requests.length === 0 && (
-          <div className="text-center text-sm text-fg-secondary py-12">
-            {t('contacts.loading')}
-          </div>
+          <CenteredLoader />
         )}
 
         {error && (
@@ -309,7 +308,7 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
                   <div className="font-medium truncate">
                     {r.nickname || `#${r.from_uin}`}
                   </div>
-                  <div className="font-mono text-xs text-fg-dim">#{r.from_uin}</div>
+                  <div className="text-xs text-fg-dim">#{r.from_uin}</div>
                 </div>
                 <div className="flex items-center gap-2">
                   <button

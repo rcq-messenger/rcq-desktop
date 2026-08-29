@@ -306,9 +306,13 @@ export function GroupInfo() {
                   <GearIcon />
                 </button>
               )}
-              <Link to={`/chat/g/${group.id}`} className="text-sm text-accent font-semibold px-2">
-                {t('contacts.open_chat')}
-              </Link>
+              {/* The owner always came HERE from the chat, so a link back is
+                  noise next to their gear (megalist B11). Members keep it. */}
+              {!isOwner && (
+                <Link to={`/chat/g/${group.id}`} className="text-sm text-accent font-semibold px-2">
+                  {t('contacts.open_chat')}
+                </Link>
+              )}
             </div>
           )}
         </div>
@@ -400,7 +404,7 @@ export function GroupInfo() {
                             it. The owner keeps the right-edge badge because the
                             owner row never carries buttons. */}
                         <div className="flex items-center gap-1.5">
-                          <span className="font-mono text-[0.625rem] text-fg-dim">#{m.uin}</span>
+                          <span className="text-[0.625rem] text-fg-dim">#{m.uin}</span>
                           {!isTheOwner && perms.length > 0 && (
                             <span className="text-[0.625rem] font-semibold text-fg-secondary uppercase tracking-wider">
                               {t('group.info.moderator')}

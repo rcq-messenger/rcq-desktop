@@ -128,7 +128,7 @@ function Portrait({ subtitle }: { subtitle: string }) {
       </div>
       <div>
         <div className="text-2xl font-medium">{info.peerName}</div>
-        <div className="font-mono text-sm text-fg-dim">#{info.peerUin}</div>
+        <div className="text-sm text-fg-dim">#{info.peerUin}</div>
       </div>
       {phase === 'connected' && connectedAt !== null ? (
         <Elapsed since={connectedAt} />
@@ -199,7 +199,7 @@ function Elapsed({ since, className = 'text-fg-secondary' }: { since: number; cl
   const total = Math.max(0, Math.floor((now - since) / 1000))
   const mm = String(Math.floor(total / 60)).padStart(2, '0')
   const ss = String(total % 60).padStart(2, '0')
-  return <div className={`font-mono tabular-nums ${className}`}>{`${mm}:${ss}`}</div>
+  return <div className={`tabular-nums ${className}`}>{`${mm}:${ss}`}</div>
 }
 
 function Controls() {

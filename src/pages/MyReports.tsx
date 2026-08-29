@@ -20,6 +20,7 @@
 // ANSWER as well as the report, and put the report NUMBER on the row so the
 // reporter can quote the same number the operator reads off the queue.
 
+import { CenteredLoader } from '../components/Spinner'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
@@ -310,9 +311,7 @@ export function MyReports() {
         )}
 
         {items === null && !error && (
-          <div className="text-center text-sm text-fg-secondary py-12">
-            {t('contacts.loading')}
-          </div>
+          <CenteredLoader />
         )}
 
         {items !== null && items.length === 0 && !error && (

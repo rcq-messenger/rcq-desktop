@@ -120,7 +120,7 @@ export function ForwardModal({
           <h2 className="text-sm font-semibold">{t('chat.forward.title')}</h2>
           <button
             onClick={onClose}
-            className="text-fg-secondary hover:text-fg-primary text-sm font-mono"
+            className="text-fg-secondary hover:text-fg-primary text-sm"
           >
             {t('chat.forward.cancel')}
           </button>
@@ -168,7 +168,7 @@ export function ForwardModal({
                     />
                     <div className="flex-1 min-w-0 text-left">
                       <div className="text-sm truncate">{name}</div>
-                      <div className="font-mono text-[0.625rem] text-fg-dim">#{c.uin}</div>
+                      <div className="text-[0.625rem] text-fg-dim">#{c.uin}</div>
                     </div>
                   </Row>
                 )
@@ -196,7 +196,7 @@ export function ForwardModal({
                     </div>
                     <div className="flex-1 min-w-0 text-left">
                       <div className="text-sm truncate">{g.name}</div>
-                      <div className="font-mono text-[0.625rem] text-fg-dim">
+                      <div className="text-[0.625rem] text-fg-dim">
                         {compactCount(memberCount(g))}
                       </div>
                     </div>
@@ -216,7 +216,7 @@ export function ForwardModal({
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
-      <div className="px-4 pt-3 pb-1 font-mono text-[0.625rem] uppercase tracking-[0.2em] text-fg-dim">
+      <div className="px-4 pt-3 pb-1 text-[0.625rem] uppercase tracking-[0.2em] text-fg-dim">
         {title}
       </div>
       <ul>{children}</ul>

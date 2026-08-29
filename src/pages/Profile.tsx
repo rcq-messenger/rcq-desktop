@@ -10,6 +10,7 @@
 // that points here (Settings, the Contacts header, the self-chat header, your
 // own row in a group) means "let me change this".
 
+import { CenteredLoader } from '../components/Spinner'
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { PersonAvatar } from '../components/PersonAvatar'
@@ -196,9 +197,7 @@ export function Profile() {
         )}
 
         {!info && !error && (
-          <div className="text-center text-sm text-fg-secondary py-12">
-            {t('contacts.loading')}
-          </div>
+          <CenteredLoader />
         )}
 
         {info && !isSelf && <ReadView info={info} t={t} isSelf={isSelf} navigate={navigate} crossIslandHost={crossIslandHost} />}
@@ -278,7 +277,7 @@ function ReadView({
             )}
           </div>
         </div>
-        <div className="font-mono text-xs text-fg-dim">
+        <div className="text-xs text-fg-dim">
           #{info.uin}{crossIslandHost ? ` · ${crossIslandHost}` : ''}
         </div>
         {info.status_message && (
@@ -481,7 +480,7 @@ function EditView({
             {/* Your own number. It used to be on the read-only page this
                 form replaced, and it is the one thing here you cannot edit
                 but do need to read out to people. */}
-            <div className="font-mono text-xs text-fg-dim">#{draft.uin}</div>
+            <div className="text-xs text-fg-dim">#{draft.uin}</div>
             <label className="text-sm text-accent cursor-pointer hover:underline">
               {draft.avatar_media_id ? t('profile.picture.change') : t('profile.picture.set')}
               <input

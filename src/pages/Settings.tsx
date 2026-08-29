@@ -596,7 +596,7 @@ export function Settings() {
                     />
                     <span className="min-w-0 flex-1">
                       <span className="block text-sm font-medium truncate">{name}</span>
-                      <span className="block font-mono text-xs text-fg-dim truncate">#{a.uin}</span>
+                      <span className="block text-xs text-fg-dim truncate">#{a.uin}</span>
                       {/* Every row names its island, the flagship included.
                           It used to be hidden for the default host on the
                           grounds that it was noise, and the effect was the
@@ -655,7 +655,7 @@ export function Settings() {
           </div>
           <div className="flex items-center justify-between text-sm">
             <span className="text-fg-secondary">{t('settings.field.uin')}</span>
-            <span className="font-mono">#{identity.uin}</span>
+            <span className="">#{identity.uin}</span>
           </div>
         </section>
 
@@ -710,7 +710,7 @@ export function Settings() {
               {/* The host repeats under a name and nowhere else: two lines
                   saying the same host is one line of noise. */}
               {islandName && (
-                <div className="font-mono text-xs text-fg-dim truncate">{islandHost}</div>
+                <div className="text-xs text-fg-dim truncate">{islandHost}</div>
               )}
             </div>
           </div>
@@ -749,7 +749,7 @@ export function Settings() {
             <ul className="space-y-1.5">
               {accountDevices.map((d) => (
                 <li key={d.device_id} className="flex items-center gap-2 text-sm min-w-0">
-                  <span className="font-mono text-xs text-fg-dim flex-none">#{d.device_id}</span>
+                  <span className="text-xs text-fg-dim flex-none">#{d.device_id}</span>
                   <span className="truncate">
                     {d.device_id === 1 ? t('settings.devices.primary') : d.label || t('settings.devices.unnamed')}
                   </span>
@@ -843,7 +843,7 @@ export function Settings() {
             .filter((h) => h.auto || h.adopted)
             .map((h) => (
               <div key={h.host} className="text-sm">
-                <div className="font-mono truncate">{h.host}</div>
+                <div className="truncate">{h.host}</div>
                 <div className="text-xs text-fg-dim">
                   {t('settings.multihome.row_uin', { uin: h.uin })}
                 </div>
@@ -865,7 +865,7 @@ export function Settings() {
                 .map((h) => (
                   <div key={h.host} className="flex items-center justify-between gap-3 text-sm">
                     <div className="min-w-0">
-                      <div className="font-mono truncate">{h.host}</div>
+                      <div className="truncate">{h.host}</div>
                       <div className="text-xs text-fg-dim">
                         {t('settings.multihome.row_uin', { uin: h.uin })}
                       </div>
@@ -902,7 +902,7 @@ export function Settings() {
                     value={mhHost}
                     onChange={(e) => setMhHost(e.target.value)}
                     placeholder={t('settings.multihome.placeholder')}
-                    className="w-full h-10 px-3 rounded-md bg-field outline-none focus:ring-1 focus:ring-accent text-sm font-mono"
+                    className="w-full h-10 px-3 rounded-md bg-field outline-none focus:ring-1 focus:ring-accent text-sm"
                     autoFocus
                     disabled={mhBusy}
                   />
@@ -1330,7 +1330,7 @@ export function Settings() {
                     }}
                     placeholder={t('settings.bypass.key_placeholder')}
                     spellCheck={false}
-                    className="flex-1 min-w-0 h-9 px-3 rounded-md bg-field text-sm font-mono"
+                    className="flex-1 min-w-0 h-9 px-3 rounded-md bg-field text-sm"
                   />
                   <button
                     onClick={() => void saveKey()}
@@ -1364,7 +1364,7 @@ export function Settings() {
                   }}
                   placeholder="rcq-relay://…"
                   spellCheck={false}
-                  className="flex-1 min-w-0 h-9 px-3 rounded-md bg-field text-sm font-mono"
+                  className="flex-1 min-w-0 h-9 px-3 rounded-md bg-field text-sm"
                 />
                 <button
                   onClick={() => void addRelay()}
@@ -1379,7 +1379,7 @@ export function Settings() {
                 <ul className="space-y-1">
                   {relays.map((r) => (
                     <li key={r.tag} className="flex items-center justify-between gap-2 text-xs">
-                      <span className="font-mono text-fg-secondary truncate">
+                      <span className="text-fg-secondary truncate">
                         {r.server}:{r.port} · {r.proto}
                       </span>
                       <button
@@ -1419,7 +1419,7 @@ export function Settings() {
                 after the eye had passed the blurb, and a tester asked outright
                 where to see which version was installed. */}
             {isTauri() && (
-              <span className="font-mono text-xs text-fg-secondary shrink-0">
+              <span className="text-xs text-fg-secondary shrink-0">
                 {desktopVersion ?? '…'}
               </span>
             )}
@@ -1433,7 +1433,7 @@ export function Settings() {
             <>
               <div className="flex items-center justify-between text-xs pt-1">
                 <span className="text-fg-secondary">{t('settings.about.version')}</span>
-                <span className="font-mono text-fg-secondary">{desktopVersion ?? '…'}</span>
+                <span className="text-fg-secondary">{desktopVersion ?? '…'}</span>
               </div>
               <button
                 onClick={() => void runUpdateCheck()}
@@ -1501,7 +1501,7 @@ export function Settings() {
                 value={burnTyped}
                 onChange={(e) => setBurnTyped(e.target.value)}
                 placeholder={String(identity.uin)}
-                className="w-full h-10 px-3 rounded-md bg-field outline-none focus:ring-1 focus:ring-accent text-sm font-mono text-center"
+                className="w-full h-10 px-3 rounded-md bg-field outline-none focus:ring-1 focus:ring-accent text-sm text-center"
                 autoFocus
               />
               <button
@@ -1669,7 +1669,7 @@ function RecoveryPhraseSection() {
           <div className="grid grid-cols-3 gap-1.5 rounded-lg bg-surface-dim p-3">
             {words.map((w, i) => (
               <div key={i} className="flex items-baseline gap-1 text-sm">
-                <span className="font-mono text-[0.625rem] text-fg-dim w-5 text-right shrink-0">{i + 1}</span>
+                <span className="text-[0.625rem] text-fg-dim w-5 text-right shrink-0">{i + 1}</span>
                 <span className="font-medium break-all">{w}</span>
               </div>
             ))}

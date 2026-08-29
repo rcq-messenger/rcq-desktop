@@ -341,7 +341,7 @@ export function Market() {
           </p>
 
           <div className="mt-6 flex items-center h-[88px] rounded-2xl bg-fg-primary/[0.04] px-5 transition-colors focus-within:bg-fg-primary/[0.07]">
-            <span aria-hidden className="font-mono text-3xl sm:text-4xl text-fg-dim/50 select-none">#</span>
+            <span aria-hidden className="text-3xl sm:text-4xl text-fg-dim/50 select-none">#</span>
             <input
               ref={inputRef}
               value={typed}
@@ -353,7 +353,7 @@ export function Market() {
               pattern="[0-9]*"
               autoFocus
               aria-label={t('uin_market.input.aria')}
-              className="ml-1 flex-1 min-w-0 bg-transparent outline-none font-mono text-4xl sm:text-5xl font-semibold tracking-tight tabular-nums caret-accent"
+              className="ml-1 flex-1 min-w-0 bg-transparent outline-none text-4xl sm:text-5xl font-semibold tracking-tight tabular-nums caret-accent"
             />
             <span className="ml-3 text-xs text-fg-dim tabular-nums whitespace-nowrap">
               {len === 0 ? t('uin_market.plate.hint') : t('uin_market.plate.digits', { n: len })}
@@ -454,7 +454,7 @@ export function Market() {
 
             <div className="rounded-2xl bg-fg-primary/[0.04] px-5 py-4">
               <div className="text-[0.6875rem] uppercase tracking-wider text-fg-dim">{t('uin_market.mine.active')}</div>
-              <div className="mt-1 font-mono text-3xl font-semibold tracking-tight tabular-nums">#{mine.active}</div>
+              <div className="mt-1 text-3xl font-semibold tracking-tight tabular-nums">#{mine.active}</div>
             </div>
 
             {mine.owned.length === 0 ? (
@@ -467,7 +467,7 @@ export function Market() {
                     className="flex items-center justify-between rounded-2xl bg-fg-primary/[0.035] px-4 py-3"
                   >
                     <div className="min-w-0">
-                      <div className="font-mono text-lg font-semibold tracking-tight tabular-nums truncate">#{o.uin}</div>
+                      <div className="text-lg font-semibold tracking-tight tabular-nums truncate">#{o.uin}</div>
                       <div className="text-xs text-fg-dim">{t('uin_market.tiers.digits', { n: o.length })}</div>
                     </div>
                     <div className="shrink-0 flex items-center gap-2">
@@ -531,7 +531,7 @@ export function Market() {
                   className="rounded-2xl p-3.5 text-left bg-fg-primary/[0.035] hover:bg-fg-primary/[0.07]
                              active:scale-[0.98] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
                 >
-                  <div className="font-mono text-lg font-semibold tracking-tight truncate">#{s.uin}</div>
+                  <div className="text-lg font-semibold tracking-tight truncate">#{s.uin}</div>
                   <div className="mt-1 flex items-center justify-between text-xs">
                     <span className="text-fg-secondary tabular-nums">{s.price_display}</span>
                     <span className="text-fg-dim/70">{t('uin_market.tiers.digits', { n: s.length })}</span>
@@ -583,7 +583,7 @@ export function Market() {
               ].map((row) => (
                 <div key={row.uin} className="flex items-center justify-between rounded-xl bg-fg-primary/[0.03] px-3.5 py-2.5">
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="font-mono text-sm font-semibold">#{row.uin}</span>
+                    <span className="text-sm font-semibold">#{row.uin}</span>
                     <span className="text-xs text-fg-dim truncate">{t('uin_market.p2p.listed_by', { uin: `#${row.by}` })}</span>
                   </div>
                   <span className="text-sm tabular-nums text-fg-secondary">{row.price}</span>
@@ -643,7 +643,7 @@ export function Market() {
               onClick={(e) => e.stopPropagation()}
             >
               <div className="text-center">
-                <div className="font-mono text-4xl font-bold tracking-tight">#{typed}</div>
+                <div className="text-4xl font-bold tracking-tight">#{typed}</div>
                 <div className="mt-1 text-fg-secondary tabular-nums">{priceDisplay(localCents)}</div>
               </div>
               <p className="mt-4 text-sm text-fg-secondary leading-relaxed text-center">{t('uin_market.confirm.body')}</p>
@@ -680,7 +680,7 @@ export function Market() {
             }}
           >
             <div className="text-center">
-              <div className="font-mono text-4xl font-bold tracking-tight">#{held}</div>
+              <div className="text-4xl font-bold tracking-tight">#{held}</div>
             </div>
             <p className="mt-4 text-sm text-fg-secondary leading-relaxed text-center">
               {t('uin_market.held.body', { prev: `#${id.uin}` })}
@@ -714,7 +714,7 @@ export function Market() {
         {releaseTarget != null && (
           <Modal onDismiss={() => !releasing && setReleaseTarget(null)}>
             <div className="text-center">
-              <div className="font-mono text-4xl font-bold tracking-tight">#{releaseTarget}</div>
+              <div className="text-4xl font-bold tracking-tight">#{releaseTarget}</div>
             </div>
             <p className="mt-4 text-sm text-fg-secondary leading-relaxed text-center">
               {t('uin_market.mine.release.confirm.body')}
@@ -740,7 +740,7 @@ export function Market() {
         {switchTarget != null && (
           <Modal onDismiss={() => !switching && setSwitchTarget(null)}>
             <div className="text-center">
-              <div className="font-mono text-4xl font-bold tracking-tight">#{switchTarget}</div>
+              <div className="text-4xl font-bold tracking-tight">#{switchTarget}</div>
             </div>
             <p className="mt-4 text-sm text-fg-secondary leading-relaxed text-center">
               {t('uin_market.mine.confirm.body', { prev: `#${mine?.active ?? id.uin}` })}

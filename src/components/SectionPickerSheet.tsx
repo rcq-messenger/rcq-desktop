@@ -126,7 +126,7 @@ export function SectionPickerSheet({ sectionName, candidates, selected, onClose,
                     )}
                     <span className="flex-1 min-w-0">
                       <span className="block truncate text-sm">{c.title}</span>
-                      <span className="block truncate text-xs text-fg-dim font-mono">{c.subtitle}</span>
+                      <span className="block truncate text-xs text-fg-dim">{c.subtitle}</span>
                     </span>
                     <span
                       className={

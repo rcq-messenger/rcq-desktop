@@ -114,7 +114,7 @@ export function ShareGroupSheet({
                     <GroupAvatar size={32} mediaId={g.avatar_media_id} mediaKey={g.avatar_media_key} />
                     <div className="flex-1 min-w-0">
                       <div className="text-sm truncate">{g.name}</div>
-                      <div className="font-mono text-[0.625rem] text-fg-dim">{compactCount(memberCount(g))}</div>
+                      <div className="text-[0.625rem] text-fg-dim">{compactCount(memberCount(g))}</div>
                     </div>
                   </button>
                 </li>

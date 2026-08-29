@@ -571,6 +571,11 @@ export const uk: Record<string, string> = {
   // Settings: privacy + sound
   'settings.section.privacy': 'Приватність',
   'settings.privacy.last_seen': 'Час у мережі бачать',
+  'contact.last_seen': 'був у мережі {when}',
+  'contact.last_seen.just_now': 'щойно',
+  'contact.last_seen.minutes': '{n} хв тому',
+  'contact.last_seen.hours': '{n} год тому',
+  'contact.last_seen.days': '{n} дн тому',
   'settings.privacy.last_seen_desc': 'Хто бачить, коли ти був у мережі востаннє.',
   'settings.privacy.gender_visible': 'Стать бачать',
   'settings.privacy.gender_desc': 'Необов\'язкові дані профілю зі своєю видимістю.',

@@ -660,6 +660,11 @@ export const en: Record<string, string> = {
   // Settings: privacy + sound
   'settings.section.privacy': 'Privacy',
   'settings.privacy.last_seen': 'Last seen visible to',
+  'contact.last_seen': 'last seen {when}',
+  'contact.last_seen.just_now': 'just now',
+  'contact.last_seen.minutes': '{n} min ago',
+  'contact.last_seen.hours': '{n} h ago',
+  'contact.last_seen.days': '{n} d ago',
   'settings.privacy.last_seen_desc': 'Who can see your last-seen timestamp.',
   'settings.privacy.gender_visible': 'Gender visible to',
   'settings.privacy.gender_desc': 'Optional profile info with its own visibility.',

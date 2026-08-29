@@ -571,6 +571,11 @@ export const tr: Record<string, string> = {
   // Settings: privacy + sound
   'settings.section.privacy': 'Gizlilik',
   'settings.privacy.last_seen': 'Son görülmeyi görenler',
+  'contact.last_seen': 'son görülme {when}',
+  'contact.last_seen.just_now': 'az önce',
+  'contact.last_seen.minutes': '{n} dk önce',
+  'contact.last_seen.hours': '{n} sa önce',
+  'contact.last_seen.days': '{n} gün önce',
   'settings.privacy.last_seen_desc': 'Son görülme zamanını kimler görebilir.',
   'settings.privacy.gender_visible': 'Cinsiyeti görenler',
   'settings.privacy.gender_desc': 'Kendi görünürlüğü olan, isteğe bağlı profil bilgisi.',

@@ -21,6 +21,7 @@
 // right now simply does not render: it is never pruned, because a roster fetch
 // that failed once would otherwise delete the account's sections.
 
+import { relativeLastSeen } from '../lib/last-seen'
 import { AnimatePresence } from 'framer-motion'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
@@ -1374,7 +1375,7 @@ function ContactRow({
   archived?: boolean
   onChanged: () => void
 }) {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const [menuOpen, setMenuOpen] = useState(false)
   const unread = usePeerUnread(contact.uin)
   // My own name for this person wins over the nickname they chose. Device-only
@@ -1421,9 +1422,15 @@ function ContactRow({
             </div>
             <div className="flex items-center gap-1.5 text-xs text-fg-dim min-w-0">
               <span className="flex-none">#{contact.uin}</span>
-              {contact.status_message && (
+              {contact.status_message ? (
                 <span className="truncate">· {contact.status_message}</span>
-              )}
+              ) : contact.status === 'offline' && contact.last_seen ? (
+                // Same precedence as the iOS row (B1): a status message wins,
+                // otherwise an offline contact shows when they were around.
+                <span className="truncate">
+                  · {t('contact.last_seen', { when: relativeLastSeen(contact.last_seen, t, lang) })}
+                </span>
+              ) : null}
             </div>
           </div>
         </Link>

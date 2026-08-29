@@ -754,6 +754,8 @@ export const uk: Record<string, string> = {
   'group.settings.closed.hint': 'За посиланням ніхто не зайде; людей додаєш ти сам.',
   'group.settings.hide_members': 'Приховати список учасників',
   'group.settings.hide_members.hint': 'Учасники бачать групу, але не одне одного.',
+  'group.settings.catalog': 'Показувати в пошуку',
+  'group.settings.catalog.hint': 'Назва та опис кімнати публікуються на острові, щоб її можна було знайти. Вимкнено: кімната відкривається лише за посиланням.',
   'group.settings.no_links': 'Вимкнути посилання',
   'group.settings.no_links.hint': 'Посилання в повідомленнях лишаються простим текстом і не відкриваються.',
   'group.settings.no_files': 'Вимкнути файли',

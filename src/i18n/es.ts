@@ -754,6 +754,8 @@ export const es: Record<string, string> = {
   'group.settings.closed.hint': 'Nadie entra por enlace; tú añades a la gente.',
   'group.settings.hide_members': 'Esconder la lista de miembros',
   'group.settings.hide_members.hint': 'Los miembros ven el grupo, no a los demás.',
+  'group.settings.catalog': 'Mostrar en la búsqueda',
+  'group.settings.catalog.hint': 'El nombre y la descripción de la sala se publican en la isla para que se pueda encontrar. Desactivado: la sala solo se abre por enlace.',
   'group.settings.no_links': 'Desactivar enlaces',
   'group.settings.no_links.hint': 'Los enlaces quedan como texto y no se abren.',
   'group.settings.no_files': 'Desactivar archivos',

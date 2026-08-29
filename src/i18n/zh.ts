@@ -752,6 +752,8 @@ export const zh: Record<string, string> = {
   'group.settings.closed.hint': '无法通过链接加入，成员由你自己添加。',
   'group.settings.hide_members': '隐藏成员列表',
   'group.settings.hide_members.hint': '成员能看到群组，但看不到彼此。',
+  'group.settings.catalog': '在搜索中显示',
+  'group.settings.catalog.hint': '房间的名称和简介会发布到岛上,以便他人找到它。关闭后:房间只能通过链接打开。',
   'group.settings.no_links': '禁用链接',
   'group.settings.no_links.hint': '消息中的链接显示为纯文本，不可打开。',
   'group.settings.no_files': '禁用文件',

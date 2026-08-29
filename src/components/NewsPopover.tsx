@@ -12,7 +12,8 @@
 import { CenteredLoader } from './Spinner'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { fetchNews, type NewsPost } from '../lib/api'
+import { fetchNews, type NewsAttachment, type NewsPost } from '../lib/api'
+import { useWS } from '../lib/ws'
 import { scopedKey } from '../lib/account-scope'
 import { useIdentity } from '../lib/identity-context'
 import { useI18n } from '../lib/i18n-context'
@@ -58,10 +59,44 @@ function splitHeadline(text: string): { head: string; rest: string } {
   return { head: text.slice(0, nl).trim(), rest: text.slice(nl).trim() }
 }
 
-function NewsItem({ post, lang, t }: { post: NewsPost; lang: string; t: (k: string) => string }) {
+/// News media never rendered on the web at all — the field arrived typed
+/// `unknown` and no component looked at it (megalist A4). The feed is public
+/// and unencrypted (unlike chat media), so a plain <img>/<video> off the
+/// island's own /news/media/ path is the whole job. `object-contain` inside a
+/// bounded box, no cropping — the iOS complaint in the same item is exactly a
+/// crop, so the web renders the full frame from day one.
+function NewsMedia({ atts, apiBase }: { atts: NewsAttachment[]; apiBase: string }) {
+  return (
+    <div className="space-y-2">
+      {atts.map((a) =>
+        a.kind === 'video' ? (
+          <video
+            key={a.media_id}
+            controls
+            playsInline
+            preload="metadata"
+            src={`${apiBase}/news/media/${a.media_id}`}
+            className="w-full max-h-64 rounded-md bg-black/20 object-contain"
+          />
+        ) : (
+          <img
+            key={a.media_id}
+            src={`${apiBase}/news/media/${a.media_id}`}
+            alt=""
+            loading="lazy"
+            className="w-full max-h-64 rounded-md object-contain"
+          />
+        ),
+      )}
+    </div>
+  )
+}
+
+function NewsItem({ post, lang, t, apiBase }: { post: NewsPost; lang: string; t: (k: string) => string; apiBase: string }) {
   const [open, setOpen] = useState(false)
   const text = inLanguage(post.body, lang)
   const { head, rest } = splitHeadline(text)
+  const atts = Array.isArray(post.attachments) ? post.attachments : []
   return (
     <article className="space-y-1">
       <div className="flex items-baseline justify-between gap-2">
@@ -73,6 +108,7 @@ function NewsItem({ post, lang, t }: { post: NewsPost; lang: string; t: (k: stri
         </span>
       </div>
       <div className="text-sm font-medium text-fg-primary break-words rcq-selectable">{head}</div>
+      {atts.length > 0 && <NewsMedia atts={atts} apiBase={apiBase} />}
       {rest && (
         <>
           <div
@@ -145,6 +181,12 @@ export function NewsButton({ className }: { className?: string }) {
 
   useEffect(() => { void load() }, [load])
 
+  // Realtime (megalist A4): the island broadcasts `news_posted` the moment a
+  // post is published (server 2026.08.29.3). Refetching keeps one code path
+  // for ordering/seen — the frame is only the doorbell.
+  const ws = useWS()
+  useEffect(() => ws.on('news_posted', () => { void load() }), [ws, load])
+
   // Close on outside click and on Escape, the two things every popover has to
   // do before it counts as one.
   useEffect(() => {
@@ -206,7 +248,7 @@ export function NewsButton({ className }: { className?: string }) {
 
       {/* Rendering is deliberately dumb: plain text, no markdown, no HTML from
           the server. */}
-      {posts?.map((p) => <NewsItem key={p.id} post={p} lang={lang} t={t} />)}
+      {posts?.map((p) => <NewsItem key={p.id} post={p} lang={lang} t={t} apiBase={identity?.apiBase ?? ''} />)}
     </>
   )
 

@@ -3,6 +3,7 @@
 // the group page (founder read that as "the group opens"); now it opens a
 // small menu (Group info / Mute / Leave), mirroring the contact affordance.
 
+import { MenuPanel } from './MenuPanel'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Api, type RCQGroup } from '../lib/api'
@@ -64,11 +65,7 @@ export function GroupActionsMenu({ group, onClose, onChanged }: Props) {
   const isArchived = archive.has(group.id)
 
   return (
-    <div
-      ref={ref}
-      className="rcq-menu absolute right-0 top-full mt-1 w-56 rounded-lg shadow-lg py-1 z-30 text-sm"
-      onClick={(e) => e.stopPropagation()}
-    >
+    <MenuPanel panelRef={ref} className="right-0 w-56 py-1 text-sm" onClick={(e) => e.stopPropagation()}>
       <Row
         icon={<InfoIcon />}
         label={t('group_actions.info')}
@@ -130,7 +127,7 @@ export function GroupActionsMenu({ group, onClose, onChanged }: Props) {
         </div>
       )}
       {error && <div className="px-3 py-1 text-xs text-red-600">{error}</div>}
-    </div>
+    </MenuPanel>
   )
 }
 

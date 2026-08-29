@@ -267,9 +267,12 @@ html.dark .rcq-wave {
    These menus hold buttons and an input and nothing fixed; anything fixed added
    inside one later has to be portalled. */
 .rcq-menu {
-  background-color: rgb(var(--c-surface) / 0.78);
-  backdrop-filter: blur(16px) saturate(150%);
-  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  /* 0.66, not 0.78: at 0.78 the blur was doing its work behind a fill thick
+     enough to hide it, and the menus read as plain solid cards (megalist
+     B4/Л2.23, "непонятно есть ли блюр"). */
+  background-color: rgb(var(--c-surface) / 0.66);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
 }
 /* Safari on iOS and older WebKit ignore backdrop-filter inside some stacking
    contexts; without this these bars would be a translucent smear over the

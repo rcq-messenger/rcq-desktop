@@ -14,6 +14,7 @@
 // the viewport, which we have now walked into twice (reports, 17.08). The page
 // header this menu can open under is exactly such an element.
 
+import { motion } from 'framer-motion'
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useI18n } from '../lib/i18n-context'
@@ -83,15 +84,20 @@ export function SectionMenu({
   const y = Math.max(8, Math.min(at.y, window.innerHeight - H - 8))
 
   const panel = (body: ReactNode) => (
-    <div
+    <motion.div
       ref={ref}
       role="menu"
+      initial={{ opacity: 0, y: -4, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.13, ease: 'easeOut' }}
       style={{ left: x, top: y, width: W }}
-      className="rcq-menu fixed z-50 rounded-lg shadow-lg text-sm bg-surface"
+      // ⚠ no bg-surface here: it painted OVER rcq-menu's translucent fill,
+      // which is why this menu never showed its blur (megalist B4/Л2.23).
+      className="rcq-menu fixed z-50 rounded-lg shadow-lg text-sm"
       onClick={(e) => e.stopPropagation()}
     >
       {body}
-    </div>
+    </motion.div>
   )
 
   if (mode === 'create' || mode === 'rename') {

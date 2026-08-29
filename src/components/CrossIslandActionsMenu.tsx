@@ -11,6 +11,7 @@
 // The three actions here are the ones whose stores are keyed by (uin, host) and
 // therefore mean what they say.
 
+import { MenuPanel } from './MenuPanel'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useI18n } from '../lib/i18n-context'
 import { useContactAliases } from '../lib/local-store'
@@ -52,10 +53,7 @@ export function CrossIslandActionsMenu({ contact, onClose, onChanged }: Props) {
   }, [onClose])
 
   return (
-    <div
-      ref={ref}
-      className="rcq-menu absolute right-3 top-full z-30 mt-1 w-60 rounded-lg shadow-lg overflow-hidden"
-    >
+    <MenuPanel panelRef={ref} className="right-3 w-60 overflow-hidden">
       {renaming ? (
         <div className="p-3 space-y-2">
           <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
@@ -138,7 +136,7 @@ export function CrossIslandActionsMenu({ contact, onClose, onChanged }: Props) {
           <Row icon={<TrashIcon />} danger label={t('ci.actions.remove')} onClick={() => setConfirmRemove(true)} />
         </ul>
       )}
-    </div>
+    </MenuPanel>
   )
 }
 

@@ -161,6 +161,17 @@ export function useMutedPeers() {
   return useNumberSet(KEYS.mutedPeers)
 }
 
+/// Non-hook reads for code that lives outside React (the incoming store's
+/// chime gate). Same storage the hooks read; a mute flipped in another tab
+/// is picked up on the next incoming row, which is soon enough for a sound.
+export function isPeerMuted(uin: number): boolean {
+  return readSet(KEYS.mutedPeers).has(uin)
+}
+
+export function isGroupMuted(gid: number): boolean {
+  return readSet(KEYS.mutedGroups).has(gid)
+}
+
 export function useMutedGroups() {
   return useNumberSet(KEYS.mutedGroups)
 }

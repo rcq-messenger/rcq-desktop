@@ -11,6 +11,7 @@ import { playSound } from './sounds'
 import { markMention, mentionsMe } from './mentions'
 import { contactsCache, snapshotFor } from './contacts-cache'
 import { applyReceiptToOutgoing, sweepExpiredOutgoing } from './outgoing-store'
+import { isGroupMuted, isPeerMuted } from './local-store'
 import { SWEEP_INTERVAL_MS, expiryFrom, lapsed, sendAnchorMs } from './disappearing'
 import { forgetCachedImage } from './media'
 
@@ -435,6 +436,11 @@ function bumpUnread(threadKey: string, row: IncomingRow, groupId: number | null)
     persistUnread()
     emitUnread()
     if (_catchingUp > 0) return
+    // A muted thread still counts its unread - mute silences, never hides -
+    // but the chime and the banner are exactly what the mute switch was
+    // asked to stop, and this gate never consulted it (#826: 'на группе
+    // выключены звуковые уведомления - но всё равно звонят').
+    if (groupId != null ? isGroupMuted(groupId) : isPeerMuted(row.from)) return
     playSound('message_incoming')
     // Media kinds pass through for a typed preview; everything else shows its
     // text (for a retired poll that is the question it asked).

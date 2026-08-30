@@ -295,6 +295,9 @@ export interface RCQGroup {
   /// Slowmode step in seconds (0/absent = off). One of 0/5/10/30/60.
   /// Server-enforced on group-sealed for identified non-moderators.
   slowmode_sec?: number
+  /// Anti-spam age floor in hours (0/absent = off): an account younger
+  /// than this may read but not post. Owner-set, island-enforced.
+  min_account_age_hours?: number
   in_catalog?: boolean
   // Pin metadata beside the text (who pinned, when) - served today, needed
   // by the sealed-state blob so an overlay loses nothing.
@@ -666,6 +669,7 @@ export const Api = {
       in_catalog?: boolean
       files_allowed?: boolean
       slowmode_sec?: number
+      min_account_age_hours?: number
       avatar_media_id?: string
       avatar_media_key?: string
     },

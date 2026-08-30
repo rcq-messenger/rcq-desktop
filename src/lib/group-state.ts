@@ -211,6 +211,18 @@ async function sendKeyTo(
   await Api.sendSealed(identity, member.uin, wire, 'skdm')
 }
 
+/// Hand the room key to ONE member - the add-member hand-off (road 3 in the
+/// design doc). The gsknack answer and the mint fan-out use the same seal.
+export async function sendRoomKeyTo(
+  identity: WebIdentity,
+  member: { uin: number; identity_key: string; signing_key?: string | null },
+  gid: number,
+  ver: number,
+  keyB64: string,
+): Promise<void> {
+  await sendKeyTo(identity, member, gid, ver, keyB64)
+}
+
 /// Make sure this room has a key, minting and distributing one when it does
 /// not. Returns the key either way. Minting fans the key to every member
 /// with an identity key, self excluded; failures are per-member best-effort

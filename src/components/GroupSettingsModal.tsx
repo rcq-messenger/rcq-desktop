@@ -86,7 +86,7 @@ export function GroupSettingsModal({
       // this. Key minting fans gskey to the roster once, on first seal.
       if (!updated.in_catalog && updated.members?.length) {
         try {
-          await ensureRoomKey(ident, gid, updated.members)
+          await ensureRoomKey(ident, gid, updated.members, updated.state_blob)
           await writeSealedState(ident, updated)
         } catch {
           /* the next save tries again; the open columns cover the meantime */

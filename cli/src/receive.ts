@@ -14,6 +14,8 @@
 //    to their end are acked at all.
 
 import fs from 'node:fs'
+import { answerKeyAsk, putRoomKey } from '../../src/lib/group-state'
+import { rosterFor } from './groups'
 import { decryptIncoming, myDeviceId, noteInboundFrom, sendV2 } from '../../src/lib/signal-device'
 import { Api, peerBundleFrom } from '../../src/lib/api'
 import { encryptV1, type CarbonEnvelope, type Envelope, type WebIdentity } from '../../src/lib/crypto'
@@ -399,6 +401,28 @@ export async function ingestDecrypted(
   // authenticated sender); SKNACK asks us to re-hand ours to somebody who
   // missed it. Both ride the ordinary per-member sealed path, which is why
   // they arrive here rather than in the gmsg branch of the drain.
+  // Room state key hand-off / ask-back (stage 6 phase 2): same outer types
+  // as the sender-key plumbing, split by the inner kind. The key store and
+  // membership gate are shared with the web (src/lib/group-state).
+  if (env.kind === 'gskey') {
+    const e = env as unknown as { gid?: number; ver?: number; key?: string }
+    if (typeof e.gid === 'number' && typeof e.ver === 'number' && typeof e.key === 'string') {
+      // The CLI's roster cache answers membership; a key from a stranger is
+      // dropped like any other unsolicited control frame.
+      if (await senderIsGroupMember(identity, e.gid, got.senderUIN).catch(() => false)) {
+        putRoomKey(e.gid, e.ver, e.key, { replaceEqual: true })
+      }
+    }
+    return
+  }
+  if (env.kind === 'gsknack') {
+    const e = env as unknown as { gid?: number }
+    if (typeof e.gid === 'number') {
+      const m = await memberBundle(identity, e.gid, got.senderUIN).catch(() => null)
+      if (m) await answerKeyAsk(identity, m, e.gid).catch(() => undefined)
+    }
+    return
+  }
   if (env.kind === 'skdm') {
     const skdm = env as unknown as { gid: number; kid: string; e: number; i: number; ck: string }
     if (handleSkdm(identity.uin, got.senderUIN, got.senderSigningKey, skdm) && typeof skdm.kid === 'string') {
@@ -854,4 +878,23 @@ async function drainRoomLog(identity: WebIdentity, myDev: number, result: Ingest
     if (e instanceof GroupLogHttpError) process.stderr.write(tr('drain.logHttp', { status: e.status }) + '\n')
     else process.stderr.write(tr('drain.logError', { err: humanError(e) }) + '\n')
   }
+}
+
+/// Is `uin` in `gid`'s roster, as this process can see it? Backed by the
+/// same cached roster the send paths use, so a fresh gskey right after an
+/// invite still verifies (the inviter refreshed the roster to send at all).
+async function senderIsGroupMember(identity: WebIdentity, gid: number, uin: number): Promise<boolean> {
+  const g = await rosterFor(identity, { id: gid, members: [] } as unknown as RCQGroup)
+  return g.members.some((m) => m.uin === uin)
+}
+
+/// The member row for `uin` in `gid`, for answering a gsknack.
+async function memberBundle(
+  identity: WebIdentity,
+  gid: number,
+  uin: number,
+): Promise<{ uin: number; identity_key: string; signing_key?: string } | null> {
+  const g = await rosterFor(identity, { id: gid, members: [] } as unknown as RCQGroup)
+  const m = g.members.find((x) => x.uin === uin)
+  return m?.identity_key ? m : null
 }

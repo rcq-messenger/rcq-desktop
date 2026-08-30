@@ -22,6 +22,7 @@
 // deriving both names locally rather than by comparing strings to "contacts".
 
 import type { WebIdentity } from './crypto'
+import { syncRoomKeysWithVault } from './group-state'
 import {
   forgetVersion,
   listSlots,
@@ -118,6 +119,9 @@ export async function sweepVaultSlots(identity: WebIdentity, force = false): Pro
   }
   const contacts = slots.get(slotId(identity, VAULT_CONTACTS)) ?? 0
   if (contacts > lastSeenContactsVersion(identity)) await refreshContactsSlot(identity)
+  // Room state keys (stage 6 phase 2): same sweep, same quietness. The sync
+  // itself decides whether either side is missing anything.
+  await syncRoomKeysWithVault(identity)
 }
 
 /// The contacts slot is still a MIRROR of the island's own list (stage 4,

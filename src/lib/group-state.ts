@@ -16,6 +16,7 @@
 import { Api, peerBundleFrom } from './api'
 import type { GroupMember, RCQGroup } from './api'
 import { encryptV1, bytesToB64, b64ToBytes, type Envelope, type WebIdentity } from './crypto'
+import { readSlot, writeSlot, slotId, lastSeenVersion, rememberVersion, VaultError } from './vault'
 
 // ── the key store ────────────────────────────────────────────────────────
 // Per-account, gid -> {k: b64 key, v: version}. localStorage survives the
@@ -210,6 +211,81 @@ export async function answerKeyAsk(
   await sendKeyTo(identity, asker, gid, k.v, k.k)
 }
 
+// ── asking for a key we do not hold ─────────────────────────────────────
+
+/// Once per room per six hours: a blob we cannot open is worth one ask, not
+/// a drumbeat. Persisted so a reload does not reset the clock.
+const ASK_EVERY_MS = 6 * 3600 * 1000
+const askKey = (uin: number) => `rcq.web.gsknack.${uin}`
+
+function shouldAsk(uin: number, gid: number): boolean {
+  try {
+    const m = JSON.parse(localStorage.getItem(askKey(uin)) || '{}') as Record<string, number>
+    if (Date.now() - (m[gid] ?? 0) < ASK_EVERY_MS) return false
+    m[gid] = Date.now()
+    localStorage.setItem(askKey(uin), JSON.stringify(m))
+    return true
+  } catch {
+    return true
+  }
+}
+
+/// Seal a `gsknack` to the members most likely to hold the key: the owner
+/// first (they minted it), then up to two admins. Fire-and-forget - any one
+/// answer is enough, and the reply lands as an ordinary gskey.
+export function askForRoomKey(identity: WebIdentity, g: RCQGroup): void {
+  if (!g.state_blob || roomKey(g.id) || !g.members?.length) return
+  if (!shouldAsk(identity.uin, g.id)) return
+  const holders = [
+    g.members.find((m) => m.uin === g.owner_uin),
+    ...g.members.filter((m) => m.role === 'admin' && m.uin !== g.owner_uin).slice(0, 2),
+  ].filter((m): m is GroupMember => !!m?.identity_key && m.uin !== identity.uin)
+  for (const h of holders) {
+    try {
+      const env: Envelope = { kind: 'gsknack', gid: g.id }
+      const wire = encryptV1(env, identity, peerBundleFrom({
+        uin: h.uin,
+        identity_key: h.identity_key,
+        signing_key: h.signing_key ?? '',
+      }))
+      void Api.sendSealed(identity, h.uin, wire, 'sknack').catch(() => undefined)
+    } catch {
+      /* the next six-hour window tries again */
+    }
+  }
+}
+
+// ── rotation ────────────────────────────────────────────────────────────
+
+/// After a kick: mint version+1, re-seal the blob under it, and fan the new
+/// key to the REMAINING roster. The evicted member knew the old name anyway;
+/// what rotation protects is everything the room becomes after them. On a
+/// voluntary leave this is deliberately NOT automatic (the design doc says
+/// why); the owner forces it by kicking nobody - i.e. this function is the
+/// whole mechanism either way.
+export async function rotateRoomKey(
+  identity: WebIdentity,
+  g: RCQGroup,
+  remaining: GroupMember[],
+): Promise<void> {
+  const cur = roomKey(g.id)
+  if (!cur) return
+  const ver = cur.v + 1
+  const fresh = bytesToB64(crypto.getRandomValues(new Uint8Array(32)))
+  putRoomKey(g.id, ver, fresh)
+  let n = 0
+  for (const m of remaining) {
+    if (m.uin === identity.uin || !m.identity_key) continue
+    try {
+      await sendKeyTo(identity, m, g.id, ver, fresh)
+    } catch {
+      /* gsknack covers stragglers */
+    }
+    if (++n % YIELD_EVERY === 0) await uiYield()
+  }
+  await writeSealedState(identity, g)
+}
+
 // ── writing the sealed identity ─────────────────────────────────────────
 
 /// Build the blob from the group's current identity fields and write it
@@ -242,6 +318,70 @@ export async function writeSealedState(identity: WebIdentity, g: RCQGroup): Prom
       return true
     } catch {
       return false
+    }
+  }
+}
+
+// ── the vault mirror ────────────────────────────────────────────────────
+// Room keys must outlive one browser: a second device and a recovery drain
+// the same vault slot the contacts mirror uses (stage 4a machinery). The
+// slot holds {gid: {k, v}}; merging is a per-gid version max, so two
+// devices writing concurrently lose nothing and a rotation always wins.
+
+export const VAULT_GSKEYS = 'gskeys'
+
+function mergeKeyMaps(
+  a: Record<string, { k: string; v: number }>,
+  b: Record<string, { k: string; v: number }>,
+): Record<string, { k: string; v: number }> {
+  const out = { ...a }
+  for (const [gid, e] of Object.entries(b)) {
+    const cur = out[gid]
+    if (!cur || e.v > cur.v) out[gid] = e
+  }
+  return out
+}
+
+/// Pull the slot, fold it into the local store, and push back whatever the
+/// island was missing. Called from the vault sweep beside contacts and
+/// sections; quiet on every failure - the localStorage copy keeps working.
+export async function syncRoomKeysWithVault(identity: WebIdentity): Promise<void> {
+  const slot = slotId(identity, VAULT_GSKEYS)
+  const local = Object.fromEntries([...keys.entries()].map(([g, e]) => [String(g), e]))
+  try {
+    const r = await readSlot(identity, slot, lastSeenVersion(slot))
+    const remote = r.plaintext?.length
+      ? (JSON.parse(new TextDecoder().decode(r.plaintext)) as Record<string, { k: string; v: number }>)
+      : {}
+    rememberVersion(slot, r.version)
+    const folded = mergeKeyMaps(remote, local)
+    // Fold the remote half into memory first: a key another device minted is
+    // usable the moment the sweep lands, not after the next reload.
+    let gained = false
+    for (const [gid, e] of Object.entries(folded)) {
+      if (putRoomKey(Number(gid), e.v, e.k)) gained = true
+    }
+    if (gained) {
+      try {
+        window.dispatchEvent(new Event('rcq-room-keys-changed'))
+      } catch {
+        /* no window in the CLI build */
+      }
+    }
+    // The island is missing something of ours: push the fold. The merge
+    // callback re-folds against whatever version the write races with.
+    if (JSON.stringify(folded) !== JSON.stringify(remote)) {
+      const seen = await writeSlot(identity, slot, (cur) => {
+        const base = cur?.length
+          ? (JSON.parse(new TextDecoder().decode(cur)) as Record<string, { k: string; v: number }>)
+          : {}
+        return new TextEncoder().encode(JSON.stringify(mergeKeyMaps(base, folded)))
+      }, lastSeenVersion(slot))
+      rememberVersion(slot, seen)
+    }
+  } catch (e) {
+    if (!(e instanceof VaultError)) {
+      /* network - the next sweep retries */
     }
   }
 }

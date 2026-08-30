@@ -27,7 +27,7 @@ import { ReactionPicker } from '../components/ReactionPicker'
 import { PersonAvatar } from '../components/PersonAvatar'
 import { SenderAvatar } from '../components/SenderAvatar'
 import { Api, peerBundleFrom, type Contact, type RCQGroup, type UserInfo } from '../lib/api'
-import { applySealedState } from '../lib/group-state'
+import { applySealedState, askForRoomKey } from '../lib/group-state'
 import { isTauri, openExternal } from '../lib/desktop'
 import {
   useIncoming,
@@ -487,6 +487,9 @@ export function Chat() {
           const g = await applySealedState(await Api.groupInfo(ctx.ident, ctx.gid))
           _groupCache.set(groupId, g)
           setGroup(g)
+          // A blob we cannot open: ask the likeliest holders for the key,
+          // throttled inside. The reply lands as a gskey and re-renders.
+          askForRoomKey(ctx.ident, g)
         } else if (isSelf && peerUIN != null) {
           // Saved Messages — synthesise the self-peer (the server never returns
           // your own UIN in /contacts). No fetch, no "not in contacts" error.

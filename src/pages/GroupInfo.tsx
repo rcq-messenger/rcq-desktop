@@ -23,6 +23,7 @@ import { GroupSettingsModal } from '../components/GroupSettingsModal'
 import { GroupAvatar } from '../components/GroupAvatar'
 import { Api, ApiError, parseErrorCode, parseRetryAfter, type RCQGroup } from '../lib/api'
 import { groupShareLink } from '../lib/group-invite'
+import { roomKey, rotateRoomKey } from '../lib/group-state'
 import { useGroupChanged } from '../lib/group-events'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
@@ -147,9 +148,17 @@ export function GroupInfo() {
   /// this device, so the link is built from the (island id, host) pair the rest
   /// of the world uses.
   async function copyShareLink() {
+    // Stage 6 phase 2: an unlisted room's link carries the room state key in
+    // the FRAGMENT - browsers never send it to any server, ours included.
+    // The joiner reads the sealed name and the pinned rules before any
+    // handshake completes, which is what the plaintext pin existed for.
+
     if (!identity) return
     try {
-      await navigator.clipboard.writeText(groupShareLink(identity, groupId))
+      let link = groupShareLink(identity, groupId)
+      const k = group && !group.in_catalog ? roomKey(groupId) : null
+      if (k) link += `#k=${k.v}.${encodeURIComponent(k.k)}`
+      await navigator.clipboard.writeText(link)
       setCopied(true)
       setTimeout(() => setCopied(false), 1600)
     } catch {
@@ -162,7 +171,14 @@ export function GroupInfo() {
     setBusy(true)
     try {
       await Api.removeGroupMember(gctx.ident, gctx.gid, uin)
-      setGroup({ ...group, members: group.members.filter((m) => m.uin !== uin) })
+      const remaining = group.members.filter((m) => m.uin !== uin)
+      setGroup({ ...group, members: remaining })
+      // Stage 6 phase 2: a kicked member must not keep reading what the room
+      // BECOMES - new key, re-sealed blob, fanned to whoever is left. Only
+      // for rooms that carry a sealed identity at all.
+      if (!group.in_catalog && roomKey(gctx.gid)) {
+        void rotateRoomKey(gctx.ident, { ...group, members: remaining }, remaining).catch(() => undefined)
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'failed')
     } finally {

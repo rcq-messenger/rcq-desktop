@@ -15,13 +15,15 @@
 //     the <img> `onError` swaps to the tile.
 // There is no state in which this renders an empty box.
 //
-// The picture is a plain public URL, so the browser's own HTTP cache is the
-// cache. This is deliberately NOT the `loadEncryptedImage` shape `PersonAvatar`
-// uses: an account avatar is an encrypted blob that has to be fetched and
-// AES-decrypted in JS before it can go in an <img>, and an island logo is
-// public plaintext with a version already in its URL. Reusing the media path
-// for it would mean decrypting something that is not encrypted and holding a
-// second cache for something `Cache-Control` already covers.
+// The bytes come through `fetch` into a blob: URL rather than a plain
+// cross-origin <img src>. Not a style choice: chat.rcq.app ships
+// `img-src 'self' data: blob:` (report #815 - the flagship's flower rendered
+// as its letter tile on the web and nowhere else), and the CSP stays tight on
+// purpose because this app renders other people's content. `connect-src`
+// already admits the islands, the browser's HTTP cache still covers the
+// fetch, and one run-cached object URL per logo version serves every tile on
+// the screen. This is still NOT the `loadEncryptedImage` shape `PersonAvatar`
+// uses: an island logo is public plaintext, nothing here decrypts.
 
 import { useEffect, useState } from 'react'
 import { islandLogoURL } from '../lib/server-info'
@@ -64,6 +66,23 @@ function initial(name: string, host: string): string {
   return ch ? ch.toUpperCase() : '#'
 }
 
+/// One inflight-or-done promise per logo URL (the version rides in the URL, so
+/// a rotated logo is a new key). A failure caches as null for the life of the
+/// page; the version bump on the next operator upload is what retries.
+const logoObjectURLs = new Map<string, Promise<string | null>>()
+
+function fetchLogoObjectURL(url: string): Promise<string | null> {
+  let p = logoObjectURLs.get(url)
+  if (!p) {
+    p = fetch(url)
+      .then((r) => (r.ok ? r.blob() : null))
+      .then((b) => (b && b.size > 0 ? URL.createObjectURL(b) : null))
+      .catch(() => null)
+    logoObjectURLs.set(url, p)
+  }
+  return p
+}
+
 export function IslandAvatar({ apiBase, name, size = 28, className = '' }: Props) {
   const host = (apiBase ?? '').replace(/^https?:\/\//, '')
   // Off disk first, so the tile (and a logo already in the browser's cache) are
@@ -76,17 +95,31 @@ export function IslandAvatar({ apiBase, name, size = 28, className = '' }: Props
   const label = name || card.name
 
   const [broken, setBroken] = useState(false)
-  // A new logo is a new version, and a version that has changed deserves one
-  // more try: without this, an island whose logo failed once would keep its
-  // tile for the life of the page even after the operator fixed it.
-  useEffect(() => setBroken(false), [version, apiBase])
+  const [src, setSrc] = useState<string | null>(null)
+  const url = version && apiBase ? islandLogoURL(apiBase, version) : null
+  // A new logo is a new version, a new version is a new URL, and a URL that
+  // has changed deserves one more try: without this, an island whose logo
+  // failed once would keep its tile for the life of the page even after the
+  // operator fixed it.
+  useEffect(() => {
+    setBroken(false)
+    setSrc(null)
+    if (!url) return
+    let alive = true
+    void fetchLogoObjectURL(url).then((u) => {
+      if (alive) setSrc(u)
+    })
+    return () => {
+      alive = false
+    }
+  }, [url])
 
   const style = { width: size, height: size, borderRadius: Math.round(size * 0.28) }
 
-  if (version && !broken) {
+  if (src && !broken) {
     return (
       <img
-        src={islandLogoURL(apiBase!, version)}
+        src={src}
         alt=""
         width={size}
         height={size}

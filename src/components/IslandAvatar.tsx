@@ -67,8 +67,12 @@ function initial(name: string, host: string): string {
 }
 
 /// One inflight-or-done promise per logo URL (the version rides in the URL, so
-/// a rotated logo is a new key). A failure caches as null for the life of the
-/// page; the version bump on the next operator upload is what retries.
+/// a rotated logo is a new key). ⚠ Only SUCCESS is cached. The first cut
+/// cached a failure for the life of the page, and on the desktop that was
+/// the life of the APP: its first render fires before the transport is
+/// engaged, the fetch failed once, and the flagship's flower was a letter
+/// tile for days (founder, 31.08). A failed fetch now clears its slot so
+/// the next mount simply tries again.
 const logoObjectURLs = new Map<string, Promise<string | null>>()
 
 function fetchLogoObjectURL(url: string): Promise<string | null> {
@@ -78,6 +82,10 @@ function fetchLogoObjectURL(url: string): Promise<string | null> {
       .then((r) => (r.ok ? r.blob() : null))
       .then((b) => (b && b.size > 0 ? URL.createObjectURL(b) : null))
       .catch(() => null)
+      .then((u) => {
+        if (u == null) logoObjectURLs.delete(url)
+        return u
+      })
     logoObjectURLs.set(url, p)
   }
   return p
@@ -107,7 +115,12 @@ export function IslandAvatar({ apiBase, name, size = 28, className = '' }: Props
     if (!url) return
     let alive = true
     void fetchLogoObjectURL(url).then((u) => {
-      if (alive) setSrc(u)
+      // The fetch road failed (offline, transport not engaged yet)? Try the
+      // picture as a PLAIN cross-origin <img>. On the desktop that road is
+      // open (its CSP admits https: images) and was how the logo always
+      // loaded; on the web it is CSP-blocked, errors, and the letter tile
+      // stands - exactly the pre-#815 behaviour, never worse.
+      if (alive) setSrc(u ?? url)
     })
     return () => {
       alive = false

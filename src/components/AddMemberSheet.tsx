@@ -15,6 +15,7 @@
 // roster yet: it is the only route that works for a stranger.
 
 import { useEffect, useMemo, useState } from 'react'
+import { roomKey, sendRoomKeyTo } from '../lib/group-state'
 import { Api, type Contact, type RCQGroup, type UserStatus } from '../lib/api'
 import type { WebIdentity } from '../lib/crypto'
 import { newUUIDv4 } from '../lib/crypto'
@@ -144,7 +145,16 @@ export function AddMemberSheet({ group, ident, gid, host, onAdded, onClose }: Pr
     const sameIsland = (c.host ?? ownHost).toLowerCase() === groupHost.toLowerCase()
     if (sameIsland) {
       try {
-        onAdded(await Api.addGroupMember(ident, gid, c.uin))
+        const updated = await Api.addGroupMember(ident, gid, c.uin)
+        onAdded(updated)
+        // Stage 6 phase 2: the inviter hands the new member the room state
+        // key at the moment of adding (design doc, road 3). Best-effort - a
+        // missed hand-off is one gsknack away.
+        const held = roomKey(gid)
+        const fresh = updated.members?.find((m) => m.uin === c.uin)
+        if (held && fresh?.identity_key) {
+          void sendRoomKeyTo(ident, fresh, gid, held.v, held.k).catch(() => undefined)
+        }
         return null
       } catch (e) {
         return addMemberReasonKey(e instanceof Error ? e.message : null)

@@ -50,6 +50,11 @@ export function GroupSettingsModal({
   const [noLinks, setNoLinks] = useState(group.links_allowed === false)
   const [noFiles, setNoFiles] = useState(group.files_allowed === false)
   const [slowmode, setSlowmode] = useState(group.slowmode_sec ?? 0)
+  // Anti-spam age floor (#803): an account younger than this many hours can
+  // read but not post. Registration takes seconds, so a ban list only breeds
+  // throwaways; the floor makes each one wait it out. Owner-only, enforced
+  // by the island for authenticated senders.
+  const [ageGate, setAgeGate] = useState(group.min_account_age_hours ?? 0)
   // Voluntary catalog (stage 6): listing publishes the room's name and
   // description to the island so search can match it. Admin-or-owner, same
   // gate as editing the name itself - it is the same information.
@@ -76,6 +81,7 @@ export function GroupSettingsModal({
         if (noLinks !== (group.links_allowed === false)) body.links_allowed = !noLinks
         if (noFiles !== (group.files_allowed === false)) body.files_allowed = !noFiles
         if (slowmode !== (group.slowmode_sec ?? 0)) body.slowmode_sec = slowmode
+        if (ageGate !== (group.min_account_age_hours ?? 0)) body.min_account_age_hours = ageGate
       }
       // Nothing changed: don't spend a round trip saying so.
       const updated = Object.keys(body).length ? await Api.patchGroup(ident, gid, body) : group
@@ -256,6 +262,30 @@ export function GroupSettingsModal({
                               : s === 300
                                 ? t('group.settings.slowmode.min5')
                                 : t('group.settings.slowmode.hour')}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="px-1 py-2">
+                  <span className="block text-sm">{t('group.settings.age_gate')}</span>
+                  <span className="block text-xs text-fg-dim">{t('group.settings.age_gate.hint')}</span>
+                  <div className="mt-2 flex gap-1.5">
+                    {[0, 1, 6, 24, 72, 168, 720].map((h) => (
+                      <button
+                        key={h}
+                        type="button"
+                        onClick={() => setAgeGate(h)}
+                        className={`flex-1 h-8 rounded-md text-xs font-medium transition-colors ${
+                          ageGate === h
+                            ? 'bg-accent text-white'
+                            : 'bg-field text-fg-secondary hover:bg-line/50'
+                        }`}
+                      >
+                        {h === 0
+                          ? t('group.settings.slowmode.off')
+                          : h < 24
+                            ? t('group.settings.age_gate.h', { h: String(h) })
+                            : t('group.settings.age_gate.d', { d: String(h / 24) })}
                       </button>
                     ))}
                   </div>

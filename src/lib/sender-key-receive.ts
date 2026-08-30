@@ -16,9 +16,65 @@ import {
 } from './sender-key-store'
 
 // Debounce NACKs so a burst of un-openable gmsg (e.g. a missed SKDM) fires at
-// most one recovery request per kid per window.
-const NACK_WINDOW_MS = 10 * 60 * 1000
-const lastNack = new Map<string, number>()
+// most one recovery request per kid per window - and STOP asking about a kid
+// nobody answers for. The flat in-memory 10-minute window turned one dead kid
+// (its owner deleted their account; nobody alive can answer) into a forever
+// machine: a 24/7 install re-asked a 971-member room every ten minutes, 366
+// whole-room fan-outs in 12 hours, and a reload wiped the window and asked
+// again immediately. So the state is persisted, the window doubles per
+// unanswered ask, and after ATTEMPTS_MAX the kid is written off for a week
+// (`skdmArrived` clears the record the moment a real answer lands, so a
+// recovered kid never serves the sentence).
+const NACK_BACKOFF_MS = [10 * 60_000, 30 * 60_000, 2 * 3600_000, 6 * 3600_000, 24 * 3600_000]
+const NACK_ATTEMPTS_MAX = NACK_BACKOFF_MS.length
+const NACK_WRITEOFF_MS = 7 * 24 * 3600_000
+const NACK_STORE_KEY = 'rcq.web.sknack.v1'
+
+type NackRec = { n: number; at: number }
+let nackState: Record<string, NackRec> | null = null
+
+function loadNackState(): Record<string, NackRec> {
+  if (nackState) return nackState
+  try {
+    nackState = JSON.parse(localStorage.getItem(NACK_STORE_KEY) ?? '{}') as Record<string, NackRec>
+  } catch {
+    nackState = {}
+  }
+  return nackState
+}
+
+function saveNackState(): void {
+  try {
+    localStorage.setItem(NACK_STORE_KEY, JSON.stringify(nackState ?? {}))
+  } catch {
+    /* private mode: the in-memory copy still debounces this run */
+  }
+}
+
+/// May we ask about `kid` now? Records the attempt when yes.
+function nackAllowed(kid: string): boolean {
+  const st = loadNackState()
+  const rec = st[kid]
+  if (!rec) {
+    st[kid] = { n: 1, at: nowMs() }
+    saveNackState()
+    return true
+  }
+  const wait = rec.n >= NACK_ATTEMPTS_MAX ? NACK_WRITEOFF_MS : NACK_BACKOFF_MS[rec.n - 1]
+  if (nowMs() - rec.at < wait) return false
+  st[kid] = { n: Math.min(rec.n + 1, NACK_ATTEMPTS_MAX + 1), at: nowMs() }
+  saveNackState()
+  return true
+}
+
+/// A real SKDM for `kid` landed: the asks worked, forget the ledger.
+export function nackAnswered(kid: string): void {
+  const st = loadNackState()
+  if (st[kid]) {
+    delete st[kid]
+    saveNackState()
+  }
+}
 
 function nowMs(): number {
   return Date.now()
@@ -112,7 +168,9 @@ export function handleSkdm(
   env: { gid: number; kid: string; e: number; i: number; ck: string },
 ): boolean {
   if (!senderSigningKey) return false // unauthenticated: never trust an unbound chain
-  return acceptSkdm(ownUin, env.kid, env.gid, senderUIN, senderSigningKey, env.e, env.i, env.ck)
+  const ok = acceptSkdm(ownUin, env.kid, env.gid, senderUIN, senderSigningKey, env.e, env.i, env.ck)
+  if (ok) nackAnswered(env.kid)
+  return ok
 }
 
 export interface ReplayedGmsg extends RoutedGmsg {
@@ -171,9 +229,7 @@ export async function handleSknack(
 /// Fire one recovery request for an unknown kid to the group's capable
 /// members (we don't know whose kid it is). Debounced per kid.
 async function sendNack(identity: WebIdentity, gid: number, kid: string): Promise<void> {
-  const prev = lastNack.get(kid)
-  if (prev && nowMs() - prev < NACK_WINDOW_MS) return
-  lastNack.set(kid, nowMs())
+  if (!nackAllowed(kid)) return
   let group: RCQGroup
   try {
     group = await Api.groupInfo(identity, gid)

@@ -28,8 +28,16 @@ import { knowsKid, ownsKid } from '../../src/lib/sender-key-store'
 import type { GmsgWire } from '../../src/lib/sender-keys'
 import { statePath } from './state'
 
-/// Same window `sender-key-receive.ts` debounces its own NACKs on.
-const NACK_WINDOW_MS = 10 * 60 * 1000
+/// Same ladder `sender-key-receive.ts` climbs for its own NACKs: the window
+/// doubles per unanswered ask, and past the ladder the kid is written off
+/// for a week. A kid whose owner deleted their account has no answerer, and
+/// the flat ten-minute window turned that into a forever machine (366
+/// whole-room fan-outs in 12h from one 24/7 install, measured 30.08).
+const NACK_BACKOFF_MS = [10 * 60_000, 30 * 60_000, 2 * 3600_000, 6 * 3600_000, 24 * 3600_000]
+const NACK_ATTEMPTS_MAX = NACK_BACKOFF_MS.length
+const NACK_WRITEOFF_MS = 7 * 24 * 3600_000
+/// The longest a stamp can still matter, for the save-time sweep.
+const NACK_WINDOW_MS = NACK_WRITEOFF_MS
 /// Past this a broadcast is not worth carrying: the owner has answered every
 /// recovery request it is going to answer, and the room has moved on.
 const MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000
@@ -45,9 +53,10 @@ interface HeldRow {
 
 interface HeldFile {
   held: HeldRow[]
-  /// kid -> epoch ms of the last recovery request, so a fresh process does not
-  /// re-ask a question that is still in flight.
-  nacked: Record<string, number>
+  /// kid -> the ask ledger, so a fresh process does not re-ask a question
+  /// that is still in flight (or one that has been asked to death). Old
+  /// files carry a bare epoch-ms number; `load` upgrades it to one attempt.
+  nacked: Record<string, { n: number; at: number }>
 }
 
 function file(uin: number): string {
@@ -56,8 +65,15 @@ function file(uin: number): string {
 
 function load(uin: number): HeldFile {
   try {
-    const raw = JSON.parse(fs.readFileSync(file(uin), 'utf8')) as Partial<HeldFile>
-    return { held: Array.isArray(raw.held) ? raw.held : [], nacked: raw.nacked ?? {} }
+    const raw = JSON.parse(fs.readFileSync(file(uin), 'utf8')) as {
+      held?: HeldRow[]
+      nacked?: Record<string, number | { n: number; at: number }>
+    }
+    const nacked: HeldFile['nacked'] = {}
+    for (const [kid, v] of Object.entries(raw.nacked ?? {})) {
+      nacked[kid] = typeof v === 'number' ? { n: 1, at: v } : v
+    }
+    return { held: Array.isArray(raw.held) ? raw.held : [], nacked }
   } catch {
     return { held: [], nacked: {} }
   }
@@ -66,9 +82,9 @@ function load(uin: number): HeldFile {
 function save(uin: number, f: HeldFile): void {
   const cutoff = Date.now() - MAX_AGE_MS
   f.held = f.held.filter((h) => Date.parse(h.at) > cutoff).slice(-CAP)
-  for (const [kid, at] of Object.entries(f.nacked)) {
-    // A stamp outlives its packets by one window and no longer.
-    if (at < Date.now() - NACK_WINDOW_MS && !f.held.some((h) => h.kid === kid)) delete f.nacked[kid]
+  for (const [kid, rec] of Object.entries(f.nacked)) {
+    // A stamp outlives its packets by one write-off and no longer.
+    if (rec.at < Date.now() - NACK_WINDOW_MS && !f.held.some((h) => h.kid === kid)) delete f.nacked[kid]
   }
   try {
     fs.writeFileSync(file(uin), JSON.stringify(f), { mode: 0o600 })
@@ -133,12 +149,19 @@ export async function replayStoredGroupPackets(identity: WebIdentity): Promise<R
   const keep: HeldRow[] = []
   for (const h of f.held) {
     if (!knowsKid(identity.uin, h.kid)) {
-      // Still no chain. Asking again is the only move, and only once a window.
-      if (Date.now() - (f.nacked[h.kid] ?? 0) < NACK_WINDOW_MS) {
+      // Still no chain. Asking again is the only move - up the ladder, and
+      // past its top only once a week.
+      const rec = f.nacked[h.kid]
+      const wait = rec == null
+        ? 0
+        : rec.n >= NACK_ATTEMPTS_MAX
+          ? NACK_WRITEOFF_MS
+          : NACK_BACKOFF_MS[rec.n - 1]
+      if (rec != null && Date.now() - rec.at < wait) {
         keep.push(h)
         continue
       }
-      f.nacked[h.kid] = Date.now()
+      f.nacked[h.kid] = { n: Math.min((rec?.n ?? 0) + 1, NACK_ATTEMPTS_MAX + 1), at: Date.now() }
       await handleGmsg(identity, h.payload, h.gid).catch(() => null)
       keep.push(h)
       continue

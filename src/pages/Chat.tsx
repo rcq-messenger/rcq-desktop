@@ -1535,6 +1535,12 @@ export function Chat() {
       // the server's own clock (retry_after), so the button agrees with the
       // island about when the next try can work.
       let errText = res.error
+      // The anti-spam age floor answers 403 with how long the account still
+      // has to wait; say that instead of showing raw JSON.
+      if (errText && /"code"\s*:\s*"account_too_young"/.test(errText)) {
+        const m = /"hours_left"\s*:\s*(\d+)/.exec(errText)
+        errText = t('chat.age_gate.wait', { h: m ? m[1] : '?' })
+      }
       if (errText && slowmodeSec > 0 && /"code"\s*:\s*"rate_limited"/.test(errText)) {
         const m = /"retry_after"\s*:\s*(\d+)/.exec(errText)
         const wait = m ? Number(m[1]) : slowmodeSec

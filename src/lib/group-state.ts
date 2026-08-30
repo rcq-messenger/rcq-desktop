@@ -300,19 +300,24 @@ export async function askForRoomKey(identity: WebIdentity, g: RCQGroup): Promise
     g.members.find((m) => m.uin === g.owner_uin),
     ...g.members.filter((m) => m.role === 'admin' && m.uin !== g.owner_uin).slice(0, 2),
   ].filter((m): m is GroupMember => !!m?.identity_key && m.uin !== identity.uin)
-  for (const h of holders) {
-    try {
-      const env: Envelope = { kind: 'gsknack', gid: g.id }
-      const wire = encryptV1(env, identity, peerBundleFrom({
-        uin: h.uin,
-        identity_key: h.identity_key,
-        signing_key: h.signing_key ?? '',
-      }))
-      void Api.sendSealed(identity, h.uin, wire, 'sknack').catch(() => undefined)
-    } catch {
-      /* the next six-hour window tries again */
-    }
-  }
+  // Awaited, not fire-and-forget: the CLI runs this at the tail of a
+  // command and exits - a floating fetch died before it left the machine,
+  // which read as "the ask never fired" in the wedge re-run.
+  await Promise.allSettled(
+    holders.map((h) => {
+      try {
+        const env: Envelope = { kind: 'gsknack', gid: g.id }
+        const wire = encryptV1(env, identity, peerBundleFrom({
+          uin: h.uin,
+          identity_key: h.identity_key,
+          signing_key: h.signing_key ?? '',
+        }))
+        return Api.sendSealed(identity, h.uin, wire, 'sknack')
+      } catch {
+        return Promise.resolve()
+      }
+    }),
+  )
 }
 
 // ── rotation ────────────────────────────────────────────────────────────

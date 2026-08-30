@@ -197,30 +197,43 @@ function route(
   if ((envelope as { kind?: string }).kind === 'gskey') {
     const e = envelope as unknown as { gid?: number; ver?: number; key?: string }
     if (identity && typeof e.gid === 'number' && typeof e.ver === 'number' && typeof e.key === 'string') {
-      // Membership gate: only a fellow member's key is worth holding, and the
-      // roster snapshot is the client's own view of who that is.
-      const snap = snapshotFor(identity.uin)
-      const g = snap?.groups.find((x) => x.id === e.gid)
-      const fromMember = !!g?.members?.some((m) => m.uin === senderUIN)
-      if (fromMember || senderUIN === myUin) {
-        if (putRoomKey(e.gid, e.ver, e.key, { replaceEqual: true })) {
-          // A fresh key makes the sealed blob readable: nudge whoever draws
-          // the group list to re-run the overlay.
-          window.dispatchEvent(new Event('rcq-room-keys-changed'))
+      const gid = e.gid, ver = e.ver, keyB64 = e.key
+      // Membership gate. ⚠ The home snapshot stores groups WITHOUT members
+      // (the list loads member-less on purpose), so testing it alone
+      // rejected every legitimate key and answered no ask - the wedge
+      // re-run caught the receiver, not the sender. One roster read on
+      // demand; the frames are rare and roster-gated on both ends.
+      void (async () => {
+        const snap = snapshotFor(identity.uin)
+        let g = snap?.groups.find((x) => x.id === gid)
+        if (!g?.members?.length) {
+          g = await Api.groupInfo(identity, gid).catch(() => undefined)
         }
-      }
+        const fromMember = !!g?.members?.some((m) => m.uin === senderUIN)
+        if (fromMember || senderUIN === myUin) {
+          if (putRoomKey(gid, ver, keyB64, { replaceEqual: true })) {
+            window.dispatchEvent(new Event('rcq-room-keys-changed'))
+          }
+        }
+      })()
     }
     return
   }
   if ((envelope as { kind?: string }).kind === 'gsknack') {
     const e = envelope as unknown as { gid?: number }
     if (identity && typeof e.gid === 'number') {
-      const snap = snapshotFor(identity.uin)
-      const g = snap?.groups.find((x) => x.id === e.gid)
-      const asker = g?.members?.find((m) => m.uin === senderUIN)
-      if (asker?.identity_key) {
-        void answerKeyAsk(identity, asker, e.gid)
-      }
+      const gid = e.gid
+      void (async () => {
+        const snap = snapshotFor(identity.uin)
+        let g = snap?.groups.find((x) => x.id === gid)
+        if (!g?.members?.length) {
+          g = await Api.groupInfo(identity, gid).catch(() => undefined)
+        }
+        const asker = g?.members?.find((m) => m.uin === senderUIN)
+        if (asker?.identity_key) {
+          void answerKeyAsk(identity, asker, gid)
+        }
+      })()
     }
     return
   }

@@ -56,16 +56,143 @@ function isUsableIdentityKey(b64: string): boolean {
 }
 
 
-/// Hand the frame back to the browser every couple dozen encryptions.
-/// encryptV1 is an X25519 + ratchet step per member, all on the main
-/// thread: a send into a 2.1K room after a rotation (SKDMs for everyone),
-/// or one with a long legacy tail, used to freeze the UI for seconds
-/// (founder, 29.08). Yielding between batches keeps the send exactly as
-/// long but lets frames paint; 24 keeps the overhead of the timer hop
-/// under a percent of the crypto itself.
-const YIELD_EVERY = 24
+/// The fan-out arithmetic, two roads.
+///
+/// PREFERRED: a small Worker pool (below). One `encryptV1` is an X25519 +
+/// ChaCha + Ed25519 step in JS; a room with a ~950-member legacy tail on a
+/// slow Windows desktop is 5-10ms EACH, and even a politely yielding
+/// main-thread loop reads as "приложение висит, часы" for many seconds
+/// (31.08). Workers take it off the UI thread entirely and onto several
+/// cores at once - the roster is sharded across the pool.
+///
+/// FALLBACK: the inline loop, yielding on a CLOCK. The item-count yield the
+/// 29.08 fix used (every 24) was measured on a fast mac; on the reporter's
+/// box 24 encryptions were a quarter second of held frames, which is where
+/// the busy cursor lives. 8ms keeps every chunk under a frame. The fallback
+/// serves three callers: Node (the CLI has no Worker and no frames to
+/// hold), a WebView whose Worker construction failed, and small sends where
+/// the worker hop costs more than it saves.
+const INLINE_CHUNK_MS = 8
+/// Below this many targets the pool is not worth waking: the postMessage
+/// round trip plus structured-clone beats the crypto itself.
+const OFFMAIN_MIN_TARGETS = 48
 function uiYield(): Promise<void> {
   return new Promise((r) => setTimeout(r, 0))
+}
+
+interface SealTarget {
+  uin: number
+  identityKey: string
+  signingKey: string
+}
+
+interface SealBatch {
+  payloads: GroupPayload[]
+  skipped: SkippedMember[]
+}
+
+/// undefined = never built; null = tried and unavailable (Node, or the
+/// WebView refused) - never retried this run except after a worker error,
+/// which burns the pool back to undefined so the next send rebuilds it.
+let sealPool: Worker[] | null | undefined
+let sealReqSeq = 0
+
+function getSealPool(): Worker[] | null {
+  if (sealPool !== undefined) return sealPool
+  try {
+    if (typeof Worker === 'undefined') {
+      sealPool = null
+      return null
+    }
+    const cores = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 4
+    const n = Math.max(1, Math.min(4, cores - 1))
+    sealPool = Array.from(
+      { length: n },
+      () => new Worker(new URL('./group-seal.worker.ts', import.meta.url), { type: 'module' }),
+    )
+  } catch {
+    sealPool = null
+  }
+  return sealPool
+}
+
+function sealOnWorker(w: Worker, envelope: Envelope, sender: WebIdentity, targets: SealTarget[]): Promise<SealBatch> {
+  const reqId = ++sealReqSeq
+  return new Promise<SealBatch>((resolve, reject) => {
+    const onMsg = (e: MessageEvent) => {
+      if (e.data?.reqId !== reqId) return // another send's answer on the shared pool
+      cleanup()
+      resolve({ payloads: e.data.payloads, skipped: e.data.skipped })
+    }
+    const onErr = (e: ErrorEvent) => {
+      cleanup()
+      reject(e.error ?? new Error(e.message || 'seal worker failed'))
+    }
+    const cleanup = () => {
+      w.removeEventListener('message', onMsg)
+      w.removeEventListener('error', onErr)
+    }
+    w.addEventListener('message', onMsg)
+    w.addEventListener('error', onErr)
+    w.postMessage({ reqId, envelope, sender, targets })
+  })
+}
+
+/// Seal `envelope` to every target: the pool when it exists and the job is
+/// big enough, the clock-yielding inline loop otherwise. Never throws for a
+/// single bad member - those land in `skipped`, exactly as before.
+async function sealToTargets(envelope: Envelope, sender: WebIdentity, targets: SealTarget[]): Promise<SealBatch> {
+  const pool = getSealPool()
+  if (pool && targets.length >= OFFMAIN_MIN_TARGETS) {
+    const shard = Math.ceil(targets.length / pool.length)
+    try {
+      const parts = await Promise.all(
+        pool.map((w, i) => {
+          const slice = targets.slice(i * shard, (i + 1) * shard)
+          if (slice.length === 0) return Promise.resolve<SealBatch>({ payloads: [], skipped: [] })
+          return sealOnWorker(w, envelope, sender, slice)
+        }),
+      )
+      return {
+        payloads: parts.flatMap((p) => p.payloads),
+        skipped: parts.flatMap((p) => p.skipped),
+      }
+    } catch (e) {
+      // A dead worker must not lose a message: burn the pool (rebuilt on
+      // the next send) and do this one on the main thread.
+      console.warn('[group-send] seal pool failed, sealing inline:', e)
+      for (const w of pool) {
+        try {
+          w.terminate()
+        } catch {
+          /* already gone */
+        }
+      }
+      sealPool = undefined
+    }
+  }
+  const payloads: GroupPayload[] = []
+  const skipped: SkippedMember[] = []
+  let chunkStart = Date.now()
+  for (const m of targets) {
+    if (Date.now() - chunkStart > INLINE_CHUNK_MS) {
+      await uiYield()
+      chunkStart = Date.now()
+    }
+    try {
+      payloads.push({
+        to_uin: m.uin,
+        payload: encryptV1(envelope, sender, {
+          uin: m.uin,
+          identityKey: m.identityKey,
+          signingKey: m.signingKey,
+        }),
+      })
+    } catch (e) {
+      skipped.push({ uin: m.uin, reason: e instanceof Error ? e.message : 'encrypt_failed' })
+    }
+  }
+  return { payloads, skipped }
 }
 
 /// Build the per-member ciphertext list for a group send. Skips the
@@ -77,32 +204,19 @@ export async function encryptGroupEnvelope(
   sender: WebIdentity,
   members: GroupMember[],
 ): Promise<GroupEncryptResult> {
-  const payloads: GroupPayload[] = []
   const skipped: SkippedMember[] = []
-  let done = 0
+  const targets: SealTarget[] = []
   for (const m of members) {
     if (m.uin === sender.uin) continue
-    if (++done % YIELD_EVERY === 0) await uiYield()
     if (!isUsableIdentityKey(m.identity_key)) {
       skipped.push({ uin: m.uin, reason: 'invalid_identity_key' })
       continue
     }
-    try {
-      const payload = encryptV1(envelope, sender, {
-        uin: m.uin,
-        identityKey: m.identity_key,
-        signingKey: m.signing_key,
-      })
-      payloads.push({ to_uin: m.uin, payload })
-    } catch (e) {
-      // Defensive: low-order point or any other noble rejection.
-      // Skip this member, keep delivering to the rest.
-      skipped.push({
-        uin: m.uin,
-        reason: e instanceof Error ? e.message : 'encrypt_failed',
-      })
-    }
+    targets.push({ uin: m.uin, identityKey: m.identity_key, signingKey: m.signing_key })
   }
+  const sealed = await sealToTargets(envelope, sender, targets)
+  const payloads = sealed.payloads
+  skipped.push(...sealed.skipped)
   if (skipped.length > 0) {
     // Surface in the console so a recurring bad member is diagnosable
     // (which UIN, why) without blocking the send.
@@ -167,23 +281,13 @@ export async function buildGroupDualSend(
   }
 
   // Legacy fan-out (unchanged path) for everyone without the capability.
-  const legacyPayloads: GroupPayload[] = []
-  let doneLegacy = 0
-  for (const m of legacy) {
-    if (++doneLegacy % YIELD_EVERY === 0) await uiYield()
-    try {
-      legacyPayloads.push({
-        to_uin: m.uin,
-        payload: encryptV1(envelope, sender, {
-          uin: m.uin,
-          identityKey: m.identity_key,
-          signingKey: m.signing_key,
-        }),
-      })
-    } catch (e) {
-      skipped.push({ uin: m.uin, reason: e instanceof Error ? e.message : 'encrypt_failed' })
-    }
-  }
+  const legacySealed = await sealToTargets(
+    envelope,
+    sender,
+    legacy.map((m) => ({ uin: m.uin, identityKey: m.identity_key, signingKey: m.signing_key })),
+  )
+  const legacyPayloads = legacySealed.payloads
+  skipped.push(...legacySealed.skipped)
 
   if (capable.length === 0) {
     return { broadcastPayload: null, skdmPayloads: [], legacyPayloads, skipped, commit: () => {} }
@@ -196,26 +300,15 @@ export async function buildGroupDualSend(
   const broadcastPayload = bytesToB64(new TextEncoder().encode(JSON.stringify(gmsg)))
 
   // SKDM to capable members who don't hold (kid, epoch) yet.
-  const skdmPayloads: GroupPayload[] = []
-  const distributedNow: number[] = []
-  let doneSkdm = 0
-  for (const m of capable) {
-    if (!step.needDistribution.includes(m.uin)) continue
-    if (++doneSkdm % YIELD_EVERY === 0) await uiYield()
-    try {
-      skdmPayloads.push({
-        to_uin: m.uin,
-        payload: encryptV1(
-          { kind: 'skdm', gid, kid: step.kid, e: step.e, i: step.i, ck: step.ckAtI },
-          sender,
-          { uin: m.uin, identityKey: m.identity_key, signingKey: m.signing_key },
-        ),
-      })
-      distributedNow.push(m.uin)
-    } catch (e) {
-      skipped.push({ uin: m.uin, reason: e instanceof Error ? e.message : 'skdm_failed' })
-    }
-  }
+  const needSkdm = capable.filter((m) => step.needDistribution.includes(m.uin))
+  const skdmSealed = await sealToTargets(
+    { kind: 'skdm', gid, kid: step.kid, e: step.e, i: step.i, ck: step.ckAtI },
+    sender,
+    needSkdm.map((m) => ({ uin: m.uin, identityKey: m.identity_key, signingKey: m.signing_key })),
+  )
+  const skdmPayloads = skdmSealed.payloads
+  const distributedNow = skdmSealed.payloads.map((p) => p.to_uin)
+  for (const sk of skdmSealed.skipped) skipped.push({ uin: sk.uin, reason: 'skdm_failed' })
 
   return {
     broadcastPayload,

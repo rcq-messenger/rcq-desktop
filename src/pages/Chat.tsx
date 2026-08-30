@@ -81,6 +81,7 @@ import { ShareGroupSheet } from '../components/ShareGroupSheet'
 import {
   clearMention,
   markMentionSeen,
+  matchMentionAt,
   mentionSeenAt,
   mentionsMe,
   type MentionRoster,
@@ -5800,7 +5801,29 @@ function PinnedRichText({ text, group, linksAllowed = true }: { text: string; gr
   let last = 0
   let key = 0
   let m: RegExpExecArray | null
-  const pushText = (s: string) => { if (s) nodes.push(<span key={key++}>{s}</span>) }
+  // @nick mentions inside the plain stretches. The pin knew `#uin` from
+  // birth but @-names rendered as dead text - and a rules pin is exactly
+  // where people GET mentioned, in exactly the rooms that switch links off
+  // (founder, 31.08). Same longest-roster-match the bubbles use; a name the
+  // roster cannot resolve stays plain, same as in a bubble.
+  const roster: MentionRoster[] = group.members.map((x) => ({ uin: x.uin, nickname: x.nickname || '' }))
+  const pushText = (s: string) => {
+    if (!s) return
+    let from = 0
+    for (let i = 0; i < s.length; i++) {
+      if (s[i] !== '@') continue
+      const hit = matchMentionAt(s, i, roster)
+      if (!hit) continue
+      if (i > from) nodes.push(<span key={key++}>{s.slice(from, i)}</span>)
+      const label = s.slice(i, i + 1 + hit.length)
+      nodes.push(
+        <Link key={key++} to={`/profile/${hit.uin}`} className="text-accent hover:text-accent-dim transition-colors">{label}</Link>,
+      )
+      i += hit.length
+      from = i + 1
+    }
+    if (from < s.length) nodes.push(<span key={key++}>{s.slice(from)}</span>)
+  }
   while ((m = re.exec(text)) !== null) {
     pushText(text.slice(last, m.index))
     last = m.index + m[0].length

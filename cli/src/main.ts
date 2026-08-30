@@ -650,12 +650,29 @@ async function cmdGroups(): Promise<void> {
   // of; everything else renders exactly as the island sent it. A blob we
   // cannot open (no key, or a wedged one) earns one throttled ask toward the
   // likeliest holders - the reply lands on the next drain.
-  const groups = await applySealedStateAll(listGroups(id.uin))
-  for (const g of groups) {
-    if (g.state_blob && g.id > 0) {
-      void rosterFor(id, g)
-        .then((full) => askForRoomKey(id, full))
-        .catch(() => undefined)
+  //
+  // ⚠ The blob has to come off the ISLAND, not the local snapshot: the
+  // snapshot predates the field, so the first cut of this hook tested
+  // `undefined` for every room and the ask never fired (caught in the wedge
+  // re-run, 30.08). One member-less /groups read is the cheap refresh.
+  let groups = listGroups(id.uin)
+  try {
+    const fresh = await Api.groups(id, false)
+    const byId = new Map(fresh.map((g) => [g.id, g]))
+    groups = groups.map((g) => {
+      const f = byId.get(g.id)
+      return f ? { ...g, state_blob: f.state_blob, state_ver: f.state_ver, in_catalog: f.in_catalog } : g
+    })
+  } catch {
+    /* offline: render the snapshot, ask nothing */
+  }
+  groups = await applySealedStateAll(groups)
+  const askable = groups.filter((g) => g.state_blob && g.id > 0)
+  for (const g of askable) {
+    try {
+      await askForRoomKey(id, await rosterFor(id, g))
+    } catch {
+      /* throttled inside; a room that cannot be asked renders its columns */
     }
   }
   if (jsonMode) {

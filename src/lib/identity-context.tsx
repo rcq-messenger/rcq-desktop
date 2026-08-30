@@ -129,12 +129,31 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
 
   // One in-flight mint at a time. A page that wakes up with an expired token
   // fires a dozen requests at once, and each 401 would otherwise start its own.
+  //
+  // ⚠ And a BACKOFF between failed ones. Deduping in-flight mints does not
+  // slow anything down once each mint FAILS instantly: every fresh 401
+  // started the next attempt the moment the last one settled, and a tab shut
+  // out by the island's own /auth/refresh budget (60/hour) hammered it 43
+  // times in ten minutes - the ws-storm shape, self-inflicted. A failure now
+  // arms a doubling cool-down (5s up to 5min) during which mintOnce answers
+  // null without touching the network; any success clears it.
   const mintingRef = useRef<Promise<string | null> | null>(null)
+  const mintBackoffRef = useRef({ until: 0, delayMs: 5_000 })
   const mintOnce = (target: WebIdentity): Promise<string | null> => {
     if (mintingRef.current) return mintingRef.current
+    if (Date.now() < mintBackoffRef.current.until) return Promise.resolve(null)
     const p = mintSessionToken(target)
       .then((mint) => {
-        if (mint.token) adoptToken(target, mint.token)
+        if (mint.token) {
+          adoptToken(target, mint.token)
+          mintBackoffRef.current = { until: 0, delayMs: 5_000 }
+        } else {
+          const b = mintBackoffRef.current
+          mintBackoffRef.current = {
+            until: Date.now() + b.delayMs,
+            delayMs: Math.min(b.delayMs * 2, 300_000),
+          }
+        }
         return mint.token
       })
       .finally(() => {

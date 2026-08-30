@@ -57,9 +57,20 @@ export function roomKey(gid: number): { k: string; v: number } | null {
 
 /// Store a key. Monotonic: an older version never overwrites a newer one,
 /// so a slow gskey crossing paths with a rotation cannot roll a room back.
-export function putRoomKey(gid: number, ver: number, keyB64: string): boolean {
+export function putRoomKey(
+  gid: number,
+  ver: number,
+  keyB64: string,
+  opts: { replaceEqual?: boolean } = {},
+): boolean {
   const cur = keys.get(gid)
-  if (cur && cur.v >= ver) return false
+  // Monotonic - with one live-caught exception. Two mints can carry the SAME
+  // version (the owner lost an unmirrored key and minted again; both fanned
+  // as v1), and a strict >= wedged every receiver on whichever copy arrived
+  // first, forever. A gskey passes the roster gate before it gets here, so
+  // for equal versions the LATEST member-sent key may replace the stored one
+  // when the caller says so; an older version still never rolls anyone back.
+  if (cur && (cur.v > ver || (cur.v === ver && (!opts.replaceEqual || cur.k === keyB64)))) return false
   keys.set(gid, { k: keyB64, v: ver })
   persist()
   return true
@@ -83,7 +94,17 @@ async function pipeThrough(bytes: Uint8Array, stream: CompressionStream | Decomp
   return new Uint8Array(await new Response(src).arrayBuffer())
 }
 
-export async function sealRoomState(state: SealedRoomState, keyB64: string): Promise<string> {
+/// Blob layout: [0x02][keyVer u32 BE][nonce 12][ciphertext]. The key VERSION
+/// rides in the open on purpose - it is the one fact a client with no key
+/// needs: which key to ask for, and, for an owner who lost theirs, what the
+/// replacement's version must EXCEED. Without it a re-mint after a loss came
+/// out as v1 again, and monotonic receivers wedged on whichever v1 landed
+/// first (caught live, web against CLI, 30.08). The island learns a small
+/// integer that only ever counts rotations; it already sees state_ver beside
+/// it counting writes.
+const BLOB_V2 = 0x02
+
+export async function sealRoomState(state: SealedRoomState, keyB64: string, keyVer: number): Promise<string> {
   const plain = new TextEncoder().encode(JSON.stringify(state))
   const deflated = await pipeThrough(plain, new CompressionStream('deflate-raw'))
   const key = await crypto.subtle.importKey('raw', b64ToBytes(keyB64) as BufferSource, 'AES-GCM', false, ['encrypt'])
@@ -91,22 +112,39 @@ export async function sealRoomState(state: SealedRoomState, keyB64: string): Pro
   const ct = new Uint8Array(
     await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce as BufferSource }, key, deflated as BufferSource),
   )
-  const out = new Uint8Array(nonce.length + ct.length)
-  out.set(nonce)
-  out.set(ct, nonce.length)
+  const out = new Uint8Array(5 + nonce.length + ct.length)
+  out[0] = BLOB_V2
+  new DataView(out.buffer).setUint32(1, keyVer >>> 0)
+  out.set(nonce, 5)
+  out.set(ct, 5 + nonce.length)
   return bytesToB64(out)
+}
+
+/// The key version a blob was sealed under, readable WITHOUT the key.
+/// Null for the pre-versioned format (a handful of test blobs).
+export function sealedKeyVer(blobB64: string): number | null {
+  try {
+    const b = b64ToBytes(blobB64)
+    if (b.length < 18 || b[0] !== BLOB_V2) return null
+    return new DataView(b.buffer, b.byteOffset).getUint32(1)
+  } catch {
+    return null
+  }
 }
 
 export async function openRoomState(blobB64: string, keyB64: string): Promise<SealedRoomState | null> {
   try {
     const blob = b64ToBytes(blobB64)
     if (blob.length < 13) return null
+    // v2 carries [tag][keyVer u32] before the nonce; the first format put the
+    // nonce at offset 0.
+    const off = blob[0] === BLOB_V2 && blob.length >= 18 ? 5 : 0
     const key = await crypto.subtle.importKey('raw', b64ToBytes(keyB64) as BufferSource, 'AES-GCM', false, ['decrypt'])
     const deflated = new Uint8Array(
       await crypto.subtle.decrypt(
-        { name: 'AES-GCM', iv: blob.slice(0, 12) as BufferSource },
+        { name: 'AES-GCM', iv: blob.slice(off, off + 12) as BufferSource },
         key,
-        blob.slice(12) as BufferSource,
+        blob.slice(off + 12) as BufferSource,
       ),
     )
     const plain = await pipeThrough(deflated, new DecompressionStream('deflate-raw'))
@@ -181,22 +219,37 @@ export async function ensureRoomKey(
   identity: WebIdentity,
   gid: number,
   members: GroupMember[],
+  existingBlobB64?: string | null,
 ): Promise<{ k: string; v: number }> {
   const existing = roomKey(gid)
   if (existing) return existing
+  // Before minting, look in the vault: "no key locally" and "no key" are
+  // different claims, and the second mint of the same version is exactly the
+  // wedge the live web-vs-CLI test caught.
+  try {
+    await syncRoomKeysWithVault(identity)
+  } catch {
+    /* offline - the mint below still does the right thing via the blob ver */
+  }
+  const recovered = roomKey(gid)
+  if (recovered) return recovered
+  // A blob already exists: its open prefix says which key generation sealed
+  // it, and the replacement must be a ROTATION above it, or every holder of
+  // the old key ignores the new one as stale.
+  const ver = existingBlobB64 ? (sealedKeyVer(existingBlobB64) ?? 0) + 1 : 1
   const fresh = bytesToB64(crypto.getRandomValues(new Uint8Array(32)))
-  putRoomKey(gid, 1, fresh)
+  putRoomKey(gid, ver, fresh)
   let n = 0
   for (const m of members) {
     if (m.uin === identity.uin || !m.identity_key) continue
     try {
-      await sendKeyTo(identity, m, gid, 1, fresh)
+      await sendKeyTo(identity, m, gid, ver, fresh)
     } catch {
       /* they will gsknack */
     }
     if (++n % YIELD_EVERY === 0) await uiYield()
   }
-  return { k: fresh, v: 1 }
+  return { k: fresh, v: ver }
 }
 
 /// Answer a member who asked for the key (gsknack). The caller has already
@@ -233,8 +286,15 @@ function shouldAsk(uin: number, gid: number): boolean {
 /// Seal a `gsknack` to the members most likely to hold the key: the owner
 /// first (they minted it), then up to two admins. Fire-and-forget - any one
 /// answer is enough, and the reply lands as an ordinary gskey.
-export function askForRoomKey(identity: WebIdentity, g: RCQGroup): void {
-  if (!g.state_blob || roomKey(g.id) || !g.members?.length) return
+///
+/// Asks not only when we hold NO key, but when the key we hold does not
+/// open the blob - the live web-vs-CLI wedge was exactly a stored key of
+/// the right version and the wrong bytes, and without this second trigger
+/// nothing would ever have repaired it.
+export async function askForRoomKey(identity: WebIdentity, g: RCQGroup): Promise<void> {
+  if (!g.state_blob || !g.members?.length) return
+  const held = roomKey(g.id)
+  if (held && (await openRoomState(g.state_blob, held.k)) !== null) return
   if (!shouldAsk(identity.uin, g.id)) return
   const holders = [
     g.members.find((m) => m.uin === g.owner_uin),
@@ -306,7 +366,7 @@ export async function writeSealedState(identity: WebIdentity, g: RCQGroup): Prom
     pinned_at: g.pinned_at ?? undefined,
     pinned_by: g.pinned_by ?? undefined,
   }
-  const blob = await sealRoomState(state, k.k)
+  const blob = await sealRoomState(state, k.k, k.v)
   const attempt = (ver: number) => Api.patchGroupState(identity, g.id, blob, ver)
   try {
     await attempt((g.state_ver ?? 0) + 1)

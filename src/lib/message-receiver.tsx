@@ -203,7 +203,7 @@ function route(
       const g = snap?.groups.find((x) => x.id === e.gid)
       const fromMember = !!g?.members?.some((m) => m.uin === senderUIN)
       if (fromMember || senderUIN === myUin) {
-        if (putRoomKey(e.gid, e.ver, e.key)) {
+        if (putRoomKey(e.gid, e.ver, e.key, { replaceEqual: true })) {
           // A fresh key makes the sealed blob readable: nudge whoever draws
           // the group list to re-run the overlay.
           window.dispatchEvent(new Event('rcq-room-keys-changed'))

@@ -63,6 +63,7 @@ import { runInteractive } from './interactive'
 import { logRowData, parseThread, readLog, type Thread } from './log'
 import { cancelRequest, describeRequestFrame, loadRequests, respondTo, sendRequest } from './requests'
 import { sendText, sendReadMarker } from './send'
+import { applySealedStateAll, askForRoomKey, loadRoomKeys } from '../../src/lib/group-state'
 import { isYes, strangerCheck } from './stranger'
 import { RcqSocket } from './socket'
 import {
@@ -200,6 +201,10 @@ function requireIdentity(): WebIdentity {
   // ⚠ Before any store is read: this scopes every local key to the account and
   // warms the names off the last snapshot (see directory.ts).
   initDirectory(id.uin)
+  // Room state keys (stage 6 phase 2): same per-account store the web uses,
+  // over the CLI's storage shim. Hydrated here so every command that shows a
+  // room name can overlay the sealed one.
+  loadRoomKeys(id.uin)
   return id
 }
 
@@ -641,7 +646,18 @@ async function cmdRemove(pos: string[], flags: Set<string>): Promise<void> {
 async function cmdGroups(): Promise<void> {
   const id = await withToken(requireIdentity())
   await primeDirectory(id)
-  const groups = listGroups(id.uin)
+  // Sealed identities overlay the served columns for rooms we hold the key
+  // of; everything else renders exactly as the island sent it. A blob we
+  // cannot open (no key, or a wedged one) earns one throttled ask toward the
+  // likeliest holders - the reply lands on the next drain.
+  const groups = await applySealedStateAll(listGroups(id.uin))
+  for (const g of groups) {
+    if (g.state_blob && g.id > 0) {
+      void rosterFor(id, g)
+        .then((full) => askForRoomKey(id, full))
+        .catch(() => undefined)
+    }
+  }
   if (jsonMode) {
     emitJson(
       groups.map((g) => ({

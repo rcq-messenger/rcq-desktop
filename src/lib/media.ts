@@ -486,23 +486,49 @@ export function setAnimatedAvatarsEnabled(on: boolean): void {
 /// Frozen first frames for the animations-off mode, keyed like _urlCache.
 const _stillCache = new Map<string, Promise<string | null>>()
 
+/// The decrypted Blob behind each cached object URL, keyed like _urlCache.
+/// #828: `freezeFirstFrame` used to re-read the blob via `fetch(blobUrl)`,
+/// and the page's own CSP rejects that (`connect-src *` does not match the
+/// blob: scheme — schemes must be listed explicitly), so the freeze ALWAYS
+/// failed into its "give back the live URL" fallback and the #750 switch
+/// froze nothing. The blob shares its backing store with the object URL, so
+/// keeping the reference costs no extra memory.
+const _blobCache = new Map<string, Blob>()
+
 function isAnimatableType(mime: string): boolean {
   return mime === 'image/gif' || mime === 'image/webp' || mime === 'image/apng' || mime === 'image/png'
 }
 
-/// The still first frame of an animated blob URL: decode, draw once, PNG.
-async function freezeFirstFrame(url: string): Promise<string | null> {
+/// The still first frame of an animated blob: decode, draw once, PNG.
+/// Deliberately avoids fetch(blobUrl) (CSP, above) AND HTMLImageElement
+/// decode/canvas.toBlob — a hidden window throttles both indefinitely, and a
+/// promise stuck in _stillCache would leave the avatar blank forever.
+/// createImageBitmap + OffscreenCanvas run off the render pipeline.
+async function freezeFirstFrame(url: string, cacheKey: string): Promise<string | null> {
   try {
-    const resp = await fetch(url)
-    const blob = await resp.blob()
+    let blob = _blobCache.get(cacheKey) ?? null
+    if (!blob) {
+      // Older cache entries predate _blobCache; fetch works where the CSP
+      // lists blob: (self-hosts), and failing back to the live URL is the
+      // pre-#828 behavior, not a regression.
+      blob = await fetch(url).then((r) => r.blob()).catch(() => null)
+    }
+    if (!blob) return url
     if (!isAnimatableType(blob.type)) return url
     const bmp = await createImageBitmap(blob)
-    const canvas = document.createElement('canvas')
-    canvas.width = bmp.width
-    canvas.height = bmp.height
-    canvas.getContext('2d')?.drawImage(bmp, 0, 0)
+    let still: Blob | null = null
+    if (typeof OffscreenCanvas !== 'undefined') {
+      const canvas = new OffscreenCanvas(bmp.width, bmp.height)
+      canvas.getContext('2d')?.drawImage(bmp, 0, 0)
+      still = await canvas.convertToBlob({ type: 'image/png' }).catch(() => null)
+    } else {
+      const canvas = document.createElement('canvas')
+      canvas.width = bmp.width
+      canvas.height = bmp.height
+      canvas.getContext('2d')?.drawImage(bmp, 0, 0)
+      still = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/png'))
+    }
     bmp.close()
-    const still = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/png'))
     if (!still) return url
     return URL.createObjectURL(still)
   } catch {
@@ -523,7 +549,7 @@ export function loadEncryptedAvatar(
   const hit = _stillCache.get(k)
   if (hit) return hit
   const p = loadEncryptedImage(apiBase, mediaId, keyB64).then((url) =>
-    url ? freezeFirstFrame(url) : null,
+    url ? freezeFirstFrame(url, k) : null,
   )
   _stillCache.set(k, p)
   void p.then((url) => { if (url === null) _stillCache.delete(k) })
@@ -541,11 +567,14 @@ export function loadEncryptedImage(
   const p = (async () => {
     const cached = await readCachedImage(k).catch(() => null)
     if (cached) {
-      return URL.createObjectURL(new Blob([cached], { type: sniffImageType(new Uint8Array(cached)) }))
+      const blob = new Blob([cached], { type: sniffImageType(new Uint8Array(cached)) })
+      _blobCache.set(k, blob)
+      return URL.createObjectURL(blob)
     }
     const url = await fetchAndDecryptBuffer(apiBase, mediaId, keyB64)
     if (!url) return null
     void writeCachedImage(k, url.buf).catch(() => {})
+    _blobCache.set(k, new Blob([url.buf], { type: sniffImageType(new Uint8Array(url.buf)) }))
     return url.objectUrl
   })()
   _urlCache.set(k, p)

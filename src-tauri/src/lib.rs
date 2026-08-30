@@ -339,6 +339,16 @@ fn open_external(app: tauri::AppHandle, url: String) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // WebKitGTK's DMA-BUF renderer aborts its web process on a class of
+    // Linux driver stacks (EGL_BAD_PARAMETER at display init: report #812,
+    // Arch/CachyOS) and the window opens empty. The legacy path renders the
+    // same pixels everywhere, so prefer it unless the user chose otherwise:
+    // an already-set value (including "0") is respected.
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    }
+
     let mut builder = tauri::Builder::default();
 
     // Desktop-only plugins: single-instance focus, auto-updater, process

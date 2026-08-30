@@ -4294,10 +4294,10 @@ function reactionChips(targetId: string, align: 'start' | 'end', myUin: number, 
           <img
             src={emoticonAssetURL(c.asset)}
             alt={c.asset}
-            className="h-4 w-auto max-w-6 select-none object-contain"
+            className="h-6 w-auto max-w-9 select-none object-contain"
             draggable={false}
           />
-          {c.count > 1 && <span className="text-[0.625rem] text-fg-secondary">{c.count}</span>}
+          {c.count > 1 && <span className="text-xs text-fg-secondary">{c.count}</span>}
         </button>
       ))}
     </div>

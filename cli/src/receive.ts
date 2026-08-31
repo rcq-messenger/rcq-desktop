@@ -15,6 +15,7 @@
 
 import fs from 'node:fs'
 import { answerKeyAsk, putRoomKey } from '../../src/lib/group-state'
+import { handleProfileKeyEnvelope } from '../../src/lib/profile-key'
 import { rosterFor } from './groups'
 import { decryptIncoming, myDeviceId, noteInboundFrom, sendV2 } from '../../src/lib/signal-device'
 import { Api, peerBundleFrom } from '../../src/lib/api'
@@ -401,6 +402,14 @@ export async function ingestDecrypted(
   // authenticated sender); SKNACK asks us to re-hand ours to somebody who
   // missed it. Both ride the ordinary per-member sealed path, which is why
   // they arrive here rather than in the gmsg branch of the drain.
+  // Profile key hand-off / ask-back: the same carriers as the room keys
+  // below, split by the inner kind. Shared module with the web
+  // (src/lib/profile-key) so both file a key against the SEALED sender.
+  if (env.kind === 'pkey' || env.kind === 'pkeyask') {
+    await handleProfileKeyEnvelope(identity, got.senderUIN, env as { kind?: string; key?: string })
+      .catch(() => undefined)
+    return
+  }
   // Room state key hand-off / ask-back (stage 6 phase 2): same outer types
   // as the sender-key plumbing, split by the inner kind. The key store and
   // membership gate are shared with the web (src/lib/group-state).

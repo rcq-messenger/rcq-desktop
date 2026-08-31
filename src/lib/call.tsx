@@ -374,6 +374,18 @@ export function CallProvider({ children }: { children: ReactNode }) {
         // socket by a render, and a frame handed to a just-closed socket is
         // swallowed without a trace. send() itself checks the real readyState.
         if (!sendRef.current(frame)) {
+          // ⚠⚠ The OFFER is not a follow-up and must not be parked. Everything
+          // else here belongs to a call that already exists on both sides, so
+          // holding it through a socket blip is a repair. An offer that nobody
+          // received starts nothing: parking it and answering `true` made the
+          // caller listen to a ringback for a call that was never placed, and
+          // if the socket came back a minute later it would ring the peer for a
+          // call the caller had already given up on. Both halves are wrong, and
+          // the first is the desktop side of report #805.
+          //
+          // So say it did not go. The caller gets "unavailable" and can try
+          // again, which is the truth and takes one tap.
+          if (type === 'call_offer') return false
           // Bounded: a long outage accumulates ICE nobody will ever apply.
           // Endings are never the ones dropped — they are the frames the
           // island's busy registry depends on.

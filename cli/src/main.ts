@@ -64,6 +64,7 @@ import { logRowData, parseThread, readLog, type Thread } from './log'
 import { cancelRequest, describeRequestFrame, loadRequests, respondTo, sendRequest } from './requests'
 import { sendText, sendReadMarker } from './send'
 import { applySealedStateAll, askForRoomKey, loadRoomKeys } from '../../src/lib/group-state'
+import { loadProfileKeys } from '../../src/lib/profile-key'
 import { isYes, strangerCheck } from './stranger'
 import { RcqSocket } from './socket'
 import {
@@ -205,6 +206,7 @@ function requireIdentity(): WebIdentity {
   // over the CLI's storage shim. Hydrated here so every command that shows a
   // room name can overlay the sealed one.
   loadRoomKeys(id.uin)
+  loadProfileKeys(id.uin)
   return id
 }
 

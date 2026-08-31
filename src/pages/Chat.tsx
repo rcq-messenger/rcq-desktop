@@ -5900,17 +5900,35 @@ function AltSubtitle({ uin, lastSeen }: { uin: number; lastSeen: string }) {
     const id = setInterval(() => setAlt((v) => !v), 4000)
     return () => clearInterval(id)
   }, [])
+  // ⚠ The two halves must not fade AT THE SAME TIME. Both stacked in one grid
+  // cell and both animating together means that for half a second they are each
+  // at half opacity on top of each other, and because the last-seen span is
+  // second in DOM order it paints ABOVE - so its fade-out lingers over the
+  // arriving number and only THAT direction looks like it lags. (Reported on
+  // web and desktop: "last seen changes to the UIN with lag, back is smooth".)
+  //
+  // The outgoing half always goes first and the incoming one waits for it, so
+  // the swap looks the same in both directions.
+  const FADE = 500
   return (
     <span className="grid">
       <span
-        className="col-start-1 row-start-1 transition-opacity duration-500"
-        style={{ opacity: alt ? 0 : 1 }}
+        className="col-start-1 row-start-1 transition-opacity"
+        style={{
+          opacity: alt ? 0 : 1,
+          transitionDuration: `${FADE}ms`,
+          transitionDelay: alt ? '0ms' : `${FADE}ms`,
+        }}
       >
         #{uin}
       </span>
       <span
-        className="col-start-1 row-start-1 truncate transition-opacity duration-500"
-        style={{ opacity: alt ? 1 : 0 }}
+        className="col-start-1 row-start-1 truncate transition-opacity"
+        style={{
+          opacity: alt ? 1 : 0,
+          transitionDuration: `${FADE}ms`,
+          transitionDelay: alt ? `${FADE}ms` : '0ms',
+        }}
       >
         {lastSeen}
       </span>

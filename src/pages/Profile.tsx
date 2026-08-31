@@ -21,7 +21,8 @@ import { getCrossIsland } from '../lib/crossisland-store'
 import { pushProfileToCrossIslandContacts } from '../lib/crossisland-profile'
 import { useContactAliases } from '../lib/local-store'
 import { lookupContactName } from '../lib/contacts-cache'
-import { uploadEncryptedImage } from '../lib/media'
+import { uploadImageUnderKey } from '../lib/media'
+import { ensureMyProfileKey, fanOutMyProfileKey } from '../lib/profile-key'
 import { useToast } from '../lib/toast'
 
 const GENDER_OPTIONS: { value: string; key: string }[] = [
@@ -422,12 +423,29 @@ function EditView({
     if (!file || !identity) return
     setPicBusy(true)
     try {
-      const up = await uploadEncryptedImage(identity.apiBase, file)
-      if (!up) {
+      // The picture is sealed under MY profile key, which the island never
+      // receives (docs/profile-key-design.md). Until this, the AES key sat in
+      // users.avatar_media_key next to the uin and the nickname, so a seized
+      // island opened every face it held. Contacts get the key over E2E.
+      const pk = await ensureMyProfileKey(identity)
+      const mediaId = await uploadImageUnderKey(identity.apiBase, file, pk)
+      if (!mediaId) {
         toast(t('profile.picture.failed'), 'error')
         return
       }
-      await Api.updateProfile(identity, { avatar_media_id: up.mediaId, avatar_media_key: up.keyB64 })
+      // ⚠ id ALONE. The island clears whatever key it held for us when an id
+      // arrives without one, which is what retires the old plaintext key for
+      // an account that had set a picture before this shipped.
+      await Api.updateProfile(identity, { avatar_media_id: mediaId })
+      // Hand the key to everyone entitled to it. Best effort per contact: one
+      // unreachable peer asks with `pkeyask` later rather than costing the
+      // rest their copy. Not awaited into the UI - the picture is already set.
+      void (async () => {
+        try {
+          const roster = await Api.contacts(identity)
+          await fanOutMyProfileKey(identity, roster, pk)
+        } catch { /* the ask-back path covers this */ }
+      })()
       // ⚠⚠ Read it back instead of trusting the write. An island older than the
       // personal-avatar feature parses the request with Pydantic's default
       // extra='ignore': it drops both fields, commits nothing and answers 200.
@@ -440,7 +458,9 @@ function EditView({
         toast(t('profile.picture.unsupported'), 'error')
         return
       }
-      setDraft({ ...draft, avatar_media_id: up.mediaId, avatar_media_key: up.keyB64 })
+      // The key stays out of the draft as well as off the island: the local
+      // render reads it from the profile-key store like any contact does.
+      setDraft({ ...draft, avatar_media_id: mediaId, avatar_media_key: null })
       // §5e: a picture is DEPOSITED to a cross-island contact's island, not
       // pulled from ours — so the new blob has to be copied there and the key
       // handed over in a sealed envelope. Only after the read-back above, so we

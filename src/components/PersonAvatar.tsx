@@ -15,6 +15,7 @@ import { useEffect, useState } from 'react'
 import type { UserStatus } from '../lib/api'
 import { useIdentity } from '../lib/identity-context'
 import { loadEncryptedAvatar } from '../lib/media'
+import { askForProfileKey, peerProfileKey } from '../lib/profile-key'
 import { StatusIcon } from './StatusIcon'
 
 interface Props {
@@ -41,6 +42,13 @@ interface Props {
   /// answers 404 and the row falls back to the flower — the founder's report
   /// that only the active account keeps its face.
   apiBase?: string
+  /// Whose picture this is, for the profile-key lookup. Without it a caller
+  /// that has only an id and no key draws the lettered tile, which is the
+  /// right fallback but never becomes a face.
+  uinForKey?: number
+  /// Enough of the peer to ASK for their key when we hold none. Optional: a
+  /// screen that has no identity key for them simply does not ask.
+  askPeer?: { uin: number; identity_key?: string | null; signing_key?: string | null }
   /// Set when the status badge itself is actionable (the header, where tapping
   /// the flower opens the status menu). Without it the badge is decoration.
   onStatusClick?: () => void
@@ -62,21 +70,35 @@ export function PersonAvatar({
   apiBase,
   onStatusClick,
   showStatus = true,
+  uinForKey,
+  askPeer,
 }: Props) {
   const { identity } = useIdentity()
   const [url, setUrl] = useState<string | null>(null)
 
   useEffect(() => {
     setUrl(null)
-    if (!identity || !mediaId || !mediaKey) return
+    if (!identity || !mediaId) return
+    // The island no longer holds the key to a picture set under the profile-key
+    // model (docs/profile-key-design.md), so `mediaKey` arrives null and the
+    // real key comes from what its owner sealed to us. Falling back the other
+    // way round keeps accounts that have not re-set their picture working.
+    const key = mediaKey ?? (uinForKey != null ? peerProfileKey(uinForKey) : null)
+    if (!key) {
+      // No key is the lettered tile, exactly like no picture. Ask its owner
+      // once (throttled) so the face appears on a later render rather than
+      // never; a stranger we are not entitled to simply never gets an answer.
+      if (uinForKey != null && askPeer) void askForProfileKey(identity, askPeer)
+      return
+    }
     let alive = true
-    void loadEncryptedAvatar(apiBase ?? identity.apiBase, mediaId, mediaKey).then((u) => {
+    void loadEncryptedAvatar(apiBase ?? identity.apiBase, mediaId, key).then((u) => {
       if (alive) setUrl(u)
     })
     return () => {
       alive = false
     }
-  }, [apiBase, identity?.apiBase, mediaId, mediaKey])
+  }, [apiBase, identity?.apiBase, mediaId, mediaKey, uinForKey])
 
   if (!url) {
     // Nothing to draw: no picture, and presence deliberately suppressed.

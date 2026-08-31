@@ -317,6 +317,26 @@ export interface GsKnackEnvelope {
   gid: number
 }
 
+/// Profile key hand-off (wire kind "pkey", outer type "skdm"). Carries the
+/// AES-256-GCM key a person's avatar blob is sealed under, to ONE contact,
+/// sealed 1:1. The island stores the blob id and no longer needs the key
+/// (docs/profile-key-design.md): today `users.avatar_media_key` sits next to
+/// the uin and the nickname, so a seized island opens every face it holds.
+/// Rides "skdm" for the same reason `gskey` does - the island already files
+/// that token as critical, and a NEW token would itself announce "this
+/// account just changed its picture".
+export interface PKeyEnvelope {
+  kind: 'pkey'
+  key: string // b64 32B profile key
+}
+
+/// Profile key recovery (wire kind "pkeyask", outer type "sknack"): I can see
+/// that you have a picture and hold no key for it. Only the owner can answer,
+/// unlike `gsknack` where any member can.
+export interface PKeyAskEnvelope {
+  kind: 'pkeyask'
+}
+
 export interface SkdmEnvelope {
   kind: 'skdm'
   gid: number
@@ -414,6 +434,8 @@ export interface ProfileEnvelope {
 }
 
 export type Envelope =
+  | PKeyEnvelope
+  | PKeyAskEnvelope
   | TextEnvelope
   | ReactionEnvelope
   | PhotoEnvelope

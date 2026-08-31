@@ -301,6 +301,24 @@ export interface UploadResult {
 /// AES-256-GCM seal plaintext bytes under a fresh key, CryptoKit `combined`
 /// layout (nonce(12) || ciphertext || tag(16)). Shared by the image/file
 /// upload paths.
+/// [sealBytes] with the key supplied. Same wire layout - CryptoKit `.combined`,
+/// nonce(12) || ciphertext || tag(16) - so anything that can open one can open
+/// the other.
+async function sealBytesWith(keyB64: string, plaintext: ArrayBuffer): Promise<Uint8Array> {
+  const keyBytes = b64ToBytes(keyB64)
+  const keyAb = new ArrayBuffer(keyBytes.length)
+  new Uint8Array(keyAb).set(keyBytes)
+  const nonceAb = new ArrayBuffer(12)
+  const nonce = new Uint8Array(nonceAb)
+  crypto.getRandomValues(nonce)
+  const key = await crypto.subtle.importKey('raw', keyAb, { name: 'AES-GCM' }, false, ['encrypt'])
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonceAb }, key, plaintext))
+  const combined = new Uint8Array(12 + ct.length)
+  combined.set(nonce, 0)
+  combined.set(ct, 12)
+  return combined
+}
+
 async function sealBytes(plaintext: ArrayBuffer): Promise<{ combined: Uint8Array; keyB64: string }> {
   const keyAb = new ArrayBuffer(32)
   const keyView = new Uint8Array(keyAb)
@@ -452,6 +470,26 @@ export async function uploadReportAttachment(apiBase: string, file: File): Promi
 /// re-encode, which would kill the animation). For a cross-island peer pass
 /// `peerHost` — the blob is then deposited to THEIR island (+ ours,
 /// best-effort) under a client-chosen id. Returns null on failure.
+/// Upload an image sealed under a key the CALLER owns, rather than a fresh
+/// random one. This is what the profile key needs (docs/profile-key-design.md):
+/// the avatar has to stay readable by every contact who already holds the key,
+/// so changing your picture must NOT change the key - otherwise every change
+/// costs a fan-out and leaves a window where your contacts see a blank tile.
+export async function uploadImageUnderKey(
+  apiBase: string,
+  file: File,
+  keyB64: string,
+): Promise<string | null> {
+  try {
+    const isGif = file.type === 'image/gif'
+    const source: Blob = isGif ? file : await compressImage(file)
+    const combined = await sealBytesWith(keyB64, await source.arrayBuffer())
+    return await uploadBlob(apiBase, combined, 'photo.bin')
+  } catch {
+    return null
+  }
+}
+
 export async function uploadEncryptedImage(
   apiBase: string,
   file: File,

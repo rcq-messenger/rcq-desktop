@@ -1462,15 +1462,25 @@ function ContactRow({
             </div>
             <div className="flex items-center gap-1.5 text-xs text-fg-dim min-w-0">
               <span className="flex-none">#{contact.uin}</span>
-              {contact.status_message ? (
-                <span className="truncate">· {contact.status_message}</span>
-              ) : contact.status === 'offline' && contact.last_seen ? (
-                // Same precedence as the iOS row (B1): a status message wins,
-                // otherwise an offline contact shows when they were around.
-                <span className="truncate">
+              {/* ⚠ Order matters, and it used to be the other way round: a
+                  status message won outright, so an OFFLINE contact who had
+                  one never showed when they were last around. Measured on
+                  prod 31.08: of 1498 contact rows that are genuinely offline,
+                  455 (30%) carry a status message, so for nearly a third of
+                  people the last seen was invisible everywhere - and most
+                  visibly in Favourites and user sections, where there is no
+                  Online/Offline heading to read it off instead. A status
+                  message is text somebody left behind; when they are not here,
+                  WHEN they were here is the more useful half, so it goes
+                  first and the message keeps whatever room is left. */}
+              {contact.status === 'offline' && contact.last_seen && (
+                <span className="flex-none">
                   · {t('contact.last_seen', { when: relativeLastSeen(contact.last_seen, t, lang) })}
                 </span>
-              ) : null}
+              )}
+              {contact.status_message && (
+                <span className="truncate">· {contact.status_message}</span>
+              )}
             </div>
           </div>
         </Link>

@@ -23,6 +23,7 @@
 
 import { relativeLastSeen } from '../lib/last-seen'
 import { applySealedStateAll, loadRoomKeys } from '../lib/group-state'
+import { loadProfileKeys } from '../lib/profile-key'
 import { AnimatePresence } from 'framer-motion'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
@@ -210,7 +211,7 @@ export function Contacts() {
   // first overlay, and re-run the refresh when a fresh key arrives live (a
   // gskey can land seconds after the list painted the fallback name).
   useEffect(() => {
-    if (identity) loadRoomKeys(identity.uin)
+    if (identity) { loadRoomKeys(identity.uin); loadProfileKeys(identity.uin) }
   }, [identity])
   useEffect(() => {
     const nudge = () => void refresh()
@@ -1445,6 +1446,8 @@ function ContactRow({
             size={28}
             mediaId={contact.avatar_media_id}
             mediaKey={contact.avatar_media_key}
+            uinForKey={contact.uin}
+            askPeer={contact}
             crossIsland={!!contact.host}
           />
           <div className="flex-1 min-w-0">

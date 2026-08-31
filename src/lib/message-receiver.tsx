@@ -13,6 +13,7 @@ import { addIncoming, addGroupIncoming, hydrateIncoming, beginCatchUp, endCatchU
 import { applyEditToOutgoing, carbonThreadKey, fileOutgoingCarbon } from './outgoing-store'
 import { publishHomeIslandRecord } from './federation-publish'
 import { answerKeyAsk, loadRoomKeys, putRoomKey } from './group-state'
+import { handleProfileKeyEnvelope, loadProfileKeys } from './profile-key'
 import { snapshotFor } from './contacts-cache'
 import { adoptHomesFromOwnRecord, applyPushedRecord, drainBackupQueues, listBackupHomes, scrubFrontAliasHomes } from './multihome'
 import { aliasFor, drainVisitedQueues, listVisitedIslands } from './visited-islands'
@@ -44,6 +45,7 @@ function ensureHydrated(uin: number): Promise<void> {
     // a tab opened straight into a chat never mounts Contacts, and a key
     // minted there was held in memory only and lost on reload.
     loadRoomKeys(uin)
+    loadProfileKeys(uin)
   }
   return hydration
 }
@@ -192,6 +194,15 @@ function route(
   // Sender-keys distribution / recovery (never rendered). SKDM stores the
   // chain bound to its authenticated sender; SKNACK asks the kid owner to
   // re-distribute. Both ride the per-member sealed path.
+  // Profile key hand-off / ask-back. Same carriers as the room keys below,
+  // and checked first for the same reason: the inner kind decides, not the
+  // outer type. `senderUin` is the SEALED sender the envelope verified under,
+  // so a key can only ever be filed against whoever actually sealed it.
+  const pkKind = (envelope as { kind?: string }).kind
+  if (identity && (pkKind === 'pkey' || pkKind === 'pkeyask')) {
+    void handleProfileKeyEnvelope(identity, senderUIN, envelope as { kind?: string; key?: string })
+    return
+  }
   // Room state key hand-off / ask-back (stage 6 phase 2). Checked before
   // skdm because both ride the same outer types; the inner kind decides.
   if ((envelope as { kind?: string }).kind === 'gskey') {

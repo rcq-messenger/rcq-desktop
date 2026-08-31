@@ -40,6 +40,7 @@ import { isBlocked } from './crossisland-requests'
 import { applyCrossIslandProfile, getCrossIsland, listCrossIsland, type CrossIslandContact } from './crossisland-store'
 import { depositSealedToPrimary } from './federation-send'
 import { depositEncryptedBlob, fetchEncryptedBlob } from './media'
+import { myProfileKey } from './profile-key'
 
 const NICKNAME_MAX = 64
 // A media id is a client-chosen uuid4 hex (32 chars) or an island-assigned id.
@@ -72,7 +73,11 @@ async function readOwnProfile(identity: WebIdentity): Promise<OwnProfile | null>
     return {
       nickname: (me.nickname || `#${identity.uin}`).slice(0, NICKNAME_MAX),
       avatarMediaId: me.avatar_media_id ?? null,
-      avatarMediaKey: me.avatar_media_key ?? null,
+      // ⚠⚠ Fall back to the key WE published. The island no longer returns it
+      // (profile-key model), and this snapshot is what the far side applies
+      // wholesale: naming no picture reads there as "I removed mine" and
+      // deletes our face for every cross-island contact.
+      avatarMediaKey: me.avatar_media_key ?? myProfileKey(),
     }
   } catch {
     const cached = contactsCache.get(identity.uin)?.me
@@ -80,7 +85,7 @@ async function readOwnProfile(identity: WebIdentity): Promise<OwnProfile | null>
     return {
       nickname: (cached.nickname || `#${identity.uin}`).slice(0, NICKNAME_MAX),
       avatarMediaId: cached.avatar_media_id ?? null,
-      avatarMediaKey: cached.avatar_media_key ?? null,
+      avatarMediaKey: cached.avatar_media_key ?? myProfileKey(),
     }
   }
 }

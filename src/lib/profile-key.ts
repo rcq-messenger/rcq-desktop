@@ -65,6 +65,20 @@ export function peerProfileKey(peer: number): string | null {
   return theirs.get(peer) ?? null
 }
 
+/// The key MY OWN picture is sealed under, as this install knows it.
+///
+/// ⚠⚠ Every place that draws or forwards our own avatar has to come through
+/// here. Under the profile-key model we PUT the media id ALONE and the island
+/// clears the key column it used to keep, which is the whole point: it must not
+/// hold the key to our face. So `me.avatar_media_key` from the island is null
+/// forever after the first change, and anything reading it directly renders a
+/// blank tile for its owner. Worse, `readOwnProfile` feeds the cross-island
+/// profile SNAPSHOT, and a snapshot naming no picture reads on the far side as
+/// "I removed mine" and deletes our face for every cross-island contact.
+export function myProfileKey(): string | null {
+  return mine
+}
+
 export function rememberPeerKey(peer: number, keyB64: string): void {
   if (!keyB64 || theirs.get(peer) === keyB64) return
   theirs.set(peer, keyB64)

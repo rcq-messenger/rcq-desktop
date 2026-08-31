@@ -23,7 +23,7 @@
 
 import { relativeLastSeen } from '../lib/last-seen'
 import { applySealedStateAll, loadRoomKeys } from '../lib/group-state'
-import { loadProfileKeys } from '../lib/profile-key'
+import { loadProfileKeys, myProfileKey } from '../lib/profile-key'
 import { AnimatePresence } from 'framer-motion'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
@@ -901,7 +901,7 @@ export function Contacts() {
                 current={me.status}
                 onChange={(s) => setMe({ ...me, status: s })}
                 avatarMediaId={me.avatar_media_id}
-                avatarMediaKey={me.avatar_media_key}
+                avatarMediaKey={me.avatar_media_key ?? myProfileKey()}
               />
               <Link
                 to="/profile"

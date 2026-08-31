@@ -13,6 +13,7 @@ import { getDevice } from '../lib/signal-device'
 import { buildContactLink } from '../lib/federation'
 import { PersonAvatar } from './PersonAvatar'
 import type { UserStatus } from '../lib/api'
+import { myProfileKey } from '../lib/profile-key'
 
 /// [me] is the caller's own card, used only to put their face in the middle of
 /// the code (iOS/Android parity). Optional: with nothing passed, or with no
@@ -92,7 +93,7 @@ export function MyQRCode({
                     status={me.status ?? 'offline'}
                     size={34}
                     mediaId={me.avatar_media_id}
-                    mediaKey={me.avatar_media_key}
+                    mediaKey={me.avatar_media_key ?? myProfileKey()}
                   />
                 </span>
               </span>
@@ -138,7 +139,7 @@ export function MyQRCode({
                         status={me.status ?? 'offline'}
                         size={64}
                         mediaId={me.avatar_media_id}
-                        mediaKey={me.avatar_media_key}
+                        mediaKey={me.avatar_media_key ?? myProfileKey()}
                       />
                     </div>
                   </div>

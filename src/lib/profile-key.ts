@@ -165,7 +165,22 @@ export async function handleProfileKeyEnvelope(
     return true
   }
   if (env.kind === 'pkeyask') {
-    const k = mine
+    // The vault fallback is what makes answering possible at all on an install
+    // that never SET the picture: the CLI, a second browser, a fresh device.
+    // Without it only the install that happened to mint the key could answer,
+    // and a contact asking while you are at a terminal would simply never get
+    // a face. The key is ours either way - the vault slot is our own.
+    let k = mine
+    if (!k) {
+      try {
+        const slot = await readSlot(identity, VAULT_PKEY)
+        k = slot.plaintext ? new TextDecoder().decode(slot.plaintext) : null
+        if (k) {
+          mine = k
+          try { localStorage.setItem(mineKey(identity.uin), k) } catch { /* nicety */ }
+        }
+      } catch { /* no vault on this island: nothing to answer with */ }
+    }
     if (!k) return true
     try {
       const info = await Api.userInfo(identity, from)

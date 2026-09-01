@@ -880,7 +880,7 @@ export const pt: Record<string, string> = {
   'uin_market.status.checking': 'Verificando…',
   'uin_market.status.available': 'Disponível',
   'uin_market.status.taken': 'Já ocupado',
-  'uin_market.status.reserved': 'Reservado: números curtos e com padrão não são distribuídos',
+  'uin_market.status.reserved': 'Reservado',
   'uin_market.status.self': 'Este é o seu UIN de agora',
   'uin_market.status.too_short': 'De 3 a 9 dígitos',
   'uin_market.status.too_long': 'Longo demais',

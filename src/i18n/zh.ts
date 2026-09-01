@@ -878,7 +878,7 @@ export const zh: Record<string, string> = {
   'uin_market.status.checking': '检查中…',
   'uin_market.status.available': '可用',
   'uin_market.status.taken': '已被占用',
-  'uin_market.status.reserved': '已保留:短号码和靓号不再发放',
+  'uin_market.status.reserved': '已保留',
   'uin_market.status.self': '这是你当前的 UIN',
   'uin_market.status.too_short': '3 到 9 位数字',
   'uin_market.status.too_long': '太长',

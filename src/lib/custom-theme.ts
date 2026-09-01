@@ -62,6 +62,10 @@ export function contrast(a: [number, number, number], b: [number, number, number
   return (hi + 0.05) / (lo + 0.05)
 }
 
+/// The product green. Only used to tint the own-message bubble so it still
+/// reads as "mine" over a background the person chose.
+const ACCENT: [number, number, number] = [34, 197, 94]
+
 const NEAR_BLACK: [number, number, number] = [10, 10, 10]
 const NEAR_WHITE: [number, number, number] = [240, 240, 240]
 
@@ -137,7 +141,7 @@ export function apply(theme: CustomTheme | null): void {
   const root = document.documentElement
   const names = [
     '--c-surface', '--c-surface-dim', '--c-line', '--c-fg-primary',
-    '--c-fg-secondary', '--c-fg-dim', '--c-bubble-other', '--c-field',
+    '--c-fg-secondary', '--c-fg-dim', '--c-bubble-other', '--c-bubble-self', '--c-field',
   ]
   if (!theme) {
     for (const n of names) root.style.removeProperty(n)
@@ -158,6 +162,19 @@ export function apply(theme: CustomTheme | null): void {
   root.style.setProperty('--c-field', rgbVar(lift(base, fg, 0.12)))
   root.style.setProperty('--c-bubble-other', rgbVar(lift(base, fg, 0.12)))
   root.style.setProperty('--c-line', rgbVar(lift(base, fg, 0.18)))
+  // ⚠⚠ MY OWN bubble too, and this one was a real bug: it keeps the built-in
+  // theme's colour otherwise - a pale green meant for a light page - while the
+  // text on it follows `--c-fg-primary`, which a dark gradient turns white.
+  // The founder's own messages came out white on pale green, unreadable, on the
+  // first background he set. It is derived here like every other surface: the
+  // accent mixed into the page's own base, then walked back toward the base
+  // until the body text on it clears the same contrast bar as everywhere else
+  // (the base itself always does, so this terminates).
+  let self = lift(base, ACCENT, 0.32)
+  for (let i = 0; i < 20 && contrast(self, fg) < MIN_CONTRAST; i += 1) {
+    self = lift(self, base, 0.25)
+  }
+  root.style.setProperty('--c-bubble-self', rgbVar(self))
   root.style.setProperty('--c-fg-primary', rgbVar(fg))
   // Secondary and dim are the SAME hue as primary, stepped toward the
   // background. Picking them independently is how a theme ends up with a

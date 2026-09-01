@@ -14,12 +14,17 @@ import { forgetSectionMember, sectionKeyForGroup } from '../lib/sections-vault'
 
 interface Props {
   group: RCQGroup
+  /// The row is inside a section the user made themselves; favourite and
+  /// archive are hidden then, for the reason spelled out in
+  /// `ContactActionsMenu`: the section already wins over favourite, and archive
+  /// would silently take the row out of the section they filed it into.
+  inUserSection?: boolean
   onClose: () => void
   onChanged: () => void
   onPreview?: () => void
 }
 
-export function GroupActionsMenu({ group, onClose, onChanged, onPreview }: Props) {
+export function GroupActionsMenu({ group, inUserSection, onClose, onChanged, onPreview }: Props) {
   const { identity } = useIdentity()
   const { t } = useI18n()
   const navigate = useNavigate()
@@ -85,14 +90,16 @@ export function GroupActionsMenu({ group, onClose, onChanged, onPreview }: Props
           navigate(`/groups/${group.id}`)
         }}
       />
-      <Row
-        icon={<StarIcon filled={isFav} />}
-        label={isFav ? t('contact_actions.unfavorite') : t('contact_actions.favorite')}
-        onClick={() => {
-          favorites.toggle(group.id)
-          onClose()
-        }}
-      />
+      {!inUserSection && (
+        <Row
+          icon={<StarIcon filled={isFav} />}
+          label={isFav ? t('contact_actions.unfavorite') : t('contact_actions.favorite')}
+          onClick={() => {
+            favorites.toggle(group.id)
+            onClose()
+          }}
+        />
+      )}
       <Row
         icon={<BellIcon off={isMuted} />}
         label={isMuted ? t('contact_actions.unmute') : t('contact_actions.mute')}
@@ -101,14 +108,16 @@ export function GroupActionsMenu({ group, onClose, onChanged, onPreview }: Props
           onClose()
         }}
       />
-      <Row
-        icon={<ArchiveIcon />}
-        label={isArchived ? t('contact_actions.unarchive') : t('contact_actions.archive')}
-        onClick={() => {
-          archive.toggle(group.id)
-          onClose()
-        }}
-      />
+      {!inUserSection && (
+        <Row
+          icon={<ArchiveIcon />}
+          label={isArchived ? t('contact_actions.unarchive') : t('contact_actions.archive')}
+          onClick={() => {
+            archive.toggle(group.id)
+            onClose()
+          }}
+        />
+      )}
       <Divider />
       {!confirmLeave ? (
         <Row

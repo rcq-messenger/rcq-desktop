@@ -865,7 +865,7 @@ export function Contacts() {
             ) : (
               <>
                 {gs.map((g) => (
-                  <GroupRow key={`g${g.id}`} group={g} onChanged={refresh} />
+                  <GroupRow key={`g${g.id}`} group={g} inUserSection onChanged={refresh} />
                 ))}
                 {cs.map((ct) => (
                   <ContactRow
@@ -873,6 +873,7 @@ export function Contacts() {
                     contact={ct}
                     muted={muted.has(ct.uin)}
                     favorite={favorites.has(ct.uin)}
+                    inUserSection
                     onChanged={refresh}
                   />
                 ))}
@@ -1407,12 +1408,16 @@ function ContactRow({
   muted,
   favorite,
   archived,
+  inUserSection,
   onChanged,
 }: {
   contact: Contact
   muted: boolean
   favorite?: boolean
   archived?: boolean
+  /// This row is inside a section the user made themselves. Favourite and
+  /// archive are hidden then - see `ContactActionsMenu`.
+  inUserSection?: boolean
   onChanged: () => void
 }) {
   const { t, lang } = useI18n()
@@ -1517,6 +1522,7 @@ function ContactRow({
       {menuOpen && (
         <ContactActionsMenu
           contact={contact}
+          inUserSection={inUserSection}
           onClose={() => setMenuOpen(false)}
           onChanged={onChanged}
           onPreview={() => setPreviewOpen(true)}
@@ -1604,7 +1610,17 @@ function CrossIslandRow({
   )
 }
 
-function GroupRow({ group, onChanged }: { group: RCQGroup; onChanged: () => void }) {
+function GroupRow({
+  group,
+  inUserSection,
+  onChanged,
+}: {
+  group: RCQGroup
+  /// Inside a section the user made themselves - favourite and archive are not
+  /// offered there, see `ContactActionsMenu`.
+  inUserSection?: boolean
+  onChanged: () => void
+}) {
   const { t } = useI18n()
   const unread = useGroupUnread(group.id)
   // Someone called your name here while you were elsewhere. Separate from the
@@ -1662,6 +1678,7 @@ function GroupRow({ group, onChanged }: { group: RCQGroup; onChanged: () => void
       {menuOpen && (
         <GroupActionsMenu
           group={group}
+          inUserSection={inUserSection}
           onClose={() => setMenuOpen(false)}
           onChanged={onChanged}
           onPreview={() => setPreviewOpen(true)}

@@ -698,7 +698,7 @@ export const ru: Record<string, string> = {
   // Настройки: приватность + звук
   'settings.section.privacy': 'Приватность',
   'settings.privacy.last_seen': 'Был в сети, видят',
-  'contact.last_seen': 'был в сети {when}',
+  'contact.last_seen': 'был {when}',
   'contact.last_seen.recently': 'недавно',
   'contact.last_seen.today': 'сегодня',
   'contact.last_seen.yesterday': 'вчера',

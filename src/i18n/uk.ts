@@ -599,7 +599,7 @@ export const uk: Record<string, string> = {
   // Settings: privacy + sound
   'settings.section.privacy': 'Приватність',
   'settings.privacy.last_seen': 'Час у мережі бачать',
-  'contact.last_seen': 'був у мережі {when}',
+  'contact.last_seen': 'був {when}',
   'contact.last_seen.recently': 'нещодавно',
   'contact.last_seen.today': 'сьогодні',
   'contact.last_seen.yesterday': 'вчора',

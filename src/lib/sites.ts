@@ -219,9 +219,10 @@ async function inline(addr: RcqAddress, m: SiteManifest, path: string, html: str
     try {
       const css = new TextDecoder().decode(await fetchFile(addr, m, href))
       const style = doc.createElement('style')
-      // `url(http…)` inside CSS is a fetch outward, so it goes the same way as
-      // an outward link: nothing in a page may cause a request off the island.
-      style.textContent = css.replace(/url\(\s*['"]?(https?:)?\/\/[^)]*\)/gi, 'none')
+      // Every `url()` that is not an inlined image is a fetch, and a fetch is
+      // how a page learns who is reading it. The bundle's own images are
+      // already `data:` by the time this runs, so nothing legitimate is lost.
+      style.textContent = css.replace(/url\(\s*(?!['"]?data:)[^)]*\)/gi, 'none')
       el.replaceWith(style)
     } catch {
       el.remove()

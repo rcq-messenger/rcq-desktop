@@ -70,13 +70,36 @@ export function Sites() {
     void fetchCatalogue(ownHost).then(setCatalogue)
   }, [ownHost])
 
-  // The page is handed to the frame through `srcdoc`, so the browser never
-  // fetches it as a document of ours: no origin, no cookies, no storage,
-  // nothing of the app reachable from inside.
+  // The page is WRITTEN into a blank frame rather than handed over as
+  // `srcdoc`. Both are the same document in the end, but a `srcdoc` frame
+  // never rendered at all inside the packaged desktop app - its parent is a
+  // custom scheme there, and WebKit gives up on `about:srcdoc` under one -
+  // and a browser that shows a white rectangle instead of the page is not a
+  // browser. Writing into `about:blank` behaves identically in both engines.
+  //
+  // ⚠ This is why the frame carries `allow-same-origin`: a document can only
+  // be written into if it is reachable, and an empty sandbox makes the frame
+  // a stranger to us. What the frame must NOT have is `allow-scripts`, and it
+  // does not: with nothing running inside, a shared origin buys the page
+  // nothing - it cannot read the app, cannot touch storage, cannot fetch. The
+  // meta policy written into the document itself (`default-src 'none'`) is the
+  // lock that actually holds, and it is the same in both places.
+  const paint = useCallback((html: string) => {
+    const doc = frameRef.current?.contentDocument
+    if (!doc) return false
+    doc.open()
+    doc.write(html)
+    doc.close()
+    return true
+  }, [])
+
   useEffect(() => {
-    const frame = frameRef.current
-    if (frame) frame.srcdoc = page?.html ?? ''
-  }, [page])
+    const html = page?.html ?? ''
+    if (paint(html)) return
+    // The frame is mounted a tick after this effect on a first open.
+    const t = setTimeout(() => paint(html), 50)
+    return () => clearTimeout(t)
+  }, [page, paint])
 
   return (
     <div className="h-screen [height:100dvh] flex flex-col bg-surface-dim overflow-hidden">
@@ -190,11 +213,11 @@ export function Sites() {
             <iframe
               ref={frameRef}
               title={addr?.display ?? ''}
-              // ⚠⚠ No `allow-scripts` and no `allow-same-origin`. Together they
-              // would let a page reach back into the app; dropping
-              // `allow-scripts` is what makes "no JS" true rather than a
-              // promise in the docs.
-              sandbox=""
+              // ⚠⚠ No `allow-scripts`, and that is the whole lock: it is what
+              // makes "no JS" true rather than a promise in the docs. Nothing
+              // inside a page runs, so the page cannot reach the app, cannot
+              // navigate itself and cannot ask the network for anything.
+              sandbox="allow-same-origin"
               referrerPolicy="no-referrer"
               className="flex-1 w-full bg-white"
             />

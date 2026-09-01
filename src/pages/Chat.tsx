@@ -2867,7 +2867,11 @@ export function Chat() {
         .map((row) => ({ at: row.sentAt, kind: 'out' as const, row })),
       ...incoming
         .filter((m) => !sentIds.has(m.id))
-        .map((m) => ({ at: m.at, kind: 'in' as const, msg: m })),
+        // ⚠ `sentAt` when the envelope carried one: `at` is when THIS device
+        // received the row, so a message drained after a week offline sorted to
+        // the bottom of the thread under today's date. The sender's own clock,
+        // clamped by `sendAnchorMs` where it is written.
+        .map((m) => ({ at: m.sentAt ?? m.at, kind: 'in' as const, msg: m })),
     ]
       .filter((it) => !isDeleted(it.kind === 'out' ? it.row.id : it.msg.id))
       .sort((a, b) => a.at - b.at)
@@ -4590,7 +4594,7 @@ const IncomingMessageRow = memo(function IncomingMessageRow({
         )}
         {reactionChips(m.id, 'start', myUin, h)}
         <div className="flex items-center gap-1 text-[0.625rem] text-fg-dim">
-          {new Date(m.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          {new Date(m.sentAt ?? m.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           {m.expiresAt != null && <ExpiryMark expiresAt={m.expiresAt} t={t} />}
         </div>
         {/* ⚠ Floats, like the reaction picker right below. As an

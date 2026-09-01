@@ -420,11 +420,19 @@ function outgoingRowFromInner(inner: Envelope): OutgoingRow | null {
     const at = expiryFrom(typeof ttl === 'number' ? ttl : null, sendAnchorMs(ts, now))
     return at != null ? { expiresAt: at } : {}
   }
+  // ⚠⚠ `sentAt` is the SEND time, not "now". A carbon of my own message can
+  // arrive a week after I wrote it (a browser opened after a trip, a phone that
+  // drained late), and stamping it with the moment it arrived put last week's
+  // message at the bottom of today's conversation with today's clock on it -
+  // "as if I had just written it", in the words of the person who reported it.
+  // `sendAnchorMs` is the same clamp the disappearing timers already use
+  // against a skewed clock.
+  const when = (ts: unknown): number => sendAnchorMs(ts, now)
   if (inner.kind === 'text') {
     return {
       id: inner.id,
       text: inner.text,
-      sentAt: now,
+      sentAt: when(inner.ts),
       state: 'sent',
       kind: 'text',
       ...(inner.reply ? { replyTo: inner.reply } : {}),
@@ -436,7 +444,7 @@ function outgoingRowFromInner(inner: Envelope): OutgoingRow | null {
     return {
       id: inner.id,
       text: inner.caption ?? '',
-      sentAt: now,
+      sentAt: when(inner.ts),
       state: 'sent',
       kind: 'photo',
       mediaId: inner.mediaID,
@@ -452,7 +460,7 @@ function outgoingRowFromInner(inner: Envelope): OutgoingRow | null {
     return {
       id: inner.id,
       text: inner.caption ?? '',
-      sentAt: now,
+      sentAt: when(inner.ts),
       state: 'sent',
       kind: 'video',
       mediaId: inner.mediaID,
@@ -470,7 +478,7 @@ function outgoingRowFromInner(inner: Envelope): OutgoingRow | null {
     return {
       id: inner.id,
       text: inner.caption ?? '',
-      sentAt: now,
+      sentAt: when(inner.ts),
       state: 'sent',
       kind: 'file',
       mediaId: inner.mediaID,
@@ -489,7 +497,7 @@ function outgoingRowFromInner(inner: Envelope): OutgoingRow | null {
     return {
       id: inner.id,
       text: '',
-      sentAt: now,
+      sentAt: when(inner.ts),
       state: 'sent',
       kind: 'voice',
       mediaId: inner.mediaID,
@@ -507,7 +515,7 @@ function outgoingRowFromInner(inner: Envelope): OutgoingRow | null {
     return {
       id: loose.id,
       text: loose.caption ?? '',
-      sentAt: now,
+      sentAt: when(loose.ts),
       state: 'sent',
       kind: 'other',
       mediaKind: loose.kind,

@@ -11,7 +11,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
 import {
-  SITE_LIMITS, bundlePaths, checkName, deleteSite, isAllowedFile, mySites, publishSite,
+  SITE_LIMITS, bundlePaths, checkName, deleteSite, isAllowedFile, mySites, pickIcon, publishSite,
   type MySite,
 } from '../lib/site-publish'
 
@@ -71,6 +71,7 @@ export function MySitePanel({ onClose, onOpen }: Props) {
   const oversize = files.filter((f) => f.size > SITE_LIMITS.maxFileBytes)
   const total = files.reduce((n, f) => n + f.size, 0)
   const hasIndex = paths.includes('index.html')
+  const icon = pickIcon(paths)
   const canPublish =
     !busy && files.length > 0 && hasIndex && rejected.length === 0 && oversize.length === 0 &&
     files.length <= SITE_LIMITS.maxFiles && total <= SITE_LIMITS.maxBundleBytes &&
@@ -214,6 +215,12 @@ export function MySitePanel({ onClose, onOpen }: Props) {
                           <span className="text-fg-dim flex-none">{fmtSize(files[paths.indexOf(p)]?.size ?? 0)}</span>
                         </div>
                       ))}
+                      {/* Said out loud, because it is a file name doing a job:
+                          whichever of these is in the set becomes the mark
+                          shown beside the address in every list. */}
+                      <div className="text-xs text-fg-dim">
+                        {icon ? t('sites.publish.icon.found', { file: icon }) : t('sites.publish.icon.none')}
+                      </div>
                       {!hasIndex && <div className="text-xs text-red-400">{t('sites.publish.error.no_index')}</div>}
                       {rejected.length > 0 && <div className="text-xs text-red-400">{t('sites.publish.error.bad_type')}</div>}
                       {(oversize.length > 0 || total > SITE_LIMITS.maxBundleBytes) && (

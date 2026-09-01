@@ -21,11 +21,36 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
-import { fetchCatalogue, fetchSitePage, parseRcqAddress, repin, type RcqAddress, type SitePage } from '../lib/sites'
+import { fetchCatalogue, fetchSiteIcon, fetchSitePage, parseRcqAddress, repin, type RcqAddress, type SitePage } from '../lib/sites'
 import { MySitePanel } from '../components/MySitePanel'
 
 const ERRORS = ['address', 'missing', 'frozen', 'unsigned', 'tampered', 'offline'] as const
 type ErrorKind = (typeof ERRORS)[number]
+
+/// A site's mark, or its first letter while there is none. The letter is not
+/// a placeholder waiting for a picture: most sites will never have one, and a
+/// row that jumps when an icon lands is worse than a row that never had it.
+function SiteMark({ name, uri, size = 26 }: { name: string; uri?: string | null; size?: number }) {
+  const box = { width: size, height: size }
+  if (uri) {
+    return (
+      <img
+        src={uri}
+        alt=""
+        style={box}
+        className="flex-none rounded-[5px] object-cover bg-field"
+      />
+    )
+  }
+  return (
+    <span
+      style={box}
+      className="flex-none rounded-[5px] bg-field text-fg-secondary flex items-center justify-center text-xs font-mono uppercase"
+    >
+      {name.slice(0, 1)}
+    </span>
+  )
+}
 
 export function Sites() {
   const { t } = useI18n()
@@ -36,6 +61,8 @@ export function Sites() {
   const [error, setError] = useState<ErrorKind | null>(null)
   const [loading, setLoading] = useState(false)
   const [catalogue, setCatalogue] = useState<Array<{ name: string; title: string | null }>>([])
+  /// name → the site's mark as a data URI, or null once we know there is none.
+  const [icons, setIcons] = useState<Record<string, string | null>>({})
   const [mine, setMine] = useState(false)
   const frameRef = useRef<HTMLIFrameElement | null>(null)
 
@@ -55,6 +82,7 @@ export function Sites() {
     try {
       const got = await fetchSitePage(parsed, path)
       setPage(got)
+      void fetchSiteIcon(parsed).then((uri) => setIcons((cur) => ({ ...cur, [parsed.name]: uri })))
       setAddr(parsed)
       setTyped(parsed.display)
     } catch (e) {
@@ -71,6 +99,21 @@ export function Sites() {
   useEffect(() => {
     void fetchCatalogue(ownHost).then(setCatalogue)
   }, [ownHost])
+
+  // Marks are fetched one by one after the list is drawn, and each is checked
+  // against the owner's signature before it is shown. A list that waited for
+  // them would be a list that an offline site could hold up.
+  useEffect(() => {
+    let live = true
+    for (const s of catalogue) {
+      const addr = parseRcqAddress(`${s.name}.rcq`, ownHost)
+      if (!addr) continue
+      void fetchSiteIcon(addr).then((uri) => {
+        if (live) setIcons((cur) => ({ ...cur, [s.name]: uri }))
+      })
+    }
+    return () => { live = false }
+  }, [catalogue, ownHost])
 
   // The page is WRITTEN into a blank frame rather than handed over as
   // `srcdoc`. Both end up the same document, but `srcdoc` rendered NOTHING
@@ -114,6 +157,7 @@ export function Sites() {
               <path d="M15 18l-6-6 6-6" />
             </svg>
           </Link>
+          {page && <SiteMark name={addr?.name ?? ''} uri={icons[addr?.name ?? '']} size={22} />}
           <form
             className="flex-1 flex items-center gap-2"
             onSubmit={(e) => {
@@ -194,10 +238,13 @@ export function Sites() {
                     key={s.name}
                     type="button"
                     onClick={() => void open(`${s.name}.rcq`)}
-                    className="w-full text-left px-3 py-2 rounded-md hover:bg-field"
+                    className="w-full flex items-center gap-3 text-left px-3 py-2 rounded-md hover:bg-field"
                   >
-                    <div className="text-sm font-mono text-fg-primary">{s.name}.rcq</div>
-                    {s.title && <div className="text-xs text-fg-secondary truncate">{s.title}</div>}
+                    <SiteMark name={s.name} uri={icons[s.name]} />
+                    <span className="min-w-0">
+                      <span className="block text-sm font-mono text-fg-primary">{s.name}.rcq</span>
+                      {s.title && <span className="block text-xs text-fg-secondary truncate">{s.title}</span>}
+                    </span>
                   </button>
                 ))}
               </div>

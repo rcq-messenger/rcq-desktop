@@ -236,6 +236,8 @@ export const uk: Record<string, string> = {
   'sites.publish.name.taken': 'Taken here. Names are per island, so this one may be free elsewhere.',
   'sites.publish.name.invalid': 'Letters, digits and dashes, up to 32.',
   'sites.publish.title': 'Рядок для каталогу',
+  'sites.publish.icon.found': 'Значок: {file} (показується поруч з адресою)',
+  'sites.publish.icon.none': 'Значка немає. Додайте icon.png або icon.svg, і він буде поруч з адресою.',
   'sites.publish.pick': 'Обрати файли',
   'sites.publish.rules': 'HTML, CSS and pictures. One of them must be index.html. Up to 64 files, 5 MB each, 20 MB in total. No scripts: nothing in a page runs, and nothing loads from outside the network.',
   'sites.publish.listed': 'Show in the catalogue on your island. Without it the site still opens by its exact name and is listed nowhere.',

@@ -38,6 +38,10 @@ export interface SiteManifest {
   files: Record<string, string>
   sig: string
   title?: string
+  /// The site's mark, a path inside the bundle. Inside the SIGNATURE on
+  /// purpose: this is what a site looks like in a list of sites, and an island
+  /// that could choose it could dress one site up as another.
+  icon?: string
 }
 
 export interface SitePage {
@@ -60,6 +64,14 @@ export interface SitePage {
 export type SiteError = 'address' | 'missing' | 'frozen' | 'unsigned' | 'tampered' | 'offline'
 
 const PINS_KEY = 'rcq.web.sitePins'
+
+/// Icons already fetched and checked this session, keyed by `name@host`. A
+/// catalogue redraws often and an icon is the same bytes every time.
+const iconCache = new Map<string, string | null>()
+
+/// What a bundle may call its mark when the manifest does not say. Ordered:
+/// a drawing beats a photograph at 24 pixels.
+const ICON_NAMES = ['icon.svg', 'icon.png', 'icon.webp', 'favicon.png', 'favicon.svg']
 
 /// `blog.is2.rcq` → { name: blog, host: is2.rcq.app }.
 ///
@@ -298,6 +310,32 @@ export async function fetchSitePage(addr: RcqAddress, path = 'index.html'): Prom
     key: m.key,
     keyChanged: pin(addr.display, m.key),
   }
+}
+
+/// Which file in this bundle is the site's mark, if any.
+export function iconPathOf(m: SiteManifest): string | null {
+  if (m.icon && m.files[m.icon]) return m.icon
+  return ICON_NAMES.find((n) => m.files[n]) ?? null
+}
+
+/// The site's mark as a `data:` URI, verified the same way a page is: the
+/// manifest signature covers its hash, and the bytes are checked against it.
+/// Null when the site has no mark, or when anything about it does not check
+/// out - a mark we cannot verify is not drawn at all.
+export async function fetchSiteIcon(addr: RcqAddress): Promise<string | null> {
+  const key = `${addr.name}@${addr.host}`
+  const cached = iconCache.get(key)
+  if (cached !== undefined) return cached
+  let uri: string | null = null
+  try {
+    const m = await fetchManifest(addr)
+    const path = iconPathOf(m)
+    if (path) uri = dataUri(path, await fetchFile(addr, m, path))
+  } catch {
+    uri = null
+  }
+  iconCache.set(key, uri)
+  return uri
 }
 
 /// The catalogue of an island: only the sites that asked to be in it.

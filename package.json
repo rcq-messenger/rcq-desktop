@@ -1,7 +1,7 @@
 {
   "name": "rcq-web-chat",
   "private": true,
-  "version": "0.3.50",
+  "version": "0.3.51",
   "license": "AGPL-3.0",
   "type": "module",
   "scripts": {

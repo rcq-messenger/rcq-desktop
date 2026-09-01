@@ -880,7 +880,7 @@ export const tr: Record<string, string> = {
   'uin_market.status.checking': 'Kontrol ediliyor…',
   'uin_market.status.available': 'Boşta',
   'uin_market.status.taken': 'Alınmış',
-  'uin_market.status.reserved': 'Ayrılmış: kısa ve desenli numaralar dağıtılmıyor',
+  'uin_market.status.reserved': 'Ayrılmış',
   'uin_market.status.self': 'Bu senin şimdiki UIN\'in',
   'uin_market.status.too_short': '3 ila 9 rakam',
   'uin_market.status.too_long': 'Çok uzun',

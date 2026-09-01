@@ -1033,7 +1033,7 @@ export const en: Record<string, string> = {
   'uin_market.status.checking': 'Checking…',
   'uin_market.status.available': 'Available',
   'uin_market.status.taken': 'Already taken',
-  'uin_market.status.reserved': 'Reserved — short and patterned numbers are not given out',
+  'uin_market.status.reserved': 'Reserved',
   'uin_market.status.self': 'This is your current UIN',
   'uin_market.status.too_short': '3 to 9 digits',
   'uin_market.status.too_long': 'Too long',

@@ -880,7 +880,7 @@ export const uk: Record<string, string> = {
   'uin_market.status.checking': 'Перевірка…',
   'uin_market.status.available': 'Вільний',
   'uin_market.status.taken': 'Уже зайнятий',
-  'uin_market.status.reserved': 'Зарезервований: короткі та красиві номери не видаються',
+  'uin_market.status.reserved': 'Зарезервований',
   'uin_market.status.self': 'Це твій нинішній UIN',
   'uin_market.status.too_short': 'Від 3 до 9 цифр',
   'uin_market.status.too_long': 'Задовгий',

@@ -8,6 +8,7 @@ import { MessageToasts } from './components/MessageToasts'
 import { CallProvider } from './lib/call'
 import { RoomsProvider } from './lib/rooms'
 import AudioRooms from './pages/AudioRooms'
+import { Sites } from './pages/Sites'
 import { ToastProvider } from './lib/toast'
 import { PinGate } from './lib/pin-gate'
 import { CallOverlay } from './components/CallOverlay'
@@ -76,6 +77,14 @@ export default function App() {
                 element={
                   <Authed>
                     <Contacts />
+                  </Authed>
+                }
+              />
+              <Route
+                path="/sites"
+                element={
+                  <Authed>
+                    <Sites />
                   </Authed>
                 }
               />

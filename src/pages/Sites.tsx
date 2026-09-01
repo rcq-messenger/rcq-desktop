@@ -1,0 +1,206 @@
+// The `.rcq` browser: the network's own pages, and nothing else.
+//
+// Design: docs/rcq-sites-design.md. What matters for reading this file:
+//
+// * A page is rendered in a LOCKED frame - `sandbox` with no `allow-scripts`,
+//   fed through `srcdoc` so it has no origin of ours to reach back into. Not a
+//   webview with our rules bolted on: a webview fingerprints the reader (fonts,
+//   canvas, timings) far past anything the messenger gives away, and it goes to
+//   the network on its own unless stopped.
+// * `.rcq` is not DNS and never leaves this device as a name: `blog.is2.rcq`
+//   is parsed HERE into island `is2` and site `blog`, and the fetch goes
+//   straight to that island. The reader's own island is not a proxy - it would
+//   otherwise hold a journal of what its users read elsewhere.
+// * Links out of the network are text. A click is how a reader gets
+//   deanonymised, and Tor's exit-node problem is one we can simply not have.
+// * Pages of the same site are moved between HERE, in our own chrome: with no
+//   scripts in the frame there is nothing inside a page that could navigate,
+//   and that is the point rather than a limitation.
+
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { useI18n } from '../lib/i18n-context'
+import { useIdentity } from '../lib/identity-context'
+import { fetchCatalogue, fetchSitePage, parseRcqAddress, repin, type RcqAddress, type SitePage } from '../lib/sites'
+
+const ERRORS = ['address', 'missing', 'frozen', 'unsigned', 'tampered', 'offline'] as const
+type ErrorKind = (typeof ERRORS)[number]
+
+export function Sites() {
+  const { t } = useI18n()
+  const { identity } = useIdentity()
+  const [typed, setTyped] = useState('')
+  const [addr, setAddr] = useState<RcqAddress | null>(null)
+  const [page, setPage] = useState<SitePage | null>(null)
+  const [error, setError] = useState<ErrorKind | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [catalogue, setCatalogue] = useState<Array<{ name: string; title: string | null }>>([])
+  const frameRef = useRef<HTMLIFrameElement | null>(null)
+
+  // "My island" for a bare `name.rcq`, taken from this session's own API base:
+  // a person's first site is reachable before they know what an island is.
+  const ownHost = identity ? new URL(identity.apiBase).host : 'api.rcq.app'
+
+  const open = useCallback(async (raw: string, path = 'index.html') => {
+    const parsed = parseRcqAddress(raw, ownHost)
+    if (!parsed) {
+      setError('address')
+      setPage(null)
+      return
+    }
+    setLoading(true)
+    setError(null)
+    try {
+      const got = await fetchSitePage(parsed, path)
+      setPage(got)
+      setAddr(parsed)
+      setTyped(parsed.display)
+    } catch (e) {
+      const kind = e instanceof Error ? e.message : 'missing'
+      setPage(null)
+      setError((ERRORS as readonly string[]).includes(kind) ? (kind as ErrorKind) : 'missing')
+    } finally {
+      setLoading(false)
+    }
+  }, [ownHost])
+
+  // The catalogue of the reader's own island: what there is to look at at all,
+  // and only the sites that asked to be in it.
+  useEffect(() => {
+    void fetchCatalogue(ownHost).then(setCatalogue)
+  }, [ownHost])
+
+  // The page is handed to the frame through `srcdoc`, so the browser never
+  // fetches it as a document of ours: no origin, no cookies, no storage,
+  // nothing of the app reachable from inside.
+  useEffect(() => {
+    const frame = frameRef.current
+    if (frame) frame.srcdoc = page?.html ?? ''
+  }, [page])
+
+  return (
+    <div className="h-screen [height:100dvh] flex flex-col bg-surface-dim overflow-hidden">
+      <header className="rcq-header sticky top-0 z-10 shrink-0">
+        <div className="max-w-3xl mx-auto px-3 h-14 flex items-center gap-2">
+          <Link to="/contacts" className="text-fg-secondary hover:text-fg-primary px-1" aria-label={t('sites.back')}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M15 18l-6-6 6-6" />
+            </svg>
+          </Link>
+          <form
+            className="flex-1 flex items-center gap-2"
+            onSubmit={(e) => {
+              e.preventDefault()
+              void open(typed)
+            }}
+          >
+            <input
+              value={typed}
+              onChange={(e) => setTyped(e.target.value)}
+              placeholder={t('sites.address.placeholder')}
+              spellCheck={false}
+              autoCapitalize="off"
+              autoCorrect="off"
+              autoComplete="off"
+              className="flex-1 h-9 px-3 rounded-md bg-field text-fg-primary outline-none focus:ring-1 focus:ring-accent text-sm font-mono"
+            />
+            <button
+              type="submit"
+              disabled={loading || !typed.trim()}
+              className="h-9 px-3 rounded-md bg-accent text-white text-sm disabled:opacity-50"
+            >
+              {loading ? t('sites.loading') : t('sites.open')}
+            </button>
+          </form>
+        </div>
+      </header>
+
+      {/* The other pages of this site. With no scripts in the frame, a link
+          inside a page cannot navigate - so the doors live out here. */}
+      {page && page.pages.length > 1 && (
+        <nav className="shrink-0 border-b border-border">
+          <div className="max-w-3xl mx-auto px-3 py-1.5 flex items-center gap-1 overflow-x-auto">
+            {page.pages.map((p) => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => addr && void open(addr.display, p)}
+                className={`px-2 py-1 rounded text-xs font-mono whitespace-nowrap ${
+                  p === page.path ? 'bg-field text-fg-primary' : 'text-fg-secondary hover:text-fg-primary'
+                }`}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+        </nav>
+      )}
+
+      <main className="flex-1 min-h-0 overflow-hidden">
+        {error && (
+          <div className="max-w-3xl mx-auto px-4 py-8 text-sm text-fg-secondary">{t(`sites.error.${error}`)}</div>
+        )}
+
+        {!error && !page && (
+          <div className="max-w-3xl mx-auto px-4 py-8 space-y-6 overflow-y-auto h-full">
+            <div className="space-y-2">
+              <div className="text-sm font-medium text-fg-primary">{t('sites.empty.title')}</div>
+              <p className="text-xs text-fg-dim leading-relaxed">{t('sites.empty.body')}</p>
+            </div>
+            {catalogue.length > 0 && (
+              <div className="space-y-1">
+                <div className="text-xs uppercase tracking-wide text-fg-dim">{t('sites.catalogue')}</div>
+                {catalogue.map((s) => (
+                  <button
+                    key={s.name}
+                    type="button"
+                    onClick={() => void open(`${s.name}.rcq`)}
+                    className="w-full text-left px-3 py-2 rounded-md hover:bg-field"
+                  >
+                    <div className="text-sm font-mono text-fg-primary">{s.name}.rcq</div>
+                    {s.title && <div className="text-xs text-fg-secondary truncate">{s.title}</div>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {!error && page && (
+          <div className="h-full flex flex-col">
+            {/* A pinned key that changed is the one thing worth interrupting
+                for: these bytes are signed by somebody other than last time,
+                which is exactly what the signature exists to make visible. */}
+            {page.keyChanged && (
+              <div className="px-4 py-2 text-xs bg-red-500/15 text-fg-primary flex items-center gap-3">
+                <span className="flex-1">{t('sites.key_changed')}</span>
+                <button
+                  type="button"
+                  className="underline"
+                  onClick={() => {
+                    if (!addr) return
+                    repin(addr.display, page.key)
+                    setPage({ ...page, keyChanged: false })
+                  }}
+                >
+                  {t('sites.key_changed.accept')}
+                </button>
+              </div>
+            )}
+            <iframe
+              ref={frameRef}
+              title={addr?.display ?? ''}
+              // ⚠⚠ No `allow-scripts` and no `allow-same-origin`. Together they
+              // would let a page reach back into the app; dropping
+              // `allow-scripts` is what makes "no JS" true rather than a
+              // promise in the docs.
+              sandbox=""
+              referrerPolicy="no-referrer"
+              className="flex-1 w-full bg-white"
+            />
+          </div>
+        )}
+      </main>
+    </div>
+  )
+}

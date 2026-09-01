@@ -55,6 +55,42 @@ export function pickIcon(paths: string[]): string | null {
   return ICON_NAMES.find((n) => paths.includes(n)) ?? null
 }
 
+/// A `favicon.ico` turned into the `icon.png` the network actually carries.
+///
+/// ICO is refused on purpose - neither phone decodes it, and the mark is drawn
+/// by the app's own chrome rather than inside the locked frame - but refusing
+/// the file somebody obviously meant as their mark is unhelpful when this
+/// browser can decode it and hand back a PNG. Returns null when it cannot, and
+/// the ordinary refusal stands.
+export async function icoToPng(file: File): Promise<File | null> {
+  const url = URL.createObjectURL(file)
+  try {
+    const img = await new Promise<HTMLImageElement | null>((resolve) => {
+      const el = new Image()
+      el.onload = () => resolve(el)
+      el.onerror = () => resolve(null)
+      el.src = url
+    })
+    if (!img || !img.naturalWidth) return null
+    // 64 is what the lists draw at twice over on a dense screen, and an icon
+    // is not worth more bytes than that.
+    const side = Math.min(64, Math.max(img.naturalWidth, img.naturalHeight))
+    const canvas = document.createElement('canvas')
+    canvas.width = side
+    canvas.height = side
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return null
+    ctx.drawImage(img, 0, 0, side, side)
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
+    if (!blob) return null
+    return new File([blob], 'icon.png', { type: 'image/png' })
+  } catch {
+    return null
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
+
 export function isAllowedFile(path: string): boolean {
   const dot = path.lastIndexOf('.')
   return dot > 0 && SITE_LIMITS.types.includes(path.slice(dot).toLowerCase())

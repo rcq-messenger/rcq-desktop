@@ -237,6 +237,7 @@ export const pt: Record<string, string> = {
   'sites.publish.name.invalid': 'Letters, digits and dashes, up to 32.',
   'sites.publish.title': 'Uma linha para o catálogo',
   'sites.publish.icon.found': 'Marca: {file} (aparece ao lado do endereço)',
+  'sites.publish.icon.converted': '{file} virou icon.png: os telefones não leem .ico, então a rede usa PNG.',
   'sites.publish.icon.none': 'Sem marca. Adicione icon.png ou icon.svg e ela aparece ao lado do endereço.',
   'sites.publish.pick': 'Escolher arquivos',
   'sites.publish.rules': 'HTML, CSS and pictures. One of them must be index.html. Up to 64 files, 5 MB each, 20 MB in total. No scripts: nothing in a page runs, and nothing loads from outside the network.',

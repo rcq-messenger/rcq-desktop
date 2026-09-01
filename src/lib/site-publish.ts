@@ -40,6 +40,17 @@ export const SITE_LIMITS = {
   types: ['.html', '.css', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.txt', '.json'],
 }
 
+/// What a bundle may call its mark, in the order a client looks for it. The
+/// name goes INTO the manifest, so it is covered by the owner's signature: a
+/// mark is how a site is recognised in a list, and an island that could choose
+/// it could dress one site up as another.
+export const ICON_NAMES = ['icon.svg', 'icon.png', 'icon.webp', 'favicon.png', 'favicon.svg']
+
+/// Which of the picked files is the site's mark, if any.
+export function pickIcon(paths: string[]): string | null {
+  return ICON_NAMES.find((n) => paths.includes(n)) ?? null
+}
+
 export function isAllowedFile(path: string): boolean {
   const dot = path.lastIndexOf('.')
   return dot > 0 && SITE_LIMITS.types.includes(path.slice(dot).toLowerCase())
@@ -96,6 +107,8 @@ export async function publishSite(
     files: Object.fromEntries(paths.map((p, i) => [p, hex(sha256(bodies[i]))])),
   }
   if (opts.title?.trim()) manifest.title = opts.title.trim()
+  const icon = pickIcon(paths)
+  if (icon) manifest.icon = icon
   const sig = ed25519.sign(new TextEncoder().encode(canonicalJSON(manifest)), identity.signingPriv)
 
   const form = new FormData()

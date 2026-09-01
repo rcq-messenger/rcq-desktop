@@ -167,21 +167,41 @@ export function apply(theme: CustomTheme | null): void {
   root.classList.add('rcq-custom-theme')
 }
 
-export function load(): CustomTheme | null {
+/// Both pictures at once. Light and dark are stored SEPARATELY on purpose: a
+/// pair that reads well over a light page is unreadable over a dark one, and
+/// somebody who set a custom light background and then switched to dark should
+/// get the built-in dark theme, not their light gradient forced into it.
+type Stored = { light?: { from: string; to: string }; dark?: { from: string; to: string } }
+
+function readAll(): Stored {
   try {
     const raw = localStorage.getItem(KEY)
-    if (!raw) return null
-    const v = JSON.parse(raw) as CustomTheme
-    if (typeof v?.from !== 'string' || typeof v?.to !== 'string') return null
-    return v
+    if (!raw) return {}
+    const v = JSON.parse(raw)
+    // Migrate the single-theme shape this key held before there were two.
+    if (v && typeof v.from === 'string' && typeof v.to === 'string') {
+      const mode: 'light' | 'dark' = v.mode === 'dark' ? 'dark' : 'light'
+      return { [mode]: { from: v.from, to: v.to } } as Stored
+    }
+    return (v && typeof v === 'object' ? v : {}) as Stored
   } catch {
-    return null
+    return {}
   }
 }
 
-export function save(theme: CustomTheme | null): void {
+export function load(mode: 'light' | 'dark'): CustomTheme | null {
+  const one = readAll()[mode]
+  if (!one || typeof one.from !== 'string' || typeof one.to !== 'string') return null
+  return { from: one.from, to: one.to, mode }
+}
+
+export function save(theme: CustomTheme | null, mode?: 'light' | 'dark'): void {
+  const which = theme?.mode ?? mode
   try {
-    if (theme) localStorage.setItem(KEY, JSON.stringify(theme))
+    const all = readAll()
+    if (theme) all[theme.mode] = { from: theme.from, to: theme.to }
+    else if (which) delete all[which]
+    if (all.light || all.dark) localStorage.setItem(KEY, JSON.stringify(all))
     else localStorage.removeItem(KEY)
   } catch {
     /* a browser with storage off keeps the built-in theme, which is fine */

@@ -268,6 +268,12 @@ export function Market() {
     switch (reason) {
       case 'taken':
         return t('uin_market.status.taken')
+      // Short (six digits or fewer) or a recognisable shape. The island keeps
+      // these as stock rather than handing them to whoever asks first, so the
+      // field has to say so instead of offering a number that /purchase would
+      // refuse. See services/uin.is_reserved_uin.
+      case 'reserved':
+        return t('uin_market.status.reserved')
       case 'self':
         return t('uin_market.status.self')
       case 'too_long':

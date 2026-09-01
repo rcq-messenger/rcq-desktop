@@ -18,6 +18,8 @@ import {
   type ReactNode,
 } from 'react'
 
+import { apply as applyCustom, load as loadCustom } from './custom-theme'
+
 export type ThemePref = 'light' | 'dark' | 'system'
 export type ThemeResolved = 'light' | 'dark'
 
@@ -50,6 +52,12 @@ function applyToDocument(resolved: ThemeResolved) {
   // Tells the UA which color form-controls/scrollbars/native widgets
   // should render in. Cheap to set, surprisingly polish.
   document.documentElement.style.colorScheme = resolved
+  // A custom gradient, if this person set one FOR THIS MODE. Applied after the
+  // built-in palette because it overrides the same variables, and re-applied on
+  // every switch: light and dark hold different pictures, and one of them is
+  // usually "none", which has to clear the other's variables rather than leave
+  // them painted over the wrong palette.
+  applyCustom(loadCustom(resolved))
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {

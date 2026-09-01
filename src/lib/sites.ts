@@ -495,13 +495,32 @@ export async function fetchSitePage(addr: RcqAddress, path = 'index.html', fresh
 
 /// Which file in this bundle is the site's mark, if any.
 export function iconPathOf(m: SiteManifest): string | null {
-  // ⚠ The manifest names the mark, so the extension has to be checked here
-  // rather than trusted: `"icon": "anything.svg"` was drawn by our own chrome
-  // until a conformance case walked through this line
-  // (docs/rcq-sites-conformance.json, sanitiser[41]).
+  return iconCandidates(m)[0] ?? null
+}
+
+/// Every file that could be this site's mark, best first.
+///
+/// ⚠ The manifest names one, so the extension has to be checked here rather
+/// than trusted: `"icon": "anything.svg"` was drawn by our own chrome until a
+/// conformance case walked through this line. And a NAME is not proof either -
+/// the first site to carry a mark had an SVG called `icon.png` beside a real
+/// `icon.webp`, so the caller tries these in order and looks at the bytes.
+export function iconCandidates(m: SiteManifest): string[] {
   const raster = (p: string) => /\.(png|webp)$/i.test(p) && hasFile(m, p)
-  if (m.icon && raster(m.icon)) return m.icon
-  return ICON_NAMES.find((n) => raster(n)) ?? null
+  const named = m.icon && raster(m.icon) ? [m.icon] : []
+  return [...named, ...ICON_NAMES.filter((n) => raster(n) && n !== m.icon)]
+}
+
+/// Are these bytes really the raster image the name claims? A mark is decoded
+/// by our own chrome, outside the locked frame, so what it IS matters more
+/// than what it is called.
+function looksRaster(bytes: Uint8Array): boolean {
+  const png = bytes.length > 8 && bytes[0] === 0x89 && bytes[1] === 0x50 &&
+    bytes[2] === 0x4e && bytes[3] === 0x47
+  const webp = bytes.length > 12 &&
+    String.fromCharCode(...bytes.subarray(0, 4)) === 'RIFF' &&
+    String.fromCharCode(...bytes.subarray(8, 12)) === 'WEBP'
+  return png || webp
 }
 
 /// The site's mark as a `data:` URI, verified the same way a page is: the
@@ -516,8 +535,15 @@ export async function fetchSiteIcon(addr: RcqAddress, fresh = false): Promise<st
   let uri: string | null = null
   try {
     const m = await fetchManifest(addr, fresh)
-    const path = iconPathOf(m)
-    if (path) uri = dataUri(path, await fetchFile(addr, m, path, fresh))
+    for (const path of iconCandidates(m)) {
+      const bytes = await fetchFile(addr, m, path, fresh)
+      // Named `icon.png` and actually an SVG is somebody's rename, not an
+      // attack - and the bundle usually carries a real one beside it, so the
+      // next candidate is tried rather than the site left blank.
+      if (!looksRaster(bytes)) continue
+      uri = dataUri(path, bytes)
+      if (uri) break
+    }
   } catch {
     uri = null
   }

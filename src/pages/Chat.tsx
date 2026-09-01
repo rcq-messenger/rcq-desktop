@@ -90,6 +90,7 @@ import {
 import type { MentionContext } from '../components/EmoticonText'
 import { groupApiCtx } from '../lib/visited-islands'
 import { ensureRoster, memberCount } from '../lib/group-roster'
+import { lookupContactStatus } from '../lib/contacts-cache'
 import { useGroupChanged } from '../lib/group-events'
 import { compactCount } from '../lib/format-count'
 import {
@@ -2718,7 +2719,22 @@ export function Chat() {
         uin,
         asset,
         name,
-        status: (member?.status ?? (uin === peerUIN ? peer?.status : undefined) ?? 'offline') as ReactionAuthor['status'],
+        // ⚠⚠ The CONTACT list first, the roster second. Above a hundred members
+        // the island deliberately reports every member as offline (the roster
+        // would otherwise hand anyone a pollable presence feed for two thousand
+        // accounts - `PRESENCE_ROSTER_LIMIT`), so in the big rooms this sheet
+        // showed everybody as offline no matter who was actually there. The
+        // contact list carries live presence, and it is presence I am already
+        // entitled to. iOS was fixed the same way on 31.08; this is the web
+        // half nobody did.
+        status: (
+          mine
+            ? (myInfo?.status ?? 'online')
+            : lookupContactStatus(identity.uin, uin)
+              ?? member?.status
+              ?? (uin === peerUIN ? peer?.status : undefined)
+              ?? 'offline'
+        ) as ReactionAuthor['status'],
         avatarMediaId: member?.avatar_media_id ?? (uin === peerUIN ? peer?.avatar_media_id : undefined),
         avatarMediaKey: member?.avatar_media_key ?? (uin === peerUIN ? peer?.avatar_media_key : undefined),
         crossIsland: uin === peerUIN ? !!peer?.host : false,

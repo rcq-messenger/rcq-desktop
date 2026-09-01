@@ -66,8 +66,13 @@ function emoticonImg(asset: string, code: string, size: number): HTMLImageElemen
   // size, and the composer has to track the reader's text size like everything
   // else does (#477). Pinned in px, the smiley the user just inserted would
   // stay put while the text around it grew.
-  img.style.width = `${size / 16}rem`
+  // ⚠ HEIGHT ONLY, width follows the aspect ratio. The kolobok set is not
+  // square (glyphs run from 20x20 to 38x27), so a square box squeezes the wide
+  // ones - which is exactly what the composer looked like (founder, 01.09).
+  // `EmoticonText` has done it this way in the bubbles all along; the input was
+  // the one place still forcing a square.
   img.style.height = `${size / 16}rem`
+  img.style.width = 'auto'
   img.draggable = false
   img.className = 'inline-block align-middle mx-0.5'
   return img

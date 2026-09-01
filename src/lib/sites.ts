@@ -69,9 +69,15 @@ const PINS_KEY = 'rcq.web.sitePins'
 /// catalogue redraws often and an icon is the same bytes every time.
 const iconCache = new Map<string, string | null>()
 
-/// What a bundle may call its mark when the manifest does not say. Ordered:
-/// a drawing beats a photograph at 24 pixels.
-const ICON_NAMES = ['icon.svg', 'icon.png', 'icon.webp', 'favicon.png', 'favicon.svg']
+/// What a bundle may call its mark when the manifest does not say.
+///
+/// ⚠⚠ RASTER ONLY, and that is a network-wide decision rather than this
+/// screen's taste. A mark is drawn by OUR chrome, outside the locked frame:
+/// on a phone that means an SVG would be handed to a native decoder with no
+/// sandbox around it and no sanitiser in front of it, and iOS has no native
+/// SVG renderer at all. PNG and WebP are decoded by the same code that draws
+/// every avatar in the app already.
+const ICON_NAMES = ['icon.png', 'icon.webp', 'favicon.png']
 
 /// `blog.is2.rcq` → { name: blog, host: is2.rcq.app }.
 ///
@@ -114,6 +120,14 @@ function readPins(): Record<string, string> {
   }
 }
 
+/// The identity a pin belongs to: the site and the island that serves it,
+/// never the string somebody typed. `blog.rcq` on your own island and
+/// `blog.flagship.rcq` are one site; keyed by what was typed they would have
+/// been two pins, and a key change would have gone unseen on the other one.
+function pinKey(addr: RcqAddress): string {
+  return `${addr.name}@${addr.host}`
+}
+
 /// Returns true when this name was pinned to a DIFFERENT key before.
 function pin(display: string, key: string): boolean {
   const pins = readPins()
@@ -127,7 +141,8 @@ function pin(display: string, key: string): boolean {
 }
 
 /// Forget the pin for a name, after the reader decided to trust the new key.
-export function repin(display: string, key: string): void {
+export function repin(addr: RcqAddress, key: string): void {
+  const display = pinKey(addr)
   const pins = readPins()
   pins[display] = key
   try { localStorage.setItem(PINS_KEY, JSON.stringify(pins)) } catch { /* private mode */ }
@@ -218,12 +233,53 @@ function resolve(from: string, ref: string): string | null {
 /// Everything that could reach the network or run is removed here rather than
 /// merely blocked by the frame: two locks, because the frame's rules are the
 /// browser's promise and this one is ours.
+/// What a page may contain. An ALLOW-LIST, not a list of things to remove:
+/// a deny-list is a promise that we thought of everything, and the web keeps
+/// inventing elements. Anything not named here is unwrapped (its text stays,
+/// the element goes), so an unknown tag costs a page its styling and never
+/// its content.
+const ALLOWED_TAGS = new Set([
+  'html', 'head', 'body', 'title', 'style', 'meta',
+  'div', 'span', 'p', 'br', 'hr', 'section', 'article', 'main', 'aside', 'nav',
+  'header', 'footer', 'figure', 'figcaption', 'blockquote', 'pre', 'code', 'kbd', 'samp',
+  'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+  'ul', 'ol', 'li', 'dl', 'dt', 'dd',
+  'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td', 'caption', 'colgroup', 'col',
+  'a', 'img', 'strong', 'b', 'em', 'i', 'u', 's', 'small', 'sub', 'sup', 'mark',
+  'time', 'abbr', 'cite', 'q', 'ruby', 'rt', 'rp', 'wbr', 'details', 'summary',
+])
+
+/// Attributes that may survive on any element. Everything else goes, which
+/// covers `on*`, `ping`, `srcset`, `formaction`, `xlink:href` and whatever is
+/// invented next without us having to name it.
+const ALLOWED_ATTRS = new Set([
+  'class', 'id', 'title', 'lang', 'dir', 'alt', 'width', 'height',
+  'colspan', 'rowspan', 'headers', 'scope', 'span', 'datetime', 'cite', 'open',
+  'start', 'reversed', 'value', 'charset',
+])
+
+/// Author CSS is kept, but never anything that fetches. `@import` is a request
+/// wearing a stylesheet's clothes, `url()` is a request outright, and on the
+/// phones there will be no CSP behind this to catch what slips through - so
+/// this has to hold on its own.
+function cleanCss(css: string): string {
+  return css
+    .replace(/@import[^;{]*(;|$)/gi, '')
+    .replace(/@font-face\s*\{[^}]*\}/gi, '')
+    .replace(/url\(\s*(?!['"]?data:)[^)]*\)/gi, 'none')
+}
+
+/// Turn the bundle's HTML into a single self-contained document.
+///
+/// Everything that could reach the network or run is removed here rather than
+/// merely blocked by the frame: two locks, because the frame's rules are the
+/// browser's promise and this one is ours. The phones will have this half and
+/// no CSP, so this is the half that has to be right.
 async function inline(addr: RcqAddress, m: SiteManifest, path: string, html: string): Promise<string> {
   const doc = new DOMParser().parseFromString(html, 'text/html')
 
-  doc.querySelectorAll('script, iframe, object, embed, form, video, audio, source, base, meta[http-equiv]')
-    .forEach((el) => el.remove())
-
+  // Stylesheets first: a <link> is resolved into a <style> before the
+  // allow-list walk, which then treats it like any author style block.
   for (const el of Array.from(doc.querySelectorAll('link'))) {
     const rel = (el.getAttribute('rel') || '').toLowerCase()
     const href = resolve(path, el.getAttribute('href') || '')
@@ -231,19 +287,21 @@ async function inline(addr: RcqAddress, m: SiteManifest, path: string, html: str
     try {
       const css = new TextDecoder().decode(await fetchFile(addr, m, href))
       const style = doc.createElement('style')
-      // Every `url()` that is not an inlined image is a fetch, and a fetch is
-      // how a page learns who is reading it. The bundle's own images are
-      // already `data:` by the time this runs, so nothing legitimate is lost.
-      style.textContent = css.replace(/url\(\s*(?!['"]?data:)[^)]*\)/gi, 'none')
+      style.textContent = cleanCss(css)
       el.replaceWith(style)
     } catch {
       el.remove()
     }
   }
 
+  // Elements that carry executable or fetching content whatever we do with
+  // their attributes. Removed WITH their children, unlike the unwrap below:
+  // the text inside a <script> is code, not prose.
+  doc.querySelectorAll('script, iframe, object, embed, form, video, audio, source, track, base, svg, math, canvas, template, noscript, portal')
+    .forEach((el) => el.remove())
+
   for (const img of Array.from(doc.querySelectorAll('img'))) {
     const src = resolve(path, img.getAttribute('src') || '')
-    img.removeAttribute('srcset')
     if (!src || !m.files[src]) { img.remove(); continue }
     try {
       const uri = dataUri(src, await fetchFile(addr, m, src))
@@ -256,8 +314,6 @@ async function inline(addr: RcqAddress, m: SiteManifest, path: string, html: str
 
   for (const a of Array.from(doc.querySelectorAll('a'))) {
     const href = a.getAttribute('href') || ''
-    a.removeAttribute('href')
-    a.removeAttribute('target')
     const inner = resolve(path, href)
     if (inner && m.files[inner]) {
       // An internal link: the frame has no scripts, so it cannot navigate.
@@ -274,17 +330,29 @@ async function inline(addr: RcqAddress, m: SiteManifest, path: string, html: str
     }
   }
 
-  // Attributes that fetch or execute, whatever element they sit on.
+  // The allow-list walk. Unknown elements are unwrapped rather than deleted,
+  // and every attribute not on the list goes - including the `src` we just
+  // wrote, so images are put back by hand below.
   for (const el of Array.from(doc.querySelectorAll('*'))) {
+    const tag = el.tagName.toLowerCase()
+    if (!ALLOWED_TAGS.has(tag)) {
+      el.replaceWith(...Array.from(el.childNodes))
+      continue
+    }
     for (const attr of Array.from(el.attributes)) {
       const n = attr.name.toLowerCase()
-      if (n.startsWith('on') || n === 'formaction' || n === 'ping' ||
-          (n === 'style' && /url\s*\(/i.test(attr.value))) {
-        el.removeAttribute(attr.name)
-      }
+      const keep =
+        ALLOWED_ATTRS.has(n) ||
+        (tag === 'img' && n === 'src' && attr.value.startsWith('data:')) ||
+        (tag === 'a' && (n === 'data-rcq-page' || n === 'data-rcq-external')) ||
+        // A style attribute may stay only once it can no longer fetch.
+        (n === 'style' && !/url\s*\(|@import/i.test(attr.value))
+      if (!keep) el.removeAttribute(attr.name)
     }
+    if (tag === 'style') el.textContent = cleanCss(el.textContent || '')
   }
 
+  // Our own policy last, so it is not one of the attributes just stripped.
   const meta = doc.createElement('meta')
   meta.setAttribute('http-equiv', 'Content-Security-Policy')
   meta.setAttribute('content', "default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src 'none'")
@@ -308,7 +376,7 @@ export async function fetchSitePage(addr: RcqAddress, path = 'index.html'): Prom
       .sort((a, b) => (a === 'index.html' ? -1 : b === 'index.html' ? 1 : a.localeCompare(b))),
     version: m.version,
     key: m.key,
-    keyChanged: pin(addr.display, m.key),
+    keyChanged: pin(pinKey(addr), m.key),
   }
 }
 

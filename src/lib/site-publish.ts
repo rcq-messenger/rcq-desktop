@@ -44,7 +44,11 @@ export const SITE_LIMITS = {
 /// name goes INTO the manifest, so it is covered by the owner's signature: a
 /// mark is how a site is recognised in a list, and an island that could choose
 /// it could dress one site up as another.
-export const ICON_NAMES = ['icon.svg', 'icon.png', 'icon.webp', 'favicon.png', 'favicon.svg']
+///
+/// ⚠⚠ Raster only. The mark is drawn by our own chrome rather than inside the
+/// locked frame, so on a phone an SVG would reach a native decoder with no
+/// sandbox and no sanitiser in front of it - and iOS has no native SVG at all.
+export const ICON_NAMES = ['icon.png', 'icon.webp', 'favicon.png']
 
 /// Which of the picked files is the site's mark, if any.
 export function pickIcon(paths: string[]): string | null {
@@ -91,7 +95,7 @@ export async function checkName(identity: WebIdentity, name: string): Promise<'f
 
 export async function publishSite(
   identity: WebIdentity,
-  opts: { name: string; files: File[]; title?: string; listed: boolean },
+  opts: { name: string; files: File[]; title?: string; listed: boolean; previousVersion?: number },
 ): Promise<MySite> {
   const paths = bundlePaths(opts.files)
   const bodies = await Promise.all(opts.files.map(async (f) => new Uint8Array(await f.arrayBuffer())))
@@ -99,10 +103,12 @@ export async function publishSite(
   const manifest: Record<string, unknown> = {
     v: 1,
     name: opts.name,
-    // The island decides the version - it is the one holding the previous one.
-    // Ours is a claim it will overwrite, and the signature covers whatever it
-    // ends up serving because the whole manifest is stored verbatim.
-    version: 1,
+    // ⚠ The version is INSIDE the signature and has to be the one the island
+    // will store, or it says nothing: a manifest frozen at 1 forever cannot
+    // tell a reader that they are being served last week's bundle. The island
+    // refuses a publish whose version is not the next one, so this is a claim
+    // it checks rather than a claim it overwrites.
+    version: (opts.previousVersion ?? 0) + 1,
     key: bytesToB64(identity.signingPub),
     files: Object.fromEntries(paths.map((p, i) => [p, hex(sha256(bodies[i]))])),
   }

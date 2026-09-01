@@ -102,7 +102,9 @@ export function ReactionAuthors({
                     <img
                       src={emoticonAssetURL(asset)}
                       alt={asset}
-                      className="h-7 w-7 flex-none select-none"
+                      // Height only, width by aspect ratio - see EmoticonText:
+                      // the set is not square and `w-7` squashed the wide ones.
+                      className="h-7 w-auto flex-none select-none"
                       draggable={false}
                     />
                     <span className="text-sm text-fg-secondary tabular-nums">{people.length}</span>

@@ -71,11 +71,13 @@ export function Sites() {
   }, [ownHost])
 
   // The page is WRITTEN into a blank frame rather than handed over as
-  // `srcdoc`. Both are the same document in the end, but a `srcdoc` frame
-  // never rendered at all inside the packaged desktop app - its parent is a
-  // custom scheme there, and WebKit gives up on `about:srcdoc` under one -
-  // and a browser that shows a white rectangle instead of the page is not a
-  // browser. Writing into `about:blank` behaves identically in both engines.
+  // `srcdoc`. Both end up the same document, but `srcdoc` rendered NOTHING
+  // inside the packaged desktop app - a white rectangle where the page should
+  // be - while working everywhere else, including a reduced WKWebView harness
+  // under the same custom scheme and the same policy (scratch probe, 01.09).
+  // So the cause is still unaccounted for; what is established is that this
+  // way renders in both engines and that way did not, and a browser that
+  // shows a blank rectangle is not a browser.
   //
   // ⚠ This is why the frame carries `allow-same-origin`: a document can only
   // be written into if it is reachable, and an empty sandbox makes the frame

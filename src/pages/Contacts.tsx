@@ -22,6 +22,7 @@
 // that failed once would otherwise delete the account's sections.
 
 import { relativeLastSeen } from '../lib/last-seen'
+import { AltText } from '../components/AltText'
 import { applySealedStateAll, loadRoomKeys } from '../lib/group-state'
 import { loadProfileKeys, myProfileKey } from '../lib/profile-key'
 import { AnimatePresence } from 'framer-motion'
@@ -1473,14 +1474,22 @@ function ContactRow({
                   message is text somebody left behind; when they are not here,
                   WHEN they were here is the more useful half, so it goes
                   first and the message keeps whatever room is left. */}
-              {contact.status === 'offline' && contact.last_seen && (
-                <span className="flex-none">
-                  · {t('contact.last_seen', { when: relativeLastSeen(contact.last_seen, t, lang) })}
-                </span>
-              )}
-              {contact.status_message && (
-                <span className="truncate">· {contact.status_message}</span>
-              )}
+              {(() => {
+                // Both are worth saying and the line fits one, so they take
+                // turns (founder). Sharing the line was the first attempt and
+                // it truncated on a phone; a status message wins outright was
+                // the state before that, and it hid the last seen for 30% of
+                // offline contacts.
+                const seen =
+                  contact.status === 'offline' && contact.last_seen
+                    ? '· ' + t('contact.last_seen', { when: relativeLastSeen(contact.last_seen, t, lang) })
+                    : null
+                const msg = contact.status_message ? '· ' + contact.status_message : null
+                if (seen && msg) return <AltText a={seen} b={msg} />
+                if (seen) return <span className="truncate">{seen}</span>
+                if (msg) return <span className="truncate">{msg}</span>
+                return null
+              })()}
             </div>
           </div>
         </Link>

@@ -27,6 +27,12 @@ interface Props {
   /// The caller is downloading this file right now (menu action) — show
   /// the spinner even though the press didn't start it here.
   busy?: boolean
+  /// How far that caller-driven download has got, 0..1. The phone has shown
+  /// a percentage since 0.159 and the desktop showed nothing at all, so a
+  /// large file looked identical before, during and after (#842).
+  progress?: number | null
+  /// The caller-driven download finished and the file was saved.
+  saved?: boolean
   /// Files are switched off in this group: render inert with this note.
   disabledNote?: string
 }
@@ -44,11 +50,13 @@ function fmtSize(bytes?: number): string | null {
   return `${n >= 10 || i === 0 ? Math.round(n) : n.toFixed(1)} ${units[i]}`
 }
 
-export function FileBubble({ mediaId, mediaKey, fileName, mime, size, apiBase, onPress, busy: busyOutside, disabledNote }: Props) {
+export function FileBubble({ mediaId, mediaKey, fileName, mime, size, apiBase, onPress, busy: busyOutside, progress: progressOutside, saved: savedOutside, disabledNote }: Props) {
   const { identity } = useIdentity()
   const { t } = useI18n()
   const [selfBusy, setSelfBusy] = useState(false)
   const [failed, setFailed] = useState(false)
+  const [selfPct, setSelfPct] = useState<number | null>(null)
+  const [selfSaved, setSelfSaved] = useState(false)
 
   // An audio FILE plays inline (megalist B2, "в целом аудио файлы"): the same
   // lazy player the voice bubble uses, with the name + download chip beneath
@@ -83,18 +91,32 @@ export function FileBubble({ mediaId, mediaKey, fileName, mime, size, apiBase, o
     if (!identity || busy) return
     setSelfBusy(true)
     setFailed(false)
-    const ok = await downloadEncryptedFile(apiBase ?? identity.apiBase, mediaId, mediaKey, name, mime)
+    setSelfSaved(false)
+    setSelfPct(0)
+    const ok = await downloadEncryptedFile(
+      apiBase ?? identity.apiBase, mediaId, mediaKey, name, mime, setSelfPct,
+    )
     setSelfBusy(false)
-    if (!ok) setFailed(true)
+    setSelfPct(null)
+    if (ok) setSelfSaved(true)
+    else setFailed(true)
   }
 
+  // What the second line says, in the order that matters while you wait: how
+  // far it has got, then whether it landed, then what a press would do.
+  const pct = progressOutside ?? selfPct
+  const saved = savedOutside || selfSaved
   const subLabel = disabledNote
     ? disabledNote
     : failed
       ? t('chat.media.unavailable')
-      : sizeLabel
-        ? `${sizeLabel} · ${t('chat.media.download')}`
-        : t('chat.media.download')
+      : busy
+        ? `${sizeLabel ? `${sizeLabel} · ` : ''}${pct != null ? `${Math.round(pct * 100)}%` : t('chat.media.downloading')}`
+        : saved
+          ? t('chat.media.saved')
+          : sizeLabel
+            ? `${sizeLabel} · ${t('chat.media.download')}`
+            : t('chat.media.download')
 
   return (
     <button
@@ -117,7 +139,13 @@ export function FileBubble({ mediaId, mediaKey, fileName, mime, size, apiBase, o
     >
       <span className="flex h-9 w-9 flex-none items-center justify-center rounded-md bg-accent/15 text-accent">
         {busy ? (
-          <span className="text-xs">…</span>
+          <span className="text-[0.625rem] font-medium tabular-nums">
+            {pct != null ? Math.round(pct * 100) : '…'}
+          </span>
+        ) : saved ? (
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
         ) : (
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
             <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
@@ -128,6 +156,16 @@ export function FileBubble({ mediaId, mediaKey, fileName, mime, size, apiBase, o
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium">{name}</span>
         <span className="block text-[0.6875rem] text-fg-dim">{subLabel}</span>
+        {/* A bar only while it is moving: a finished row should look like a
+            file again, not like a progress widget that happens to be full. */}
+        {busy && (
+          <span className="mt-1 block h-0.5 w-full overflow-hidden rounded-full bg-line/50">
+            <span
+              className="block h-full bg-accent transition-[width] duration-200"
+              style={{ width: `${Math.round((pct ?? 0) * 100)}%` }}
+            />
+          </span>
+        )}
       </span>
     </button>
   )

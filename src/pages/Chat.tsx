@@ -341,6 +341,12 @@ export function Chat() {
   /// Row whose file the menu's download action is decrypting right now —
   /// keeps the chip's spinner honest while the work happens up here.
   const [downloadingRowId, setDownloadingRowId] = useState<string | null>(null)
+  // #842: the phone shows a percentage while a file comes down and the
+  // desktop showed nothing, so a big file looked the same before, during and
+  // after. `savedRowId` holds the tick for a few seconds afterwards, which is
+  // the half the reporter actually asked for: whether it is done.
+  const [downloadPct, setDownloadPct] = useState<number | null>(null)
+  const [savedRowId, setSavedRowId] = useState<string | null>(null)
   /// Long-press gesture state for pressMenu — see the comment there.
   const pressRef = useRef({ timer: null as number | null, sx: 0, sy: 0, firedAt: 0 })
   /// The incoming message being reported to the island's operators, or null.
@@ -2427,9 +2433,16 @@ export function Chat() {
     setActionsForRowId(null)
     if (!identity || downloadingRowId != null) return
     setDownloadingRowId(rowId)
-    const ok = await downloadEncryptedFile(groupMediaBase ?? identity.apiBase, mediaId, mediaKey, name || 'file', mime)
+    setDownloadPct(0)
+    setSavedRowId(null)
+    const ok = await downloadEncryptedFile(
+      groupMediaBase ?? identity.apiBase, mediaId, mediaKey, name || 'file', mime, setDownloadPct,
+    )
     setDownloadingRowId(null)
-    if (!ok) toast(t('chat.media.unavailable'), 'error')
+    setDownloadPct(null)
+    if (!ok) return toast(t('chat.media.unavailable'), 'error')
+    setSavedRowId(rowId)
+    window.setTimeout(() => setSavedRowId((cur) => (cur === rowId ? null : cur)), 5000)
   }
 
   /// "Report" on somebody's message: collect what the modal needs. The
@@ -3590,6 +3603,8 @@ export function Chat() {
                     }
                     filesAllowed={filesAllowed}
                     downloading={downloadingRowId === m.id}
+                    downloadPct={downloadingRowId === m.id ? downloadPct : null}
+                    downloadSaved={savedRowId === m.id}
                     senderName={senderName}
                     senderAvatarId={senderMember?.avatar_media_id}
                     senderAvatarKey={senderMember?.avatar_media_key}
@@ -3621,6 +3636,8 @@ export function Chat() {
                   linksAllowed={linksAllowed}
                   filesAllowed={filesAllowed}
                   downloading={downloadingRowId === row.id}
+                  downloadPct={downloadingRowId === row.id ? downloadPct : null}
+                  downloadSaved={savedRowId === row.id}
                   myNickname={myNickname}
                   mention={mentionCtxSelf}
                   mediaBase={groupMediaBase}
@@ -4268,6 +4285,10 @@ interface CommonRowProps {
   filesAllowed: boolean
   /// This row's file is being decrypted for saving right now.
   downloading: boolean
+  /// How far it has got, 0..1, or null before the first chunk lands.
+  downloadPct: number | null
+  /// It just finished and the file was saved.
+  downloadSaved: boolean
   mention: MentionContext | undefined
   mediaBase: string | undefined
   myUin: number
@@ -4453,6 +4474,8 @@ const IncomingMessageRow = memo(function IncomingMessageRow({
   linksAllowed,
   filesAllowed,
   downloading,
+  downloadPct,
+  downloadSaved,
   mention,
   mediaBase,
   myUin,
@@ -4574,6 +4597,8 @@ const IncomingMessageRow = memo(function IncomingMessageRow({
               apiBase={mediaBase}
               onPress={(el) => h.toggleActions(m.id, el)}
               busy={downloading}
+              progress={downloadPct}
+              saved={downloadSaved}
               disabledNote={filesAllowed ? undefined : t('chat.files_off.chip')}
             />
             {m.text && (
@@ -4761,6 +4786,8 @@ const OutgoingMessageRow = memo(function OutgoingMessageRow({
   linksAllowed,
   filesAllowed,
   downloading,
+  downloadPct,
+  downloadSaved,
   mention,
   mediaBase,
   myUin,
@@ -4986,6 +5013,8 @@ const OutgoingMessageRow = memo(function OutgoingMessageRow({
             apiBase={mediaBase}
             onPress={vouchedOut(row) ? (el) => h.toggleActions(row.id, el) : undefined}
             busy={downloading}
+            progress={downloadPct}
+            saved={downloadSaved}
             disabledNote={filesAllowed ? undefined : t('chat.files_off.chip')}
           />
           {row.text && (

@@ -22,6 +22,7 @@ import { Link } from 'react-router-dom'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
 import { fetchCatalogue, fetchSitePage, parseRcqAddress, repin, type RcqAddress, type SitePage } from '../lib/sites'
+import { MySitePanel } from '../components/MySitePanel'
 
 const ERRORS = ['address', 'missing', 'frozen', 'unsigned', 'tampered', 'offline'] as const
 type ErrorKind = (typeof ERRORS)[number]
@@ -35,6 +36,7 @@ export function Sites() {
   const [error, setError] = useState<ErrorKind | null>(null)
   const [loading, setLoading] = useState(false)
   const [catalogue, setCatalogue] = useState<Array<{ name: string; title: string | null }>>([])
+  const [mine, setMine] = useState(false)
   const frameRef = useRef<HTMLIFrameElement | null>(null)
 
   // "My island" for a bare `name.rcq`, taken from this session's own API base:
@@ -137,6 +139,18 @@ export function Sites() {
               {loading ? t('sites.loading') : t('sites.open')}
             </button>
           </form>
+          <button
+            type="button"
+            onClick={() => setMine(true)}
+            className="text-fg-secondary hover:text-fg-primary p-2 rounded-md hover:bg-field"
+            title={t('sites.mine')}
+            aria-label={t('sites.mine')}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M4 20h16" />
+              <path d="M6 16l9-9 3 3-9 9H6z" />
+            </svg>
+          </button>
         </div>
       </header>
 
@@ -226,6 +240,15 @@ export function Sites() {
           </div>
         )}
       </main>
+
+      {/* Publishing lives here rather than in Settings: it is the same place
+          you go to read, and a site is a place, not a preference. */}
+      {mine && (
+        <MySitePanel
+          onClose={() => setMine(false)}
+          onOpen={(name) => { setMine(false); void open(`${name}.rcq`) }}
+        />
+      )}
     </div>
   )
 }

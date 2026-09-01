@@ -41,7 +41,6 @@ import { AddContactModal } from '../components/AddContactModal'
 import { NewsButton } from '../components/NewsPopover'
 import { PersonAvatar } from '../components/PersonAvatar'
 import { StatusPickerButton } from '../components/StatusPicker'
-import { ThemeToggle } from '../components/ThemeToggle'
 import {
   Api,
   type Contact,
@@ -995,12 +994,14 @@ export function Contacts() {
             </Link>
             {/* A narrow window keeps only the doors the founder named (21.08):
                 lock, settings, rooms, requests, add — the update pill shrinks
-                to a square icon. News and the theme switch go first: the theme
-                also lives as a row in Settings, and both are the reads-later
-                kind of door, not the reach-for kind. */}
+                to a square icon. News goes first, being the reads-later kind
+                of door rather than the reach-for kind.
+
+                The theme switch is gone from here entirely (founder, 01.09):
+                it is a row in Settings, and a header is for the things you
+                reach for, not for a preference you set once. */}
             <NewsButton className="relative text-fg-secondary hover:text-fg-primary p-2 rounded-md max-[519px]:hidden" />
             <LockNowButton />
-            <ThemeToggle className="text-fg-secondary hover:text-fg-primary p-2 rounded-md hover:bg-surface-dim transition-colors max-[519px]:hidden" />
             <Link
               to="/settings"
               className="text-fg-secondary hover:text-fg-primary p-2 rounded-md hover:bg-surface-dim"

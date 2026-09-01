@@ -150,7 +150,17 @@ interface DecryptedParts {
 ///   * RCQM1 (`media-chunked.ts`), the chunked container a client uses for a
 ///     file too big to seal in one piece. It is decrypted a chunk at a time
 ///     straight off the response stream, so a film costs one chunk of memory.
-async function fetchDecryptParts(apiBase: string, mediaId: string, keyB64: string): Promise<DecryptedParts | null> {
+/// Called as a download advances, with a fraction between 0 and 1. Chunked
+/// blobs report per chunk, which is what a person actually waits through; a
+/// monolithic one is small by construction and reports once, at the end.
+export type ProgressFn = (fraction: number) => void
+
+async function fetchDecryptParts(
+  apiBase: string,
+  mediaId: string,
+  keyB64: string,
+  onProgress?: ProgressFn,
+): Promise<DecryptedParts | null> {
   try {
     const keyBytes = b64ToBytes(keyB64)
     if (keyBytes.length !== 32) return null
@@ -182,6 +192,7 @@ async function fetchDecryptParts(apiBase: string, mediaId: string, keyB64: strin
       const combined = new Uint8Array(magic.length + rest.length)
       combined.set(magic, 0)
       combined.set(rest, magic.length)
+      onProgress?.(1)
       return await decryptWhole(combined, key)
     }
     const tail = await reader.readExactly(CHUNKED_HEADER_LEN - magic.length)
@@ -199,6 +210,7 @@ async function fetchDecryptParts(apiBase: string, mediaId: string, keyB64: strin
       // dropped or edited. The catch below turns that into the same failed
       // bubble a bad monolithic seal produces.
       parts.push(await openChunk(record, i, h, key))
+      onProgress?.((i + 1) / h.chunkCount)
     }
     // Bytes after the last record mean this is not the file the header
     // describes, and the header is the only thing every tag agreed on.
@@ -247,8 +259,9 @@ async function fetchDecryptToBlob(
   mediaId: string,
   keyB64: string,
   type: (head: Uint8Array) => string,
+  onProgress?: ProgressFn,
 ): Promise<Blob | null> {
-  const d = await fetchDecryptParts(apiBase, mediaId, keyB64)
+  const d = await fetchDecryptParts(apiBase, mediaId, keyB64, onProgress)
   if (d === null) return null
   return new Blob(d.parts as unknown as BlobPart[], { type: type(d.head) })
 }
@@ -733,8 +746,11 @@ export async function downloadEncryptedFile(
   keyB64: string,
   fileName: string,
   mime?: string,
+  onProgress?: ProgressFn,
 ): Promise<boolean> {
-  const blob = await fetchDecryptToBlob(apiBase, mediaId, keyB64, () => mime || 'application/octet-stream')
+  const blob = await fetchDecryptToBlob(
+    apiBase, mediaId, keyB64, () => mime || 'application/octet-stream', onProgress,
+  )
   if (!blob) return false
   // ⚠ The desktop dialog wants the bytes contiguous, so THAT path pays for one
   // buffer; the browser path hands the Blob straight to an object URL and never

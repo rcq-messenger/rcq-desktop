@@ -20,6 +20,16 @@ export interface IncomingRow {
   from: number // sender UIN (the actual sender, from the sealed envelope)
   text: string // text body, or the caption for a photo, or '' for other media
   at: number // ms received
+  /// When the SENDER sent it, in ms, when the envelope carried a `ts`.
+  ///
+  /// ⚠⚠ Not decoration: `at` is when THIS device received the row, and a
+  /// device that was asleep receives everything at once, long after another
+  /// device has read it. The cross-device read marker compares the two, so
+  /// with `at` alone the phone that drained late counted every message as
+  /// "arrived after the read" and its badge never cleared - the founder's
+  /// "I thought we fixed reading on one device". The send time is the same
+  /// number on every device, which is what makes the comparison mean anything.
+  sentAt?: number
   // Defaults to 'text' when absent (back-compat with rows persisted before
   // media support). 'photo'/'video'/'file' carry mediaId/mediaKey (+ poster /
   // file metadata); 'other' is a still-unsupported media kind (voice/location)
@@ -61,12 +71,20 @@ function rowFromEnvelope(from: number, env: Envelope): IncomingRow | null {
   /// deadline and must not be granted a fresh lifetime here (the Android bug,
   /// `Session.expiryFor`). `expiresAt` in the past is fine: the sweeper is
   /// what removes it, and it runs on hydrate and on a timer.
+  /// When the sender says they sent it, clamped by `sendAnchorMs` against a
+  /// skewed or hostile clock. Every row that carries a `ts` gets it, because
+  /// the cross-device read marker needs a number that means the same thing on
+  /// both devices (see `IncomingRow.sentAt`).
+  const sent = (ts: unknown): { sentAt?: number } => {
+    if (typeof ts !== 'number' || !Number.isFinite(ts) || ts <= 0) return {}
+    return { sentAt: sendAnchorMs(ts, now) }
+  }
   const dying = (ttl: unknown, ts: unknown): { expiresAt?: number } => {
     const at = expiryFrom(typeof ttl === 'number' ? ttl : null, sendAnchorMs(ts, now))
     return at != null ? { expiresAt: at } : {}
   }
   if (env.kind === 'text') {
-    return { id: env.id, from, text: env.text, at: now, kind: 'text', replyTo: env.reply, ...dying(env.ttl, env.ts) }
+    return { id: env.id, from, text: env.text, at: now, kind: 'text', replyTo: env.reply, ...dying(env.ttl, env.ts), ...sent(env.ts) }
   }
   if (env.kind === 'photo') {
     return {
@@ -78,7 +96,7 @@ function rowFromEnvelope(from: number, env: Envelope): IncomingRow | null {
       mediaId: env.mediaID,
       mediaKey: env.mediaKey,
       replyTo: env.reply,
-      ...dying(env.ttl, env.ts),
+      ...dying(env.ttl, env.ts), ...sent(env.ts),
     }
   }
   // Video (#15): keep the media ref + poster + duration so the web can play /
@@ -95,7 +113,7 @@ function rowFromEnvelope(from: number, env: Envelope): IncomingRow | null {
       thumbnailB64: env.thumbnailB64,
       durationSec: env.durationSec,
       replyTo: env.reply,
-      ...dying(env.ttl, env.ts),
+      ...dying(env.ttl, env.ts), ...sent(env.ts),
     }
   }
   // File / document (#16): keep the media ref + name/mime/size for the
@@ -113,7 +131,7 @@ function rowFromEnvelope(from: number, env: Envelope): IncomingRow | null {
       fileMime: env.mime,
       fileSize: env.size,
       replyTo: env.reply,
-      ...dying(env.ttl, env.ts),
+      ...dying(env.ttl, env.ts), ...sent(env.ts),
     }
   }
   if (env.kind === 'voice' && env.id && env.mediaID && env.mediaKey) {
@@ -129,7 +147,7 @@ function rowFromEnvelope(from: number, env: Envelope): IncomingRow | null {
       mediaId: env.mediaID,
       mediaKey: env.mediaKey,
       durationSec: typeof env.durationSec === 'number' ? Math.round(env.durationSec) : undefined,
-      ...dying(env.ttl, env.ts),
+      ...dying(env.ttl, env.ts), ...sent(env.ts),
     }
   }
   const loose = env as { kind?: string; id?: string; caption?: string; ttl?: unknown; ts?: unknown }
@@ -143,7 +161,7 @@ function rowFromEnvelope(from: number, env: Envelope): IncomingRow | null {
       kind: 'other',
       mediaKind: loose.kind,
       ...(geo.lat != null && geo.lng != null ? { lat: geo.lat, lng: geo.lng } : {}),
-      ...dying(loose.ttl, loose.ts),
+      ...dying(loose.ttl, loose.ts), ...sent(loose.ts),
     }
   }
   // A group poll from an old peer. Polls were cut (founder item 14a) and this
@@ -498,7 +516,7 @@ export function applyRemoteRead(peerUin: number | null, groupId: number | null, 
   // Rows this device holds that arrived after the other device's read. The
   // stored rows are the incoming ones only, which is exactly what the badge
   // counts.
-  const after = rows ? rows.filter((r) => r.at > at).length : 0
+  const after = rows ? rows.filter((r) => (r.sentAt ?? r.at) > at).length : 0
   const next = Math.min(current, after)
   if (next === current) return
   if (next === 0) unread.delete(key)

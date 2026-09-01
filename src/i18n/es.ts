@@ -272,6 +272,7 @@ export const es: Record<string, string> = {
   'sites.back': 'Atrás',
   'sites.address.placeholder': 'nombre.rcq',
   'sites.open': 'Abrir',
+  'sites.reload': 'Recargar',
   'sites.error.address': 'Una dirección se ve así: nombre.rcq o nombre.isla.rcq',
   'sites.error.frozen': 'La isla ha congelado este sitio.',
   'sites.error.missing': 'No existe ese sitio, o la isla no respondió.',

@@ -152,12 +152,20 @@ function hex(bytes: Uint8Array): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
 }
 
-async function get(url: string): Promise<Response> {
+async function get(url: string, fresh = false): Promise<Response> {
   // ⚠ `credentials: omit` is not hygiene, it is the feature: a read carries no
   // token, so the island cannot tie a page to a person.
+  //
+  // `fresh` is the reload button: a bundle is served with a five-minute cache,
+  // which is right for reading and wrong for a person who just republished and
+  // wants to see it.
   let res: Response
   try {
-    res = await fetch(url, { credentials: 'omit', referrerPolicy: 'no-referrer' })
+    res = await fetch(url, {
+      credentials: 'omit',
+      referrerPolicy: 'no-referrer',
+      cache: fresh ? 'reload' : 'default',
+    })
   } catch {
     throw new Error('offline' satisfies SiteError)
   }
@@ -167,8 +175,8 @@ async function get(url: string): Promise<Response> {
 }
 
 /// Fetch the manifest and check the owner's signature over it.
-export async function fetchManifest(addr: RcqAddress): Promise<SiteManifest> {
-  const res = await get(`${originOf(addr.host)}/sites/${encodeURIComponent(addr.name)}/manifest.json`)
+export async function fetchManifest(addr: RcqAddress, fresh = false): Promise<SiteManifest> {
+  const res = await get(`${originOf(addr.host)}/sites/${encodeURIComponent(addr.name)}/manifest.json`, fresh)
   let m: SiteManifest
   try {
     m = (await res.json()) as SiteManifest
@@ -192,10 +200,10 @@ export async function fetchManifest(addr: RcqAddress): Promise<SiteManifest> {
 }
 
 /// Fetch one file and check it against the manifest's hash.
-async function fetchFile(addr: RcqAddress, m: SiteManifest, path: string): Promise<Uint8Array> {
+async function fetchFile(addr: RcqAddress, m: SiteManifest, path: string, fresh = false): Promise<Uint8Array> {
   const want = m.files[path]
   if (!want) throw new Error('missing' satisfies SiteError)
-  const res = await get(`${originOf(addr.host)}/sites/${encodeURIComponent(addr.name)}/${path}`)
+  const res = await get(`${originOf(addr.host)}/sites/${encodeURIComponent(addr.name)}/${path}`, fresh)
   const bytes = new Uint8Array(await res.arrayBuffer())
   if (hex(sha256(bytes)) !== want) throw new Error('tampered' satisfies SiteError)
   return bytes
@@ -362,9 +370,9 @@ async function inline(addr: RcqAddress, m: SiteManifest, path: string, html: str
 
 /// Open a page of a site: verify, inline, and report what the reader should
 /// know about the key.
-export async function fetchSitePage(addr: RcqAddress, path = 'index.html'): Promise<SitePage> {
-  const m = await fetchManifest(addr)
-  const raw = new TextDecoder().decode(await fetchFile(addr, m, path))
+export async function fetchSitePage(addr: RcqAddress, path = 'index.html', fresh = false): Promise<SitePage> {
+  const m = await fetchManifest(addr, fresh)
+  const raw = new TextDecoder().decode(await fetchFile(addr, m, path, fresh))
   const html = await inline(addr, m, path, raw)
   return {
     html,
@@ -390,15 +398,16 @@ export function iconPathOf(m: SiteManifest): string | null {
 /// manifest signature covers its hash, and the bytes are checked against it.
 /// Null when the site has no mark, or when anything about it does not check
 /// out - a mark we cannot verify is not drawn at all.
-export async function fetchSiteIcon(addr: RcqAddress): Promise<string | null> {
+export async function fetchSiteIcon(addr: RcqAddress, fresh = false): Promise<string | null> {
   const key = `${addr.name}@${addr.host}`
+  if (fresh) iconCache.delete(key)
   const cached = iconCache.get(key)
   if (cached !== undefined) return cached
   let uri: string | null = null
   try {
-    const m = await fetchManifest(addr)
+    const m = await fetchManifest(addr, fresh)
     const path = iconPathOf(m)
-    if (path) uri = dataUri(path, await fetchFile(addr, m, path))
+    if (path) uri = dataUri(path, await fetchFile(addr, m, path, fresh))
   } catch {
     uri = null
   }

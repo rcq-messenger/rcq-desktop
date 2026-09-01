@@ -293,6 +293,7 @@ export const ru: Record<string, string> = {
   'sites.back': 'Назад',
   'sites.address.placeholder': 'имя.rcq',
   'sites.open': 'Открыть',
+  'sites.reload': 'Обновить',
   'sites.error.address': 'Адрес выглядит так: имя.rcq или имя.остров.rcq',
   'sites.error.frozen': 'Остров заморозил этот сайт.',
   'sites.error.missing': 'Такого сайта нет, или остров не ответил.',

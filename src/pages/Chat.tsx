@@ -13,6 +13,7 @@
 // so the forwarded message shows up there when the user navigates.
 
 import { relativeLastSeen } from '../lib/last-seen'
+import { AltText } from '../components/AltText'
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { scopedKey } from '../lib/account-scope'
@@ -3000,7 +3001,16 @@ export function Chat() {
       setActionsForRowId(null)
       setReactionForRowId(rowId)
     },
-    showReactionAuthors: setReactionAuthorsFor,
+    showReactionAuthors: (id: string | null) => {
+      setReactionAuthorsFor(id)
+      // Ask for a fresh roster as the sheet opens: the one we hold carries the
+      // presence of whenever it was fetched, so everybody read as offline.
+      if (id != null && isGroup && group && identity) {
+        void ensureRoster(identity, group, true).then((full) => {
+          if (full.members.length > 0) setGroup(full)
+        })
+      }
+    },
     toggleReaction: (targetId, asset) => void toggleReaction(targetId, asset),
     jumpToMessage,
     startReplyTo,
@@ -5908,50 +5918,10 @@ function CallLogIcon({ missed, outgoing }: { missed: boolean; outgoing: boolean 
 }
 
 
-/// The chat-header subtitle for an offline 1:1 peer (megalist B1): crossfades
-/// between `#uin` and the humanised last-seen every few seconds, the port of
-/// the iOS `peerSubtitle`. Both children stay mounted in one grid cell so the
-/// line's box never changes size mid-swap and the nickname above holds still.
+/// The chat-header subtitle for an offline 1:1 peer (megalist B1): the number
+/// and when they were last around, taking turns. See [AltText].
 function AltSubtitle({ uin, lastSeen }: { uin: number; lastSeen: string }) {
-  const [alt, setAlt] = useState(false)
-  useEffect(() => {
-    const id = setInterval(() => setAlt((v) => !v), 4000)
-    return () => clearInterval(id)
-  }, [])
-  // ⚠ The two halves must not fade AT THE SAME TIME. Both stacked in one grid
-  // cell and both animating together means that for half a second they are each
-  // at half opacity on top of each other, and because the last-seen span is
-  // second in DOM order it paints ABOVE - so its fade-out lingers over the
-  // arriving number and only THAT direction looks like it lags. (Reported on
-  // web and desktop: "last seen changes to the UIN with lag, back is smooth".)
-  //
-  // The outgoing half always goes first and the incoming one waits for it, so
-  // the swap looks the same in both directions.
-  const FADE = 500
-  return (
-    <span className="grid">
-      <span
-        className="col-start-1 row-start-1 transition-opacity"
-        style={{
-          opacity: alt ? 0 : 1,
-          transitionDuration: `${FADE}ms`,
-          transitionDelay: alt ? '0ms' : `${FADE}ms`,
-        }}
-      >
-        #{uin}
-      </span>
-      <span
-        className="col-start-1 row-start-1 truncate transition-opacity"
-        style={{
-          opacity: alt ? 1 : 0,
-          transitionDuration: `${FADE}ms`,
-          transitionDelay: alt ? `${FADE}ms` : '0ms',
-        }}
-      >
-        {lastSeen}
-      </span>
-    </span>
-  )
+  return <AltText a={`#${uin}`} b={lastSeen} />
 }
 
 

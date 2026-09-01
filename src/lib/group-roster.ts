@@ -23,8 +23,18 @@ import type { WebIdentity } from './crypto'
 export async function ensureRoster(
   identity: WebIdentity,
   group: RCQGroup,
+  /// Fetch even when a roster is already held.
+  ///
+  /// ⚠ A roster carries PRESENCE, and presence is a snapshot of the moment it
+  /// was fetched. Held for an hour it says everyone is offline, which is what
+  /// the "who reacted" sheet showed: it renders the roster's status field, and
+  /// that field was as old as the roster. Anything that puts a status in front
+  /// of somebody asks for it fresh; anything that only needs keys or names does
+  /// not, because the roster of a big room is expensive.
+  refresh = false,
 ): Promise<RCQGroup> {
-  if (group.members.length > 0 || group.host) return group
+  if (!refresh && (group.members.length > 0 || group.host)) return group
+  if (group.host) return group
   try {
     const full = await Api.groupInfo(identity, group.id)
     // Only the roster is taken from the fetch; everything else on the row is

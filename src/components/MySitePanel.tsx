@@ -11,7 +11,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
 import {
-  SITE_LIMITS, bundlePaths, checkName, deleteSite, icoToPng, isAllowedFile, mySites, pickIcon,
+  SITE_LIMITS, bundlePaths, checkName, deleteSite, isAllowedFile, mySites, pickIcon, rasterizeMark,
   publishSite, type MySite,
 } from '../lib/site-publish'
 
@@ -79,18 +79,21 @@ export function MySitePanel({ onClose, onOpen }: Props) {
     files.length <= SITE_LIMITS.maxFiles && total <= SITE_LIMITS.maxBundleBytes &&
     /^[a-z0-9][a-z0-9-]{0,31}$/.test(name) && (site != null || nameState === 'free')
 
-  /// Take a pick of files, converting the one thing people reasonably try and
-  /// the network cannot carry: a favicon.ico. Everything else is passed
-  /// through and judged by the rules below.
+  /// Take a pick of files, converting the two things people reasonably try
+  /// and the network cannot carry as a mark: a `.ico` and an `.svg`.
+  /// Everything else is passed through and judged by the rules below.
   async function take(picked: File[]) {
     setError(null)
     setConverted(null)
-    const ico = picked.find((f) => f.name.toLowerCase().endsWith('.ico'))
-    if (!ico || picked.some((f) => pickIcon([f.name]))) { setFiles(picked); return }
-    const png = await icoToPng(ico)
+    if (picked.some((f) => pickIcon([f.name]))) { setFiles(picked); return }
+    const vector = picked.find((f) => /^(icon|favicon)\.(ico|svg)$/i.test(f.name))
+    if (!vector) { setFiles(picked); return }
+    const png = await rasterizeMark(vector)
     if (!png) { setFiles(picked); return }
-    setConverted(ico.name)
-    setFiles(picked.filter((f) => f !== ico).concat(png))
+    setConverted(vector.name)
+    // The original stays in the bundle: it may be the page's own picture as
+    // well as its mark, and dropping a file somebody chose is not ours to do.
+    setFiles(picked.concat(png))
   }
 
   async function publish() {

@@ -55,14 +55,17 @@ export function pickIcon(paths: string[]): string | null {
   return ICON_NAMES.find((n) => paths.includes(n)) ?? null
 }
 
-/// A `favicon.ico` turned into the `icon.png` the network actually carries.
+/// A picked `.ico` or `.svg` turned into the `icon.png` the network carries.
 ///
-/// ICO is refused on purpose - neither phone decodes it, and the mark is drawn
-/// by the app's own chrome rather than inside the locked frame - but refusing
-/// the file somebody obviously meant as their mark is unhelpful when this
-/// browser can decode it and hand back a PNG. Returns null when it cannot, and
-/// the ordinary refusal stands.
-export async function icoToPng(file: File): Promise<File | null> {
+/// Both are refused as marks on purpose: a mark is drawn by the app's own
+/// chrome rather than inside the locked frame, neither phone decodes ICO, and
+/// iOS has no native SVG at all. But refusing the file somebody obviously
+/// meant as their mark is unhelpful when this browser can decode it and hand
+/// back a PNG - which is exactly what happened to the first person who tried
+/// (founder, 02.09: "I put favicon.svg in and no favicon appeared").
+///
+/// Returns null when it cannot, and the ordinary refusal stands.
+export async function rasterizeMark(file: File): Promise<File | null> {
   const url = URL.createObjectURL(file)
   try {
     const img = await new Promise<HTMLImageElement | null>((resolve) => {
@@ -74,7 +77,10 @@ export async function icoToPng(file: File): Promise<File | null> {
     if (!img || !img.naturalWidth) return null
     // 64 is what the lists draw at twice over on a dense screen, and an icon
     // is not worth more bytes than that.
-    const side = Math.min(64, Math.max(img.naturalWidth, img.naturalHeight))
+    // An SVG often reports no intrinsic size at all; 64 is what the lists
+    // draw at twice over on a dense screen, and a mark is not worth more.
+    const natural = Math.max(img.naturalWidth, img.naturalHeight)
+    const side = natural > 0 ? Math.min(64, natural) : 64
     const canvas = document.createElement('canvas')
     canvas.width = side
     canvas.height = side

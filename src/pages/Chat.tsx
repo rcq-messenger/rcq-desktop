@@ -132,7 +132,10 @@ const SHIPPABLE_KINDS = new Set<Envelope['kind']>(['text', 'reaction', 'photo', 
 /// skips self (group-crypto), so the carbon is the ONLY road an edit or a
 /// retract has to the account's other devices — without them the founder
 /// edited a message on the desktop and the phone kept the old text forever.
-const CARBON_KINDS = new Set<Envelope['kind']>(['text', 'photo', 'video', 'file', 'location', 'edit', 'delete'])
+/// `voice` joined 2026-09-01: Android has always been able to file one from a
+/// carbon, and leaving it out meant a voice message sent from the desktop was
+/// the one kind that never appeared on the phone.
+const CARBON_KINDS = new Set<Envelope['kind']>(['text', 'photo', 'video', 'voice', 'file', 'location', 'edit', 'delete'])
 
 /// Client-side cap on a document upload. The backend accepts up to 2 GB, but
 /// the web decrypts the whole blob into memory to download — keep that bounded.
@@ -1369,16 +1372,23 @@ export function Chat() {
   /// own carbon by id. Reactions are excluded (they sync via their own
   /// self-echo). Best-effort — the message already went out.
   async function sendMessageCarbon(inner: Envelope) {
+    if (gctx?.host) return
+    await sendMessageCarbonTo(inner, isGroup ? null : peer?.uin ?? null, isGroup ? group?.id ?? null : null)
+  }
+
+  /// [sendMessageCarbon] with an explicit destination, for the one send that
+  /// does not land in the thread it was composed in (a forward).
+  async function sendMessageCarbonTo(inner: Envelope, to: number | null, gid: number | null) {
     if (!identity || !CARBON_KINDS.has(inner.kind)) return
     // Foreign-group sends are not mirrored: the carbon would carry the
     // server-side group id, which another of our devices would misread as a
     // LOCAL group (alias ids are per-device). v1 limit, documented in §5c.
-    if (gctx?.host) return
+    if (to == null && gid == null) return
     try {
       const carbon: CarbonEnvelope = {
         kind: 'carbon',
-        to: isGroup ? null : peer?.uin ?? null,
-        gid: isGroup ? group?.id ?? null : null,
+        to,
+        gid,
         env: inner,
       }
       const selfBundle = peerBundleFrom({
@@ -2346,6 +2356,14 @@ export function Chat() {
         const wireB64 = encryptV1(env, identity, peerBundleFrom(target.contact))
         await Api.sendSealed(identity, target.uin, wireB64)
       }
+      // ⚠⚠ Mirror it, like every other send does. A forward was the one path
+      // that never carboned, so a message forwarded from the desktop simply
+      // never existed on the phone - the group fan-out deliberately skips
+      // ourselves, so the carbon is the ONLY road our own words take to our own
+      // other devices. Addressed at the TARGET thread, not the one we forwarded
+      // from, because that is where the row lands.
+      void sendMessageCarbonTo(env, target.kind === 'group' ? null : target.uin,
+                               target.kind === 'group' ? target.group.id : null)
       const newRow: OutgoingRow = {
         id: newId,
         text: row.text,

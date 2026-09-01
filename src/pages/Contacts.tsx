@@ -893,8 +893,10 @@ export function Contacts() {
   }
 
   return (
-    <div className="min-h-screen bg-surface-dim">
-      <header className="rcq-header sticky top-0 z-10">
+    // See Settings for why the page is a pane rather than a scrolling document
+    // (#839: the wheel does not move the document under WebKitGTK).
+    <div className="h-screen [height:100dvh] flex flex-col bg-surface-dim overflow-hidden">
+      <header className="rcq-header sticky top-0 z-10 shrink-0">
         <div className="max-w-2xl mx-auto px-3 h-14 flex items-center gap-2">
           {me && (
             <>
@@ -1002,7 +1004,7 @@ export function Contacts() {
         <GlobalSearchOverlay contacts={contacts} groups={groups} onClose={() => setShowGlobalSearch(false)} />
       )}
 
-      <main className="max-w-2xl mx-auto px-4 py-4 space-y-4">
+      <main className="flex-1 min-h-0 overflow-y-auto overscroll-contain w-full max-w-2xl mx-auto px-4 py-4 space-y-4">
         {loading && contacts.length === 0 && (
           <div className="text-center text-sm text-fg-secondary py-12">{t('contacts.loading')}</div>
         )}

@@ -64,7 +64,17 @@ import { publishHomeIslandRecord } from '../lib/federation-publish'
 import { pushHomeRecordToContacts } from '../lib/federation-gossip'
 import { DEFAULT_CAPABILITIES } from '../lib/server-info'
 import { useServerInfo } from '../lib/use-server-info'
+import { CustomThemeCard } from '../components/CustomThemeCard'
 import { useWS } from '../lib/ws'
+
+/// The groups this page is divided into, in the order they appear. The name is
+/// also the i18n key suffix, so a group cannot be added without a title and a
+/// one-line description to go under it.
+type SettingsGroup = 'account' | 'island' | 'privacy' | 'appearance' | 'sound' | 'community' | 'danger'
+
+const SETTINGS_GROUPS: SettingsGroup[] = [
+  'account', 'island', 'privacy', 'appearance', 'sound', 'community', 'danger',
+]
 
 export function Settings() {
   const { identity, accounts, switchAccount, addAccount, signOutAccount, signOut } = useIdentity()
@@ -144,6 +154,14 @@ export function Settings() {
   const [presenceSoundOn, setPresenceSoundOnState] = useState<boolean>(() => isPresenceSoundEnabled())
   const [sentSoundOn, setSentSoundOnState] = useState<boolean>(() => isSentSoundEnabled())
   const { pref: themePref, setPref: setThemePref } = useTheme()
+  // Which group of settings is open, or null for the index. ⚠⚠ This page used
+  // to be one 1700-line column of twenty cards: everything was two scrolls away
+  // from everything else, and finding the sound switches twice in a row was
+  // luck. The phones have always grouped these; this is the same shape.
+  // Deliberately NOT a route: a group is not somewhere you send a link to, and
+  // as state the back arrow and the browser's Back button cannot disagree
+  // about what "back" means here.
+  const [group, setGroup] = useState<SettingsGroup | null>(null)
   const fontScalePref = useSyncExternalStore(subscribeFontScale, getFontScale)
   const [backups, setBackups] = useState<BackupHome[]>(() => listBackupHomes())
   const [mhAdding, setMhAdding] = useState(false)
@@ -512,14 +530,30 @@ export function Settings() {
     <div className="min-h-screen bg-surface-dim">
       <header className="rcq-header sticky top-0 z-10">
         <div className="max-w-2xl mx-auto px-4 h-14 flex items-center gap-3">
-          <Link to="/contacts" className="text-fg-secondary hover:text-fg-primary px-2">
-            ←
-          </Link>
-          <div className="font-semibold">{t('settings.title')}</div>
+          {/* One arrow, two meanings, and the group is the nearer one: inside a
+              group "back" is the index, not the chat list. */}
+          {group ? (
+            <button
+              type="button"
+              onClick={() => setGroup(null)}
+              className="text-fg-secondary hover:text-fg-primary px-2"
+              aria-label={t('settings.title')}
+            >
+              ←
+            </button>
+          ) : (
+            <Link to="/contacts" className="text-fg-secondary hover:text-fg-primary px-2">
+              ←
+            </Link>
+          )}
+          <div className="font-semibold">
+            {group ? t(`settings.group.${group}`) : t('settings.title')}
+          </div>
         </div>
       </header>
 
       <main className="max-w-2xl mx-auto px-4 py-6 space-y-6">
+        {!group && (
         <Link
           to="/profile"
           className="block bg-surface rounded-lg p-4 hover:bg-field transition-colors"
@@ -536,12 +570,38 @@ export function Settings() {
             <span className="text-fg-dim">→</span>
           </div>
         </Link>
+        )}
+
+        {/* The index. One row per group, each with the sentence that says what
+            is inside it, because "Privacy" and "This island" are not
+            self-explanatory to somebody looking for one switch. */}
+        {!group && (
+          <nav className="bg-surface rounded-lg overflow-hidden">
+            {SETTINGS_GROUPS.map((g, i) => (
+              <button
+                key={g}
+                type="button"
+                onClick={() => setGroup(g)}
+                className={`w-full text-left px-4 py-3 hover:bg-field transition-colors flex items-center justify-between gap-3 ${
+                  i > 0 ? 'border-t border-line' : ''
+                }`}
+              >
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium">{t(`settings.group.${g}`)}</span>
+                  <span className="block text-xs text-fg-dim mt-0.5">{t(`settings.group.${g}.footer`)}</span>
+                </span>
+                <span className="text-fg-dim">→</span>
+              </button>
+            ))}
+          </nav>
+        )}
 
         {/* Accounts. A browser could only ever hold one, so there was no way to
             keep a second number here or to move between them without signing
             out — the phones have had both for as long as they have existed.
             Each row shows that account's own name and face, read from its own
             stored snapshot: nothing is fetched to draw this. */}
+        {group === 'account' && (<>
         <section className="bg-surface rounded-lg overflow-hidden">
           <div className="px-4 pt-4 pb-2 text-xs font-semibold text-fg-secondary uppercase tracking-wide">
             {t('settings.accounts')}
@@ -668,6 +728,8 @@ export function Settings() {
           <MyQRCode me={me} />
         </section>
 
+        </>)}
+        {group === 'island' && (<>
         {/* The island this account lives on, in its own words. Both fields are
             typed by the operator in the admin panel and have been served on
             /server/info since islands existed; no browser ever read them, so
@@ -713,6 +775,8 @@ export function Settings() {
           )}
         </section>
 
+        </>)}
+        {group === 'account' && (<>
         {/* #643: the account's key slots. The QR-linked web registry lives on
             the phone's screen; THIS list is the cryptographic one — every
             install that can read v=2 holds a slot here, so a phrase login
@@ -914,6 +978,8 @@ export function Settings() {
 
         {/* Privacy — its own page now that there are five pickers.
             See pages/Privacy.tsx for the actual surface. */}
+        </>)}
+        {group === 'privacy' && (<>
         <Link
           to="/privacy"
           className="block bg-surface rounded-lg p-4 hover:bg-field transition-colors"
@@ -934,6 +1000,8 @@ export function Settings() {
         {/* Permanent, not an onboarding step. The three questions this answers
             arrive on the third day of using the app, by which time a first-run
             screen is long gone. */}
+        </>)}
+        {group === 'island' && (<>
         <Link
           to="/how"
           className="block bg-surface rounded-lg p-4 hover:bg-field transition-colors"
@@ -949,6 +1017,8 @@ export function Settings() {
           </div>
         </Link>
 
+        </>)}
+        {group === 'privacy' && (<>
         {/* Desktop only — renders nothing in a browser tab, where a PIN
             could not be honest. */}
         <PinSettings />
@@ -956,6 +1026,8 @@ export function Settings() {
         {/* We ask people to trust a client they cannot open up. This is the
             nearest thing to opening it up: everything this browser is holding,
             measured live, with the switch that removes it. */}
+        </>)}
+        {group === 'privacy' && (<>
         <Link
           to="/storage"
           className="block bg-surface rounded-lg p-4 hover:bg-field transition-colors"
@@ -971,6 +1043,8 @@ export function Settings() {
           </div>
         </Link>
 
+        </>)}
+        {group === 'appearance' && (<>
         <section className="bg-surface rounded-lg p-4 space-y-2">
           <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
             {t('settings.section.language')}
@@ -995,6 +1069,11 @@ export function Settings() {
           />
           <p className="text-xs text-fg-dim">{t('settings.theme.footer')}</p>
         </section>
+
+        {/* Own background. Its own card, directly under the theme picker it
+            belongs to: it edits the CURRENT mode, so seeing the two together is
+            what makes "this is the dark one" obvious. */}
+        <CustomThemeCard />
 
         {/* Text size (#477). Its own card rather than a row inside the theme
             one: the RU header there reads «Оформление», but the EN header is
@@ -1035,6 +1114,8 @@ export function Settings() {
           <p className="text-xs text-fg-dim">{t('settings.display.animated_avatars_footer')}</p>
         </section>
 
+        </>)}
+        {group === 'sound' && (<>
         <section className="bg-surface rounded-lg p-4 space-y-3">
           <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
             {t('settings.section.sound')}
@@ -1089,6 +1170,8 @@ export function Settings() {
 
         {/* Hall of Fame opt-in + optional avatar (federation-independent;
             same PUT /users/me as the mobile clients). */}
+        </>)}
+        {group === 'community' && (<>
         <section className="bg-surface rounded-lg p-4 space-y-3">
           <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
             {t('settings.section.hof')}
@@ -1236,6 +1319,8 @@ export function Settings() {
         </Link>
         </>)}
 
+        </>)}
+        {group === 'privacy' && (<>
         {/* Desktop only: the bundled sing-box. The webview proxy is fixed when
             the webview is built, so flipping this needs a restart. */}
         {bypass && (
@@ -1359,6 +1444,8 @@ export function Settings() {
           </section>
         )}
 
+        </>)}
+        {group === 'island' && (<>
         <section className="bg-surface rounded-lg p-4 space-y-3">
           <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
             {t('settings.section.about')}
@@ -1410,6 +1497,8 @@ export function Settings() {
           </a>
         </section>
 
+        </>)}
+        {group === 'account' && (<>
         <section className="bg-surface rounded-lg p-4 space-y-3">
           <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
             {t('settings.section.session')}
@@ -1427,6 +1516,8 @@ export function Settings() {
             look (founder disliked the red lines): a NEUTRAL card with a single
             warning glyph; red is reserved for the one truly destructive action
             (the final confirm button) so it reads as deliberate, not alarming. */}
+        </>)}
+        {group === 'danger' && (<>
         <section className="bg-surface rounded-lg p-4 space-y-3">
           <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-fg-secondary">
             <WarnIcon />
@@ -1479,6 +1570,7 @@ export function Settings() {
             </div>
           )}
         </section>
+        </>)}
       </main>
     </div>
   )

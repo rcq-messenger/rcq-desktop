@@ -140,6 +140,17 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* A gradient the person picked, painted under everything. `apply()` in
+   lib/custom-theme.ts sets --rcq-gradient and the surface variables together,
+   so panels and bubbles stay related to it instead of becoming a second
+   palette. The gradient is fixed to the viewport: scrolled with the content it
+   would band visibly on a long thread. */
+html.rcq-custom-theme body {
+  background-image: var(--rcq-gradient);
+  background-attachment: fixed;
+  background-size: cover;
+}
+
 input, textarea, button {
   font-family: inherit;
 }

@@ -365,7 +365,7 @@ export interface UinQuote {
   available: boolean
   price_cents: number | null
   price_display: string | null
-  reason?: 'taken' | 'too_short' | 'too_long' | 'self' | null
+  reason?: 'taken' | 'too_short' | 'too_long' | 'self' | 'reserved' | null
 }
 
 export interface UinSuggestion {

@@ -265,7 +265,7 @@ export function Sites() {
                   className="underline"
                   onClick={() => {
                     if (!addr) return
-                    repin(addr.display, page.key)
+                    repin(addr, page.key)
                     setPage({ ...page, keyChanged: false })
                   }}
                 >

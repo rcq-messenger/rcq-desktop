@@ -82,7 +82,7 @@ export function MySitePanel({ onClose, onOpen }: Props) {
     setBusy(true)
     setError(null)
     try {
-      const out = await publishSite(identity, { name, files, title, listed })
+      const out = await publishSite(identity, { name, files, title, listed, previousVersion: site?.version })
       setSite(out)
       setFiles([])
     } catch (e) {

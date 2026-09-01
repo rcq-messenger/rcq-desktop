@@ -237,6 +237,7 @@ export const tr: Record<string, string> = {
   'sites.publish.name.invalid': 'Letters, digits and dashes, up to 32.',
   'sites.publish.title': 'Katalog için bir satır',
   'sites.publish.icon.found': 'İşaret: {file} (adresin yanında görünür)',
+  'sites.publish.icon.converted': '{file} icon.png dosyasına dönüştürüldü: telefonlar .ico okuyamaz, ağ PNG taşır.',
   'sites.publish.icon.none': 'İşaret yok. icon.png veya icon.svg ekleyin, adresin yanında görünür.',
   'sites.publish.pick': 'Dosya seç',
   'sites.publish.rules': 'HTML, CSS and pictures. One of them must be index.html. Up to 64 files, 5 MB each, 20 MB in total. No scripts: nothing in a page runs, and nothing loads from outside the network.',

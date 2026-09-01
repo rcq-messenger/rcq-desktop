@@ -11,8 +11,8 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
 import {
-  SITE_LIMITS, bundlePaths, checkName, deleteSite, isAllowedFile, mySites, pickIcon, publishSite,
-  type MySite,
+  SITE_LIMITS, bundlePaths, checkName, deleteSite, icoToPng, isAllowedFile, mySites, pickIcon,
+  publishSite, type MySite,
 } from '../lib/site-publish'
 
 interface Props {
@@ -40,6 +40,8 @@ export function MySitePanel({ onClose, onOpen }: Props) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  /// A .ico the browser decoded into the icon.png the network carries.
+  const [converted, setConverted] = useState<string | null>(null)
   const pick = useRef<HTMLInputElement | null>(null)
 
   const reload = useCallback(async () => {
@@ -76,6 +78,20 @@ export function MySitePanel({ onClose, onOpen }: Props) {
     !busy && files.length > 0 && hasIndex && rejected.length === 0 && oversize.length === 0 &&
     files.length <= SITE_LIMITS.maxFiles && total <= SITE_LIMITS.maxBundleBytes &&
     /^[a-z0-9][a-z0-9-]{0,31}$/.test(name) && (site != null || nameState === 'free')
+
+  /// Take a pick of files, converting the one thing people reasonably try and
+  /// the network cannot carry: a favicon.ico. Everything else is passed
+  /// through and judged by the rules below.
+  async function take(picked: File[]) {
+    setError(null)
+    setConverted(null)
+    const ico = picked.find((f) => f.name.toLowerCase().endsWith('.ico'))
+    if (!ico || picked.some((f) => pickIcon([f.name]))) { setFiles(picked); return }
+    const png = await icoToPng(ico)
+    if (!png) { setFiles(picked); return }
+    setConverted(ico.name)
+    setFiles(picked.filter((f) => f !== ico).concat(png))
+  }
 
   async function publish() {
     if (!identity || !canPublish) return
@@ -197,7 +213,7 @@ export function MySitePanel({ onClose, onOpen }: Props) {
                     type="file"
                     multiple
                     className="hidden"
-                    onChange={(e) => { setFiles(Array.from(e.target.files ?? [])); setError(null) }}
+                    onChange={(e) => { void take(Array.from(e.target.files ?? [])) }}
                   />
                   <button
                     type="button"
@@ -221,6 +237,9 @@ export function MySitePanel({ onClose, onOpen }: Props) {
                       <div className="text-xs text-fg-dim">
                         {icon ? t('sites.publish.icon.found', { file: icon }) : t('sites.publish.icon.none')}
                       </div>
+                      {converted && (
+                        <div className="text-xs text-fg-dim">{t('sites.publish.icon.converted', { file: converted })}</div>
+                      )}
                       {!hasIndex && <div className="text-xs text-red-400">{t('sites.publish.error.no_index')}</div>}
                       {rejected.length > 0 && <div className="text-xs text-red-400">{t('sites.publish.error.bad_type')}</div>}
                       {(oversize.length > 0 || total > SITE_LIMITS.maxBundleBytes) && (

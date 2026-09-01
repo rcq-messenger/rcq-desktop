@@ -237,6 +237,7 @@ export const zh: Record<string, string> = {
   'sites.publish.name.invalid': 'Letters, digits and dashes, up to 32.',
   'sites.publish.title': '目录里的一行说明',
   'sites.publish.icon.found': '图标：{file}（显示在地址旁边）',
+  'sites.publish.icon.converted': '{file} 已转换为 icon.png：手机无法解码 .ico，网络里使用 PNG。',
   'sites.publish.icon.none': '没有图标。加入 icon.png 或 icon.svg，它会显示在地址旁边。',
   'sites.publish.pick': '选择文件',
   'sites.publish.rules': 'HTML, CSS and pictures. One of them must be index.html. Up to 64 files, 5 MB each, 20 MB in total. No scripts: nothing in a page runs, and nothing loads from outside the network.',

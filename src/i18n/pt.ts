@@ -273,6 +273,8 @@ export const pt: Record<string, string> = {
   'sites.address.placeholder': 'nome.rcq',
   'sites.open': 'Abrir',
   'sites.reload': 'Recarregar',
+  'sites.frameset': 'Esta página é feita de frames, que não abrem aqui. Suas partes:',
+  'sites.frameset.missing': 'Esta página é feita de frames, que não abrem aqui, e os arquivos que ela aponta não estão no pacote. Tente as páginas acima.',
   'sites.error.address': 'Um endereço é assim: nome.rcq ou nome.ilha.rcq',
   'sites.error.frozen': 'A ilha congelou este site.',
   'sites.error.missing': 'Site inexistente, ou a ilha não respondeu.',

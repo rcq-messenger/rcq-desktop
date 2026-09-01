@@ -273,6 +273,8 @@ export const tr: Record<string, string> = {
   'sites.address.placeholder': 'ad.rcq',
   'sites.open': 'Aç',
   'sites.reload': 'Yenile',
+  'sites.frameset': 'Bu sayfa çerçevelerden oluşuyor, burada açılmıyorlar. Parçaları:',
+  'sites.frameset.missing': 'Bu sayfa çerçevelerden oluşuyor, burada açılmıyorlar ve işaret ettiği dosyalar pakette yok. Yukarıdaki sayfaları deneyin.',
   'sites.error.address': 'Adres şöyle görünür: ad.rcq veya ad.ada.rcq',
   'sites.error.frozen': 'Ada bu siteyi dondurdu.',
   'sites.error.missing': 'Böyle bir site yok ya da ada yanıt vermedi.',

@@ -47,6 +47,17 @@ export interface SiteManifest {
 export interface SitePage {
   /// Ready for the frame: assets inlined, everything outward removed.
   html: string
+  /// This page is a frameset and these are the parts of it that the bundle
+  /// actually contains. Framesets cannot be rendered here - a frame is a
+  /// fetch and a second document, neither of which this reader does - so the
+  /// screen offers the parts instead of showing the blank page a stripped
+  /// frameset leaves behind.
+  frames: string[]
+  /// The page WAS a frameset, whether or not any of its parts turned out to
+  /// be in the bundle. The first site published on this network points its
+  /// frames at files it never uploaded, and "nothing here" is a worse answer
+  /// than "this is a frameset and its parts are missing".
+  frameset: boolean
   /// Which file of the bundle this is.
   path: string
   /// Every `.html` in the bundle, so the reader can move between pages
@@ -152,6 +163,25 @@ export function repin(addr: RcqAddress, key: string): void {
 /// and is not: the value is a hash, so a truthiness test also answers "yes" to
 /// anything inherited from Object.prototype (`constructor`, `toString`), and
 /// "no" to a legitimate entry whose hash is somehow empty.
+/// Decode a text file the way its author declared it, not the way we would
+/// prefer. The first site published on this network was a 2000s frameset in
+/// windows-1251, and that is not an accident: a format with no scripts and no
+/// tracking attracts exactly the people whose pages predate UTF-8. The label
+/// is read out of the first kilobyte, the way a browser sniffs it.
+function decodeText(bytes: Uint8Array): string {
+  const head = new TextDecoder('latin1').decode(bytes.subarray(0, 1024))
+  const label = /charset\s*=\s*["']?([a-z0-9_-]+)/i.exec(head)?.[1]?.toLowerCase()
+  if (label && label !== 'utf-8' && label !== 'utf8') {
+    try {
+      return new TextDecoder(label, { fatal: false }).decode(bytes)
+    } catch {
+      // An encoding this engine does not know. UTF-8 at least renders the
+      // ASCII half rather than nothing.
+    }
+  }
+  return new TextDecoder().decode(bytes)
+}
+
 function hasFile(m: SiteManifest, path: string): boolean {
   return Object.prototype.hasOwnProperty.call(m.files, path)
 }
@@ -324,8 +354,17 @@ function cleanCss(css: string): string {
 /// merely blocked by the frame: two locks, because the frame's rules are the
 /// browser's promise and this one is ours. The phones will have this half and
 /// no CSP, so this is the half that has to be right.
-async function inline(addr: RcqAddress, m: SiteManifest, path: string, html: string): Promise<string> {
+async function inline(addr: RcqAddress, m: SiteManifest, path: string, html: string): Promise<{ html: string; frames: string[]; frameset: boolean }> {
   const doc = new DOMParser().parseFromString(html, 'text/html')
+
+  // A frameset is stripped like everything else that fetches, but its parts
+  // are worth naming: without this the reader gets a blank page and no idea
+  // that the site is there at all.
+  const frameset = doc.querySelector('frameset') != null
+  const frames = Array.from(doc.querySelectorAll('frame'))
+    .map((f) => resolve(path, f.getAttribute('src') || ''))
+    .filter((p): p is string => !!p && hasFile(m, p))
+  doc.querySelectorAll('frameset, frame, noframes').forEach((el) => el.remove())
 
   // Stylesheets first: a <link> is resolved into a <style> before the
   // allow-list walk, which then treats it like any author style block.
@@ -334,7 +373,7 @@ async function inline(addr: RcqAddress, m: SiteManifest, path: string, html: str
     const href = resolve(path, el.getAttribute('href') || '')
     if (rel !== 'stylesheet' || !href || !hasFile(m, href)) { el.remove(); continue }
     try {
-      const css = new TextDecoder().decode(await fetchFile(addr, m, href))
+      const css = decodeText(await fetchFile(addr, m, href))
       const style = doc.createElement('style')
       style.textContent = cleanCss(css)
       el.replaceWith(style)
@@ -423,17 +462,19 @@ async function inline(addr: RcqAddress, m: SiteManifest, path: string, html: str
   meta.setAttribute('http-equiv', 'Content-Security-Policy')
   meta.setAttribute('content', "default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src 'none'")
   doc.head.prepend(meta)
-  return `<!doctype html>${doc.documentElement.outerHTML}`
+  return { html: `<!doctype html>${doc.documentElement.outerHTML}`, frames, frameset }
 }
 
 /// Open a page of a site: verify, inline, and report what the reader should
 /// know about the key.
 export async function fetchSitePage(addr: RcqAddress, path = 'index.html', fresh = false): Promise<SitePage> {
   const m = await fetchManifest(addr, fresh)
-  const raw = new TextDecoder().decode(await fetchFile(addr, m, path, fresh))
-  const html = await inline(addr, m, path, raw)
+  const raw = decodeText(await fetchFile(addr, m, path, fresh))
+  const { html, frames, frameset } = await inline(addr, m, path, raw)
   return {
     html,
+    frames,
+    frameset,
     path,
     // index.html first, the rest alphabetically: the front page is the front
     // page, whatever it sorts as.

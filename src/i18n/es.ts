@@ -273,6 +273,8 @@ export const es: Record<string, string> = {
   'sites.address.placeholder': 'nombre.rcq',
   'sites.open': 'Abrir',
   'sites.reload': 'Recargar',
+  'sites.frameset': 'Esta página está hecha de marcos, que no se abren aquí. Sus partes:',
+  'sites.frameset.missing': 'Esta página está hecha de marcos, que no se abren aquí, y los archivos a los que apunta no están en el paquete. Prueba las páginas de arriba.',
   'sites.error.address': 'Una dirección se ve así: nombre.rcq o nombre.isla.rcq',
   'sites.error.frozen': 'La isla ha congelado este sitio.',
   'sites.error.missing': 'No existe ese sitio, o la isla no respondió.',

@@ -21,12 +21,22 @@ import { forgetSectionMember } from '../lib/sections-vault'
 
 interface Props {
   contact: Contact
+  /// The row is inside a section the user made themselves.
+  ///
+  /// ⚠⚠ Favourite and Archive are then NOT offered, and this is a rule the
+  /// phones have followed since August: a contact lives in exactly one place,
+  /// and the buckets are ranked - archive beats the user's own section, which
+  /// beats favourite. So "favourite" on a filed contact does nothing visible
+  /// (the section still wins) and "archive" silently TAKES the contact out of
+  /// the section the person put them in. Two menu items whose only honest
+  /// description is "this will not do what you think".
+  inUserSection?: boolean
   onClose: () => void
   onChanged: () => void
   onPreview?: () => void
 }
 
-export function ContactActionsMenu({ contact, onClose, onChanged, onPreview }: Props) {
+export function ContactActionsMenu({ contact, inUserSection, onClose, onChanged, onPreview }: Props) {
   const { identity } = useIdentity()
   const { t } = useI18n()
   const favorites = useFavorites()
@@ -157,14 +167,16 @@ export function ContactActionsMenu({ contact, onClose, onChanged, onPreview }: P
         />
       )}
       <Row icon={<PencilIcon />} label={t('ci.actions.rename')} onClick={() => setRenaming(true)} />
-      <Row
-        icon={<StarIcon filled={isFav} />}
-        label={isFav ? t('contact_actions.unfavorite') : t('contact_actions.favorite')}
-        onClick={() => {
-          favorites.toggle(contact.uin)
-          onClose()
-        }}
-      />
+      {!inUserSection && (
+        <Row
+          icon={<StarIcon filled={isFav} />}
+          label={isFav ? t('contact_actions.unfavorite') : t('contact_actions.favorite')}
+          onClick={() => {
+            favorites.toggle(contact.uin)
+            onClose()
+          }}
+        />
+      )}
       <Row
         icon={<BellIcon off={isMuted} />}
         label={isMuted ? t('contact_actions.unmute') : t('contact_actions.mute')}
@@ -173,14 +185,16 @@ export function ContactActionsMenu({ contact, onClose, onChanged, onPreview }: P
           onClose()
         }}
       />
-      <Row
-        icon={<ArchiveIcon />}
-        label={isArchived ? t('contact_actions.unarchive') : t('contact_actions.archive')}
-        onClick={() => {
-          archive.toggle(contact.uin)
-          onClose()
-        }}
-      />
+      {!inUserSection && (
+        <Row
+          icon={<ArchiveIcon />}
+          label={isArchived ? t('contact_actions.unarchive') : t('contact_actions.archive')}
+          onClick={() => {
+            archive.toggle(contact.uin)
+            onClose()
+          }}
+        />
+      )}
       <Divider />
       <Row
         icon={<BanIcon />}

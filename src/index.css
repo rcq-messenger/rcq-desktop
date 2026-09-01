@@ -151,6 +151,21 @@ html.rcq-custom-theme body {
   background-size: cover;
 }
 
+/* ⚠⚠ …and the page has to let it through. Every screen paints its own root
+   with `bg-surface-dim`, which is opaque, so the gradient was painted on the
+   body and then completely covered by the very first element on top of it:
+   the founder set one, saw the surfaces take its colour, and asked where the
+   gradient was. Fair question - it was there, under an opaque sheet.
+
+   Only the ROOTS are cleared, matched by the full-height class every screen
+   root carries. `bg-surface-dim` is also used for small panels (the segmented
+   pickers, the inline cards) and those must keep their fill, or they dissolve
+   into the background they are supposed to sit on. */
+html.rcq-custom-theme .min-h-screen.bg-surface-dim,
+html.rcq-custom-theme .h-screen.bg-surface-dim {
+  background-color: transparent;
+}
+
 input, textarea, button {
   font-family: inherit;
 }

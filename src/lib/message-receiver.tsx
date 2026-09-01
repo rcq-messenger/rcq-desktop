@@ -18,6 +18,7 @@ import { snapshotFor } from './contacts-cache'
 import { adoptHomesFromOwnRecord, applyPushedRecord, drainBackupQueues, listBackupHomes, scrubFrontAliasHomes } from './multihome'
 import { aliasFor, drainVisitedQueues, listVisitedIslands } from './visited-islands'
 import { getCrossIsland } from './crossisland-store'
+import { applyRequestAck } from './crossisland-ack'
 import { ensureRequestsLoaded, holdRequestMessage, isBlocked } from './crossisland-requests'
 import { isContact, shouldQuarantineStranger } from './stranger-requests'
 import { handleContactReq } from './crossisland-contactreq'
@@ -180,6 +181,14 @@ function route(
         if (key) applyEditToOutgoing(key, inner.targetID, inner.text ?? '')
       } else if (inner?.kind === 'delete' && inner.targetID != null) {
         markDeleted(inner.targetID, { fromSelf: true })
+      } else if (inner?.kind === 'ciack') {
+        // A cross-island request answered on another of my devices. The row is
+        // per-install, so without this the same request sits here waiting to be
+        // accepted a SECOND time — which is not idempotent: it would re-TOFU
+        // the peer and overwrite the keys the other device pinned.
+        // No event of our own: `clearRequest`/`blockRequest` already notify the
+        // store's listeners, and the pending list watches the store.
+        applyRequestAck(inner as Record<string, unknown>)
       } else if (inner?.kind === 'readmark') {
         // We read this thread on another device (A2): drop the badge here
         // too, minus anything that arrived after that read. Not a message,

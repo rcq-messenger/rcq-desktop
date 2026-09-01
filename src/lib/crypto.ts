@@ -223,6 +223,41 @@ export interface ReadMarkEnvelope {
   at: number
 }
 
+/// A cross-island request ANSWERED, told to my own other devices. Rides inside
+/// a self-carbon exactly like the read marker above, under the same outer
+/// `read` type, so the island learns nothing it did not already see.
+///
+/// ⚠⚠ Why this has to exist. A cross-island request is per-INSTALL state: the
+/// conveyor row carries no `to_device_id`, so every device of the account picks
+/// it up and writes its own copy, while accepting it speaks only to the PEER.
+/// So an accept on the desktop leaves the same request sitting on the phone,
+/// and accepting it a second time is not idempotent — it re-fetches the key
+/// card and OVERWRITES the pinned keys with no comparison and no warning, on
+/// the one class of peer whose every message is encrypted to exactly those
+/// pinned keys.
+///
+/// The card rides along for that reason: the device that accepted did the TOFU,
+/// and the others copy its answer instead of each doing their own. A device
+/// that already holds the contact keeps what it has.
+export interface CIAckEnvelope {
+  kind: 'ciack'
+  uin: number
+  /// Island host of the peer. Empty string is a SAME-island quarantined
+  /// stranger, which has no key card and no §5f request behind it.
+  host: string
+  act: 'accept' | 'decline' | 'block'
+  /// Present on an accept of a cross-island request: the key card the
+  /// accepting device pinned. Omitted for decline/block and for strangers.
+  card?: {
+    nick?: string
+    ik: string
+    sk: string
+    sik?: string | null
+    gender?: string | null
+    status?: string | null
+  }
+}
+
 /// Group poll announcement (iOS/Android kind "poll"). Terse wire keys to
 /// match the mobile clients: `poll` = server poll id, `q` = question,
 /// `opts` = option labels, `sc` = single-choice, `anon` = anonymous.
@@ -449,6 +484,7 @@ export type Envelope =
   | DeleteEnvelope
   | ReceiptEnvelope
   | ReadMarkEnvelope
+  | CIAckEnvelope
   | HomeRecordEnvelope
   | SkdmEnvelope
   | SknackEnvelope
@@ -592,6 +628,12 @@ export function envelopeToObject(env: Envelope): Record<string, unknown> {
     obj.text = env.text
   } else if (env.kind === 'delete') {
     obj.targetID = env.targetID
+  } else if (env.kind === 'ciack') {
+    // Terse keys, and the card only when there is one to copy.
+    obj.uin = env.uin
+    obj.host = env.host
+    obj.act = env.act
+    if (env.card) obj.card = env.card
   } else if (env.kind === 'readmark') {
     // Cross-device read marker (A2). One field: when the read happened.
     // Which thread it belongs to is the carbon's own to/gid, so nothing is

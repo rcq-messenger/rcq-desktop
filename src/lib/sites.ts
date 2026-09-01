@@ -148,6 +148,14 @@ export function repin(addr: RcqAddress, key: string): void {
   try { localStorage.setItem(PINS_KEY, JSON.stringify(pins)) } catch { /* private mode */ }
 }
 
+/// Is this path in the bundle? `m.files[path]` looks like the same question
+/// and is not: the value is a hash, so a truthiness test also answers "yes" to
+/// anything inherited from Object.prototype (`constructor`, `toString`), and
+/// "no" to a legitimate entry whose hash is somehow empty.
+function hasFile(m: SiteManifest, path: string): boolean {
+  return Object.prototype.hasOwnProperty.call(m.files, path)
+}
+
 function hex(bytes: Uint8Array): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
 }
@@ -201,7 +209,7 @@ export async function fetchManifest(addr: RcqAddress, fresh = false): Promise<Si
 
 /// Fetch one file and check it against the manifest's hash.
 async function fetchFile(addr: RcqAddress, m: SiteManifest, path: string, fresh = false): Promise<Uint8Array> {
-  const want = m.files[path]
+  const want = hasFile(m, path) ? m.files[path] : null
   if (!want) throw new Error('missing' satisfies SiteError)
   const res = await get(`${originOf(addr.host)}/sites/${encodeURIComponent(addr.name)}/${path}`, fresh)
   const bytes = new Uint8Array(await res.arrayBuffer())
@@ -209,6 +217,9 @@ async function fetchFile(addr: RcqAddress, m: SiteManifest, path: string, fresh 
   return bytes
 }
 
+/// Types a bundle image may be turned into. SVG is here for pictures INSIDE a
+/// page, where the locked frame and its policy apply; `iconPathOf` refuses it
+/// for the mark, which our own chrome draws.
 const IMAGE_TYPES: Record<string, string> = {
   png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
   gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml',
@@ -266,17 +277,47 @@ const ALLOWED_ATTRS = new Set([
   'start', 'reversed', 'value', 'charset',
 ])
 
-/// Author CSS is kept, but never anything that fetches. `@import` is a request
-/// wearing a stylesheet's clothes, `url()` is a request outright, and on the
-/// phones there will be no CSP behind this to catch what slips through - so
-/// this has to hold on its own.
+/// Author CSS is kept, but never anything that fetches, and never anything
+/// that can climb out of the `<style>` element it is written into.
+///
+/// The order matters and each pass exists because a conformance case walked
+/// through the previous version (docs/rcq-sites-conformance.json):
+///
+/// 1. Comments go first: `/*…*/` can sit inside a property value and split a
+///    keyword the later passes look for.
+/// 2. CSS escapes are DECODED next, not deleted. `\75 rl(` IS `url(` to a
+///    conforming parser and `@\69 mport` IS `@import`, so a scanner reading
+///    the raw text sees neither. Deleting the escape leaves `rl(` and the
+///    address it points at sitting in the file, inert but present; decoding
+///    hands the real keyword to the passes below, which then neutralise it
+///    like any other.
+/// 3. `</style` is neutralised. The text is written into a `<style>` element
+///    and serialised verbatim, so a stylesheet carrying that sequence closes
+///    the element and everything after it is markup that never went through
+///    the sanitiser. ⚠⚠ On the web the frame's CSP still refuses to run it;
+///    the phones have no CSP, so this is the pass that has to hold there.
+/// 4. Then the fetching constructs: @import in both its forms (a semicolon is
+///    not required before a block), @font-face, image-set() which takes bare
+///    strings and needs no url() at all, and url() itself unless it is an
+///    inlined data: image.
 function cleanCss(css: string): string {
   return css
-    .replace(/@import[^;{]*(;|$)/gi, '')
+    .replace(/\/\*[\s\S]*?(\*\/|$)/g, '')
+    .replace(/\\([0-9a-fA-F]{1,6})[ \t\n\r\f]?|\\(.)/g,
+             (_m, hex, ch) => (hex ? String.fromCodePoint(parseInt(hex, 16)) : ch))
+    .replace(/<\s*\/\s*style/gi, '')
+    .replace(/@import[^;{]*(;|(?=\{)|$)/gi, '')
     .replace(/@font-face\s*\{[^}]*\}/gi, '')
-    .replace(/url\(\s*(?!['"]?data:)[^)]*\)/gi, 'none')
+    .replace(/(-\w+-)?image-set\s*\([^)]*\)/gi, 'none')
+    .replace(/url\(\s*(?:'\s*data:|"\s*data:|data:)[^)]*\)|url\([^)]*\)/gi,
+             (m) => (/url\(\s*['"]?\s*data:/i.test(m) ? m : 'none'))
 }
 
+/// Turn the bundle's HTML into a single self-contained document.
+///
+/// Everything that could reach the network or run is removed here rather than
+/// merely blocked by the frame: two locks, because the frame's rules are the
+/// browser's promise and this one is ours.
 /// Turn the bundle's HTML into a single self-contained document.
 ///
 /// Everything that could reach the network or run is removed here rather than
@@ -291,7 +332,7 @@ async function inline(addr: RcqAddress, m: SiteManifest, path: string, html: str
   for (const el of Array.from(doc.querySelectorAll('link'))) {
     const rel = (el.getAttribute('rel') || '').toLowerCase()
     const href = resolve(path, el.getAttribute('href') || '')
-    if (rel !== 'stylesheet' || !href || !m.files[href]) { el.remove(); continue }
+    if (rel !== 'stylesheet' || !href || !hasFile(m, href)) { el.remove(); continue }
     try {
       const css = new TextDecoder().decode(await fetchFile(addr, m, href))
       const style = doc.createElement('style')
@@ -308,9 +349,26 @@ async function inline(addr: RcqAddress, m: SiteManifest, path: string, html: str
   doc.querySelectorAll('script, iframe, object, embed, form, video, audio, source, track, base, svg, math, canvas, template, noscript, portal')
     .forEach((el) => el.remove())
 
+  // Comments are dropped rather than passed through: they carry build paths
+  // and names their author forgot about, and every engine disagrees slightly
+  // about where one ends - which is a disagreement between our four
+  // implementations waiting to happen.
+  const walker = doc.createTreeWalker(doc, NodeFilter.SHOW_COMMENT)
+  const comments: Node[] = []
+  while (walker.nextNode()) comments.push(walker.currentNode)
+  comments.forEach((c) => c.parentNode?.removeChild(c))
+
+  // ⚠ The page must not be able to write into the channel between the
+  // sanitiser and our own chrome: an author-supplied data-rcq-page would be
+  // kept by the allow-list below and read by the page list as ours.
+  doc.querySelectorAll('[data-rcq-page], [data-rcq-external]').forEach((el) => {
+    el.removeAttribute('data-rcq-page')
+    el.removeAttribute('data-rcq-external')
+  })
+
   for (const img of Array.from(doc.querySelectorAll('img'))) {
     const src = resolve(path, img.getAttribute('src') || '')
-    if (!src || !m.files[src]) { img.remove(); continue }
+    if (!src || !hasFile(m, src)) { img.remove(); continue }
     try {
       const uri = dataUri(src, await fetchFile(addr, m, src))
       if (!uri) { img.remove(); continue }
@@ -323,7 +381,7 @@ async function inline(addr: RcqAddress, m: SiteManifest, path: string, html: str
   for (const a of Array.from(doc.querySelectorAll('a'))) {
     const href = a.getAttribute('href') || ''
     const inner = resolve(path, href)
-    if (inner && m.files[inner]) {
+    if (inner && hasFile(m, inner)) {
       // An internal link: the frame has no scripts, so it cannot navigate.
       // The page list in our own chrome is the door, and the anchor says
       // where it points.
@@ -390,8 +448,13 @@ export async function fetchSitePage(addr: RcqAddress, path = 'index.html', fresh
 
 /// Which file in this bundle is the site's mark, if any.
 export function iconPathOf(m: SiteManifest): string | null {
-  if (m.icon && m.files[m.icon]) return m.icon
-  return ICON_NAMES.find((n) => m.files[n]) ?? null
+  // ⚠ The manifest names the mark, so the extension has to be checked here
+  // rather than trusted: `"icon": "anything.svg"` was drawn by our own chrome
+  // until a conformance case walked through this line
+  // (docs/rcq-sites-conformance.json, sanitiser[41]).
+  const raster = (p: string) => /\.(png|webp)$/i.test(p) && hasFile(m, p)
+  if (m.icon && raster(m.icon)) return m.icon
+  return ICON_NAMES.find((n) => raster(n)) ?? null
 }
 
 /// The site's mark as a `data:` URI, verified the same way a page is: the
@@ -427,4 +490,7 @@ export async function fetchCatalogue(host: string): Promise<Array<{ name: string
   }
 }
 
-export const _internal = { islandHostFromLabel, resolve, readPins }
+/// Test seam. `inline` is the half that has no network in it once the bundle
+/// is in hand, and the conformance corpus drives it directly
+/// (docs/rcq-sites-conformance.json).
+export const _internal = { islandHostFromLabel, resolve, readPins, cleanCss, inline }

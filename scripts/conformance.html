@@ -1,0 +1,72 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>.rcq conformance</title>
+<!--
+  Runs docs/rcq-sites-conformance.json against the REAL module, in a real DOM.
+
+  Two of the three sections need no DOM and run in node instead
+  (scripts/run-conformance.mjs); the sanitiser section needs DOMParser, which
+  is why this half is a page. Open it through the dev server so the import
+  resolves and the origin matches:
+
+      npm run dev
+      python3 -c "import http.server,socketserver,pathlib;d=pathlib.Path('../docs/rcq-sites-conformance.json').read_bytes();\
+      H=type('H',(http.server.BaseHTTPRequestHandler,),{'do_GET':lambda s:(s.send_response(200),s.send_header('Access-Control-Allow-Origin','*'),s.end_headers(),s.wfile.write(d)),'log_message':lambda *a:None});\
+      socketserver.TCPServer(('127.0.0.1',8132),H).serve_forever()"
+      open http://localhost:5174/scripts/conformance.html
+-->
+<body style="font:14px ui-monospace,monospace;background:#111;color:#eee;padding:1.5rem">
+<pre id="out">running…</pre>
+<script type="module">
+const out = document.getElementById('out')
+const say = (s) => { out.textContent += '\n' + s }
+const url = new URL(location.href).searchParams.get('corpus') || 'http://127.0.0.1:8132/'
+const m = await import('/src/lib/sites.ts')
+const corpus = await (await fetch(url)).json()
+
+// The fixture bundle the corpus describes (sanitiser[0].why): a page, a second
+// page, a stylesheet and some images, with hashes that actually match, so the
+// positive cases exercise the inlining rather than the refusal path.
+const enc = new TextEncoder()
+const PNG = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='), (c) => c.charCodeAt(0))
+const FIX = {
+  'style.css': enc.encode('body{color:#111}'),
+  'about.html': enc.encode('<p>about</p>'),
+  'logo.png': PNG, 'a.png': PNG, 'mark.png': PNG, 'photo.png': PNG,
+}
+const hex = async (b) => [...new Uint8Array(await crypto.subtle.digest('SHA-256', b))].map((x) => x.toString(16).padStart(2, '0')).join('')
+const files = { 'index.html': await hex(enc.encode('x')) }
+for (const [k, v] of Object.entries(FIX)) files[k] = await hex(v)
+const manifest = { v: 1, name: 'test', version: 1, key: '', sig: '', files }
+const addr = { name: 'test', host: 'api.rcq.app', display: 'test.rcq' }
+
+const realFetch = window.fetch
+window.fetch = async (u, o) => {
+  const name = String(u).split('/').pop()
+  return FIX[name] ? new Response(FIX[name], { status: 200 }) : realFetch(u, o)
+}
+
+let pass = 0, fail = 0
+for (const [i, c] of corpus.addresses.entries()) {
+  const got = m.parseRcqAddress(c.input, c.ownHost)
+  const ok = c.expect === null ? got === null
+    : got !== null && got.name === c.expect.name && got.host === c.expect.host
+  ok ? pass++ : (fail++, say(`ADDRESS[${i}] ${JSON.stringify(c.input)} -> ${JSON.stringify(got)}`))
+}
+for (const [i, c] of corpus.css.entries()) {
+  const res = m._internal.cleanCss(c.css)
+  const bad = (c.mustNotContain || []).filter((n) => res.includes(n))
+  bad.length ? (fail++, say(`CSS[${i}] kept ${JSON.stringify(bad)}`)) : pass++
+}
+for (const [i, c] of corpus.sanitiser.entries()) {
+  let html = ''
+  try { html = await m._internal.inline(addr, manifest, 'index.html', c.html) } catch (e) { html = 'THREW: ' + e.message }
+  const bad = (c.mustNotContain || []).filter((n) => html.includes(n))
+  const missing = (c.mustContain || []).filter((n) => !html.includes(n))
+  ;(bad.length || missing.length)
+    ? (fail++, say(`SANITISER[${i}] kept ${JSON.stringify(bad)} missing ${JSON.stringify(missing)}`))
+    : pass++
+}
+window.fetch = realFetch
+out.textContent = `${pass} pass, ${fail} fail` + out.textContent.replace('running…', '')
+</script>

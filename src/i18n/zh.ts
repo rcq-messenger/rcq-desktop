@@ -272,6 +272,7 @@ export const zh: Record<string, string> = {
   'sites.back': '返回',
   'sites.address.placeholder': '名称.rcq',
   'sites.open': '打开',
+  'sites.reload': '刷新',
   'sites.error.address': '地址格式为 名称.rcq 或 名称.岛屿.rcq',
   'sites.error.frozen': '该岛屿已冻结此站点。',
   'sites.error.missing': '没有这个站点，或岛屿未回应。',

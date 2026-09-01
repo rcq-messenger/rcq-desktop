@@ -272,6 +272,7 @@ export const tr: Record<string, string> = {
   'sites.back': 'Geri',
   'sites.address.placeholder': 'ad.rcq',
   'sites.open': 'Aç',
+  'sites.reload': 'Yenile',
   'sites.error.address': 'Adres şöyle görünür: ad.rcq veya ad.ada.rcq',
   'sites.error.frozen': 'Ada bu siteyi dondurdu.',
   'sites.error.missing': 'Böyle bir site yok ya da ada yanıt vermedi.',

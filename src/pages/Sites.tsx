@@ -64,13 +64,15 @@ export function Sites() {
   /// name → the site's mark as a data URI, or null once we know there is none.
   const [icons, setIcons] = useState<Record<string, string | null>>({})
   const [mine, setMine] = useState(false)
+  const [focused, setFocused] = useState(false)
   const frameRef = useRef<HTMLIFrameElement | null>(null)
+  const inputRef = useRef<HTMLInputElement | null>(null)
 
   // "My island" for a bare `name.rcq`, taken from this session's own API base:
   // a person's first site is reachable before they know what an island is.
   const ownHost = identity ? new URL(identity.apiBase).host : 'api.rcq.app'
 
-  const open = useCallback(async (raw: string, path = 'index.html') => {
+  const open = useCallback(async (raw: string, path = 'index.html', fresh = false) => {
     const parsed = parseRcqAddress(raw, ownHost)
     if (!parsed) {
       setError('address')
@@ -80,9 +82,9 @@ export function Sites() {
     setLoading(true)
     setError(null)
     try {
-      const got = await fetchSitePage(parsed, path)
+      const got = await fetchSitePage(parsed, path, fresh)
       setPage(got)
-      void fetchSiteIcon(parsed).then((uri) => setIcons((cur) => ({ ...cur, [parsed.name]: uri })))
+      void fetchSiteIcon(parsed, fresh).then((uri) => setIcons((cur) => ({ ...cur, [parsed.name]: uri })))
       setAddr(parsed)
       setTyped(parsed.display)
     } catch (e) {
@@ -150,39 +152,91 @@ export function Sites() {
 
   return (
     <div className="h-screen [height:100dvh] flex flex-col bg-surface-dim overflow-hidden">
+      {/* One capsule, the way a desktop browser does it: the address IS the
+          control. Idle it sits centred with the site's mark and a reload
+          glyph; focused it becomes an ordinary text field, left-aligned and
+          selected, and Enter opens. There is no Open button - a button beside
+          an address bar is a second way to do the thing the Return key
+          already does (founder, 01.09). */}
       <header className="rcq-header sticky top-0 z-10 shrink-0">
-        <div className="max-w-3xl mx-auto px-3 h-14 flex items-center gap-2">
-          <Link to="/contacts" className="text-fg-secondary hover:text-fg-primary px-1" aria-label={t('sites.back')}>
+        <div className="max-w-3xl mx-auto px-3 h-14 flex items-center gap-1.5">
+          <Link to="/contacts" className="text-fg-secondary hover:text-fg-primary p-1.5 rounded-md hover:bg-field" aria-label={t('sites.back')}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
               <path d="M15 18l-6-6 6-6" />
             </svg>
           </Link>
-          {page && <SiteMark name={addr?.name ?? ''} uri={icons[addr?.name ?? '']} size={22} />}
+
           <form
-            className="flex-1 flex items-center gap-2"
+            className={`group flex-1 flex items-center gap-2 h-9 px-3 rounded-full bg-field transition-shadow ${
+              focused ? 'ring-1 ring-accent' : 'hover:bg-line/40'
+            }`}
             onSubmit={(e) => {
               e.preventDefault()
               void open(typed)
+              inputRef.current?.blur()
             }}
           >
+            {/* The mark stands in for the padlock a browser puts here, and it
+                means the same thing: this is the site it says it is, checked
+                against the owner's signature. */}
+            {page && !focused && (
+              <SiteMark name={addr?.name ?? ''} uri={icons[addr?.name ?? '']} size={18} />
+            )}
             <input
+              ref={inputRef}
               value={typed}
               onChange={(e) => setTyped(e.target.value)}
+              onFocus={(e) => { setFocused(true); e.currentTarget.select() }}
+              onBlur={() => { setFocused(false); if (addr) setTyped(addr.display) }}
+              onKeyDown={(e) => {
+                // Enter is handled here rather than left to the form's implicit
+                // submission: a form whose only button is a reload button has
+                // no submit button, and implicit submission is exactly the
+                // corner of the spec engines disagree about. Escape puts the
+                // address back the way a browser does.
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  void open(e.currentTarget.value)
+                  e.currentTarget.blur()
+                } else if (e.key === 'Escape') {
+                  inputRef.current?.blur()
+                }
+              }}
               placeholder={t('sites.address.placeholder')}
               spellCheck={false}
               autoCapitalize="off"
               autoCorrect="off"
               autoComplete="off"
-              className="flex-1 h-9 px-3 rounded-md bg-field text-fg-primary outline-none focus:ring-1 focus:ring-accent text-sm font-mono"
+              aria-label={t('sites.address.placeholder')}
+              className={`flex-1 min-w-0 bg-transparent outline-none text-sm font-mono text-fg-primary placeholder:text-fg-dim ${
+                focused || !page ? 'text-left' : 'text-center'
+              }`}
             />
-            <button
-              type="submit"
-              disabled={loading || !typed.trim()}
-              className="h-9 px-3 rounded-md bg-accent text-white text-sm disabled:opacity-50"
-            >
-              {loading ? t('sites.loading') : t('sites.open')}
-            </button>
+            {/* Reload, and it really reloads: the bundle is served with a five
+                minute cache, which is right for reading and wrong for somebody
+                who just republished. */}
+            {page && !focused && (
+              <button
+                type="button"
+                onClick={() => addr && void open(addr.display, page.path, true)}
+                className="text-fg-dim hover:text-fg-primary flex-none"
+                title={t('sites.reload')}
+                aria-label={t('sites.reload')}
+              >
+                {loading ? (
+                  <svg width="15" height="15" viewBox="0 0 24 24" className="animate-spin" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden>
+                    <path d="M21 12a9 9 0 1 1-6.2-8.6" />
+                  </svg>
+                ) : (
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <path d="M21 12a9 9 0 1 1-2.6-6.4" />
+                    <path d="M21 3v5h-5" />
+                  </svg>
+                )}
+              </button>
+            )}
           </form>
+
           <button
             type="button"
             onClick={() => setMine(true)}
@@ -196,6 +250,10 @@ export function Sites() {
             </svg>
           </button>
         </div>
+        {/* A hair of progress under the bar. A spinner in the capsule says
+            "something is happening"; this says where it has got to, which is
+            what a slow island actually needs. */}
+        <div className={`h-0.5 ${loading ? 'bg-accent/70 animate-pulse' : 'bg-transparent'}`} />
       </header>
 
       {/* The other pages of this site. With no scripts in the frame, a link

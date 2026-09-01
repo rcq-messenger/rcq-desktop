@@ -19,6 +19,7 @@ import {
   type CrossIslandRequest,
 } from '../lib/crossisland-requests'
 import { saveCrossIsland } from '../lib/crossisland-store'
+import { sendRequestAck } from '../lib/crossisland-ack'
 import { sendContactAccept, sendContactDecline } from '../lib/crossisland-contactreq'
 import { pushProfileTo } from '../lib/crossisland-profile'
 import { fetchPeerKeyCard } from '../lib/federation-send'
@@ -47,6 +48,7 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
     // remember the allowance, release what they already wrote, open the chat.
     if (r.host === '') {
       allowStranger(r.uin)
+      void sendRequestAck(identity!, r.uin, '', 'accept')
       const held = clearRequest(r.uin, '')
       beginCatchUp()
       try {
@@ -88,6 +90,18 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
       // `accept` back to the requester's island so BOTH sides hold the other as
       // an accepted cross-island contact — that mutual state is the precondition
       // §5d call signalling checks and §5e profile refresh assumes.
+      // My OTHER devices hold their own copy of this request (the conveyor row
+      // has no device id). Hand them the answer AND the card just pinned, so
+      // the row disappears there instead of inviting a second accept that would
+      // re-TOFU the peer and overwrite these very keys.
+      void sendRequestAck(identity!, r.uin, r.host, 'accept', {
+        nick: card.nickname?.trim() || undefined,
+        ik: card.identity_key,
+        sk: card.signing_key,
+        sik: card.signal_identity_key ?? null,
+        gender: card.gender ?? null,
+        status: card.status_message ?? null,
+      })
       const acked = await sendContactAccept(identity!, r.host, r.uin)
       // §5e: they hold us from this moment, with whatever name their key-card
       // fetch caught. Give them the current one now — the alternative is that
@@ -117,6 +131,7 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
     const tag = `${r.uin}@${r.host}`
     setCiActing(tag)
     clearRequest(r.uin, r.host)
+    void sendRequestAck(identity!, r.uin, r.host, 'decline')
     setCi(listRequests())
     // Same-island quarantined rows have no §5f request to answer — dropping
     // the row is the whole of it (and telling a stranger their message was
@@ -134,6 +149,7 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
 
   function blockCI(r: CrossIslandRequest) {
     blockRequest(r.uin, r.host)
+    void sendRequestAck(identity!, r.uin, r.host, 'block')
     setCi(listRequests())
   }
 

@@ -377,7 +377,12 @@ async function inline(addr: RcqAddress, m: SiteManifest, path: string, html: str
       const style = doc.createElement('style')
       style.textContent = cleanCss(css)
       el.replaceWith(style)
-    } catch {
+    } catch (e) {
+      // ⚠ A missing or unreachable file costs its own element; a file whose
+      // hash does not match costs the PAGE. That is the island serving bytes
+      // the owner did not sign, and half a document assembled from those is
+      // not a document worth showing.
+      if (e instanceof Error && e.message === 'tampered') throw e
       el.remove()
     }
   }
@@ -412,7 +417,8 @@ async function inline(addr: RcqAddress, m: SiteManifest, path: string, html: str
       const uri = dataUri(src, await fetchFile(addr, m, src))
       if (!uri) { img.remove(); continue }
       img.setAttribute('src', uri)
-    } catch {
+    } catch (e) {
+      if (e instanceof Error && e.message === 'tampered') throw e
       img.remove()
     }
   }

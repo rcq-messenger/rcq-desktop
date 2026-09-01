@@ -312,6 +312,24 @@ export function Sites() {
 
         {!error && page && (
           <div className="h-full flex flex-col">
+            {/* A frameset: the parts exist, the page that pointed at them
+                cannot be drawn, so the doors are offered here rather than
+                leaving the reader with a blank rectangle. */}
+            {page.frameset && (
+              <div className="px-4 py-2 text-xs bg-field text-fg-secondary flex items-center gap-2 flex-wrap">
+                <span>{page.frames.length > 0 ? t('sites.frameset') : t('sites.frameset.missing')}</span>
+                {page.frames.map((f) => (
+                  <button
+                    key={f}
+                    type="button"
+                    onClick={() => addr && void open(addr.display, f)}
+                    className="font-mono text-fg-primary hover:text-accent underline underline-offset-2"
+                  >
+                    {f}
+                  </button>
+                ))}
+              </div>
+            )}
             {/* A pinned key that changed is the one thing worth interrupting
                 for: these bytes are signed by somebody other than last time,
                 which is exactly what the signature exists to make visible. */}

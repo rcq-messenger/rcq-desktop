@@ -294,6 +294,8 @@ export const ru: Record<string, string> = {
   'sites.address.placeholder': 'имя.rcq',
   'sites.open': 'Открыть',
   'sites.reload': 'Обновить',
+  'sites.frameset': 'Эта страница собрана из фреймов, они здесь не открываются. Её части:',
+  'sites.frameset.missing': 'Эта страница собрана из фреймов, они здесь не открываются, а файлов, на которые она ссылается, в наборе нет. Попробуйте страницы выше.',
   'sites.error.address': 'Адрес выглядит так: имя.rcq или имя.остров.rcq',
   'sites.error.frozen': 'Остров заморозил этот сайт.',
   'sites.error.missing': 'Такого сайта нет, или остров не ответил.',

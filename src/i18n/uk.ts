@@ -273,6 +273,8 @@ export const uk: Record<string, string> = {
   'sites.address.placeholder': 'ім\'я.rcq',
   'sites.open': 'Відкрити',
   'sites.reload': 'Оновити',
+  'sites.frameset': 'Ця сторінка зібрана з фреймів, вони тут не відкриваються. Її частини:',
+  'sites.frameset.missing': 'Ця сторінка зібрана з фреймів, вони тут не відкриваються, а файлів, на які вона посилається, у наборі немає. Спробуйте сторінки вище.',
   'sites.error.address': 'Адреса виглядає так: ім\'я.rcq або ім\'я.острів.rcq',
   'sites.error.frozen': 'Острів заморозив цей сайт.',
   'sites.error.missing': 'Такого сайту немає, або острів не відповів.',

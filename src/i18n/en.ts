@@ -296,6 +296,8 @@ export const en: Record<string, string> = {
   'sites.address.placeholder': 'name.rcq',
   'sites.open': 'Open',
   'sites.reload': 'Reload',
+  'sites.frameset': 'This page is built from frames, which do not open here. Its parts:',
+  'sites.frameset.missing': 'This page is built from frames, which do not open here, and the parts it points at are not in the bundle. Try the pages above.',
   'sites.error.address': 'An address looks like name.rcq or name.island.rcq',
   'sites.error.frozen': 'The island has frozen this site.',
   'sites.error.missing': 'No such site, or the island did not answer.',

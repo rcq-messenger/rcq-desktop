@@ -979,6 +979,20 @@ export function Contacts() {
             >
               <MicIcon />
             </Link>
+            {/* `.rcq` sites. A door of its own rather than a row in Settings:
+                it is a place you go to, not a preference you set. */}
+            <Link
+              to="/sites"
+              className="text-fg-secondary hover:text-fg-primary p-2 rounded-md hover:bg-surface-dim max-[519px]:hidden"
+              title={t('sites.nav')}
+              aria-label={t('sites.nav')}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <circle cx="12" cy="12" r="9" />
+                <path d="M3 12h18" />
+                <path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18" />
+              </svg>
+            </Link>
             {/* A narrow window keeps only the doors the founder named (21.08):
                 lock, settings, rooms, requests, add — the update pill shrinks
                 to a square icon. News and the theme switch go first: the theme

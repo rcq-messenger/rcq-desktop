@@ -195,7 +195,7 @@ pub fn auto_engage_if_blocked(app: &AppHandle) -> Option<u16> {
         return None;
     }
     let host = state.host.clone().unwrap_or_else(|| DEFAULT_ISLAND.to_string());
-    if probe_once(&host, Duration::from_secs(3)) {
+    if probe_once(app, &host, Duration::from_secs(3)) {
         // Reachable directly: make sure a previously auto-raised tunnel does
         // not linger into a session that does not need it.
         if state.auto {
@@ -258,7 +258,7 @@ pub fn watch(app: &AppHandle) {
             }
             let Some(host) = state.host.clone() else { continue };
 
-            if probe_once(&host, Duration::from_secs(5)) {
+            if probe_once(&handle, &host, Duration::from_secs(5)) {
                 consecutive_failures = 0;
                 continue;
             }
@@ -431,8 +431,8 @@ pub fn diagnostics(app: &AppHandle, host: &str) -> Diagnostics {
     let config = current_config(app);
     Diagnostics {
         tunnel: is_running(),
-        direct_ok: probe(host, None),
-        route_ok: probe(host, proxy_url().as_deref()),
+        direct_ok: probe(app, host, None),
+        route_ok: probe(app, host, proxy_url().as_deref()),
         relay_count: config.as_ref().map(|c| c.relays.len()).unwrap_or(0),
         relay_config_version: config.and_then(|c| c.version),
     }
@@ -444,7 +444,16 @@ pub fn diagnostics(app: &AppHandle, host: &str) -> Diagnostics {
 // "bypass turns itself on when it shouldn't" report. Real DPI keeps timing out.
 /// One attempt, short budget — for the startup path, where the cost of waiting
 /// is a blank window rather than a slower diagnostics screen.
-fn probe_once(host: &str, budget: Duration) -> bool {
+fn probe_once(app: &AppHandle, host: &str, budget: Duration) -> bool {
+    // An island that is not the flagship is asked under the trust rule, not by
+    // a plain HTTP client that knows nothing of pins: a fingerprint island
+    // fails every CA check and would have raised the tunnel at every launch,
+    // and a REFUSED certificate is an island that answered - no tunnel helps
+    // that, and raising one would make the banner and the shield fight (§5.5
+    // of the fingerprint design).
+    if let Some(answer) = crate::island_trust::reachability(app, host, None, budget) {
+        return answer != crate::island_trust::Reachability::Unreachable;
+    }
     let Ok(client) = reqwest::blocking::Client::builder()
         .timeout(budget)
         .no_proxy()
@@ -459,7 +468,13 @@ fn probe_once(host: &str, budget: Duration) -> bool {
         .unwrap_or(false)
 }
 
-fn probe(host: &str, proxy: Option<&str>) -> bool {
+fn probe(app: &AppHandle, host: &str, proxy: Option<&str>) -> bool {
+    // Same as probe_once: the trust rule answers for any island but the
+    // flagship, over the tunnel when the route being checked is the tunnel.
+    let socks = proxy.and(socks_port());
+    if let Some(answer) = crate::island_trust::reachability(app, host, socks, Duration::from_secs(15)) {
+        return answer != crate::island_trust::Reachability::Unreachable;
+    }
     let mut builder = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(5))
         .danger_accept_invalid_certs(false);

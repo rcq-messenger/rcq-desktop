@@ -1,7 +1,9 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { islandLabel, normaliseIsland } from '../lib/island-choice'
+import { hostnameOf, isIpLiteral, islandLabel, normaliseIsland, type IslandAddress } from '../lib/island-choice'
+import { isCaOnlyHost } from '../lib/island-trust'
+import { isTauri } from '../lib/desktop'
 import { useI18n } from '../lib/i18n-context'
 import { IslandAvatar } from './IslandAvatar'
 
@@ -22,6 +24,12 @@ const FLAGSHIP = 'https://api.rcq.app'
  * self-hosters the catalog will never know about. The login page used to
  * offer a bare host input and nothing else, which told a newcomer nothing
  * about what exists.
+ *
+ * The hand-typed address may carry the island's certificate fingerprint after
+ * a `#` (docs/island-fingerprint-design.md §3). It comes back beside the base
+ * for the caller to pin BEFORE anything is dialled. A fragment that is not a
+ * fingerprint is an error here, not something to drop: connecting anyway
+ * would take a first-use pin while the person believes they pinned.
  */
 export function IslandPickerModal({
   current,
@@ -29,13 +37,14 @@ export function IslandPickerModal({
   onClose,
 }: {
   current: string
-  onPick: (base: string) => void
+  onPick: (address: IslandAddress) => void
   onClose: () => void
 }) {
   const { t } = useI18n()
   const [catalog, setCatalog] = useState<CatalogIsland[] | null>(null)
   const [failed, setFailed] = useState(false)
   const [manual, setManual] = useState('')
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     let dead = false
@@ -54,15 +63,33 @@ export function IslandPickerModal({
     return () => document.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  function pick(base: string) {
-    onPick(normaliseIsland(base))
+  function pick(input: string) {
+    const address = normaliseIsland(input)
+    if (address.badFingerprint) {
+      setError(t('island.trust.not_fingerprint'))
+      return
+    }
+    // The flagship is trusted through its authority and never pinned (§1); a
+    // fragment on it is a wrong address, not a pin to take.
+    if (address.fingerprint && isCaOnlyHost(hostnameOf(address.base))) {
+      setError(t('island.trust.ca_only'))
+      return
+    }
+    onPick(address)
     onClose()
   }
 
   const rows: { url: string; name?: string; description?: string; region?: string }[] = [
     { url: FLAGSHIP, name: 'RCQ Flagship', description: t('island.flagship.desc') },
-    ...(catalog ?? []).filter((s) => normaliseIsland(s.url) !== FLAGSHIP),
+    ...(catalog ?? []).filter((s) => normaliseIsland(s.url).base !== FLAGSHIP),
   ]
+
+  // §5.4, the web in a browser only: a fragment, or a bare IP, is the shape of
+  // an island without a certificate authority, and a browser cannot be told
+  // to trust one. The desktop and the phones can.
+  const typed = manual.trim()
+  const browserHint =
+    !isTauri() && typed.length > 0 && (typed.includes('#') || isIpLiteral(hostnameOf(normaliseIsland(typed).base)))
 
   return createPortal(
     <AnimatePresence>
@@ -93,7 +120,7 @@ export function IslandPickerModal({
               <div className="py-4 text-center text-xs text-fg-dim">{t('island.picker.offline')}</div>
             )}
             {rows.map((s) => {
-              const base = normaliseIsland(s.url)
+              const base = normaliseIsland(s.url).base
               const active = base === current
               return (
                 <button
@@ -123,7 +150,10 @@ export function IslandPickerModal({
             <div className="flex gap-2">
               <input
                 value={manual}
-                onChange={(e) => setManual(e.target.value)}
+                onChange={(e) => {
+                  setManual(e.target.value)
+                  setError(null)
+                }}
                 onKeyDown={(e) => { if (e.key === 'Enter' && manual.trim()) pick(manual) }}
                 placeholder="my-island.example.org"
                 spellCheck={false}
@@ -140,6 +170,10 @@ export function IslandPickerModal({
                 OK
               </button>
             </div>
+            {error && <div className="text-xs text-red-500 leading-relaxed">{error}</div>}
+            {!error && browserHint && (
+              <div className="text-xs text-fg-dim leading-relaxed">{t('island.trust.browser_hint')}</div>
+            )}
           </footer>
         </motion.div>
       </motion.div>

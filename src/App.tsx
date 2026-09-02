@@ -5,6 +5,7 @@ import { ThemeProvider } from './lib/theme-context'
 import { WSProvider } from './lib/ws'
 import { MessageReceiver } from './lib/message-receiver'
 import { MessageToasts } from './components/MessageToasts'
+import { IslandTrustBanner } from './components/IslandTrust'
 import { CallProvider } from './lib/call'
 import { RoomsProvider } from './lib/rooms'
 import AudioRooms from './pages/AudioRooms'
@@ -67,6 +68,11 @@ export default function App() {
             <MessageReceiver />
             <Router>
             <MessageToasts />
+            {/* Above every route, the login screen included: a certificate
+                that changed, or a typed fingerprint the store disagrees with,
+                is refused before there is an account (fingerprint design §5).
+                Draws nothing off the desktop. */}
+            <IslandTrustBanner />
             {/* Above every route: a call has to survive navigation, and the
                 incoming sheet has to appear wherever the user happens to be. */}
             <CallOverlay />

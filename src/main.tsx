@@ -4,6 +4,7 @@ import App from './App'
 import './index.css'
 import { bypassStatus, installExternalLinkHandler, isTauri } from './lib/desktop'
 import { installFrontRouting, refreshFrontRouting, setFrontHost } from './lib/front'
+import { engageIslandEagerly, installIslandTrust } from './lib/island-trust'
 import { loadStoredIdentity, wipeLocalAccountData } from './lib/auth'
 import { setAccountScope } from './lib/account-scope'
 import { idbClearAll } from './lib/signal-persist'
@@ -40,6 +41,19 @@ installExternalLinkHandler()
 // while it runs.
 if (isTauri()) {
   installFrontRouting()
+  // Desktop only: islands without a certificate authority
+  // (docs/island-fingerprint-design.md §7.3). Installed AFTER the front's
+  // wrapper so the two compose - this one sees every call first and moves
+  // only an island origin it has decided, the front's underneath moves only
+  // the flagship, which this one never touches. The account's own island is
+  // asked eagerly so the decision is made before the first request; every
+  // other island origin is asked by the wrapper before its first request.
+  installIslandTrust()
+  try {
+    void engageIslandEagerly(loadStoredIdentity()?.apiBase)
+  } catch {
+    /* unreadable storage - the wrapper still decides before the first request */
+  }
   void (async () => {
     // Ask the signed list where the front lives before deciding whether to use
     // it. Local call, no network: Rust already holds the verified payload.

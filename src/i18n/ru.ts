@@ -990,7 +990,7 @@ export const ru: Record<string, string> = {
   'group.settings.no_links': 'Отключить ссылки',
   'group.settings.no_links.hint': 'Ссылки в сообщениях остаются простым текстом и не открываются.',
   'group.settings.no_files': 'Отключить файлы',
-  'group.settings.no_files.hint': 'Файлы нельзя отправить или скачать в этой группе.',
+  'group.settings.no_files.hint': 'Фото, видео и файлы отправить нельзя. Голосовые сообщения остаются.',
   'group.settings.slowmode': 'Медленный режим',
   'group.settings.slowmode.hint': 'Пауза между сообщениями для каждого участника.',
   'group.settings.age_gate': 'Испытательный срок новичков',

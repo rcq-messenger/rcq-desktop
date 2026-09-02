@@ -845,7 +845,7 @@ export const pt: Record<string, string> = {
   'group.settings.no_links': 'Desativar links',
   'group.settings.no_links.hint': 'Os links ficam como texto e não abrem.',
   'group.settings.no_files': 'Desativar arquivos',
-  'group.settings.no_files.hint': 'Aqui não dá para enviar nem baixar arquivos.',
+  'group.settings.no_files.hint': 'Aqui não dá para enviar fotos, vídeos nem arquivos. Mensagens de voz continuam.',
   'group.settings.slowmode': 'Modo lento',
   'group.settings.slowmode.hint': 'Uma pausa entre mensagens para cada membro.',
   'group.settings.age_gate': 'Período de espera para novatos',

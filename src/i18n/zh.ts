@@ -168,6 +168,7 @@ export const zh: Record<string, string> = {
   'chat.actions.copy': '复制',
   'chat.actions.pin': '置顶',
   'chat.actions.open_link': '打开链接',
+  'chat.actions.open_site': '打开站点',
   'chat.actions.copy_link': '复制链接',
   'chat.actions.download': '下载',
   'chat.actions.report': '举报',

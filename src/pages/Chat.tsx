@@ -338,6 +338,9 @@ export function Chat() {
   /// prepends "open link / copy link" rows. A message link never navigates
   /// by itself; the menu is the only way through (founder, 21.08).
   const [actionsLink, setActionsLink] = useState<string | null>(null)
+  /// The click landed on a `.rcq` address rather than a URL: the menu offers
+  /// the browser inside the app, and nothing here ever leaves the network.
+  const [actionsSite, setActionsSite] = useState<string | null>(null)
   /// Row whose file the menu's download action is decrypting right now —
   /// keeps the chip's spinner honest while the work happens up here.
   const [downloadingRowId, setDownloadingRowId] = useState<string | null>(null)
@@ -2412,8 +2415,19 @@ export function Chat() {
       ? ((ev.target as HTMLElement | null)?.closest?.('[data-msg-link]')?.getAttribute('data-msg-link') ?? null)
       : null
     setActionsLink(link)
+    setActionsSite(ev
+      ? ((ev.target as HTMLElement | null)?.closest?.('[data-rcq-site]')?.getAttribute('data-rcq-site') ?? null)
+      : null)
     setActionsForRowId((prev) => (prev === rowId ? null : rowId))
     setReactionForRowId(null)
+  }
+
+  /// "Open the site" from the message menu. A `.rcq` name means nothing
+  /// outside this network, so it goes to the reader in the app rather than
+  /// through `openLink`, whose http(s) guard would refuse it anyway.
+  function openSiteFromMenu(addr: string) {
+    setActionsForRowId(null)
+    navigate(`/sites?a=${encodeURIComponent(addr)}`)
   }
 
   /// "Open link" from the message menu — the one place a message link
@@ -3051,6 +3065,7 @@ export function Chat() {
     startEdit,
     copyText,
     openLink: openLinkFromMenu,
+    openSite: openSiteFromMenu,
     pinMessage,
     startForward: (text, author) => {
       setForwardingRow({ text, author })
@@ -3079,6 +3094,7 @@ export function Chat() {
       startEdit: (...a) => rowLiveRef.current!.startEdit(...a),
       copyText: (...a) => rowLiveRef.current!.copyText(...a),
       openLink: (...a) => rowLiveRef.current!.openLink(...a),
+      openSite: (...a) => rowLiveRef.current!.openSite(...a),
       pinMessage: (...a) => rowLiveRef.current!.pinMessage(...a),
       startForward: (...a) => rowLiveRef.current!.startForward(...a),
       startReport: (...a) => rowLiveRef.current!.startReport(...a),
@@ -3587,6 +3603,7 @@ export function Chat() {
                     menuUp={(openMenu || openPicker) && actionsUp}
                     menuMax={openMenu ? actionsMax : 0}
                     actionsLink={openMenu ? actionsLink : null}
+                    actionsSite={openMenu ? actionsSite : null}
                     isSelf={isSelf}
                     canPin={canPin}
                     canModerate={canModerate}
@@ -3632,6 +3649,7 @@ export function Chat() {
                   menuUp={(openMenu || openPicker) && actionsUp}
                   menuMax={openMenu ? actionsMax : 0}
                   actionsLink={openMenu ? actionsLink : null}
+                  actionsSite={openMenu ? actionsSite : null}
                   canPin={canPin}
                   linksAllowed={linksAllowed}
                   filesAllowed={filesAllowed}
@@ -4252,6 +4270,7 @@ interface RowActions {
   startEdit: (row: OutgoingRow) => void
   copyText: (text: string) => void
   openLink: (url: string) => void
+  openSite: (addr: string) => void
   pinMessage: (text: string) => void
   startForward: (text: string, author: string) => void
   startReport: (m: { from: number; text: string; kind?: string; fileName?: string; mediaId?: string }) => void
@@ -4281,6 +4300,8 @@ interface CommonRowProps {
   menuUp: boolean
   menuMax: number
   actionsLink: string | null
+  /// A `.rcq` address the click landed on, if it did.
+  actionsSite: string | null
   linksAllowed: boolean
   filesAllowed: boolean
   /// This row's file is being decrypted for saving right now.
@@ -4471,6 +4492,7 @@ const IncomingMessageRow = memo(function IncomingMessageRow({
   menuUp,
   menuMax,
   actionsLink,
+  actionsSite,
   linksAllowed,
   filesAllowed,
   downloading,
@@ -4651,6 +4673,20 @@ const IncomingMessageRow = memo(function IncomingMessageRow({
             {/* The click that opened this menu landed on a URL:
                 opening and copying it lead — a link never
                 navigates by itself anymore. */}
+            {/* An address inside the network opens in OUR browser, and only
+                there: a `.rcq` name means nothing to a system browser, and
+                handing it over would send somebody to a search engine with the
+                name of the site they wanted to read. */}
+            {actionsSite != null && (
+              <ActionButton
+                onClick={() => h.openSite(actionsSite)}
+                label={t('chat.actions.open_site')}
+                icon={<MenuGlobeIcon />}
+              />
+            )}
+            {actionsSite != null && (
+              <ActionButton onClick={() => h.copyText(actionsSite)} label={t('chat.actions.copy_link')} icon={<MenuCopyIcon />} />
+            )}
             {actionsLink != null && (
               <ActionButton
                 onClick={() => h.openLink(actionsLink)}
@@ -4783,6 +4819,7 @@ const OutgoingMessageRow = memo(function OutgoingMessageRow({
   menuUp,
   menuMax,
   actionsLink,
+  actionsSite,
   linksAllowed,
   filesAllowed,
   downloading,
@@ -5122,6 +5159,18 @@ const OutgoingMessageRow = memo(function OutgoingMessageRow({
         <AnimatePresence>
         {showActions && (row.state === 'sent' || row.state === 'delivered' || row.state === 'read') && (
           <ActionMenu align="end" up={menuUp} max={menuMax}>
+            {/* Same two rows as an incoming bubble: an address inside the
+                network opens in our own reader, and only there. */}
+            {actionsSite != null && (
+              <ActionButton
+                onClick={() => h.openSite(actionsSite)}
+                label={t('chat.actions.open_site')}
+                icon={<MenuGlobeIcon />}
+              />
+            )}
+            {actionsSite != null && (
+              <ActionButton onClick={() => h.copyText(actionsSite)} label={t('chat.actions.copy_link')} icon={<MenuCopyIcon />} />
+            )}
             {actionsLink != null && (
               <ActionButton
                 onClick={() => h.openLink(actionsLink)}
@@ -5382,6 +5431,16 @@ function MenuHideIcon() {
 }
 
 /// Arrow leaving a box — "open link" goes somewhere else.
+function MenuGlobeIcon() {
+  return (
+    <MenuIconSvg>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18" />
+      <path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18" />
+    </MenuIconSvg>
+  )
+}
+
 function MenuLinkIcon() {
   return (
     <MenuIconSvg>

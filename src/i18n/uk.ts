@@ -168,6 +168,7 @@ export const uk: Record<string, string> = {
   'chat.actions.copy': 'копіювати',
   'chat.actions.pin': 'закріпити',
   'chat.actions.open_link': 'перейти за посиланням',
+  'chat.actions.open_site': 'Відкрити сайт',
   'chat.actions.copy_link': 'скопіювати посилання',
   'chat.actions.download': 'завантажити',
   'chat.actions.report': 'поскаржитися',

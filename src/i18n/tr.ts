@@ -168,6 +168,7 @@ export const tr: Record<string, string> = {
   'chat.actions.copy': 'kopyala',
   'chat.actions.pin': 'sabitle',
   'chat.actions.open_link': 'bağlantıyı aç',
+  'chat.actions.open_site': 'Siteyi aç',
   'chat.actions.copy_link': 'bağlantıyı kopyala',
   'chat.actions.download': 'indir',
   'chat.actions.report': 'şikayet et',

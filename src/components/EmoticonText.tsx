@@ -63,11 +63,18 @@ interface Props {
 
 const URL_RE = /https?:\/\/[^\s]+/gi
 
+/// An address inside the network, written the way people write it in a
+/// sentence: `blog.rcq`, `blog.is2.rcq`. Deliberately narrow - the same shape
+/// the address bar accepts - so an ordinary word before a full stop cannot
+/// become a link, and so `something.rcq.app` (a real host) is not mistaken
+/// for one.
+const RCQ_RE = /\b([a-z0-9][a-z0-9-]{0,31})(?:\.([a-z0-9][a-z0-9.:-]{0,63}))?\.rcq\b/gi
+
 /// Split one text run into literal and URL parts. Trailing sentence
 /// punctuation stays with the sentence — "смотри https://x.y/z." must not
 /// produce a link ending in a dot.
-function splitLinks(text: string): { url: boolean; text: string }[] {
-  const out: { url: boolean; text: string }[] = []
+function splitLinks(text: string): { url: boolean; site?: boolean; text: string }[] {
+  const out: { url: boolean; site?: boolean; text: string }[] = []
   let last = 0
   URL_RE.lastIndex = 0
   let m: RegExpExecArray | null
@@ -77,6 +84,23 @@ function splitLinks(text: string): { url: boolean; text: string }[] {
     if (m.index > last) out.push({ url: false, text: text.slice(last, m.index) })
     out.push({ url: true, text: url })
     last = m.index + url.length
+  }
+  if (last < text.length) out.push({ url: false, text: text.slice(last) })
+  // `.rcq` addresses, found in what is left over. Done as a second pass rather
+  // than one combined expression so an address inside an http URL - which is
+  // somebody else's host, not ours - is never taken for a site.
+  return out.flatMap((part) => (part.url ? [part] : splitSites(part.text)))
+}
+
+function splitSites(text: string): { url: boolean; site?: boolean; text: string }[] {
+  const out: { url: boolean; site?: boolean; text: string }[] = []
+  let last = 0
+  RCQ_RE.lastIndex = 0
+  let m: RegExpExecArray | null
+  while ((m = RCQ_RE.exec(text)) !== null) {
+    if (m.index > last) out.push({ url: false, text: text.slice(last, m.index) })
+    out.push({ url: true, site: true, text: m[0] })
+    last = m.index + m[0].length
   }
   if (last < text.length) out.push({ url: false, text: text.slice(last) })
   return out
@@ -187,7 +211,11 @@ export function EmoticonText({ text, emoticonSize = 18, className = '', mention,
                 return (
                   <span
                     key={`${i}-${j}`}
-                    data-msg-link={part.text}
+                    // An address inside the network gets its own attribute:
+                    // the menu it opens offers "open in the browser", not
+                    // "open in the system browser", and nothing about it is a
+                    // URL anywhere else in the app.
+                    {...(part.site ? { 'data-rcq-site': part.text } : { 'data-msg-link': part.text })}
                     role="link"
                     tabIndex={0}
                     // No handler: the click bubbles to the bubble <button>,

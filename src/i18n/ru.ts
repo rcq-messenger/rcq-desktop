@@ -187,6 +187,7 @@ export const ru: Record<string, string> = {
   'chat.actions.copy': 'копировать',
   'chat.actions.pin': 'закрепить',
   'chat.actions.open_link': 'перейти по ссылке',
+  'chat.actions.open_site': 'Открыть сайт',
   'chat.actions.copy_link': 'скопировать ссылку',
   'chat.actions.download': 'скачать',
   'chat.actions.report': 'пожаловаться',

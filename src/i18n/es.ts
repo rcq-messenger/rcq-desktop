@@ -168,6 +168,7 @@ export const es: Record<string, string> = {
   'chat.actions.copy': 'copiar',
   'chat.actions.pin': 'fijar',
   'chat.actions.open_link': 'abrir enlace',
+  'chat.actions.open_site': 'Abrir el sitio',
   'chat.actions.copy_link': 'copiar enlace',
   'chat.actions.download': 'descargar',
   'chat.actions.report': 'denunciar',

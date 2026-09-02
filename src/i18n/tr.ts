@@ -845,7 +845,7 @@ export const tr: Record<string, string> = {
   'group.settings.no_links': 'Bağlantıları kapat',
   'group.settings.no_links.hint': 'Mesajlardaki bağlantılar düz metin kalır ve açılmaz.',
   'group.settings.no_files': 'Dosyaları kapat',
-  'group.settings.no_files.hint': 'Bu grupta dosya gönderilemez ve indirilemez.',
+  'group.settings.no_files.hint': 'Bu grupta fotoğraf, video ve dosya gönderilemez. Sesli mesajlar gönderilebilir.',
   'group.settings.slowmode': 'Yavaş mod',
   'group.settings.slowmode.hint': 'Her üye için mesajlar arasında bekleme.',
   'group.settings.age_gate': 'Yeni üyeler için bekleme süresi',

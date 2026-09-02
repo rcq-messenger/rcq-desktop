@@ -21,7 +21,8 @@ import { PersonAvatar } from '../components/PersonAvatar'
 import { AddMemberSheet } from '../components/AddMemberSheet'
 import { GroupSettingsModal } from '../components/GroupSettingsModal'
 import { GroupAvatar } from '../components/GroupAvatar'
-import { Api, ApiError, parseErrorCode, parseRetryAfter, type RCQGroup } from '../lib/api'
+import { CenteredLoader } from '../components/Spinner'
+import { Api, ApiError, parseErrorCode, parseRetryAfter, type GroupMember, type RCQGroup } from '../lib/api'
 import { groupShareLink } from '../lib/group-invite'
 import { roomKey, rotateRoomKey } from '../lib/group-state'
 import { useGroupChanged } from '../lib/group-events'
@@ -44,6 +45,19 @@ const TRANSFER_ERRORS: Record<string, string> = {
   not_a_member: 'group.transfer.err.not_a_member',
   no_such_user: 'group.transfer.err.no_such_user',
   target_suspended: 'group.transfer.err.target_suspended',
+}
+
+/// Where a member sits in the roster: 0 the owner, 1 a moderator, 2 someone
+/// who is around, 3 the rest. A moderator is the `admin` role or any granted
+/// capability, the same set the composer exempts from the room rules. Around
+/// is the contact list's definition: away and do-not-disturb count, invisible
+/// and offline do not, and neither does a member the island reports no
+/// presence for.
+function rosterTier(m: GroupMember, ownerUin: number): number {
+  if (m.uin === ownerUin) return 0
+  if (m.role === 'admin' || (m.permissions?.length ?? 0) > 0) return 1
+  if (m.status === 'online' || m.status === 'away' || m.status === 'dnd') return 2
+  return 3
 }
 
 export function GroupInfo() {
@@ -130,17 +144,23 @@ export function GroupInfo() {
   // make tiny groups feel locked in", groups.py), which is exactly what both
   // phones do and what the web was missing entirely.
   const isMember = isOwner || myRow != null
-  // The owner first, then everyone else. The island's roster query has no
-  // ORDER BY and the initial rows are inserted from a Python set, so "who owns
-  // this group" arrived in whatever order Postgres felt like — the founder was
-  // not shown at the top of his own group because nothing had ever put him
-  // there. The phones sort; now so does this.
+  // The owner, then the moderators, then whoever is around, then everyone
+  // else, by name inside a tier (founder, 02.09: the same order on every
+  // client). The island's roster query has no ORDER BY and the initial rows
+  // are inserted from a Python set, so "who owns this group" arrived in
+  // whatever order Postgres felt like — the founder was not shown at the top
+  // of his own group because nothing had ever put him there.
   const roster = group
     ? [...group.members].sort((a, b) => {
-        const ao = a.uin === group.owner_uin ? 0 : 1
-        const bo = b.uin === group.owner_uin ? 0 : 1
-        if (ao !== bo) return ao - bo
-        return (a.nickname || `#${a.uin}`).localeCompare(b.nickname || `#${b.uin}`)
+        const ta = rosterTier(a, group.owner_uin)
+        const tb = rosterTier(b, group.owner_uin)
+        if (ta !== tb) return ta - tb
+        const byName = (a.nickname || `#${a.uin}`).localeCompare(b.nickname || `#${b.uin}`, undefined, {
+          sensitivity: 'accent',
+        })
+        // Two equal names would otherwise keep the roster's arrival order,
+        // which is random, so the same group would shuffle between openings.
+        return byName || a.uin - b.uin
       })
     : []
 
@@ -341,11 +361,7 @@ export function GroupInfo() {
           </div>
         )}
 
-        {!group && !error && (
-          <div className="text-center text-sm text-fg-secondary py-12">
-            {t('contacts.loading')}
-          </div>
-        )}
+        {!group && !error && <CenteredLoader className="py-12" label={t('contacts.loading')} />}
 
         {group && (
           <>

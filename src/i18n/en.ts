@@ -985,7 +985,7 @@ export const en: Record<string, string> = {
   'group.settings.no_links': 'Disable links',
   'group.settings.no_links.hint': 'Links in messages stay plain text and do not open.',
   'group.settings.no_files': 'Disable files',
-  'group.settings.no_files.hint': 'Files cannot be sent or downloaded here.',
+  'group.settings.no_files.hint': 'Photos, videos and files cannot be sent here. Voice messages still can.',
   'group.settings.slowmode': 'Slow mode',
   'group.settings.slowmode.hint': 'A pause between messages for each member.',
   'group.settings.age_gate': 'Newcomer waiting period',

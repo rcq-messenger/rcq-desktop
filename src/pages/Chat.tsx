@@ -1752,10 +1752,11 @@ export function Chat() {
       toast(t('chat.owner_only.notice'), 'error')
       return
     }
-    // A photo is media like any other: the files-off room refused documents,
-    // voice and drag-drop but let plain photos through - the one hole in the
+    // A photo is media like any other: the files-off room refused documents
+    // and drag-drop but let plain photos through - the one hole in the
     // policy, found when Android grew the same gates (29.08). Guarded here,
-    // at the single choke point every photo path funnels into.
+    // at the single choke point every photo path funnels into. Voice is the
+    // one deliberate exception (02.09), see startVoice.
     if (isGroup && !filesAllowed) {
       toast(t('chat.files_off.chip'), 'error')
       return
@@ -1898,10 +1899,12 @@ export function Chat() {
 
   async function startVoice() {
     if (rec || uploadingFile || readOnlyHere) return
-    if (isGroup && !filesAllowed) {
-      toast(t('chat.files_off.notice'), 'error')
-      return
-    }
+    // Deliberately NOT behind the room's files-off gate. A voice note is a
+    // spoken message, not a file: `files_allowed=false` blocks what a recipient
+    // downloads and opens (documents, photos, videos, drag-drop, shares) and
+    // nothing else. The room rules (#755) treated voice as a file, and Android
+    // copied that gate from here; the founder's decision of 02.09 reversed it
+    // on every client.
     if (slowmodeBlocked()) return
     const mime = voiceMimeSupported()
     if (!mime) {

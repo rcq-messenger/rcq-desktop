@@ -232,6 +232,9 @@ export function GroupSettingsModal({
                   on={noLinks}
                   onChange={setNoLinks}
                 />
+                {/* Covers photos, videos and documents; voice messages stay.
+                    The hint says so, because the person switching it has to
+                    know what they are switching (founder, 02.09). */}
                 <Toggle
                   label={t('group.settings.no_files')}
                   hint={t('group.settings.no_files.hint')}

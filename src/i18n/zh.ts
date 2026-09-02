@@ -843,7 +843,7 @@ export const zh: Record<string, string> = {
   'group.settings.no_links': '禁用链接',
   'group.settings.no_links.hint': '消息中的链接显示为纯文本，不可打开。',
   'group.settings.no_files': '禁用文件',
-  'group.settings.no_files.hint': '此群里不能发送或下载文件。',
+  'group.settings.no_files.hint': '此群里不能发送照片、视频和文件。语音消息不受影响。',
   'group.settings.slowmode': '慢速模式',
   'group.settings.slowmode.hint': '每位成员发消息之间的间隔。',
   'group.settings.age_gate': '新成员等待期',

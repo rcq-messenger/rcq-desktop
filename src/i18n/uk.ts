@@ -845,7 +845,7 @@ export const uk: Record<string, string> = {
   'group.settings.no_links': 'Вимкнути посилання',
   'group.settings.no_links.hint': 'Посилання в повідомленнях лишаються простим текстом і не відкриваються.',
   'group.settings.no_files': 'Вимкнути файли',
-  'group.settings.no_files.hint': 'Файли не можна надіслати чи завантажити в цій групі.',
+  'group.settings.no_files.hint': 'Фото, відео та файли надіслати не можна. Голосові повідомлення залишаються.',
   'group.settings.slowmode': 'Повільний режим',
   'group.settings.slowmode.hint': 'Пауза між повідомленнями для кожного учасника.',
   'group.settings.age_gate': 'Випробувальний термін новачків',

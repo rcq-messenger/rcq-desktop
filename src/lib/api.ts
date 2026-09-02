@@ -290,6 +290,9 @@ export interface RCQGroup {
   post_policy?: string
   // Owner-set content policy. Absent (older island) → allowed. Both are
   // honored by clients — the server can't see inside sealed envelopes.
+  // `files` means what a recipient downloads and opens: documents, photos,
+  // videos, drag-drop, shares. A voice note is a spoken message and is NOT
+  // covered (founder, 02.09; every client).
   links_allowed?: boolean
   files_allowed?: boolean
   /// Slowmode step in seconds (0/absent = off). One of 0/5/10/30/60.

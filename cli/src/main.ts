@@ -471,20 +471,24 @@ async function cmdIsland(pos: string[], opts: Map<string, string>, flags: Set<st
       // and says so, a change refuses. Only "did not answer" is not a verdict.
       const gate = await trustIsland(url)
       if (gate === 'refused' || gate === 'unpinnable') process.exit(1)
+      // `unverified` stops a command that would SEND something; this one only
+      // reads, so it means what it says on the tin: the island did not answer,
+      // and here is what is on file.
+      const noAnswer = gate === 'unreachable' || gate === 'unverified'
       // A CA-only host has no record by design (it is never pinned, and
       // nothing needs remembering); it is the one case where `ca` is the
       // answer with nothing on file.
       const rec = recordFor(addr.key) ?? (isCaOnlyHost(addr.host) ? { mode: 'ca' as const, since: 0 } : null)
       if (jsonMode) {
-        emitJson({ host: addr.host, port: addr.port, answered: gate !== 'unreachable', trust: trustJson(addr.key, rec) })
+        emitJson({ host: addr.host, port: addr.port, answered: !noAnswer, trust: trustJson(addr.key, rec) })
         return
       }
-      if (!rec) die(gate === 'unreachable' ? tr('island.trust.unreachable', { host }) : tr('island.trust.settings.none'))
+      if (!rec) die(noAnswer ? tr('island.trust.unreachable', { host }) : tr('island.trust.settings.none'))
       // stdout is data: `ca`, or the address with the fingerprint.
       process.stdout.write(rec.mode === 'ca' ? 'ca\n' : `${addressWithFingerprint(addr.key, rec.fp)}\n`)
       process.stderr.write(`${host}: ${rec.mode === 'ca' ? tr('island.trust.settings.ca') : tr('island.trust.settings.pinned')}\n`)
       if (rec.mode === 'pinned') process.stderr.write(err.dim(displayFingerprint(rec.fp)) + '\n')
-      if (gate === 'unreachable') process.stderr.write(err.dim(tr('island.trust.unreachableNote', { host })) + '\n')
+      if (noAnswer) process.stderr.write(err.dim(tr('island.trust.unreachableNote', { host })) + '\n')
       return
     }
     case 'forget': {
@@ -1208,6 +1212,10 @@ async function commandIsland(verb: string, opts: Map<string, string>): Promise<s
 async function guardIsland(url: string, proxy?: string | null): Promise<void> {
   const r = await trustIsland(url, proxy === undefined ? {} : { proxy })
   if (r === 'refused' || r === 'unpinnable') process.exit(1)
+  // The island did not answer the probe and its pin is the only thing that
+  // would have judged the connection: Node's own check is the platform's, and
+  // the pin is not in it. Nothing was sent.
+  if (r === 'unverified') die(tr('island.trust.unverified', { host: url.replace(/^https?:\/\//, '') }))
   if (r === 'restart') {
     carryTrust()
     die(tr('island.trust.restart', { host: url.replace(/^https?:\/\//, '') }))

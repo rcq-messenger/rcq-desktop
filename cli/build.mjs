@@ -58,6 +58,7 @@ await build({ ...common, entryPoints: [path.join(cli, 'src', 'blind-token-entry.
 await build({ ...common, entryPoints: [path.join(cli, 'src', 'vault-entry.ts')], outfile: path.join(dist, 'vault.mjs') })
 await build({ ...common, entryPoints: [path.join(cli, 'src', 'routes-entry.ts')], outfile: path.join(dist, 'routes.mjs') })
 await build({ ...common, entryPoints: [path.join(cli, 'src', 'seal-entry.ts')], outfile: path.join(dist, 'seal.mjs') })
+await build({ ...common, entryPoints: [path.join(cli, 'src', 'island-trust-entry.ts')], outfile: path.join(dist, 'island-trust.mjs') })
 
 // The node glue + its .wasm, next to the bundles (see the header comment).
 fs.cpSync(path.join(root, 'crypto-wasm-spike', 'signal-wasm', 'pkg-node'), path.join(dist, 'pkg-node'), {

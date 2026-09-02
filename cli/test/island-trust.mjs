@@ -14,6 +14,11 @@
 // use, a certificate Node could not anchor is not pinned at all, and an
 // island that does not answer at all is refused while a pin is on file.
 //
+// The rule itself is proved first, over one record and no socket: an island
+// that answers with a chain the platform accepts cannot be stood up here, so
+// the branches that answer to a certificate AUTHORITY have nowhere else to be
+// tested.
+//
 // Run: npm run cli:test   (builds first - this drives the BUILT bundle)
 
 import assert from 'node:assert/strict'
@@ -27,6 +32,73 @@ import { fileURLToPath } from 'node:url'
 
 const RCQ = path.join(path.dirname(path.dirname(fileURLToPath(import.meta.url))), 'dist', 'rcq.mjs')
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'rcq-trust-test-'))
+
+// -----------------------------------------------------------------
+// 0. The rule itself (§1), over one record, with no socket.
+//
+// ⚠ Every island below is self-signed, so `caValid` is never true down there
+// and the two branches that answer to a certificate AUTHORITY never run: the
+// `ca` write on the success path, and the refusal of a private certificate
+// for an island known through a CA. Those are the branches §7.4's ⚠ is
+// about - with no success-path write there are no `ca` records at all, and
+// an island used for months over Let's Encrypt is still an unknown island
+// that a self-signed certificate takes on first use. So they are proved here.
+// -----------------------------------------------------------------
+
+const { decide } = await import('../dist/island-trust.mjs')
+
+const FP_A = 'a'.repeat(64)
+const FP_B = 'b'.repeat(64)
+const NOW = 1_700_000_000
+const rule = (rec, caValid, fp = FP_A, caOnly = false) => decide(rec, caOnly, fp, caValid, NOW)
+const pinned = (fp, source) => ({ mode: 'pinned', fp, source, since: 1, noticed: true })
+
+// A chain the platform accepts, for an island this device has never met: the
+// island is written down as `ca`, and that write is the whole point.
+assert.deepEqual(rule(null, true), {
+  verdict: { ok: true, firstUse: false },
+  write: { mode: 'ca', since: NOW },
+})
+// It overwrites a pin taken on first use, and one accepted from a banner:
+// the island moved to an authority, and pinning a leaf a CA rotates would
+// warn every sixty days.
+for (const source of ['tofu', 'accepted']) {
+  assert.deepEqual(rule(pinned(FP_B, source), true), {
+    verdict: { ok: true, firstUse: false },
+    write: { mode: 'ca', since: NOW },
+  })
+}
+// Already `ca`: accepted, and nothing is rewritten.
+assert.deepEqual(rule({ mode: 'ca', since: 1 }, true), { verdict: { ok: true, firstUse: false }, write: undefined })
+
+// The other side of that write: a private certificate for an island known
+// through an authority is a CHANGE, never a first use.
+assert.deepEqual(rule({ mode: 'ca', since: 1 }, false), {
+  verdict: { ok: false, reason: 'changed', old: 'ca', typed: false },
+})
+
+// A typed fingerprint outranks an authority's signature, both ways: it
+// matches and connects whatever the platform said, and a CA-valid chain that
+// hashes to something else is refused - with `ca` carried, so accepting it
+// records `ca` rather than a leaf that rotates (§5.2).
+assert.deepEqual(rule(pinned(FP_A, 'typed'), true), { verdict: { ok: true, firstUse: false } })
+assert.deepEqual(rule(pinned(FP_B, 'typed'), true), {
+  verdict: { ok: false, reason: 'changed', old: FP_B, typed: true },
+})
+
+// And the branches the end-to-end run below does cover, so the two agree:
+// nothing on file pins and says so once, a match is quiet, a mismatch is a
+// change, and the flagship is never pinned either way.
+assert.deepEqual(rule(null, false), {
+  verdict: { ok: true, firstUse: true },
+  write: { mode: 'pinned', fp: FP_A, source: 'tofu', since: NOW, noticed: true },
+})
+assert.deepEqual(rule(pinned(FP_A, 'tofu'), false), { verdict: { ok: true, firstUse: false } })
+assert.deepEqual(rule(pinned(FP_B, 'tofu'), false), {
+  verdict: { ok: false, reason: 'changed', old: FP_B, typed: false },
+})
+assert.deepEqual(rule(null, true, FP_A, true), { verdict: { ok: true, firstUse: false } })
+assert.deepEqual(rule(pinned(FP_A, 'typed'), false, FP_A, true), { verdict: { ok: false, reason: 'ca_only' } })
 
 /// One self-signed P-256 certificate with the SAN given, the way install.sh
 /// makes one. Returns the PEM pair and the canonical fingerprint (sha256 of
@@ -246,4 +318,4 @@ assert.deepEqual(hits, [], 'nothing was sent')
 
 other.close()
 fs.rmSync(TMP, { recursive: true, force: true })
-console.error('island-trust: first use, refusal, --replace, typed pin, address errors, unpinnable, no answer ok')
+console.error('island-trust: the rule, first use, refusal, --replace, typed pin, address errors, unpinnable, no answer ok')

@@ -207,21 +207,26 @@ export function Sites() {
     return () => clearTimeout(t)
   }, [page, paint])
 
+  // Idle on a page the capsule carries the site's mark and the reload glyph;
+  // focused it is a plain text field and both go.
+  const idleOnPage = !!page && !focused
+
   return (
     <div className="h-screen [height:100dvh] flex flex-col bg-surface-dim overflow-hidden">
       {/* One capsule across the row, the way a desktop browser does it: the
           address IS the control, and the way back lives inside it, at the
           left edge. On a page, or on an error for an address, the chevron
           returns to the catalogue; only from the catalogue does it leave the
-          browser (founder, 02.09). Idle the address sits centred between the
-          site's mark and a reload glyph; focused it becomes an ordinary text
-          field, left-aligned and selected, and Enter opens. There is no Open
-          button - a button beside an address bar is a second way to do the
-          thing the Return key already does (founder, 01.09). */}
+          browser (founder, 02.09). Idle the address sits centred in the
+          capsule, the site's mark on its left and a reload glyph on its
+          right; focused it becomes an ordinary text field, left-aligned and
+          selected, and Enter opens. There is no Open button - a button beside
+          an address bar is a second way to do the thing the Return key
+          already does (founder, 01.09). */}
       <header className="rcq-header sticky top-0 z-10 shrink-0">
         <div className="max-w-3xl mx-auto px-3 h-14 flex items-center gap-1.5">
           <form
-            className={`group flex-1 flex items-center gap-2 h-9 pl-1.5 pr-3 rounded-full bg-field transition-shadow ${
+            className={`group flex-1 flex items-center gap-2 h-9 px-1.5 rounded-full bg-field transition-shadow ${
               focused ? 'ring-1 ring-accent' : 'hover:bg-line/40'
             }`}
             onSubmit={(e) => {
@@ -230,23 +235,32 @@ export function Sites() {
               inputRef.current?.blur()
             }}
           >
-            <button
-              type="button"
-              onClick={() => navigate(asked ? '/sites' : '/contacts')}
-              className="flex-none p-1 text-fg-secondary hover:text-fg-primary"
-              title={t('sites.back')}
-              aria-label={t('sites.back')}
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <path d="M15 18l-6-6 6-6" />
-              </svg>
-            </button>
-            {/* The mark stands in for the padlock a browser puts here, and it
-                means the same thing: this is the site it says it is, checked
-                against the owner's signature. */}
-            {page && !focused && (
-              <SiteMark name={addr?.name ?? ''} uri={icons[addr?.name ?? '']} size={18} />
-            )}
+            {/* The two ends of the capsule are the same width whatever is in
+                them, so a centred address is centred in the CAPSULE rather
+                than in what is left between the mark and the reload glyph.
+                With the chevron and the mark on one side and a single glyph
+                on the other, that leftover sat to the right, and so did the
+                domain (founder, 02.09). 26px is the chevron with its padding;
+                52 adds the gap and the 18px mark. */}
+            <div className={`flex-none flex items-center gap-2 ${idleOnPage ? 'w-[52px]' : 'w-[26px]'}`}>
+              <button
+                type="button"
+                onClick={() => navigate(asked ? '/sites' : '/contacts')}
+                className="flex-none p-1 text-fg-secondary hover:text-fg-primary"
+                title={t('sites.back')}
+                aria-label={t('sites.back')}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M15 18l-6-6 6-6" />
+                </svg>
+              </button>
+              {/* The mark stands in for the padlock a browser puts here, and it
+                  means the same thing: this is the site it says it is, checked
+                  against the owner's signature. */}
+              {idleOnPage && (
+                <SiteMark name={addr?.name ?? ''} uri={icons[addr?.name ?? '']} size={18} />
+              )}
+            </div>
             <input
               ref={inputRef}
               value={typed}
@@ -274,32 +288,34 @@ export function Sites() {
               autoComplete="off"
               aria-label={t('sites.address.placeholder')}
               className={`flex-1 min-w-0 bg-transparent outline-none text-sm font-mono text-fg-primary placeholder:text-fg-dim ${
-                focused || !page ? 'text-left' : 'text-center'
+                focused ? 'text-left' : 'text-center'
               }`}
             />
-            {/* Reload, and it really reloads: the bundle is served with a five
-                minute cache, which is right for reading and wrong for somebody
-                who just republished. */}
-            {page && !focused && (
-              <button
-                type="button"
-                onClick={() => addr && void open(addr.display, page.path, true)}
-                className="text-fg-dim hover:text-fg-primary flex-none"
-                title={t('sites.reload')}
-                aria-label={t('sites.reload')}
-              >
-                {loading ? (
-                  <svg width="15" height="15" viewBox="0 0 24 24" className="animate-spin" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden>
-                    <path d="M21 12a9 9 0 1 1-6.2-8.6" />
-                  </svg>
-                ) : (
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                    <path d="M21 12a9 9 0 1 1-2.6-6.4" />
-                    <path d="M21 3v5h-5" />
-                  </svg>
-                )}
-              </button>
-            )}
+            <div className={`flex-none flex items-center justify-end ${idleOnPage ? 'w-[52px]' : 'w-[26px]'}`}>
+              {/* Reload, and it really reloads: the bundle is served with a five
+                  minute cache, which is right for reading and wrong for somebody
+                  who just republished. */}
+              {idleOnPage && page && (
+                <button
+                  type="button"
+                  onClick={() => addr && void open(addr.display, page.path, true)}
+                  className="flex-none p-1 text-fg-dim hover:text-fg-primary"
+                  title={t('sites.reload')}
+                  aria-label={t('sites.reload')}
+                >
+                  {loading ? (
+                    <svg width="15" height="15" viewBox="0 0 24 24" className="animate-spin" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden>
+                      <path d="M21 12a9 9 0 1 1-6.2-8.6" />
+                    </svg>
+                  ) : (
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                      <path d="M21 12a9 9 0 1 1-2.6-6.4" />
+                      <path d="M21 3v5h-5" />
+                    </svg>
+                  )}
+                </button>
+              )}
+            </div>
           </form>
 
           <button

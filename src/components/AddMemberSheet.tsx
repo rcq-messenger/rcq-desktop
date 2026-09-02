@@ -106,7 +106,7 @@ export function AddMemberSheet({ group, ident, gid, host, onAdded, onClose }: Pr
         .map((c) => ({
           key: `l:${c.uin}`,
           uin: c.uin,
-          nickname: c.nickname || `#${c.uin}`,
+          nickname: c.nickname || `${c.uin}`,
           identityKey: c.identity_key,
           signingKey: c.signing_key,
           host: null,
@@ -117,7 +117,7 @@ export function AddMemberSheet({ group, ident, gid, host, onAdded, onClose }: Pr
       ...listCrossIsland().map((c) => ({
         key: `c:${c.uin}@${c.host}`,
         uin: c.uin,
-        nickname: c.nickname || `#${c.uin}`,
+        nickname: c.nickname || `${c.uin}`,
         identityKey: c.identityKey,
         signingKey: c.signingKey,
         host: c.host,

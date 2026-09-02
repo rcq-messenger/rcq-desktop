@@ -43,9 +43,9 @@ async function myDisplayName(identity: WebIdentity): Promise<string> {
   if (cached) return cached.slice(0, NICKNAME_MAX)
   try {
     const me = await Api.myInfo(identity)
-    return (me.nickname || `#${identity.uin}`).slice(0, NICKNAME_MAX)
+    return (me.nickname || `${identity.uin}`).slice(0, NICKNAME_MAX)
   } catch {
-    return `#${identity.uin}`
+    return `${identity.uin}`
   }
 }
 

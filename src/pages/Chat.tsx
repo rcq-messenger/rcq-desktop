@@ -2135,7 +2135,7 @@ export function Chat() {
     // as one of ITS OWN accounts — which is how calling `1234@is2.rcq.app` used
     // to ring a local #1234 who had never heard of us. `peer.host` is set from
     // the cross-island store for a `?i=<host>` thread and absent otherwise.
-    call.start(peer.uin, peer.nickname ?? `#${peer.uin}`, media, peer.host ?? islandHost)
+    call.start(peer.uin, peer.nickname ?? `${peer.uin}`, media, peer.host ?? islandHost)
   }
 
   /// Scroll to the message a quote refers to and flash it.
@@ -2648,7 +2648,7 @@ export function Chat() {
         (mine ? myNickname : undefined) ??
         member?.nickname ??
         (uin === peerUIN ? peer?.nickname : undefined) ??
-        `#${uin}`
+        `${uin}`
       // Where tapping this person goes (founder item 22). The rows used to be
       // inert: a name and a number that looked exactly like every other
       // clickable name in the app and did nothing.
@@ -2704,11 +2704,11 @@ export function Chat() {
     // `reactionsVersion` is what makes this recompute when a reaction lands.
   }, [reactionAuthorsFor, identity, isGroup, group, peer, peerUIN, islandHost, myNickname, peerAliasFor, reactionsVersion])
   const headerName = isGroup
-    ? group?.name ?? `#${groupId}`
+    ? group?.name ?? `${groupId}`
     : isSelf
       ? t('chat.saved.title')
       // My own name for them, when I set one (device-only, see useContactAliases).
-      : peerAlias ?? peer?.nickname ?? `#${peerUIN}`
+      : peerAlias ?? peer?.nickname ?? `${peerUIN}`
   // "typing…" — the phones have had it for a long time and the web has not,
   // so a conversation between a phone and a browser looked one-sided. Wire
   // format is the phones': {type:"typing", to_uin, active} out,
@@ -2810,12 +2810,13 @@ export function Chat() {
       : peerTyping
         ? t('chat.typing')
       // Cross-island: show the peer's island (presence doesn't cross islands).
-      : peer?.host ? `#${peerUIN} · ${peer.host}`
-      // B1: the '#' the founder asked for, and — like the iOS header — an
-      // offline peer's subtitle breathes between the uin and their last-seen.
+      : peer?.host ? `${peerUIN} · ${peer.host}`
+      // The number stands on its own now: the '#' in front of it went from
+      // every client on 02.09 (founder). Like the iOS header, an offline peer's
+      // subtitle breathes between the number and their last-seen.
       : peer?.status === 'offline' && peer.last_seen
         ? <AltSubtitle uin={peerUIN ?? 0} lastSeen={relativeLastSeen(peer.last_seen, t, lang)} />
-        : `#${peerUIN}`
+        : `${peerUIN}`
   // One ordered timeline of both halves of the conversation, with a day
   // separator inserted wherever the date changes. Until now the list showed
   // only HH:MM, so a message from last week looked exactly like one from an
@@ -2924,7 +2925,7 @@ export function Chat() {
         author: it.kind === 'out'
           ? undefined
           : isGroup
-            ? (peerAliasFor(it.msg.from) || memberByUin.get(it.msg.from)?.nickname || `#${it.msg.from}`)
+            ? (peerAliasFor(it.msg.from) || memberByUin.get(it.msg.from)?.nickname || `${it.msg.from}`)
             : undefined,
       }]
     })
@@ -3517,14 +3518,14 @@ export function Chat() {
                 // reading their nick over every message in a group read as the
                 // alias not having been saved at all.
                 const senderName = isGroup
-                  ? peerAliasFor(m.from) || senderMember?.nickname || `#${m.from}`
+                  ? peerAliasFor(m.from) || senderMember?.nickname || `${m.from}`
                   : null
                 // ⚠ NO aliases in here: ReplyContext ships INSIDE the sealed
                 // envelope, so the quote's author label reaches the peer. My
                 // own name for someone is device-only by contract — sending it
                 // to the very person it describes is the one leak worse than
                 // storing it. Their self-chosen nickname only.
-                const replyAuthor = (isGroup ? senderMember?.nickname : peer?.nickname) ?? `#${m.from}`
+                const replyAuthor = (isGroup ? senderMember?.nickname : peer?.nickname) ?? `${m.from}`
                 return (
                   <IncomingMessageRow
                     key={`in-${m.id}`}
@@ -3815,7 +3816,7 @@ export function Chat() {
                     className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-field transition-colors"
                   >
                     <span className="flex-1 truncate text-sm">{m.nickname}</span>
-                    <span className="text-[0.6875rem] text-fg-dim">#{m.uin}</span>
+                    <span className="text-[0.6875rem] text-fg-dim">{m.uin}</span>
                   </button>
                 ))}
               </div>
@@ -4082,12 +4083,16 @@ export function Chat() {
                 // group used to swap the whole bar for a notice; the bar is
                 // still here and simply cannot be typed in, which is the same
                 // sentence without the layout consequences (see readOnlyHere).
+                // The name of whoever you are writing to is already at the top
+                // of the screen; repeating it in the field said nothing and
+                // made the field's own line jump around with the name's length
+                // (founder, 02.09). One sentence for every chat.
                 readOnlyHere
                   ? t('chat.owner_only.notice')
                   : isGroup && group
-                    ? t('chat.placeholder.group', { name: group.name })
+                    ? t('chat.placeholder')
                     : peer
-                      ? t('chat.placeholder', { nick: peer.nickname })
+                      ? t('chat.placeholder')
                       : t('chat.placeholder_loading')
               }
               value={input}
@@ -5933,7 +5938,7 @@ function PinnedRichText({ text, group, linksAllowed = true }: { text: string; gr
       const uin = Number(m[3])
       const nick = contactAlias(uin) ?? group.members.find((x) => x.uin === uin)?.nickname
       nodes.push(
-        <Link key={key++} to={`/profile/${uin}`} className="text-accent hover:text-accent-dim transition-colors">{nick ?? `#${uin}`}</Link>,
+        <Link key={key++} to={`/profile/${uin}`} className="text-accent hover:text-accent-dim transition-colors">{nick ?? `${uin}`}</Link>,
       )
     }
   }
@@ -5975,7 +5980,7 @@ function CallLogIcon({ missed, outgoing }: { missed: boolean; outgoing: boolean 
 /// The chat-header subtitle for an offline 1:1 peer (megalist B1): the number
 /// and when they were last around, taking turns. See [AltText].
 function AltSubtitle({ uin, lastSeen }: { uin: number; lastSeen: string }) {
-  return <AltText a={`#${uin}`} b={lastSeen} />
+  return <AltText a={`${uin}`} b={lastSeen} />
 }
 
 

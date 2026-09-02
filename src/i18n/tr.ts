@@ -120,7 +120,7 @@ export const tr: Record<string, string> = {
   'contacts.saved.subtitle': 'Kendine notlar',
   // Chat
   'chat.typing': 'yazıyor…',
-  'chat.placeholder': '{nick} kişisine mesaj…',
+  'chat.placeholder': 'Mesajınız…',
   'chat.placeholder_loading': 'Yükleniyor…',
   'chat.send': 'Gönder',
   'chat.send_only.title': 'Yalnızca gönderme modu.',
@@ -194,7 +194,7 @@ export const tr: Record<string, string> = {
   'chat.files_off.notice': 'Bu grupta dosyalar kapalı.',
   'chat.files_off.chip': 'Bu grupta dosyalar kapalı',
   'chat.slowmode.wait': 'Yavaş mod: {s} sn bekleyin',
-  'chat.report.title': 'Şikayet: #{uin}',
+  'chat.report.title': 'Şikayet: {uin}',
   'chat.report.placeholder': 'Bu mesajda ne sorun var?',
   'chat.report.hint': 'Şikayet, mesajdan kısa bir alıntı ve gönderenin numarasıyla birlikte ada operatörlerine gider.',
   'chat.report.send': 'Şikayeti gönder',
@@ -559,7 +559,7 @@ export const tr: Record<string, string> = {
   'settings.session.unlink_footer': 'Çıkış yapar ve yalnızca bu tarayıcıyı temizler (burada saklanan mesajlar, kişiler, anahtarlar). Bu web istemcisini telefonundan QR ile bağladıysan hesabın telefonda kalır; orada Bağlı cihazlar altından bu tarayıcıyı ayırman yeter. Ama kurtarma ifadesiyle girdiysen ve elindeki tek kopya buysa, çıkış yapmak hesabı temelli kaybettirir.',
   'settings.section.multihome': 'Başka bir adada yedek',
   'settings.multihome.body': 'Hesabın ikinci, bağımsız bir RCQ adasında (sunucusunda) da yaşayabilir. Mesajlar o zaman iki posta kutusuna birden düşer; bir ada çökerse hiçbir şey kaybolmaz, diğeri almayı sürdürür.',
-  'settings.multihome.row_uin': 'oradaki numaran: #{uin}',
+  'settings.multihome.row_uin': 'oradaki numaran: {uin}',
   'settings.multihome.auto_label': 'Hesabımın yedeğini başka bir adada tut',
   'settings.multihome.auto_sub': 'Ada, herkese açık katalogdan kendiliğinden seçilir. Bunu kapatmak seçilen adayla bağlantıyı keser.',
   'settings.multihome.auto_busy': 'Ada seçiliyor…',
@@ -927,7 +927,7 @@ export const tr: Record<string, string> = {
   'group_join.error.generic': 'Bu grup yüklenemedi.',
   'group_join.error.blocked': 'Grup sahibi seni bu gruptan engelledi.',
   // Group chat
-  'chat.placeholder.group': '{name} grubuna mesaj…',
+  'chat.placeholder.group': 'Mesajınız…',
   // Settings: burn confirm typing
   'settings.danger.type_uin': 'Onaylamak için UIN\'ini ({uin}) aşağıya yaz.',
   // Brand

@@ -128,7 +128,7 @@ function Portrait({ subtitle }: { subtitle: string }) {
       </div>
       <div>
         <div className="text-2xl font-medium">{info.peerName}</div>
-        <div className="text-sm text-fg-dim">#{info.peerUin}</div>
+        <div className="text-sm text-fg-dim">{info.peerUin}</div>
       </div>
       {phase === 'connected' && connectedAt !== null ? (
         <Elapsed since={connectedAt} />

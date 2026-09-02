@@ -125,7 +125,7 @@ export function ContactActionsMenu({ contact, inUserSection, onClose, onChanged,
             value={name}
             onChange={(e) => setName(e.target.value)}
             maxLength={48}
-            placeholder={contact.nickname || `#${contact.uin}`}
+            placeholder={contact.nickname || `${contact.uin}`}
             className="w-full h-9 px-2 rounded-md bg-field outline-none focus:ring-1 focus:ring-accent text-sm"
             onKeyDown={(e) => {
               if (e.key === 'Enter') save()

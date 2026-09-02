@@ -71,7 +71,7 @@ async function readOwnProfile(identity: WebIdentity): Promise<OwnProfile | null>
   try {
     const me = await Api.myInfo(identity)
     return {
-      nickname: (me.nickname || `#${identity.uin}`).slice(0, NICKNAME_MAX),
+      nickname: (me.nickname || `${identity.uin}`).slice(0, NICKNAME_MAX),
       avatarMediaId: me.avatar_media_id ?? null,
       // ⚠⚠ Fall back to the key WE published. The island no longer returns it
       // (profile-key model), and this snapshot is what the far side applies
@@ -83,7 +83,7 @@ async function readOwnProfile(identity: WebIdentity): Promise<OwnProfile | null>
     const cached = contactsCache.get(identity.uin)?.me
     if (!cached) return null
     return {
-      nickname: (cached.nickname || `#${identity.uin}`).slice(0, NICKNAME_MAX),
+      nickname: (cached.nickname || `${identity.uin}`).slice(0, NICKNAME_MAX),
       avatarMediaId: cached.avatar_media_id ?? null,
       avatarMediaKey: cached.avatar_media_key ?? myProfileKey(),
     }

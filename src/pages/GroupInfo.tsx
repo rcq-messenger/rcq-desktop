@@ -106,6 +106,26 @@ export function GroupInfo() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [identity?.uin, groupId])
 
+  // ⚠ A roster carries PRESENCE, and presence is a snapshot of the moment it
+  // was fetched: a screen left open put whoever came online afterwards at the
+  // bottom under "everyone else", and someone who left stayed near the top
+  // (#859, and the founder on iOS the same day). So it is asked again when the
+  // window comes back, and on a timer for rooms small enough that the roster is
+  // cheap - the flagship's two thousand members are hundreds of kilobytes, and
+  // that one is not polled.
+  useEffect(() => {
+    if (!identity || !gctx) return
+    const small = (group?.members.length ?? 0) <= 200
+    const onFocus = () => { if (document.visibilityState === 'visible') void refresh() }
+    document.addEventListener('visibilitychange', onFocus)
+    const timer = small ? window.setInterval(() => { void refresh() }, 45_000) : undefined
+    return () => {
+      document.removeEventListener('visibilitychange', onFocus)
+      if (timer) window.clearInterval(timer)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [identity?.uin, groupId, group?.members.length])
+
   // This screen is the one that is entirely gated on ownership: the rights
   // buttons, the remove buttons, the settings gear, "delete" versus "leave".
   // So a handover performed from another device, or by the previous owner
@@ -155,7 +175,7 @@ export function GroupInfo() {
         const ta = rosterTier(a, group.owner_uin)
         const tb = rosterTier(b, group.owner_uin)
         if (ta !== tb) return ta - tb
-        const byName = (a.nickname || `#${a.uin}`).localeCompare(b.nickname || `#${b.uin}`, undefined, {
+        const byName = (a.nickname || `${a.uin}`).localeCompare(b.nickname || `${b.uin}`, undefined, {
           sensitivity: 'accent',
         })
         // Two equal names would otherwise keep the roster's arrival order,
@@ -361,7 +381,7 @@ export function GroupInfo() {
           </div>
         )}
 
-        {!group && !error && <CenteredLoader className="py-12" label={t('contacts.loading')} />}
+        {!group && !error && <CenteredLoader label={t('contacts.loading')} />}
 
         {group && (
           <>
@@ -401,7 +421,7 @@ export function GroupInfo() {
                   // offered and then rejected.
                   const canSetRights = isOwner && !isTheOwner && !isMe
                   const canRemove = canManageMembers && !isTheOwner && !isMe
-                  const memberName = m.nickname || `#${m.uin}`
+                  const memberName = m.nickname || `${m.uin}`
                   return (
                   <li key={m.uin}>
                     <div className="relative">
@@ -423,7 +443,7 @@ export function GroupInfo() {
                       />
                       <div className="flex-1 min-w-0">
                         <div className="font-medium text-sm truncate">
-                          {m.nickname || `#${m.uin}`}
+                          {m.nickname || `${m.uin}`}
                           {m.uin === identity.uin && (
                             <span className="text-fg-dim font-normal ml-1">
                               ({t('group.info.you')})
@@ -436,7 +456,7 @@ export function GroupInfo() {
                             it. The owner keeps the right-edge badge because the
                             owner row never carries buttons. */}
                         <div className="flex items-center gap-1.5">
-                          <span className="text-[0.625rem] text-fg-dim">#{m.uin}</span>
+                          <span className="text-[0.625rem] text-fg-dim">{m.uin}</span>
                           {!isTheOwner && perms.length > 0 && (
                             <span className="text-[0.625rem] font-semibold text-fg-secondary uppercase tracking-wider">
                               {t('group.info.moderator')}

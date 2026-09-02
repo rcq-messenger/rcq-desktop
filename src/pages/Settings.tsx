@@ -5,6 +5,7 @@
 // took up too much vertical space inline. Settings now just shows
 // a nav-row that opens the dedicated surface.
 
+import { SettingsSectionIcon } from '../components/SettingsSectionIcon'
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { currentRecoveryPhrase, forgetRecoverySeed, revokedAccounts } from '../lib/auth'
@@ -589,7 +590,8 @@ export function Settings() {
         >
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+              <div className="flex items-center gap-2 text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+                <SettingsSectionIcon name="profile" />
                 {t('settings.section.profile')}
               </div>
               <div className="text-sm font-medium mt-0.5 truncate">
@@ -615,7 +617,13 @@ export function Settings() {
                   i > 0 ? 'border-t border-line' : ''
                 }`}
               >
-                <span className="min-w-0">
+                {/* The mark to the left of the category name (founder,
+                    02.09): seven rows of grey text read as a list of words,
+                    and a settings list is something people scan by shape. */}
+                <span className="flex-none text-fg-secondary">
+                  <SettingsSectionIcon name={g} size={18} />
+                </span>
+                <span className="min-w-0 flex-1">
                   <span className="block text-sm font-medium">{t(`settings.group.${g}`)}</span>
                   <span className="block text-xs text-fg-dim mt-0.5">{t(`settings.group.${g}.footer`)}</span>
                 </span>
@@ -641,7 +649,7 @@ export function Settings() {
               // The active account's own profile is already loaded on this
               // screen; the others come from the snapshot each one persisted.
               const who = isActive ? me ?? snapshotFor(a.uin)?.me : snapshotFor(a.uin)?.me
-              const name = who?.nickname || `#${a.uin}`
+              const name = who?.nickname || `${a.uin}`
               return (
                 <li key={a.uin} className="flex items-center gap-3 px-4 py-2.5 hover:bg-field transition-colors">
                   <button
@@ -663,7 +671,7 @@ export function Settings() {
                     />
                     <span className="min-w-0 flex-1">
                       <span className="block text-sm font-medium truncate">{name}</span>
-                      <span className="block text-xs text-fg-dim truncate">#{a.uin}</span>
+                      <span className="block text-xs text-fg-dim truncate">{a.uin}</span>
                       {/* Every row names its island, the flagship included.
                           It used to be hidden for the default host on the
                           grounds that it was noise, and the effect was the
@@ -717,12 +725,13 @@ export function Settings() {
         </section>
 
         <section className="bg-surface rounded-lg p-4 space-y-2">
-          <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+          <div className="flex items-center gap-2 text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+            <SettingsSectionIcon name="account" />
             {t('settings.section.account')}
           </div>
           <div className="flex items-center justify-between text-sm">
             <span className="text-fg-secondary">{t('settings.field.uin')}</span>
-            <span className="">#{identity.uin}</span>
+            <span className="">{identity.uin}</span>
           </div>
         </section>
 
@@ -751,7 +760,8 @@ export function Settings() {
         </Link>
 
         <section className="bg-surface rounded-lg p-4 space-y-3">
-          <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+          <div className="flex items-center gap-2 text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+            <SettingsSectionIcon name="qr" />
             {t('settings.section.qr')}
           </div>
           <MyQRCode me={me} />
@@ -766,7 +776,8 @@ export function Settings() {
             for EVERY island including the flagship, which has a name and rules
             of its own. */}
         <section className="bg-surface rounded-lg p-4 space-y-3">
-          <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+          <div className="flex items-center gap-2 text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+            <SettingsSectionIcon name="island" />
             {t('settings.section.island')}
           </div>
           {/* Picture and name together, which is the whole point: an island
@@ -817,7 +828,8 @@ export function Settings() {
             cannot stay out of it. Read-only in v1: revoking a slot is a key
             operation with its own consequences, not a button to add lightly. */}
         <section className="bg-surface rounded-lg p-4 space-y-3">
-          <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+          <div className="flex items-center gap-2 text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+            <SettingsSectionIcon name="devices" />
             {t('settings.section.devices')}
           </div>
           <p className="text-xs text-fg-secondary">{t('settings.devices.body')}</p>
@@ -825,7 +837,7 @@ export function Settings() {
             <ul className="space-y-1.5">
               {accountDevices.map((d) => (
                 <li key={d.device_id} className="flex items-center gap-2 text-sm min-w-0">
-                  <span className="text-xs text-fg-dim flex-none">#{d.device_id}</span>
+                  <span className="text-xs text-fg-dim flex-none">{d.device_id}</span>
                   <span className="truncate">
                     {d.device_id === 1 ? t('settings.devices.primary') : d.label || t('settings.devices.unnamed')}
                   </span>
@@ -880,7 +892,8 @@ export function Settings() {
         {/* Multihoming (federation v1): this account also registered on a
             second island, messages get deposited into both mailboxes. */}
         <section className="bg-surface rounded-lg p-4 space-y-3">
-          <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+          <div className="flex items-center gap-2 text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+            <SettingsSectionIcon name="multihome" />
             {t('settings.section.multihome')}
           </div>
           <p className="text-xs text-fg-secondary">{t('settings.multihome.body')}</p>
@@ -1020,7 +1033,8 @@ export function Settings() {
         >
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+              <div className="flex items-center gap-2 text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+                <SettingsSectionIcon name="privacy" />
                 {t('settings.section.privacy')}
               </div>
               <div className="text-xs text-fg-dim mt-0.5 truncate">
@@ -1080,7 +1094,8 @@ export function Settings() {
         </>)}
         {group === 'appearance' && (<>
         <section className="bg-surface rounded-lg p-4 space-y-2">
-          <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+          <div className="flex items-center gap-2 text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+            <SettingsSectionIcon name="language" />
             {t('settings.section.language')}
           </div>
           <LanguagePicker variant="row" />
@@ -1088,7 +1103,8 @@ export function Settings() {
         </section>
 
         <section className="bg-surface rounded-lg p-4 space-y-3">
-          <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+          <div className="flex items-center gap-2 text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+            <SettingsSectionIcon name="theme" />
             {t('settings.section.theme')}
           </div>
           <Dropdown<ThemePref>
@@ -1113,7 +1129,8 @@ export function Settings() {
             one: the RU header there reads «Оформление», but the EN header is
             "Theme", and text size is not a theme. */}
         <section className="bg-surface rounded-lg p-4 space-y-3">
-          <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+          <div className="flex items-center gap-2 text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+            <SettingsSectionIcon name="textsize" />
             {t('settings.section.textsize')}
           </div>
           <Dropdown<FontScale>
@@ -1130,7 +1147,8 @@ export function Settings() {
         </section>
 
         <section className="bg-surface rounded-lg p-4 space-y-3">
-          <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+          <div className="flex items-center gap-2 text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+            <SettingsSectionIcon name="display" />
             {t('settings.section.display')}
           </div>
           <label className="flex items-center justify-between cursor-pointer">
@@ -1151,7 +1169,8 @@ export function Settings() {
         </>)}
         {group === 'sound' && (<>
         <section className="bg-surface rounded-lg p-4 space-y-3">
-          <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+          <div className="flex items-center gap-2 text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+            <SettingsSectionIcon name="sound" />
             {t('settings.section.sound')}
           </div>
           <label className="flex items-center justify-between cursor-pointer">
@@ -1207,7 +1226,8 @@ export function Settings() {
         </>)}
         {group === 'community' && (<>
         <section className="bg-surface rounded-lg p-4 space-y-3">
-          <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+          <div className="flex items-center gap-2 text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+            <SettingsSectionIcon name="hof" />
             {t('settings.section.hof')}
           </div>
           <label className="flex items-center justify-between cursor-pointer">
@@ -1265,7 +1285,8 @@ export function Settings() {
         {caps.reports && (<>
         {/* Report a problem — same /reports channel the mobile clients use. */}
         <section className="bg-surface rounded-lg p-4 space-y-3">
-          <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+          <div className="flex items-center gap-2 text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+            <SettingsSectionIcon name="report" />
             {t('settings.section.report')}
           </div>
           <p className="text-xs text-fg-secondary">{t('settings.report.body')}</p>
@@ -1359,7 +1380,8 @@ export function Settings() {
             the webview is built, so flipping this needs a restart. */}
         {bypass && (
           <section className="bg-surface rounded-lg p-4 space-y-3">
-            <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+            <div className="flex items-center gap-2 text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+              <SettingsSectionIcon name="bypass" />
               {t('settings.section.bypass')}
             </div>
             <label
@@ -1481,7 +1503,8 @@ export function Settings() {
         </>)}
         {group === 'island' && (<>
         <section className="bg-surface rounded-lg p-4 space-y-3">
-          <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+          <div className="flex items-center gap-2 text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+            <SettingsSectionIcon name="about" />
             {t('settings.section.about')}
           </div>
           <div className="flex items-center gap-3">
@@ -1534,7 +1557,8 @@ export function Settings() {
         </>)}
         {group === 'account' && (<>
         <section className="bg-surface rounded-lg p-4 space-y-3">
-          <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+          <div className="flex items-center gap-2 text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+            <SettingsSectionIcon name="session" />
             {t('settings.section.session')}
           </div>
           <button

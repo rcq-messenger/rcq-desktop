@@ -133,7 +133,7 @@ export const en: Record<string, string> = {
 
   // Chat
   'chat.typing': 'typing…',
-  'chat.placeholder': 'Message {nick}…',
+  'chat.placeholder': 'Your message…',
   'chat.placeholder_loading': 'Loading…',
   'chat.send': 'Send',
   'chat.send_only.title': 'Send-only mode.',
@@ -216,7 +216,7 @@ export const en: Record<string, string> = {
   'chat.files_off.notice': 'Files are disabled in this group.',
   'chat.files_off.chip': 'Files are disabled in this group',
   'chat.slowmode.wait': 'Slow mode: wait {s} s',
-  'chat.report.title': 'Report #{uin}',
+  'chat.report.title': 'Report {uin}',
   'chat.report.placeholder': 'What is wrong with this message?',
   'chat.report.hint': 'The report goes to the island operators together with a short excerpt of the message and the sender\'s number.',
   'chat.report.send': 'Send report',
@@ -631,7 +631,7 @@ export const en: Record<string, string> = {
   'settings.section.multihome': 'Backup on another island',
   'settings.multihome.body':
     'Your account can also live on a second, independent RCQ island (server). Messages are then delivered into both mailboxes, so if one island goes down, nothing is lost: the other keeps receiving.',
-  'settings.multihome.row_uin': 'your number there: #{uin}',
+  'settings.multihome.row_uin': 'your number there: {uin}',
   'settings.multihome.auto_label': 'Keep a copy automatically',
   'settings.multihome.auto_sub':
     'The island is picked automatically from the public catalogue. Turning this off disconnects the picked island.',
@@ -1072,7 +1072,7 @@ export const en: Record<string, string> = {
   'group_join.error.blocked': 'The owner has blocked you from this group.',
 
   // Group chat
-  'chat.placeholder.group': 'Message {name}…',
+  'chat.placeholder.group': 'Your message…',
 
   // Settings: burn confirm typing
   'settings.danger.type_uin': 'To confirm, type your UIN ({uin}) below.',

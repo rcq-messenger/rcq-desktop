@@ -120,7 +120,7 @@ export const uk: Record<string, string> = {
   'contacts.saved.subtitle': 'Нотатки собі',
   // Chat
   'chat.typing': 'пише…',
-  'chat.placeholder': 'Написати {nick}…',
+  'chat.placeholder': 'Ваше повідомлення…',
   'chat.placeholder_loading': 'Завантаження…',
   'chat.send': 'Надіслати',
   'chat.send_only.title': 'Режим лише надсилання.',
@@ -194,7 +194,7 @@ export const uk: Record<string, string> = {
   'chat.files_off.notice': 'Файли вимкнено в цій групі.',
   'chat.files_off.chip': 'Файли вимкнено в цій групі',
   'chat.slowmode.wait': 'Повільний режим: зачекайте {s} с',
-  'chat.report.title': 'Скарга на #{uin}',
+  'chat.report.title': 'Скарга на {uin}',
   'chat.report.placeholder': 'Що не так із цим повідомленням?',
   'chat.report.hint': 'Скарга йде операторам острова разом з уривком повідомлення та номером відправника.',
   'chat.report.send': 'Надіслати скаргу',
@@ -559,7 +559,7 @@ export const uk: Record<string, string> = {
   'settings.session.unlink_footer': 'Виходить і очищає лише цей браузер (повідомлення, контакти, ключі, що зберігаються тут). Якщо ти підключив цей веб з телефона через QR, акаунт лишається на телефоні: просто відключи там цей браузер у розділі Підключені пристрої. Але якщо ти увійшов фразою відновлення і це єдина копія, після виходу акаунт втрачено назавжди.',
   'settings.section.multihome': 'Резерв на іншому острові',
   'settings.multihome.body': 'Твій акаунт може жити ще й на другому, незалежному острові RCQ (сервері). Тоді повідомлення доставляються в обидві скриньки, і якщо один острів впаде, нічого не загубиться: другий далі приймає.',
-  'settings.multihome.row_uin': 'твій номер там: #{uin}',
+  'settings.multihome.row_uin': 'твій номер там: {uin}',
   'settings.multihome.auto_label': 'Тримати резерв мого акаунта на іншому острові',
   'settings.multihome.auto_sub': 'Острів обирається автоматично з публічного каталогу. Якщо вимкнути, обраний острів буде відключено.',
   'settings.multihome.auto_busy': 'Обираємо острів…',
@@ -927,7 +927,7 @@ export const uk: Record<string, string> = {
   'group_join.error.generic': 'Не вдалося завантажити цю групу.',
   'group_join.error.blocked': 'Власник закрив тобі доступ до цієї групи.',
   // Group chat
-  'chat.placeholder.group': 'Написати в {name}…',
+  'chat.placeholder.group': 'Ваше повідомлення…',
   // Settings: burn confirm typing
   'settings.danger.type_uin': 'Для підтвердження введи нижче свій UIN ({uin}).',
   // Brand

@@ -234,7 +234,7 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
               {ci.map((r) => {
                 // host '' = a same-island stranger from the Privacy quarantine:
                 // render a plain #uin, not a dangling "@".
-                const tag = r.host === '' ? `#${r.uin}` : `${r.uin}@${r.host}`
+                const tag = r.host === '' ? `${r.uin}` : `${r.uin}@${r.host}`
                 const firstText = r.msgs.find((m) => m.kind === 'text') as { text?: string } | undefined
                 // A §5f contact request says what it wants and who is asking;
                 // a quarantined message row keeps showing its first message.
@@ -322,9 +322,9 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <div className="font-medium truncate">
-                    {r.nickname || `#${r.from_uin}`}
+                    {r.nickname || `${r.from_uin}`}
                   </div>
-                  <div className="text-xs text-fg-dim">#{r.from_uin}</div>
+                  <div className="text-xs text-fg-dim">{r.from_uin}</div>
                 </div>
                 <div className="flex items-center gap-2">
                   <button

@@ -72,6 +72,7 @@ export const zh: Record<string, string> = {
   'island.trust.entered': '为 {host} 输入的指纹与本设备已信任的不一致。',
   'island.trust.on_file': '已记录',
   'island.trust.presented': '本次出示',
+  'island.trust.entered_label': '输入的',
   'island.trust.via_ca': '证书颁发机构',
   'island.trust.accept': '信任新指纹',
   'island.trust.later': '暂不',

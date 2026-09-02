@@ -77,6 +77,7 @@ export const ru: Record<string, string> = {
   'island.trust.entered': 'Введённый отпечаток {host} не совпадает с тем, которому это устройство уже доверяет.',
   'island.trust.on_file': 'Сохранён',
   'island.trust.presented': 'Предъявлен сейчас',
+  'island.trust.entered_label': 'Введён',
   'island.trust.via_ca': 'удостоверяющий центр',
   'island.trust.accept': 'Доверять новому отпечатку',
   'island.trust.later': 'Не сейчас',

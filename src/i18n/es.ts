@@ -72,6 +72,7 @@ export const es: Record<string, string> = {
   'island.trust.entered': 'La huella escrita para {host} no coincide con la que este dispositivo ya conoce.',
   'island.trust.on_file': 'Guardada',
   'island.trust.presented': 'Presentada ahora',
+  'island.trust.entered_label': 'Introducida',
   'island.trust.via_ca': 'una autoridad de certificación',
   'island.trust.accept': 'Confiar en la nueva huella',
   'island.trust.later': 'Ahora no',

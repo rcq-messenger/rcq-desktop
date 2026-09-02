@@ -103,7 +103,13 @@ function ChangedBanner({ island }: { island: ChangedIsland }) {
           ) : (
             <pre className="font-mono text-[0.75rem] leading-snug whitespace-pre">{displayFingerprint(island.old)}</pre>
           )}
-          <span className="text-white/80 pt-px">{t('island.trust.presented')}</span>
+          {/* ⚠ Not "presented" when the person typed it. §3's refusal is
+              raised by prePinIsland with no handshake at all - the island was
+              never dialled - so labelling their own keystrokes as what the
+              island showed would assert a connection that did not happen. */}
+          <span className="text-white/80 pt-px">
+            {t(island.entered ? 'island.trust.entered_label' : 'island.trust.presented')}
+          </span>
           <pre className="font-mono text-[0.75rem] leading-snug whitespace-pre">{displayFingerprint(island.new)}</pre>
         </div>
         <div className="flex gap-2 pt-1">

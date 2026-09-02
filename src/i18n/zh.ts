@@ -294,6 +294,7 @@ export const zh: Record<string, string> = {
   'sites.recents.remove': '从最近中移除',
   'sites.share': '分享地址',
   'sites.share.copy': '复制地址',
+  'sites.share.title': '把地址发给',
   'sites.by': '发布者',
   'sites.error.unsigned': '该站点的签名不匹配，未显示任何内容。',
   'sites.error.tampered': '某个文件与所有者签名的内容不符，未显示任何内容。',

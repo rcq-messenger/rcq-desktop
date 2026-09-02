@@ -315,6 +315,7 @@ export const ru: Record<string, string> = {
   'sites.recents.remove': 'Убрать из недавних',
   'sites.share': 'Поделиться адресом',
   'sites.share.copy': 'Скопировать адрес',
+  'sites.share.title': 'Отправить адрес',
   'sites.by': 'от',
   'sites.error.unsigned': 'Подпись сайта не сходится. Ничего не показано.',
   'sites.error.tampered': 'Файл не совпадает с тем, что подписал владелец. Ничего не показано.',

@@ -28,6 +28,7 @@ export function ForwardModal({
   onClose,
   onPick,
   lead,
+  title,
 }: {
   visible: boolean
   onClose: () => void
@@ -37,6 +38,10 @@ export function ForwardModal({
   /// leaves the app, and it is also the door that is still there when the
   /// lists below are empty.
   lead?: { label: string; onPick: () => void }
+  /// What the sheet says it is doing. A forward says "Forward to"; handing
+  /// somebody a site address is not a forward, so the sites browser passes its
+  /// own line.
+  title?: string
 }) {
   const { identity } = useIdentity()
   const { t } = useI18n()
@@ -125,7 +130,7 @@ export function ForwardModal({
             onClick={(e) => e.stopPropagation()}
           >
         <header className="flex items-center justify-between px-4 py-3">
-          <h2 className="text-sm font-semibold">{t('chat.forward.title')}</h2>
+          <h2 className="text-sm font-semibold">{title ?? t('chat.forward.title')}</h2>
           <button
             onClick={onClose}
             className="text-fg-secondary hover:text-fg-primary text-sm"

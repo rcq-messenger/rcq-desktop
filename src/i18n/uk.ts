@@ -294,6 +294,7 @@ export const uk: Record<string, string> = {
   'sites.recents.remove': 'Прибрати з нещодавніх',
   'sites.share': 'Поділитися адресою',
   'sites.share.copy': 'Скопіювати адресу',
+  'sites.share.title': 'Надіслати адресу',
   'sites.by': 'від',
   'sites.error.unsigned': 'Підпис сайту не сходиться. Нічого не показано.',
   'sites.error.tampered': 'Файл не збігається з тим, що підписав власник. Нічого не показано.',

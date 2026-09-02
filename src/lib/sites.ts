@@ -154,7 +154,16 @@ export interface SiteLink {
 /// bundle's other files are pictures and stylesheets, and a picture "opened
 /// as a page" is a screen of bytes. Query and fragment are dropped.
 export function siteLinkOf(raw: string): SiteLink | null {
-  const m = /^(?:(?:https?|rcq):\/\/)?([^/?#\s]+)(?:\/([^?#\s]*))?(?:[?#]\S*)?$/i.exec(raw.trim())
+  // ⚠ An address at the end of a sentence is still an address. A chat hands
+  // this function whatever the linkifier matched, punctuation and all, and a
+  // `home.rcq.` that failed here fell through to the ordinary-URL path and
+  // opened the system browser at a name that resolves nowhere - the one
+  // outcome this whole feature exists to avoid.
+  const trimmed = raw.trim()
+    .replace(/^[([{<«"'`]+/, '')
+    .replace(/[)\]}>»"'`,;:!?]+$/, '')
+    .replace(/\.+$/, '')
+  const m = /^(?:(?:https?|rcq):\/\/)?([^/?#\s]+)(?:\/([^?#\s]*))?(?:[?#]\S*)?$/i.exec(trimmed)
   if (!m) return null
   const address = m[1].toLowerCase()
   if (!address.endsWith('.rcq') || !parseRcqAddress(address, 'own')) return null

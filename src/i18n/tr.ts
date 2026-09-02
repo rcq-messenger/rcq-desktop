@@ -294,6 +294,7 @@ export const tr: Record<string, string> = {
   'sites.recents.remove': 'Son açılanlardan kaldır',
   'sites.share': 'Adresi paylaş',
   'sites.share.copy': 'Adresi kopyala',
+  'sites.share.title': 'Adresi şuraya gönder',
   'sites.by': 'yayımlayan',
   'sites.error.unsigned': 'Bu sitenin imzası tutmuyor. Hiçbir şey gösterilmedi.',
   'sites.error.tampered': 'Bir dosya, sahibinin imzaladığıyla uyuşmuyor. Hiçbir şey gösterilmedi.',

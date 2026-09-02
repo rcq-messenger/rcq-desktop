@@ -20,7 +20,7 @@
 //   frame's document, and only the two kinds of link that stay inside the
 //   network go anywhere.
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
@@ -152,6 +152,14 @@ function SiteRow({
   )
 }
 
+/// What may be opened as a page. The manifest signs images and stylesheets
+/// too, and neither is a page: decoded as text and parsed as HTML they paint a
+/// screen of rubble. `siteLinkOf` already holds this line for a typed address;
+/// a link inside a page and the `p` parameter hold it here.
+function isPagePath(path: string | null | undefined): boolean {
+  return !!path && /\.html?$/i.test(path)
+}
+
 export function Sites() {
   const { t } = useI18n()
   const { identity } = useIdentity()
@@ -190,7 +198,16 @@ export function Sites() {
   // else - the grammar names islands as `<label>.rcq.app` or by port. Such a
   // row under another account would open to an address error, so it waits
   // for the account it belongs to rather than sitting there dead.
-  const recents = recentsAll.filter((r) => parseRcqAddress(displayAddress(r.name, r.host, ownHost), ownHost))
+  //
+  // ⚠ Memoised, and not for tidiness: this list is a dependency of the mark
+  // effect below. A fresh array on every render made that effect run after
+  // every render, and it sets state, so the screen re-rendered for as long as
+  // it was mounted and asked each island for the same manifest again and
+  // again.
+  const recents = useMemo(
+    () => recentsAll.filter((r) => parseRcqAddress(displayAddress(r.name, r.host, ownHost), ownHost)),
+    [recentsAll, ownHost],
+  )
 
   /// The fetch itself. Moving between pages of one site and reloading call
   /// this directly; opening a site by address goes through `go` and the URL.
@@ -242,7 +259,7 @@ export function Sites() {
   const askedPage = params.get('p')
   useEffect(() => {
     if (asked) {
-      void open(asked, askedPage || 'index.html')
+      void open(asked, isPagePath(askedPage) ? (askedPage as string) : 'index.html')
       return
     }
     // Back to the catalogue: nothing of the page survives, and a fetch still
@@ -290,6 +307,23 @@ export function Sites() {
   // Marks are fetched one by one after the list is drawn, and each is checked
   // against the owner's signature before it is shown. A list that waited for
   // them would be a list that an offline site could hold up.
+  //
+  // ⚠⚠ Only from THIS island. A recent row on someone else's island is drawn
+  // with its letter, not with its mark: asking for the mark would tell that
+  // island "this address still has me in its list" every time the reader
+  // merely opens the browser, and the promise at the top of this file is that
+  // an island learns about a reader when the reader opens something on it.
+  // The mark of a foreign site is fetched when it is opened, which is a visit
+  // that island sees anyway.
+  //
+  // ⚠ An address whose mark is already in hand is not asked again: the effect
+  // runs whenever the catalogue or the recents change, and without this a list
+  // that grew by one row re-fetched every mark it already had. The set is
+  // filled where the mark ARRIVES, not where it is asked for - React mounts a
+  // screen twice in development, and a set filled on the way out made the
+  // second mount skip every address whose first-mount answer had just been
+  // thrown away, so no marks appeared at all.
+  const haveMarks = useRef<Set<string>>(new Set())
   useEffect(() => {
     let live = true
     const wanted: RcqAddress[] = []
@@ -297,10 +331,17 @@ export function Sites() {
       const a = parseRcqAddress(`${s.name}.rcq`, ownHost)
       if (a) wanted.push(a)
     }
-    for (const r of recents) wanted.push({ name: r.name, host: r.host, display: displayAddress(r.name, r.host, ownHost) })
+    for (const r of recents) {
+      if (r.host !== ownHost) continue
+      wanted.push({ name: r.name, host: r.host, display: displayAddress(r.name, r.host, ownHost) })
+    }
     for (const a of wanted) {
+      const key = recentKey(a)
+      if (haveMarks.current.has(key)) continue
       void fetchSiteIcon(a).then((uri) => {
-        if (live) setIcons((cur) => ({ ...cur, [recentKey(a)]: uri }))
+        if (!live) return
+        haveMarks.current.add(key)
+        setIcons((cur) => (cur[key] === uri ? cur : { ...cur, [key]: uri }))
       })
     }
     return () => { live = false }
@@ -316,13 +357,28 @@ export function Sites() {
     // into the attribute.
     const inner = a.getAttribute('data-rcq-page')
     if (inner) {
-      if (addr) void open(addr.display, inner)
+      // A page, not any file the manifest happens to sign. The sanitiser
+      // marks every in-bundle link, and a 2000s page links its full-size
+      // photographs that way; opening one decoded its bytes as text and
+      // painted the result. Such a link stays inert, as it was before.
+      if (addr && isPagePath(inner)) void open(addr.display, inner)
       return
     }
     // Another site, bare or with a scheme: the reader, by the same door as a
     // name tapped in a chat. Every other link stays what it is - text.
+    //
+    // ⚠ A name with no island in it belongs to the island THIS page came
+    // from, the way a bare name in a web page belongs to the site's own zone.
+    // Resolved against the reader's island instead, an author on the flagship
+    // writing `e2ee.rcq` sent every reader on another island to whoever
+    // happens to hold that name over there.
     const link = siteLinkOf(a.getAttribute('data-rcq-external') ?? '')
-    if (link) go(link.address, link.page)
+    if (!link) return
+    const bare = parseRcqAddress(link.address, addr ? addr.host : ownHost)
+    const address = addr && bare && bare.host === (addr ? addr.host : ownHost)
+      ? displayAddress(bare.name, addr.host, ownHost)
+      : link.address
+    go(address, link.page)
   }
 
   // The page is WRITTEN into a blank frame rather than handed over as
@@ -414,10 +470,14 @@ export function Sites() {
   // The start screen, in three parts (founder, 02.09): what the island put
   // at the top, what this device opened last, and the rest of the catalogue
   // with those two taken out of it.
+  // The three are a partition: a site appears in one of them, never twice.
+  // Nearly everybody opens the pinned site first, so without this the flagship's
+  // own page stood under PINNED and again under RECENT.
   const pinned = catalogue.filter((s) => s.featured)
-  const shown = new Set<string>()
-  for (const s of pinned) shown.add(recentKey({ name: s.name, host: ownHost }))
-  for (const r of recents) shown.add(recentKey(r))
+  const pinnedKeys = new Set(pinned.map((s) => recentKey({ name: s.name, host: ownHost })))
+  const recentRows = recents.filter((r) => !pinnedKeys.has(recentKey(r)))
+  const shown = new Set<string>(pinnedKeys)
+  for (const r of recentRows) shown.add(recentKey(r))
   const rest = catalogue.filter((s) => !shown.has(recentKey({ name: s.name, host: ownHost })))
 
   // Idle on a page the capsule carries the site's mark and the reload glyph;
@@ -618,10 +678,10 @@ export function Sites() {
                 {pinned.map(catalogueRow)}
               </div>
             )}
-            {recents.length > 0 && (
+            {recentRows.length > 0 && (
               <div className="space-y-1">
                 <div className="text-xs uppercase tracking-wide text-fg-dim">{t('sites.recents')}</div>
-                {recents.map((r) => {
+                {recentRows.map((r) => {
                   const address = displayAddress(r.name, r.host, ownHost)
                   return (
                     <SiteRow
@@ -717,6 +777,7 @@ export function Sites() {
         visible={sharing != null}
         onClose={() => setSharing(null)}
         onPick={shareTo}
+        title={t('sites.share.title')}
         lead={{ label: t('sites.share.copy'), onPick: copyShared }}
       />
     </div>

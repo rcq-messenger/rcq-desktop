@@ -779,13 +779,24 @@ export async function probeIsland(
 // What the person sees (§5), and the gate every dialler goes through
 // -----------------------------------------------------------------
 
+/// A fingerprint under its own label, twice: the canonical form to paste into
+/// a command or a diff, and under it the display form of §2 - 16 groups of 4,
+/// four groups to a line. This is the moment the whole feature exists for, the
+/// one where a person has to compare two hashes by eye, and nobody does that
+/// on a run of sixty-four characters. The same shape the first-use notice
+/// below uses.
+function fingerprintLines(label: string, fp: string): string[] {
+  return [`  ${label}: ${fp}`, err.dim(displayFingerprint(fp).replace(/^/gm, '    '))]
+}
+
 /// The §5.2 text: the host, what is on file, what was presented, and the
 /// command that accepts it (the console's "Trust the new fingerprint").
 export function describeRefusal(key: string, old: string | 'ca', fp: string, typed: boolean): string {
   const host = key.replace(/:443$/, '')
   const lines = [typed ? tr('island.trust.changed_typed', { host }) : tr('island.trust.changed', { host })]
-  lines.push(`  ${tr('island.trust.on_file')}: ${old === 'ca' ? tr('island.trust.via_ca') : old}`)
-  lines.push(`  ${tr('island.trust.presented')}: ${fp}`)
+  if (old === 'ca') lines.push(`  ${tr('island.trust.on_file')}: ${tr('island.trust.via_ca')}`)
+  else lines.push(...fingerprintLines(tr('island.trust.on_file'), old))
+  lines.push(...fingerprintLines(tr('island.trust.presented'), fp))
   lines.push(tr('island.trust.accept', { host, fp }))
   return lines.join('\n')
 }
@@ -796,8 +807,10 @@ export function describeTypedDisagreement(key: string, old: string | 'ca', fp: s
   const host = key.replace(/:443$/, '')
   return [
     tr('island.trust.typedDisagrees', { host }),
-    `  ${tr('island.trust.on_file')}: ${old === 'ca' ? tr('island.trust.via_ca') : old}`,
-    `  ${tr('island.trust.entered')}: ${fp}`,
+    ...(old === 'ca'
+      ? [`  ${tr('island.trust.on_file')}: ${tr('island.trust.via_ca')}`]
+      : fingerprintLines(tr('island.trust.on_file'), old)),
+    ...fingerprintLines(tr('island.trust.entered'), fp),
     tr('island.trust.accept', { host, fp }),
   ].join('\n')
 }

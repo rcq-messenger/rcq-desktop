@@ -19,6 +19,10 @@ export interface MySite {
   title: string | null
   size_bytes: number
   listed: boolean
+  /// The owner asked to be named in the public catalogue. Off by default: the
+  /// island answers with no owner at all unless this is set, so the choice is
+  /// enforced where it matters rather than in a screen.
+  show_owner: boolean
   frozen: boolean
   updated_at: string
 }
@@ -66,6 +70,10 @@ export function pickIcon(paths: string[]): string | null {
 ///
 /// Returns null when it cannot, and the ordinary refusal stands.
 export async function rasterizeMark(file: File): Promise<File | null> {
+  // Anything a browser can draw becomes the mark: the person picked a picture,
+  // and which of the dozen image formats it happens to be is our problem, not
+  // theirs. What comes back is always a PNG called icon.png, which is the one
+  // shape every client in this network can decode.
   const url = URL.createObjectURL(file)
   try {
     const img = await new Promise<HTMLImageElement | null>((resolve) => {
@@ -137,7 +145,14 @@ export async function checkName(identity: WebIdentity, name: string): Promise<'f
 
 export async function publishSite(
   identity: WebIdentity,
-  opts: { name: string; files: File[]; title?: string; listed: boolean; previousVersion?: number },
+  opts: {
+    name: string
+    files: File[]
+    title?: string
+    listed: boolean
+    showOwner?: boolean
+    previousVersion?: number
+  },
 ): Promise<MySite> {
   const paths = bundlePaths(opts.files)
   const bodies = await Promise.all(opts.files.map(async (f) => new Uint8Array(await f.arrayBuffer())))
@@ -164,6 +179,7 @@ export async function publishSite(
   form.append('owner_key', bytesToB64(identity.signingPub))
   if (opts.title?.trim()) form.append('title', opts.title.trim())
   form.append('listed', opts.listed ? 'true' : 'false')
+  form.append('show_owner', opts.showOwner ? 'true' : 'false')
   paths.forEach((p, i) => {
     // The path is the FILENAME part of the multipart field: that is what the
     // island writes into the bundle, and what the manifest hashed.

@@ -18,10 +18,10 @@
 //   and that is the point rather than a limitation.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
-import { fetchCatalogue, fetchSiteIcon, fetchSitePage, parseRcqAddress, repin, type RcqAddress, type SitePage } from '../lib/sites'
+import { Link } from 'react-router-dom'
+import { fetchCatalogue, fetchSiteIcon, fetchSitePage, parseRcqAddress, repin, type CatalogueEntry, type RcqAddress, type SitePage } from '../lib/sites'
 import { MySitePanel } from '../components/MySitePanel'
 
 const ERRORS = ['address', 'missing', 'frozen', 'unsigned', 'tampered', 'offline'] as const
@@ -60,7 +60,7 @@ export function Sites() {
   const [page, setPage] = useState<SitePage | null>(null)
   const [error, setError] = useState<ErrorKind | null>(null)
   const [loading, setLoading] = useState(false)
-  const [catalogue, setCatalogue] = useState<Array<{ name: string; title: string | null }>>([])
+  const [catalogue, setCatalogue] = useState<CatalogueEntry[]>([])
   /// name → the site's mark as a data URI, or null once we know there is none.
   const [icons, setIcons] = useState<Record<string, string | null>>({})
   const [mine, setMine] = useState(false)
@@ -299,9 +299,23 @@ export function Sites() {
                     className="w-full flex items-center gap-3 text-left px-3 py-2 rounded-md hover:bg-field"
                   >
                     <SiteMark name={s.name} uri={icons[s.name]} />
-                    <span className="min-w-0">
+                    <span className="min-w-0 flex-1">
                       <span className="block text-sm font-mono text-fg-primary">{s.name}.rcq</span>
                       {s.title && <span className="block text-xs text-fg-secondary truncate">{s.title}</span>}
+                      {/* Who published it, and a way to reach them. The island
+                          already answers with this - a listed site is a shop
+                          window - so leaving it in an unread response helped
+                          nobody. */}
+                      <span className="block text-[0.6875rem] text-fg-dim">
+                        {t('sites.by')}{' '}
+                        <Link
+                          to={`/chat/${s.owner_uin}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="font-mono hover:text-fg-primary underline underline-offset-2"
+                        >
+                          #{s.owner_uin}
+                        </Link>
+                      </span>
                     </span>
                   </button>
                 ))}

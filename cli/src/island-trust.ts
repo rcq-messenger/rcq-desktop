@@ -59,6 +59,12 @@ const BUNDLE_FILE = 'bundle.pem'
 /// route ladder's second budget: a host that does not answer in this long is
 /// handed to the ladder, which has its own patience for a blocked network.
 const PROBE_MS = 8000
+/// The second ask, when the answer decides whether a PINNED island may be
+/// dialled at all. Matches the route ladder's own second budget (routes.ts):
+/// a throttled mobile link that needs eleven seconds is not an attack, and
+/// refusing a command over our own impatience would be worse than the gap it
+/// closes.
+const PATIENT_PROBE_MS = 11000
 
 // -----------------------------------------------------------------
 // The fingerprint (§2)
@@ -655,8 +661,9 @@ async function handshake(
   ca: readonly string[],
   strict: boolean,
   proxy: string | null,
+  budgetMs: number = PROBE_MS,
 ): Promise<Handshake | { failed: string }> {
-  const deadline = Date.now() + PROBE_MS
+  const deadline = Date.now() + budgetMs
   const bare = addr.host.replace(/^\[|\]$/g, '')
   let sock: net.Socket
   try {
@@ -714,9 +721,12 @@ export type ProbeOutcome =
   | { state: 'unpinnable'; fp: string; code: string }
   | { state: 'unreachable'; detail: string }
 
-export async function probeIsland(addr: IslandAddress, opts: { proxy?: string | null } = {}): Promise<ProbeOutcome> {
+export async function probeIsland(
+  addr: IslandAddress,
+  opts: { proxy?: string | null; budgetMs?: number } = {},
+): Promise<ProbeOutcome> {
   const proxy = opts.proxy === undefined ? probeProxy() : opts.proxy
-  const h = await handshake(addr, platformRoots(), false, proxy)
+  const h = await handshake(addr, platformRoots(), false, proxy, opts.budgetMs)
   if ('failed' in h) return { state: 'unreachable', detail: h.failed }
   const fp = fingerprintOfDer(h.leafDer)
   const caOnly = isCaOnlyHost(addr.host)
@@ -792,7 +802,7 @@ export function describeTypedDisagreement(key: string, old: string | 'ca', fp: s
   ].join('\n')
 }
 
-export type GateResult = 'ok' | 'unreachable' | 'refused' | 'unpinnable' | 'restart'
+export type GateResult = 'ok' | 'unreachable' | 'unverified' | 'refused' | 'unpinnable' | 'restart'
 
 /// One outcome per host per process; the ladder and the drains ask again.
 const gated = new Map<string, GateResult>()
@@ -814,7 +824,21 @@ export async function trustIsland(url: string, opts: { proxy?: string | null } =
   const memo = gated.get(addr.key)
   if (memo) return memo
   if (isCaOnlyHost(addr.host) && !hasPinnedAnchors()) return 'ok'
-  const r = await probeIsland(addr, opts)
+  let r = await probeIsland(addr, opts)
+  // ⚠ "did not answer" is not a verdict, but for a PINNED island it is not a
+  // pass either, and this is the only place that can tell. Nothing else in
+  // this process enforces the pin: the command's own fetch is judged by Node
+  // against the platform roots plus our anchors, never against the record, so
+  // a probe that gives up hands the connection carrying the bearer token to
+  // exactly the check §1's typed branch exists to override - and a typed pin
+  // writes no PEM, so the honest island fails that check while an attacker's
+  // CA-valid chain passes it. Ask once more on the ladder's own budget before
+  // deciding: our eight seconds are shorter than the eleven a throttled link
+  // is allowed, and stalling one handshake must not be a way to disarm the
+  // pin.
+  if (r.state === 'unreachable' && recordFor(addr.key)?.mode === 'pinned') {
+    r = await probeIsland(addr, { ...opts, budgetMs: PATIENT_PROBE_MS })
+  }
   const result = report(addr, r)
   gated.set(addr.key, result)
   return result
@@ -847,7 +871,11 @@ function report(addr: IslandAddress, r: ProbeOutcome): GateResult {
       return 'unpinnable'
     case 'unreachable':
       if (process.env.RCQ_VERBOSE) process.stderr.write(`[trust] ${host}: ${r.detail}\n`)
-      return 'unreachable'
+      // A record that CONSTRAINS this connection and a probe that could not
+      // check it: the command may not send. Said by whoever was about to -
+      // `island fingerprint` reaches this too, and it sends nothing, so it
+      // prints what is on file instead.
+      return recordFor(addr.key)?.mode === 'pinned' ? 'unverified' : 'unreachable'
   }
 }
 
@@ -859,6 +887,13 @@ function report(addr: IslandAddress, r: ProbeOutcome): GateResult {
 export async function visitedTrusted(host: string): Promise<boolean> {
   const r = await trustIsland(`https://${host}`)
   if (r === 'ok' || r === 'unreachable') return true
+  if (r === 'unverified') {
+    if (!unverifiedSaid.has(host)) {
+      unverifiedSaid.add(host)
+      process.stderr.write(err.yellow(tr('island.trust.unverified', { host })) + '\n')
+    }
+    return false
+  }
   if (r === 'restart' && !restartSaid.has(host)) {
     restartSaid.add(host)
     process.stderr.write(err.yellow(tr('island.trust.restart', { host })) + '\n')
@@ -866,6 +901,7 @@ export async function visitedTrusted(host: string): Promise<boolean> {
   return false
 }
 const restartSaid = new Set<string>()
+const unverifiedSaid = new Set<string>()
 
 /// How an island is trusted, one line, for `whoami`, `islands` and the
 /// `island fingerprint` command.

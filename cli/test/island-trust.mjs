@@ -11,7 +11,8 @@
 // then lets the command through, a typed fingerprint that the island does not
 // present is refused at the connect, a fragment that is not a fingerprint and
 // a fragment on the flagship are address errors, a typed pin needs no first
-// use, and a certificate Node could not anchor is not pinned at all.
+// use, a certificate Node could not anchor is not pinned at all, and an
+// island that does not answer at all is refused while a pin is on file.
 //
 // Run: npm run cli:test   (builds first - this drives the BUILT bundle)
 
@@ -231,7 +232,18 @@ assert.deepEqual(pins(home4), {}, 'nothing was pinned')
 assert.ok(!fs.existsSync(pemOf(home4, OTHER)))
 assert.deepEqual(hits, [])
 
-island.close()
+// -- the island does not answer, and a pin is the only thing that would have
+// judged the connection: refused, not waved through ---------------------
+// home1 carries a typed pin for HOST. Node validates the command's own fetch
+// against the platform roots plus our anchors and never against the record,
+// so a probe that gives up must not be a way past the pin.
+await new Promise((r) => island.close(r))
+hits.length = 0
+const gone = await rcq(home1, ['whoami'])
+assert.equal(gone.code, 1, `a pinned island that does not answer stops the command: ${gone.err}`)
+assert.ok(gone.err.includes('Nothing was sent'), `and says why: ${gone.err}`)
+assert.deepEqual(hits, [], 'nothing was sent')
+
 other.close()
 fs.rmSync(TMP, { recursive: true, force: true })
-console.error('island-trust: first use, refusal, --replace, typed pin, address errors, unpinnable ok')
+console.error('island-trust: first use, refusal, --replace, typed pin, address errors, unpinnable, no answer ok')

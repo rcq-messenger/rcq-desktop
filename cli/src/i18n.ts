@@ -2403,6 +2403,15 @@ RCQ_VERBOSE=1 显示协议细节; NO_COLOR 去掉颜色。
     es: '{host} no respondió y no hay nada registrado', pt: '{host} não respondeu e nada está registrado',
     tr: '{host} yanit vermedi ve kaydi yok', uk: '{host} не відповів, і запису про нього немає', 'zh-Hans': '{host} 没有回应，且没有它的记录',
   },
+  'island.trust.unverified': {
+    en: '{host} did not answer, and a fingerprint for it is on file: the request would go out under the platform certificate check alone, which is exactly what the pin overrides. Nothing was sent.',
+    ru: '{host} не ответил, а его отпечаток записан: запрос ушёл бы с проверкой только по системным корням, которую отпечаток и переопределяет. Ничего не отправлено.',
+    es: '{host} no respondió y hay una huella registrada para él: la petición saldría solo con la comprobación de certificados del sistema, que es justo lo que la huella anula. No se envió nada.',
+    pt: '{host} não respondeu e há uma impressão digital registrada para ele: a requisição sairia apenas com a verificação de certificados do sistema, que é o que a impressão digital substitui. Nada foi enviado.',
+    tr: '{host} yanit vermedi ve onun icin kayitli bir parmak izi var: istek yalnizca sistem sertifika kontroluyle gidecekti, ki parmak izi tam da bunu gecersiz kilar. Hicbir sey gonderilmedi.',
+    uk: '{host} не відповів, а його відбиток записано: запит пішов би лише з перевіркою за системними коренями, яку відбиток і переважає. Нічого не надіслано.',
+    'zh-Hans': '{host} 没有回应，而本机已记录它的指纹：请求将只经过系统证书校验，而这正是指纹要覆盖的。没有发送任何内容。',
+  },
   'island.trust.unreachableNote': {
     en: '{host} did not answer just now; this is what is on file', ru: '{host} сейчас не ответил; это то, что записано',
     es: '{host} no respondió ahora; esto es lo registrado', pt: '{host} não respondeu agora; isto é o que está registrado',

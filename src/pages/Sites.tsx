@@ -306,16 +306,22 @@ export function Sites() {
                           already answers with this - a listed site is a shop
                           window - so leaving it in an unread response helped
                           nobody. */}
-                      <span className="block text-[0.6875rem] text-fg-dim">
-                        {t('sites.by')}{' '}
-                        <Link
-                          to={`/chat/${s.owner_uin}`}
-                          onClick={(e) => e.stopPropagation()}
-                          className="font-mono hover:text-fg-primary underline underline-offset-2"
-                        >
-                          #{s.owner_uin}
-                        </Link>
-                      </span>
+                      {/* Only when the author asked to be named: the island
+                          answers with no owner at all otherwise, and a row
+                          reading "by #" was the shape of that decision leaking
+                          into the screen. */}
+                      {s.owner_uin != null && (
+                        <span className="block text-[0.6875rem] text-fg-dim">
+                          {t('sites.by')}{' '}
+                          <Link
+                            to={`/chat/${s.owner_uin}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="font-mono hover:text-fg-primary underline underline-offset-2"
+                          >
+                            #{s.owner_uin}
+                          </Link>
+                        </span>
+                      )}
                     </span>
                   </button>
                 ))}

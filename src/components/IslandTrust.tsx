@@ -204,7 +204,17 @@ export function IslandTrustBanner() {
 
   if (!drawing) return null
   return (
-    <div ref={box} className="relative z-[45] flex flex-col">
+    // ⚠⚠ FIXED, and the space for it is reserved by `pt-[var(--rcq-top-inset)]`
+    // on the screens that are exactly one viewport tall. It sat in the flow for
+    // one release and cost two reports the same evening (#856, #858): a page
+    // whose height was `calc(100dvh - var(...))` collapsed on the desktop's
+    // webview - the sites reader became a strip a few pixels tall, and the chat
+    // grew past the window so the way back scrolled off the top. Padding cannot
+    // do that: it is inside a height that never changes, and if the variable is
+    // ever unresolvable it falls back to zero, which is the layout that shipped
+    // for months. The z-index stays under the modal layer, so the island picker
+    // still covers this.
+    <div ref={box} className="fixed inset-x-0 top-0 z-[45] flex flex-col">
       {changed.map((c) => (
         <ChangedBanner key={c.authority} island={c} />
       ))}

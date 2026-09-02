@@ -895,7 +895,7 @@ export function Contacts() {
   return (
     // See Settings for why the page is a pane rather than a scrolling document
     // (#839: the wheel does not move the document under WebKitGTK).
-    <div className="h-screen [height:calc(100dvh-var(--rcq-top-inset))] flex flex-col bg-surface-dim overflow-hidden">
+    <div className="h-screen [height:100dvh] pt-[var(--rcq-top-inset)] flex flex-col bg-surface-dim overflow-hidden">
       <header className="rcq-header sticky top-0 z-10 shrink-0">
         <div className="max-w-2xl mx-auto px-3 h-14 flex items-center gap-2">
           {me && (

@@ -137,7 +137,16 @@ export function MySitePanel({ onClose, onOpen }: Props) {
     } catch (e) {
       const code = (e as { code?: string }).code ?? 'failed'
       const file = (e as { file?: string }).file
-      setError(t(`sites.publish.error.${code}`) + (file ? ` (${file})` : ''))
+      // ⚠ An island may answer with a code this build has no sentence for -
+      // an older client meeting a newer island, or a refusal that comes from
+      // the rate limiter rather than from the sites router (#849: a publish
+      // over the ten-an-hour ceiling put the literal
+      // `sites.publish.error.rate_limited` on the screen). `t` returns the key
+      // it was given when it knows no string, so the key IS the test, and the
+      // generic sentence is a truthful answer where a raw identifier is not.
+      const key = `sites.publish.error.${code}`
+      const said = t(key)
+      setError((said === key ? t('sites.publish.error.failed') : said) + (file ? ` (${file})` : ''))
     } finally {
       setBusy(false)
     }

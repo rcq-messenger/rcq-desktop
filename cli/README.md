@@ -419,6 +419,13 @@ handshake of the CLI's own:
   under `rcq.app` is only ever trusted through an authority), is an address
   error: exit 2, nothing dialled. Dropping it and connecting anyway would
   take a first-use pin while the person believes they pinned.
+* An island with a fingerprint on file that does not ANSWER the probe stops
+  the command too (after one more ask, on the route ladder's own budget).
+  Nothing else here enforces a pin - Node judges the command's own request
+  against the platform roots plus our anchors, never against the record - so
+  a probe that gave up used to be a way past the pin. An island with nothing
+  on file, or one known through an authority, is unaffected: the platform
+  check is all we would have asked for anyway.
 
 `whoami` shows how the account's island is trusted, `rcq islands` shows it
 per catalogue row (and lists the islands on file that the catalogue does
@@ -436,15 +443,19 @@ never re-run after a failure. Behind a proxy the probe speaks SOCKS5 or HTTP
 CONNECT itself, so the handshake that judges an island never goes around the
 proxy that hides you from it.
 
-Two limits, written down:
+Three limits, written down:
 
 * ⚠ An extra anchor is an anchor for every host: Node has no "this
   certificate, for this address only", and the installer's certificates carry
-  `CA:TRUE`. So the flagship and the front are probed against the platform
-  roots ALONE whenever an anchor is pinned, an island that moves to a CA has
-  its anchor removed the moment the `ca` record is written, and a pin is a
-  statement about an operator you have decided to trust. The phones and the
-  desktop compare the leaf per host and have no such widening.
+  `CA:TRUE`. So a CA-only host is checked against the platform roots ALONE
+  whenever an anchor is pinned - which `rcq islands` asks for explicitly
+  before it reads the catalogue off `rcq.app`, because that verb runs outside
+  the gate and the catalogue is what `--island <n>` resolves against. An
+  island that moves to a CA has its anchor removed the moment the `ca` record
+  is written. What is not narrowed: any other connection a trust-free verb
+  makes. A pin is a statement about an operator you have decided to trust.
+  The phones and the desktop compare the leaf per host and have no such
+  widening.
 * A certificate Node would refuse as an anchor anyway (expired, or a SAN that
   does not name the address) is not pinned here even where the rule would
   accept it, because a pin the CLI cannot use is worse than none; the error

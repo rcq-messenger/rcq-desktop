@@ -396,12 +396,35 @@ fn provider() -> Arc<rustls::crypto::CryptoProvider> {
     P.get_or_init(|| Arc::new(rustls::crypto::ring::default_provider())).clone()
 }
 
-/// The WebPKI verifier over the bundled Mozilla roots, built once: parsing
-/// the anchors is the expensive part, and it is the same for every island.
+/// The verifier that answers `caValid`, built once: parsing the anchors is
+/// the expensive part and they are the same for every island.
+///
+/// ⚠ The PLATFORM's roots, not the bundled Mozilla list. §1 defines `caValid`
+/// as "the platform accepted the chain", and on the desktop the platform is
+/// the store the WEBVIEW asks - the keychain on macOS, the system store on
+/// Windows and Linux - so a root the person installed counts here the way it
+/// counts for every other program on their machine. Judged by the compiled-in
+/// list alone, an island behind a mkcert root, a company CA or an inspecting
+/// proxy is CA-valid to the webview and an unknown island to us: it would
+/// take a first-use pin with a notice, ride the forwarder, and put up the red
+/// banner at every renewal of a certificate the machine already trusts. §11
+/// tests exactly that island ("a local Caddy with a mkcert root the device
+/// trusts: connect once, check the `ca` record was written").
+///
+/// The bundled list is the fallback for a platform whose store cannot be
+/// read, and the two are merged rather than swapped: a root that is missing
+/// from the system store on some Linux is not a reason to stop trusting the
+/// public web.
 fn webpki_verifier() -> Result<Arc<WebPkiServerVerifier>, String> {
     static V: OnceLock<Result<Arc<WebPkiServerVerifier>, String>> = OnceLock::new();
     V.get_or_init(|| {
         let mut roots = rustls::RootCertStore::empty();
+        let native = rustls_native_certs::load_native_certs();
+        for e in &native.errors {
+            log::warn!("island trust: platform roots: {e}");
+        }
+        let (added, ignored) = roots.add_parsable_certificates(native.certs);
+        log::info!("island trust: {added} platform roots ({ignored} unusable)");
         roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
         WebPkiServerVerifier::builder_with_provider(Arc::new(roots), provider())
             .build()
@@ -1599,6 +1622,33 @@ mod tests {
             health(&mut tls, &host, port).await
         });
         assert!(answered, "the island answers /health on the connection the rule accepted");
+    }
+
+    /// §11's CA island: a chain the PLATFORM accepts is written down as `ca`
+    /// and never pinned, and the platform is the machine's own store - a root
+    /// the person installed counts, the way it counts for the webview beside
+    /// us. Stand up a server on a certificate signed by a local root and run
+    /// it alone:
+    ///
+    /// ```text
+    /// SSL_CERT_FILE=<the root> RCQ_TEST_CA_ISLAND=127.0.0.1:8444     ///   cargo test a_chain_the_platform_trusts -- --ignored
+    /// ```
+    ///
+    /// ⚠ Alone, and with the variable set before the process starts: the root
+    /// store is read once, and SSL_CERT_FILE REPLACES it, so the flagship test
+    /// below would have no roots to validate against.
+    #[test]
+    #[ignore]
+    fn a_chain_the_platform_trusts_is_recorded_as_ca_and_not_pinned() {
+        let Some((host, port)) = std::env::var("RCQ_TEST_CA_ISLAND").ok().and_then(|a| split_authority(&a)) else {
+            return;
+        };
+        let dir = scratch_store();
+        store().lock().unwrap().pins.remove(&key(&host, port));
+        let p = tauri::async_runtime::block_on(probe_at(&host, port, false, None));
+        assert_eq!(p.state, "ca", "the platform's store decides caValid, not the bundled list");
+        assert_eq!(store().lock().unwrap().pins.get(&key(&host, port)).map(|r| r.mode.clone()), Some("ca".to_string()));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -23,7 +23,11 @@
 // use. The probe leaves the origin in one of three states: `direct` (a CA
 // island, the request goes out on the webview's own TLS), `loopback` (the
 // forwarder), or `refused` (the fetch rejects with a TypeError carrying the
-// reason, nothing is sent, the banner reads the snapshot below).
+// reason, nothing is sent, the banner reads the snapshot below). An origin
+// the probe could not judge at all is refused as well, and not remembered:
+// the webview's TLS never runs the rule, so letting it carry the request
+// would hand out the bearer token unjudged AND leave the island without the
+// `ca` record that makes a later downgrade a change.
 //
 // ⚠ A request is NEVER re-issued after a failure. The first text probed on a
 // webview `TypeError` and replayed the request through the forwarder, which
@@ -402,38 +406,63 @@ async function openForwarder(host: string, port: number): Promise<number | null>
 }
 
 /// The probe's answer as a route. `offline` says nothing about the
-/// certificate, so it decides by what is on file: a pinned island goes
-/// through the forwarder regardless (the bridge runs the rule on every
-/// connection, and the webview's own TLS must never carry a request to an
-/// island whose identity the person typed - an on-path attacker with a
-/// CA-valid certificate could tell our handshake from the webview's and
-/// answer only the webview's); anything else goes direct, where the webview
-/// verifies it, and is asked again after the gap. Null: not decided.
+/// certificate, so it decides by what is on file: a record that says `ca` may
+/// go direct, because the webview then enforces exactly what the record
+/// asserts - a chain the platform accepts for this host. Everything else goes
+/// through the forwarder, so that the stack which runs the rule is the stack
+/// that carries the request:
+///
+/// * a PINNED island, because an on-path attacker with a CA-valid certificate
+///   could tell our handshake from the webview's and answer only the
+///   webview's;
+/// * an island with NOTHING on file, because the webview's TLS never calls
+///   the rule, so a request it carries writes no `ca` record - and that write
+///   is the whole of §1's "a known island cannot be downgraded silently". An
+///   island left record-less this way is an unknown island forever, and the
+///   day a self-signed certificate appears on the path it is a first use with
+///   a dismissible notice instead of a refusal.
+///
+/// Null means undecided: the caller refuses the request and asks again after
+/// the gap. It is NOT a licence to go direct - a forwarder that cannot be
+/// opened (a listener that will not bind) is a reason to send nothing, not a
+/// reason to send it unjudged.
 async function routeFor(host: string, port: number, res: ProbeResult): Promise<Route | null> {
   switch (res.state) {
     case 'ca':
     case 'ca_only':
       return { kind: 'direct' }
     case 'pinned':
-    case 'first_use': {
+    case 'first_use':
+    case 'offline': {
+      if (res.state === 'offline' && res.on_file === 'ca') return { kind: 'direct' }
       const loopback = await openForwarder(host, port)
       return loopback == null ? null : { kind: 'loopback', port: loopback }
     }
     case 'changed':
       return { kind: 'refused', reason: 'changed' }
-    case 'offline': {
-      if (res.on_file !== 'pinned') return null
-      const loopback = await openForwarder(host, port)
-      return loopback == null ? null : { kind: 'loopback', port: loopback }
-    }
   }
 }
 
 /// Probe `origin` and decide its route. One probe per origin at a time; a
-/// second caller waits on the first. An undecided answer (offline, nothing on
-/// file) leaves the origin direct for now WITHOUT remembering it, so the next
-/// request after the gap asks again - and not before: on a dead network a
-/// handshake per request would be a handshake per retry.
+/// second caller waits on the first.
+///
+/// An UNDECIDED answer refuses this request and is not remembered, so the
+/// next request after the gap asks again - and not before: on a dead network
+/// a handshake per request would be a handshake per retry. It used to go
+/// direct instead, which handed the request, bearer token and all, to the
+/// webview's TLS for an island the rule had never judged, and left that
+/// island without the `ca` record that makes a later private certificate a
+/// change rather than a first use. An island our own stack cannot reach is an
+/// island this client cannot judge, and §1 does not let a connection carrying
+/// a session token be judged by anything else.
+///
+/// ⚠ The Rust side dials with TcpStream::connect or the sing-box SOCKS
+/// inbound; it does not read the OS proxy settings the webview obeys. On a
+/// machine that reaches an island only through such a proxy, that island is
+/// now unreachable rather than silently unverified - which is what it already
+/// was for the socket layer, since the wrapper hands back a dead socket for
+/// any origin it has not decided. The flagship is untouched either way: it is
+/// CA-only and never comes through here.
 function gate(origin: string): Promise<Route> {
   const known = routes.get(origin)
   if (known) return Promise.resolve(known)
@@ -443,15 +472,16 @@ function gate(origin: string): Promise<Route> {
     await pending.get(origin)
     const decided = routes.get(origin)
     if (decided) return decided
+    const undecided: Route = { kind: 'refused', reason: 'unverified' }
     const at = lastProbe.get(origin)
-    if (at != null && Date.now() - at < REPROBE_GAP_MS) return { kind: 'direct' }
+    if (at != null && Date.now() - at < REPROBE_GAP_MS) return undecided
     const { host, port } = splitHostPort(origin)
     lastProbe.set(origin, Date.now())
     const res = await probeIsland(host, port)
-    if (!res) return { kind: 'direct' }
+    if (!res) return undecided
     feed(host, port, res)
     const route = await routeFor(host, port, res)
-    if (!route) return { kind: 'direct' }
+    if (!route) return undecided
     routes.set(origin, route)
     console.info(`[island-trust] ${origin}: ${res.state} → ${route.kind}${route.kind === 'loopback' ? ` 127.0.0.1:${route.port}` : ''}`)
     return route

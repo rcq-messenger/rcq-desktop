@@ -41,6 +41,7 @@
 // Off the desktop every export is a no-op: a browser shows §5.4's hint and
 // nothing else.
 
+import { onAccountWipe } from './auth'
 import { isTauri } from './desktop'
 import { isFrontHost } from './front'
 import { splitHostPort } from './island-choice'
@@ -253,6 +254,24 @@ export async function forgetIslandTrust(host: string, port: number): Promise<voi
     /* nothing to forget */
   }
   routes.delete(`https://${islandAuthority(host, port)}`)
+}
+
+/// The destroy-everything path (§4), called by `wipeLocalAccountData`: the
+/// pin store goes with the localStorage rows, for the reason written there.
+/// The KEY of a pin is a host, so what the file holds is a list of every
+/// island this device ever talked to - the account's own, its backup homes,
+/// correspondents' and every visited group's - and the desktop has no other
+/// wipe that touches it.
+export async function wipeIslandTrust(): Promise<void> {
+  routes.clear()
+  lastProbe.clear()
+  update({ changed: {}, firstUse: {} })
+  if (!isTauri()) return
+  try {
+    await invoke('island_trust_clear')
+  } catch (e) {
+    console.warn('[island-trust] clear failed', e)
+  }
 }
 
 async function markIslandNoticed(host: string, port: number): Promise<void> {
@@ -490,6 +509,14 @@ let installed = false
 export function installIslandTrust() {
   if (installed || !isTauri()) return
   installed = true
+
+  // The pin store belongs to the destroy-everything path (§4) and nothing
+  // else on the desktop deletes it. Registered here rather than imported by
+  // auth.ts: that module is bundled into the console as well, and it must not
+  // pull this one - and the Tauri bridge behind it - into that build.
+  onAccountWipe(() => {
+    void wipeIslandTrust()
+  })
 
   const under = window.fetch.bind(window)
 

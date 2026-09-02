@@ -929,6 +929,19 @@ const PRESERVED_KEYS = new Set<string>([
   'rcq.web.install.id',
 ])
 
+/// What the wipe below has to take besides localStorage, registered by the
+/// module that owns it rather than imported here. The desktop's island pin
+/// store (lib/island-trust.ts) is a JSON file the Rust side owns, and it is
+/// the same list `rcq.island.*` is deleted for: the KEY is a host, so it names
+/// every island this device ever talked to. Registered, not imported, because
+/// this module is bundled into the console too, and that build must not pull
+/// the desktop's Tauri bridge in behind it.
+const extraWipes: Array<() => void> = []
+
+export function onAccountWipe(fn: () => void) {
+  extraWipes.push(fn)
+}
+
 /// Wipe ALL account-scoped local data so a fresh account never inherits
 /// the previous one's messages/contacts/keys. Removes the identity,
 /// every per-thread outgoing log (`rcq.web.outgoing.*`), favorites/
@@ -957,6 +970,14 @@ export function wipeLocalAccountData() {
     }
   }
   for (const k of toRemove) localStorage.removeItem(k)
+  // Stores that are not localStorage and belong to this wipe all the same.
+  for (const fn of extraWipes) {
+    try {
+      fn()
+    } catch {
+      /* one store failing must not leave the rest of the account behind */
+    }
+  }
   // Held in memory behind the desktop PIN? Then the rows the loop above was
   // looking for were never on the disk, and a sign-out that left them in the
   // vault would sign the user back in at the next unlock.

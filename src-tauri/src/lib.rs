@@ -256,6 +256,14 @@ fn island_trust_forget(app: tauri::AppHandle, host: String, port: u16) -> Result
     island_trust::forget(&app, &host, port)
 }
 
+/// Sign-out, account removal, "forgot PIN -> reset the vault": the pin store
+/// leaves with everything else (fingerprint design §4).
+#[cfg(desktop)]
+#[tauri::command]
+fn island_trust_clear(app: tauri::AppHandle) -> Result<(), String> {
+    island_trust::clear(&app)
+}
+
 /// The first-use notice was shown for this island; it is owed no second one.
 #[cfg(desktop)]
 #[tauri::command]
@@ -472,6 +480,7 @@ pub fn run() {
                 island_trust_prepin,
                 island_trust_accept,
                 island_trust_forget,
+                island_trust_clear,
                 island_trust_noticed,
                 island_trust_status,
                 island_trust_list,

@@ -275,6 +275,7 @@ export const es: Record<string, string> = {
   'sites.publish.delete.body': 'It goes off this island. Readers who already opened it keep their copy, and no server can reach into that.',
   'sites.publish.delete.confirm': 'Eliminar',
   'sites.publish.error.failed': 'The island did not take it.',
+  'sites.publish.error.rate_limited': 'Demasiadas publicaciones por ahora. Inténtalo más tarde.',
   'sites.publish.error.no_index': 'A site needs an index.html.',
   'sites.publish.error.bad_type': 'That type is not served here.',
   'sites.publish.error.file_too_large': 'Too large: 5 MB per file, 20 MB in total.',

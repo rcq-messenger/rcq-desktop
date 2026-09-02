@@ -241,7 +241,17 @@ export async function fetchManifest(addr: RcqAddress, fresh = false): Promise<Si
 async function fetchFile(addr: RcqAddress, m: SiteManifest, path: string, fresh = false): Promise<Uint8Array> {
   const want = hasFile(m, path) ? m.files[path] : null
   if (!want) throw new Error('missing' satisfies SiteError)
-  const res = await get(`${originOf(addr.host)}/sites/${encodeURIComponent(addr.name)}/${path}`, fresh)
+  // ⚠⚠ The manifest's version rides on every file request, and it is not
+  // decoration: it is what keeps a bundle from being read half-old. The pages
+  // are served with a five-minute cache, so a reader who was here before a
+  // republish gets the NEW manifest and the OLD bytes, they disagree, and the
+  // page is refused as tampered - which is the one verdict that must never be
+  // wrong, because it is how a reader learns the island lied. Reported on the
+  // desktop for `iptv.rcq` at version 3, and invisible on iOS only because
+  // that reader's URLSession is ephemeral and caches nothing. A changed
+  // version is a different URL, so the two halves can no longer disagree.
+  const versioned = `${originOf(addr.host)}/sites/${encodeURIComponent(addr.name)}/${path}?v=${m.version}`
+  const res = await get(versioned, fresh)
   const bytes = new Uint8Array(await res.arrayBuffer())
   if (hex(sha256(bytes)) !== want) throw new Error('tampered' satisfies SiteError)
   return bytes

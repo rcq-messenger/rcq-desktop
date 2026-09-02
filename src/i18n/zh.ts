@@ -275,6 +275,7 @@ export const zh: Record<string, string> = {
   'sites.publish.delete.body': 'It goes off this island. Readers who already opened it keep their copy, and no server can reach into that.',
   'sites.publish.delete.confirm': '删除',
   'sites.publish.error.failed': 'The island did not take it.',
+  'sites.publish.error.rate_limited': '目前发布次数过多，请稍后再试。',
   'sites.publish.error.no_index': 'A site needs an index.html.',
   'sites.publish.error.bad_type': 'That type is not served here.',
   'sites.publish.error.file_too_large': 'Too large: 5 MB per file, 20 MB in total.',

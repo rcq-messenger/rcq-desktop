@@ -296,6 +296,7 @@ export const ru: Record<string, string> = {
   'sites.publish.delete.body': 'Он уходит с этого острова. У тех, кто уже открывал, копия останется, и ни один сервер до неё не дотянется.',
   'sites.publish.delete.confirm': 'Удалить',
   'sites.publish.error.failed': 'Остров не принял.',
+  'sites.publish.error.rate_limited': 'Пока слишком много публикаций. Попробуйте позже.',
   'sites.publish.error.no_index': 'Нужен файл index.html.',
   'sites.publish.error.bad_type': 'Такой тип файла здесь не отдаётся.',
   'sites.publish.error.file_too_large': 'Слишком большой: 5 МБ на файл, 20 МБ всего.',

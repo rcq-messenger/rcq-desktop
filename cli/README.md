@@ -37,6 +37,8 @@ node cli/dist/rcq.mjs watch [--groups]
 node cli/dist/rcq.mjs lang [en|ru]
 node cli/dist/rcq.mjs proxy [set <addr>|clear|test]      # your own Tor / i2p / tunnel
 node cli/dist/rcq.mjs routes [--probe|--refresh|--singbox]  # roads to the island
+node cli/dist/rcq.mjs island trust <host[:port]> <fp> [--replace]   # an island with no certificate authority
+node cli/dist/rcq.mjs island fingerprint [host] | island forget <host[:port]>
 ```
 
 For subcommands, stdout is data only (messages, the phrase, lists); status
@@ -382,6 +384,82 @@ is talking, how often, or to which account. And a proxy you did not build
 yourself sees exactly what a relay would, so this is worth precisely as much
 as the proxy is.
 
+## An island without a certificate authority
+
+```
+rcq register --island 203.0.113.5:8443#ab12cd34…    the address the operator hands out: host[:port]#fingerprint
+rcq island trust 203.0.113.5:8443 AB:12:CD:…        pin before the first connection (openssl's spelling is fine)
+rcq island fingerprint [host[:port]]                how an island is trusted, and its address with the fingerprint
+rcq island forget 203.0.113.5:8443                  drop the pin; the next connection is a first use again
+rcq island trust <host[:port]> <fp> --replace       accept a changed certificate
+```
+
+An island whose certificate no authority signed (the installer's fingerprint
+mode, or any island reachable only by IP) is trusted by the SHA-256
+fingerprint of its certificate, the way ssh trusts a host key. The rule is
+the one every client follows (`RCQ/docs/island-fingerprint-design.md`), and
+it runs BEFORE the first request to an island in a process, on one TLS
+handshake of the CLI's own:
+
+* A chain the platform trusts for that host is accepted and written down as
+  `ca`. Let's Encrypt rotates every two months, so a CA island is never pinned.
+* An island never met, presenting a private certificate, is pinned on first
+  use, and one line on stderr says so with the fingerprint. The careful path
+  is the fragment: `host:port#fingerprint`, taken by `--island`, by `join`
+  (`<gid>@<host>#<fp>`) and by `island trust`, goes on file before anything is
+  dialled, and the first connection has to match it. A fingerprint the person
+  typed wins over an authority's signature, too: a CA-valid chain that hashes
+  to something else is a change, not a pass.
+* A certificate that differs from what is on file is REFUSED: the command
+  does not run, nothing is sent, and stderr carries the fingerprint on file,
+  the one presented, and the `island trust … --replace` line that accepts it.
+  A refusal is not a blocked road: the route ladder never sees it, so no
+  front or proxy is engaged for an island that answered.
+* A fragment that is not 64 hex characters, or one on the flagship (anything
+  under `rcq.app` is only ever trusted through an authority), is an address
+  error: exit 2, nothing dialled. Dropping it and connecting anyway would
+  take a first-use pin while the person believes they pinned.
+
+`whoami` shows how the account's island is trusted, `rcq islands` shows it
+per catalogue row (and lists the islands on file that the catalogue does
+not), and `island fingerprint` prints `host:port#fp` on stdout, ready to
+hand to somebody.
+
+How Node carries it: the global `fetch` and `WebSocket` take no custom
+verifier, but Node reads `NODE_EXTRA_CA_CERTS` at startup, and the CLI
+already re-executes itself to set startup-only environment for the proxy. So
+a pinned island is one PEM under `island-certs/`, and the same single exec
+that carries the proxy variables carries a bundle of every pinned PEM. A pin
+taken mid-command (the first use) is adopted in place on Node 24.5+ and
+carried by one exec before the command runs on older Node; a command is
+never re-run after a failure. Behind a proxy the probe speaks SOCKS5 or HTTP
+CONNECT itself, so the handshake that judges an island never goes around the
+proxy that hides you from it.
+
+Two limits, written down:
+
+* ⚠ An extra anchor is an anchor for every host: Node has no "this
+  certificate, for this address only", and the installer's certificates carry
+  `CA:TRUE`. So the flagship and the front are probed against the platform
+  roots ALONE whenever an anchor is pinned, an island that moves to a CA has
+  its anchor removed the moment the `ca` record is written, and a pin is a
+  statement about an operator you have decided to trust. The phones and the
+  desktop compare the leaf per host and have no such widening.
+* A certificate Node would refuse as an anchor anyway (expired, or a SAN that
+  does not name the address) is not pinned here even where the rule would
+  accept it, because a pin the CLI cannot use is worse than none; the error
+  names which it was. The installer's certificates satisfy both; a hand-made
+  one without the SAN works on the phones and the desktop and not here.
+* ⚠ Behind `rcq proxy`, an island addressed by an IP LITERAL cannot be
+  fetched on Node 26 at all, pinned or not: Node's own proxy path hands the
+  IP to TLS as the server name and Node 26 refuses that
+  (`ERR_INVALID_ARG_VALUE … Setting the TLS ServerName to an IP address`;
+  verified 2026-09-02 against a self-signed island on `127.0.0.1:8443`, the
+  same request to `localhost:8443` goes through). The trust probe is not the
+  problem, it speaks the proxy protocol itself and does not set SNI for an
+  IP; the command's own request is. Give such an island a name, or do not
+  proxy it, until Node fixes its side.
+
 ## State
 
 `$RCQ_CLI_HOME` (default `~/.config/rcq`), dir 0700, files 0600:
@@ -413,6 +491,13 @@ as the proxy is.
   another terminal), and the pinned onion entry for the sing-box config.
 * `relay-config.json`: the last Ed25519-verified relay payload, verbatim. It
   is re-verified on every read, so a hand-edited copy is simply ignored.
+* `island-pins.json`: how each island met is trusted, keyed `host:port`
+  (`{mode: "ca"}` or `{mode: "pinned", fp, source: tofu|typed|accepted}`), and
+  `island-certs/<host>_<port>.pem` beside it for every pinned one, plus the
+  `bundle.pem` NODE_EXTRA_CA_CERTS points at. Per state dir on purpose: a
+  throwaway home must not carry its decisions into your own. Never sealed: a
+  pin is a statement about an island, not a secret, and Node reads the bundle
+  before any of our code runs.
 
 Local stores inside `localstorage.json` are keyed per account
 (`setAccountScope`, called from `cli/src/directory.ts`): the roster

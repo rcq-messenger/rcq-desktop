@@ -25,10 +25,17 @@ import {
   refByAlias,
 } from '../../src/lib/visited-islands'
 import { tr } from './i18n'
+import { visitedTrusted } from './island-trust'
 
 /// What `join` was given: a bare id (host null, today's home-island path), a
 /// `<gid>@<host>`, or a full invite link (https://rcq.app/g/<gid>[@host] and
 /// rcq://group/..., both via the web's parser). Null = not a join target.
+///
+/// The host may carry the island's fingerprint (`<gid>@<host>#<fp>`, §3 of the
+/// island-fingerprint design); it is handed on as typed, fragment included,
+/// for joinForeignRoom to pin BEFORE the first packet. Not stripped here: a
+/// fragment dropped on the way is a first-use pin taken while the person
+/// believes they pinned.
 export function parseJoinTarget(raw: string): { gid: number; host: string | null } | null {
   const s = raw.trim()
   if (!s) return null
@@ -39,7 +46,7 @@ export function parseJoinTarget(raw: string): { gid: number; host: string | null
   const at = s.lastIndexOf('@')
   if (at > 0) {
     const gid = Number(s.slice(0, at).replace(/^g/i, ''))
-    const host = s.slice(at + 1).trim().toLowerCase()
+    const host = s.slice(at + 1).trim()
     if (!Number.isInteger(gid) || gid <= 0 || !host) return null
     return { gid, host }
   }
@@ -63,6 +70,9 @@ export function isForeignGroupId(gid: number): boolean {
 export async function foreignGroupCtx(identity: WebIdentity, aliasGid: number): Promise<ForeignCtx> {
   const ref = refByAlias(aliasGid)
   if (!ref) throw new Error(tr('group.gone'))
+  // The trust gate before the first packet: a room's island whose certificate
+  // changed is refused, not signed into.
+  if (!(await visitedTrusted(ref.host))) throw new Error(tr('island.trust.refusedLine', { host: ref.host }))
   const guest = await ensureGuestAuth(identity, ref.host)
   if (!guest) throw new Error(tr('visited.noAuth', { host: ref.host }))
   return { ident: guest, gid: ref.remoteId, host: ref.host }
@@ -105,6 +115,12 @@ export async function fetchForeignGroups(identity: WebIdentity, prevForeign: RCQ
   const out: RCQGroup[] = []
   for (const v of listVisitedIslands()) {
     const kept = prevForeign.filter((g) => g.host === v.host)
+    // A refused island keeps its rooms from the last snapshot, like one that
+    // does not answer; the gate has said why on stderr.
+    if (!(await visitedTrusted(v.host))) {
+      out.push(...kept)
+      continue
+    }
     try {
       const guest = await ensureGuestAuth(identity, v.host)
       if (!guest) {

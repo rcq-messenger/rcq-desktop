@@ -45,6 +45,7 @@ import { tr } from './i18n'
 import { appendState, readStateLines, statePath } from './state'
 import { err, out, peer } from './style'
 import { humanError } from './errors'
+import { visitedTrusted } from './island-trust'
 
 /// Envelope kinds that are a MESSAGE (rendered, receipted, kept in history).
 /// Everything else is control traffic: receipts, reactions, edits, sender-key
@@ -727,6 +728,16 @@ export async function drainQueue(identity: WebIdentity): Promise<IngestResult | 
 export async function drainVisited(identity: WebIdentity, into?: IngestResult): Promise<IngestResult> {
   const result = into ?? { receiptTargets: [] }
   if (listVisitedIslands().length === 0) return result
+  // The trust gate before the first packet to each island (island-trust.ts):
+  // one whose certificate changed is skipped outright, guest token and all,
+  // until the person trusts the new fingerprint. Not left to the TLS failure
+  // below: a typed pin against an island that moved to an authority is a
+  // chain Node WOULD accept, and the refusal has to hold there too.
+  const refused = new Set<string>()
+  for (const v of listVisitedIslands()) {
+    if (!(await visitedTrusted(v.host))) refused.add(v.host)
+  }
+  if (refused.size === listVisitedIslands().length) return result
   // The guest mailbox is account-level v=1 fan-out: rows carry no
   // to_device_id, so the device id only matters for the sibling-copy filter,
   // which never fires here. 0 when this box has no provisioned device yet.
@@ -759,6 +770,7 @@ export async function drainVisited(identity: WebIdentity, into?: IngestResult): 
         }
       },
     },
+    { skip: (host) => refused.has(host) },
   )
   announceGroupNews(identity.uin)
   return result

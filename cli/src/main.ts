@@ -84,6 +84,7 @@ import { relayState, startRelays, stopRelays } from './relays'
 import { decryptIncoming, noteInboundFrom } from '../../src/lib/signal-device'
 import { canonical } from './aliases'
 import {
+  carryTrust,
   clearProxyUrl,
   normalizeProxyUrl,
   probeEnvIgnored,
@@ -94,6 +95,21 @@ import {
   runProbe,
   saveProxyUrl,
 } from './env-proxy'
+import {
+  AddressError,
+  addressWithFingerprint,
+  describeAddressProblem,
+  describeTypedDisagreement,
+  displayFingerprint,
+  forget as forgetIsland,
+  isCaOnlyHost,
+  parseFingerprint,
+  parseIslandAddress,
+  pinTyped,
+  recordFor,
+  trustIsland,
+  trustJson,
+} from './island-trust'
 import {
   activeProxyLabel,
   describeRoute,
@@ -115,7 +131,7 @@ import {
 import { buildSingBox, DEFAULT_LOCAL_PORT, fetchBridges, findSingBox } from './singbox'
 import { currentLang, LANG_CODES, normalizeLang, setLang, tr } from './i18n'
 import { err, out } from './style'
-import { fetchIslands, renderIslands, resolveIsland } from './islands'
+import { fetchIslands, islandFromAddress, islandTrust, renderIslands, resolveIsland } from './islands'
 import { noteUpdateIfAny, runUpdate } from './update-check'
 import { CLI_VERSION } from './version'
 import { humanError, isTransportFailure } from './errors'
@@ -166,12 +182,20 @@ const BOOL_FLAGS = new Set([
   '--bridges',
   '--onion',
   '--no-onion',
+  // rcq island trust
+  '--replace',
 ])
 
 /// Commands that never name the island, so the route ladder is not engaged
 /// for them. `routes` engages its own (and may be asked to walk it);
-/// `proxy`/`__probe` deliberately run outside the proxy they configure.
-const ROUTE_FREE = new Set(['lang', 'log', 'export', 'proxy', '__probe', 'routes', 'islands', 'relays'])
+/// `proxy`/`__probe` deliberately run outside the proxy they configure;
+/// `island` probes on its own terms.
+const ROUTE_FREE = new Set(['lang', 'log', 'export', 'proxy', '__probe', 'routes', 'islands', 'relays', 'island'])
+
+/// Commands that dial no island at all, so the trust gate (island-trust.ts)
+/// has nothing to ask before them. Everything else names the island it will
+/// talk to before its first request, and that is where the gate runs.
+const TRUST_FREE = new Set(['lang', 'log', 'export', 'proxy', '__probe', 'islands', 'update', 'lock', 'unlock', 'island'])
 
 /// Pull `--flag value` pairs out of argv; what remains are positionals.
 function parseArgs(argv: string[]): { pos: string[]; opts: Map<string, string>; flags: Set<string> } {
@@ -377,27 +401,119 @@ async function cmdIslands(): Promise<void> {
   })
   const islands = list as Awaited<ReturnType<typeof fetchIslands>>
   if (jsonMode) {
-    emitJson(islands.map((i) => ({ host: i.url.replace(/^https:\/\//, ''), url: i.url, name: i.name, region: i.region ?? null, description: i.description ?? null })))
+    emitJson(
+      islands.map((i) => ({
+        host: i.url.replace(/^https:\/\//, ''),
+        url: i.url,
+        name: i.name,
+        region: i.region ?? null,
+        description: i.description ?? null,
+        // How this device trusts it: null until it has met the island.
+        trust: islandTrust(i.url),
+      })),
+    )
     return
   }
   process.stdout.write(renderIslands(islands))
   process.stderr.write(out.dim(tr('islands.howto')) + '\n')
 }
 
-async function cmdRegister(opts: Map<string, string>): Promise<void> {
+/// `rcq island trust|fingerprint|forget`: an island trusted by the
+/// fingerprint of its certificate rather than by an authority
+/// (island-trust.ts; docs/island-fingerprint-design.md §7.4).
+///
+/// `trust` is the pre-pin of §3 and touches no network: what the operator
+/// handed out goes on file, and the NEXT connection has to match it. Against
+/// a record that disagrees it refuses and prints both; `--replace` is the
+/// console's "Trust the new fingerprint" button. `fingerprint` shows how an
+/// island is trusted and, given a host, meets it first, under the same rule
+/// as every other connection. `forget` drops the record and its anchor.
+async function cmdIsland(pos: string[], opts: Map<string, string>, flags: Set<string>): Promise<void> {
+  const sub = pos[0]
+  const shortHost = (key: string): string => key.replace(/:443$/, '')
+  switch (sub) {
+    case 'trust': {
+      const rawHost = pos[1]
+      if (!rawHost) usageDie(tr('island.trust.needsArgs'))
+      const addr = parseIslandAddress(rawHost)
+      if ('error' in addr) usageDie(describeAddressProblem(addr))
+      if (addr.plain) usageDie(tr('island.trust.badAddress', { addr: rawHost }))
+      if (isCaOnlyHost(addr.host)) usageDie(tr('island.trust.caOnly', { host: addr.host }))
+      // The fingerprint stands on its own or rides the address (`host#fp`,
+      // the form the installer prints, pasted whole); two that disagree are
+      // a typo somewhere and nothing is written.
+      const raw = pos[2] ?? addr.fp ?? undefined
+      if (!raw) usageDie(tr('island.trust.needsArgs'))
+      const fp = parseFingerprint(raw)
+      if (!fp) usageDie(tr('island.trust.notFingerprint', { frag: raw }))
+      if (addr.fp && addr.fp !== fp) usageDie(tr('island.trust.needsArgs'))
+      const typed = pinTyped(addr.key, fp, flags.has('--replace'))
+      if (typeof typed === 'object') {
+        process.stderr.write(err.yellow(describeTypedDisagreement(addr.key, typed.disagrees, fp)) + '\n')
+        process.exit(1)
+      }
+      // stdout is data: the address to hand out.
+      process.stdout.write(`${addressWithFingerprint(addr.key, fp)}\n`)
+      process.stderr.write(
+        (typed === 'same' ? tr('island.trust.same', { host: shortHost(addr.key) }) : tr('island.trust.typed', { host: shortHost(addr.key) })) +
+          '\n',
+      )
+      return
+    }
+    case 'fingerprint':
+    case 'fp': {
+      const url = pos[1] ? islandFromAddress(pos[1]) : probeIsland(opts)
+      const addr = parseIslandAddress(url)
+      if ('error' in addr) usageDie(describeAddressProblem(addr))
+      if (addr.plain) usageDie(tr('island.trust.badAddress', { addr: url }))
+      const host = shortHost(addr.key)
+      // The rule runs on this handshake as on any other: a first use pins
+      // and says so, a change refuses. Only "did not answer" is not a verdict.
+      const gate = await trustIsland(url)
+      if (gate === 'refused' || gate === 'unpinnable') process.exit(1)
+      // A CA-only host has no record by design (it is never pinned, and
+      // nothing needs remembering); it is the one case where `ca` is the
+      // answer with nothing on file.
+      const rec = recordFor(addr.key) ?? (isCaOnlyHost(addr.host) ? { mode: 'ca' as const, since: 0 } : null)
+      if (jsonMode) {
+        emitJson({ host: addr.host, port: addr.port, answered: gate !== 'unreachable', trust: trustJson(addr.key, rec) })
+        return
+      }
+      if (!rec) die(gate === 'unreachable' ? tr('island.trust.unreachable', { host }) : tr('island.trust.settings.none'))
+      // stdout is data: `ca`, or the address with the fingerprint.
+      process.stdout.write(rec.mode === 'ca' ? 'ca\n' : `${addressWithFingerprint(addr.key, rec.fp)}\n`)
+      process.stderr.write(`${host}: ${rec.mode === 'ca' ? tr('island.trust.settings.ca') : tr('island.trust.settings.pinned')}\n`)
+      if (rec.mode === 'pinned') process.stderr.write(err.dim(displayFingerprint(rec.fp)) + '\n')
+      if (gate === 'unreachable') process.stderr.write(err.dim(tr('island.trust.unreachableNote', { host })) + '\n')
+      return
+    }
+    case 'forget': {
+      const rawHost = pos[1]
+      if (!rawHost) usageDie(tr('island.trust.needsHost'))
+      const addr = parseIslandAddress(rawHost)
+      if ('error' in addr) usageDie(describeAddressProblem(addr))
+      const host = shortHost(addr.key)
+      process.stderr.write(
+        (forgetIsland(addr.key) ? tr('island.trust.forgotten', { host }) : tr('island.trust.nothingToForget', { host })) + '\n',
+      )
+      return
+    }
+    default:
+      usageDie(tr('island.trust.usage'))
+  }
+}
+
+async function cmdRegister(opts: Map<string, string>, island: string): Promise<void> {
   if (loadStoredIdentity()) die(tr('err.accountExists'))
   const nick = opts.get('--nick') ?? suggestNickname()
-  // A number here is a row of `rcq islands`, an address is taken as typed.
-  const island = await resolveIsland(opts.get('--island'))
   const identity = await createNewAccount(nick, island)
   initDirectory(identity.uin)
   printPhraseBlock(identity.uin)
 }
 
-async function cmdRestore(pos: string[], opts: Map<string, string>): Promise<void> {
+async function cmdRestore(pos: string[], island: string): Promise<void> {
   const phrase = pos[0]
   if (!phrase) usageDie(tr('restore.needsPhrase'))
-  const island = await resolveIsland(opts.get('--island'))
   const identity = await recoverFromPhrase(phrase, island)
   initDirectory(identity.uin)
   process.stdout.write(`uin: ${identity.uin}\n`)
@@ -440,6 +556,13 @@ async function cmdWhoami(): Promise<void> {
   // answer to "am I actually behind Tor right now", and it must not be the
   // reason a proxy password ends up in a screenshot.
   const proxy = readProxyUrl()
+  // How the island is trusted (the Settings row of the phones): off the
+  // store alone, no probe, because whoami must work offline.
+  const trustAddr = parseIslandAddress(id.apiBase)
+  const trustKey = 'error' in trustAddr || trustAddr.plain ? null : trustAddr.key
+  // The flagship (any CA-only host) keeps no record: `ca` is its answer.
+  const caOnly = !('error' in trustAddr) && isCaOnlyHost(trustAddr.host)
+  const trust = trustKey ? (recordFor(trustKey) ?? (caOnly ? { mode: 'ca' as const, since: 0 } : null)) : null
   if (jsonMode) {
     emitJson({
       uin: id.uin,
@@ -448,11 +571,13 @@ async function cmdWhoami(): Promise<void> {
       device_id: blob ? blob.deviceId : null,
       proxy: proxy ? redactProxyUrl(proxy) : null,
       sealed: isSealed(),
+      trust: trustKey ? trustJson(trustKey, trust) : null,
     })
     return
   }
+  const trustLine = trust ? `${tr('label.trust')}: ${trust.mode === 'ca' ? 'ca' : `fingerprint ${trust.fp}`}\n` : ''
   process.stdout.write(
-    `uin: ${id.uin}\n${nick ? `${tr('label.nickname')}: ${nick}\n` : ''}${tr('label.island')}: ${id.apiBase}\n${tr('label.device')}: ${blob ? blob.deviceId : '-'}\n${proxy ? `${tr('label.proxy')}: ${redactProxyUrl(proxy)}\n` : ''}`,
+    `uin: ${id.uin}\n${nick ? `${tr('label.nickname')}: ${nick}\n` : ''}${tr('label.island')}: ${id.apiBase}\n${trustLine}${tr('label.device')}: ${blob ? blob.deviceId : '-'}\n${proxy ? `${tr('label.proxy')}: ${redactProxyUrl(proxy)}\n` : ''}`,
   )
 }
 
@@ -1052,10 +1177,32 @@ function cmdLang(pos: string[]): void {
 /// Where a probe should knock: --island wins, then the island this account
 /// already talks to, then the default. Deliberately NOT requireIdentity() -
 /// checking a proxy BEFORE there is an account is the whole throwaway recipe.
+/// An address with a fingerprint (`host#fp`) is pinned on the way through.
 function probeIsland(opts: Map<string, string>): string {
   const flag = opts.get('--island')?.trim()
-  if (flag) return flag.replace(/\/+$/, '')
+  if (flag) return islandFromAddress(flag)
   return loadStoredIdentity()?.apiBase ?? DEFAULT_API_BASE
+}
+
+/// The island this command is about, resolved once: `--island` (a catalogue
+/// number for register and restore, an address anywhere) or the account's.
+async function commandIsland(verb: string, opts: Map<string, string>): Promise<string> {
+  if (verb === 'register' || verb === 'restore') return resolveIsland(opts.get('--island'))
+  return probeIsland(opts)
+}
+
+/// The trust gate of island-trust.ts in front of a command, and what each
+/// answer means for it. Refused, or a certificate this client cannot anchor:
+/// the command does not run, and nothing was sent. A pin taken here that
+/// this runtime cannot adopt in place is carried by an exec, which is safe
+/// exactly here, before the command has done anything, and nowhere later.
+async function guardIsland(url: string, proxy?: string | null): Promise<void> {
+  const r = await trustIsland(url, proxy === undefined ? {} : { proxy })
+  if (r === 'refused' || r === 'unpinnable') process.exit(1)
+  if (r === 'restart') {
+    carryTrust()
+    die(tr('island.trust.restart', { host: url.replace(/^https?:\/\//, '') }))
+  }
 }
 
 /// host:port of a proxy address, for the messages that name it.
@@ -1099,6 +1246,10 @@ async function runProxyTest(url: string, island: string): Promise<ProxyVerdict> 
     process.stderr.write(err.yellow(tr('proxy.refusedUnsupported')) + '\n')
     return 'unsupported'
   }
+  // The trust gate, through the very proxy under test: this process runs
+  // outside it (see cmdProxy), and a fingerprint island the probe child is
+  // about to ask has to be met first, without a packet going around the proxy.
+  await guardIsland(island, url)
   const r = await probeThroughProxy(url, island)
   if (r.ok) {
     process.stdout.write(`ok\t${r.ms ?? 0}\t${r.island ?? '-'}\n`)
@@ -1133,8 +1284,8 @@ async function runProxyTest(url: string, island: string): Promise<ProxyVerdict> 
 /// as LOCAL_PROXY on the phones (RCQ/docs/proxy-design.md).
 ///
 /// Lock-free like `lang`, and the one command that deliberately runs OUTSIDE
-/// the proxy it configures (engageProxy skips it): a proxy that is down must
-/// never be able to take `rcq proxy clear` down with it.
+/// the proxy it configures (engageStartupEnv skips it): a proxy that is down
+/// must never be able to take `rcq proxy clear` down with it.
 async function cmdProxy(pos: string[], opts: Map<string, string>, flags: Set<string>): Promise<void> {
   // Subcommands are NOT run through canonical() - `set` and `show` are their
   // own little namespace, and the top-level table would turn `s` into `send`.
@@ -1142,7 +1293,7 @@ async function cmdProxy(pos: string[], opts: Map<string, string>, flags: Set<str
   const cfg = readProxyConfig()
   const saved = cfg && 'url' in cfg ? cfg.url : null
   // A stored value we cannot carry is NOT "no proxy". Every other command
-  // refuses to run on one (env-proxy.ts, engageProxy); this one is where the
+  // refuses to run on one (env-proxy.ts, engageStartupEnv); this one is where the
   // person is told what to fix, because it is the only command that still runs.
   if (cfg && 'invalid' in cfg) {
     process.stderr.write(
@@ -1394,6 +1545,10 @@ async function main(): Promise<void> {
     // keep, and it must never delay the prompt.
     void noteUpdateIfAny()
     const id = requireIdentity()
+    // The trust gate before the route ladder, so a refused certificate never
+    // reads as a blocked road (design §5.5) and a pinned island answers the
+    // ladder's own handshake.
+    await guardIsland(id.apiBase)
     await ensureRoute(id.apiBase)
     return runInteractive(await withToken(id))
   }
@@ -1420,28 +1575,41 @@ async function main(): Promise<void> {
   // let through without a key and then died reading the history it had just
   // been told it could not read. These are the verbs that touch no account
   // state at all, plus `lock`, which is the command that creates the seal.
-  const KEY_FREE = new Set(['lang', 'proxy', '__probe', 'routes', 'islands', 'update', 'lock', 'relays'])
+  // `island` reads and writes its own two files (pins and PEMs, never sealed)
+  // and nothing of the account's.
+  const KEY_FREE = new Set(['lang', 'proxy', '__probe', 'routes', 'islands', 'update', 'lock', 'relays', 'island'])
   if (isSealed() && !isUnlocked() && !KEY_FREE.has(verb)) {
     const supplied = passphraseFromEnv()
     const pass = supplied ?? (await promptSecret(tr('seal.prompt')))
     if (!unlockWith(pass)) die(tr('seal.wrong'))
   }
-  const LOCK_FREE = new Set(['whoami', 'export', 'lang', 'log', 'proxy', '__probe', 'routes', 'islands', 'relays'])
+  const LOCK_FREE = new Set(['whoami', 'export', 'lang', 'log', 'proxy', '__probe', 'routes', 'islands', 'relays', 'island'])
   if (!LOCK_FREE.has(verb)) acquireStateLock()
   const { pos, opts, flags } = parseArgs(argv.slice(1))
   // Set before any command runs, read by the ones that have a document form.
   // A command with no JSON shape ignores it rather than failing: a script that
   // passes --json to everything should not have to know which is which.
   jsonMode = flags.has('--json')
+  // The island this command will talk to, resolved ONCE, and the trust gate
+  // in front of it (island-trust.ts): the first handshake to it happens here,
+  // before any request and before the route ladder, so a refused certificate
+  // stops the command and never reads as a blocked road.
+  let island: string | null = null
+  if (!TRUST_FREE.has(verb)) {
+    island = await commandIsland(verb, opts)
+    await guardIsland(island)
+  }
   // Bring the route up before anything names the island. Cheap: a decision
   // younger than half an hour is re-engaged without a probe, so the common
   // case costs nothing and only a stale or blocked one pays for a walk.
   // `routes` does its own; `lang`, `log`, `export` and the proxy pair never
   // touch the network at all.
-  if (!ROUTE_FREE.has(verb)) await ensureRoute(probeIsland(opts))
+  if (!ROUTE_FREE.has(verb)) await ensureRoute(island ?? probeIsland(opts))
   switch (verb) {
     case 'islands':
       return cmdIslands()
+    case 'island':
+      return cmdIsland(pos, opts, flags)
     case 'safety':
       return cmdSafety(pos)
     case 'relays':
@@ -1451,9 +1619,9 @@ async function main(): Promise<void> {
     case 'unlock':
       return cmdUnlock()
     case 'register':
-      return cmdRegister(opts)
+      return cmdRegister(opts, island ?? DEFAULT_API_BASE)
     case 'restore':
-      return cmdRestore(pos, opts)
+      return cmdRestore(pos, island ?? DEFAULT_API_BASE)
     case 'whoami':
       return cmdWhoami()
     case 'nick':
@@ -1524,6 +1692,9 @@ main().then(
     if (verb !== undefined && verb !== 'watch') process.exit(0)
   },
   (e) => {
+    // An address that cannot be used (a fragment that is not a fingerprint,
+    // one on the flagship) is a usage error: nothing was dialled.
+    if (e instanceof AddressError) die(e.message, 2)
     // A road that carried nothing is not a road to keep. Forgetting the sticky
     // decision costs one ladder walk on the next command and buys a client
     // that notices a network which started blocking mid-day, instead of

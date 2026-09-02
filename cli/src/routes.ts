@@ -61,10 +61,12 @@
 // thousand times a day.
 
 import fs from 'node:fs'
+import net from 'node:net'
 import tls from 'node:tls'
 import { setFrontHost } from '../../src/lib/front'
 import { envProxySupported, readProxyUrl, redactProxyUrl } from './env-proxy'
 import { tr } from './i18n'
+import { addCaOnlyHost } from './island-trust'
 import { frontHost, prime as primeRelayConfig } from './relay-config'
 import { statePath, writeFileAtomic } from './state'
 
@@ -153,7 +155,7 @@ export function saveRoutesState(patch: Partial<RoutesState>): void {
 /// True when this process is really running behind the user's proxy.
 ///
 /// ⚠ Not the same question as "is a proxy configured". The environment is what
-/// Node's fetch and WebSocket read, once, at startup; `engageProxy()` re-execs
+/// Node's fetch and WebSocket read, once, at startup; `engageStartupEnv()` re-execs
 /// the process to set it. So this asks what actually happened, not what the
 /// config says - and it also answers true for somebody who exported the
 /// variables themselves, whose traffic is proxied just as thoroughly.
@@ -161,7 +163,7 @@ export function saveRoutesState(patch: Partial<RoutesState>): void {
 /// ⚠ The runtime check is not decoration. Those variables are read by NOBODY
 /// before Node 24, so the flag we set ourselves was the whole evidence base:
 /// on Node 22 every rung, every `whoami` line and the routes file all said
-/// `proxy` while every byte went direct. `engageProxy` now refuses to run a
+/// `proxy` while every byte went direct. `engageStartupEnv` now refuses to run a
 /// command there at all, and this is the second half of the same rule, for the
 /// person who exported the variables by hand.
 export function proxyActive(): boolean {
@@ -320,6 +322,11 @@ export function setFrontEngagedForTest(on: boolean): void {
 ///
 /// ⚠ Raw sockets, so this does NOT go through the user's proxy. It is only
 /// ever used when no proxy is engaged; [probeViaRequest] is the proxied twin.
+///
+/// `authorized` is judged by the store this process runs with, which under
+/// the trust exec (env-proxy.ts) includes every pinned island: a fingerprint
+/// island answers "reachable" here only once the trust gate has let it in,
+/// and the gate runs before this ladder for that reason.
 function tlsReachable(host: string, port: number, budgetMs: number): Promise<boolean> {
   return new Promise((resolve) => {
     let done = false
@@ -335,15 +342,19 @@ function tlsReachable(host: string, port: number, budgetMs: number): Promise<boo
       resolve(ok)
     }
     const timer = setTimeout(() => finish(false), budgetMs)
-    const sock = tls.connect({ host, port, servername: host })
+    // SNI carries names only; Node warns on an IP literal and ignores it.
+    const sock = tls.connect({ host, port, servername: net.isIP(host) ? undefined : host })
     sock.once('secureConnect', () => finish(sock.authorized))
     sock.once('error', () => finish(false))
   })
 }
 
-async function probeHost(host: string): Promise<boolean> {
+/// ⚠ The island's own port, not 443. Hard-coded 443 reported every island on
+/// `:8443` as blocked, cost fifteen seconds of probing per cold minute, and
+/// wrote it down as a route that answered nothing.
+async function probeHost(host: string, port: number): Promise<boolean> {
   for (const budget of TLS_BUDGETS_MS) {
-    if (await tlsReachable(host, 443, budget)) return true
+    if (await tlsReachable(host, port, budget)) return true
   }
   return false
 }
@@ -364,11 +375,13 @@ async function probeViaRequest(base: string): Promise<boolean> {
   }
 }
 
-function hostOf(apiBase: string): string {
+function hostPortOf(apiBase: string): { host: string; port: number } {
   try {
-    return new URL(apiBase).hostname
+    const u = new URL(apiBase)
+    // `hostname` keeps an IPv6 literal's brackets; the socket wants it bare.
+    return { host: u.hostname.replace(/^\[|\]$/g, ''), port: u.port ? Number(u.port) : 443 }
   } catch {
-    return apiBase.replace(/^https?:\/\//, '').replace(/\/.*$/, '')
+    return { host: apiBase.replace(/^https?:\/\//, '').replace(/\/.*$/, ''), port: 443 }
   }
 }
 
@@ -396,7 +409,8 @@ export async function walkLadder(apiBase: string): Promise<LadderWalk> {
   engagedFront = false
   frontForSockets = false
   const t0 = Date.now()
-  const islandOk = proxied ? await probeViaRequest(apiBase) : await probeHost(hostOf(apiBase))
+  const { host, port } = hostPortOf(apiBase)
+  const islandOk = proxied ? await probeViaRequest(apiBase) : await probeHost(host, port)
   if (islandOk) {
     walk.rungs.push({ rung: islandRung, verdict: 'ok', ms: Date.now() - t0 })
     walk.rungs.push({ rung: frontRung, verdict: 'not-tried' })
@@ -413,7 +427,7 @@ export async function walkLadder(apiBase: string): Promise<LadderWalk> {
   }
 
   const t1 = Date.now()
-  const frontOk = proxied ? await probeViaRequest(`https://${frontHost()}`) : await probeHost(frontHost())
+  const frontOk = proxied ? await probeViaRequest(`https://${frontHost()}`) : await probeHost(frontHost(), 443)
   if (frontOk) {
     engagedFront = true
     walk.rungs.push({ rung: frontRung, verdict: 'ok', ms: Date.now() - t1 })
@@ -436,6 +450,9 @@ function prepare(): void {
   // registered as a backup home is the flagship's own mailbox under another
   // name, and the redundancy it promises is fiction.
   setFrontHost(`https://${frontHost()}`)
+  // And the trust rule's: a road is never pinned, wherever the signed config
+  // moves it.
+  addCaOnlyHost(frontHost())
   installRouting()
 }
 
@@ -524,7 +541,7 @@ export async function escalateForDeadSockets(apiBase: string): Promise<boolean> 
     if (process.env.RCQ_VERBOSE) process.stderr.write('[route] sockets die via the front too, back to direct\n')
     return true
   }
-  const reachable = proxied ? await probeViaRequest(`https://${frontHost()}`) : await probeHost(frontHost())
+  const reachable = proxied ? await probeViaRequest(`https://${frontHost()}`) : await probeHost(frontHost(), 443)
   if (!reachable) return false
   engagedFront = true
   frontForSockets = true

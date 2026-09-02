@@ -12,6 +12,17 @@
 // Here it only ever fills in a URL a person then chooses on purpose.
 
 import { tr } from './i18n'
+import {
+  AddressError,
+  describeAddressProblem,
+  describeTrust,
+  describeTypedDisagreement,
+  listRecords,
+  parseIslandAddress,
+  pinTyped,
+  recordFor,
+  trustJson,
+} from './island-trust'
 import { err, out } from './style'
 
 const CATALOGUE_URL = 'https://rcq.app/servers.json'
@@ -51,9 +62,25 @@ export async function fetchIslands(): Promise<Island[]> {
   return flagship ? [flagship, ...rest] : [{ url: FLAGSHIP, name: 'RCQ Flagship' }, ...rest]
 }
 
-/// The list as a person reads it: one island per two lines, numbered from 1.
+/// The store key of an island URL, or null for one that does not parse.
+function trustKey(url: string): string | null {
+  const a = parseIslandAddress(url)
+  return 'error' in a || a.plain ? null : a.key
+}
+
+/// How the trust store knows this island, for the JSON rows.
+export function islandTrust(url: string): Record<string, unknown> | null {
+  const key = trustKey(url)
+  return key ? trustJson(key, recordFor(key)) : null
+}
+
+/// The list as a person reads it: one island per two lines, numbered from 1,
+/// with how this device trusts it when it has met it. Islands on file that
+/// the catalogue does not list (a self-hosted one, a visited room's) follow,
+/// unnumbered: the numbers are `--island`'s and count the catalogue only.
 export function renderIslands(list: Island[]): string {
   const lines: string[] = []
+  const seen = new Set<string>()
   list.forEach((isl, i) => {
     const n = String(i + 1).padStart(2, ' ')
     const host = isl.url.replace(/^https:\/\//, '')
@@ -64,8 +91,41 @@ export function renderIslands(list: Island[]): string {
     lines.push(`${out.dim(n + '.')} ${isl.name}${tag}`)
     lines.push(`    ${out.dim(host)}${isl.region ? out.dim(` · ${isl.region}`) : ''}`)
     if (isl.description) lines.push(`    ${out.dim(isl.description.slice(0, 96))}`)
+    const key = trustKey(isl.url)
+    if (key) {
+      seen.add(key)
+      const rec = recordFor(key)
+      if (rec) lines.push(`    ${out.dim(describeTrust(rec))}`)
+    }
   })
+  const known = listRecords().filter(({ key }) => !seen.has(key))
+  if (known.length > 0) {
+    lines.push(out.dim(tr('islands.known')))
+    for (const { key, rec } of known) {
+      lines.push(`    ${key.replace(/:443$/, '')}`)
+      lines.push(`    ${out.dim(describeTrust(rec))}`)
+    }
+  }
   return lines.join('\n') + '\n'
+}
+
+/// `--island <address>` as an address (a number is the catalogue's business):
+/// parsed, and when it carries a fingerprint, pinned BEFORE anything dials
+/// (§3 of the island-fingerprint design). An address that cannot be used is
+/// an AddressError, which the dispatcher turns into a usage exit: nothing
+/// was dialled. A fragment against a record that disagrees is a refusal
+/// with both values, never a silent write.
+export function islandFromAddress(raw: string): string {
+  const addr = parseIslandAddress(raw)
+  if ('error' in addr) throw new AddressError(describeAddressProblem(addr))
+  if (addr.fp) {
+    const typed = pinTyped(addr.key, addr.fp)
+    if (typeof typed === 'object') throw new Error(describeTypedDisagreement(addr.key, typed.disagrees, addr.fp))
+    if (typed === 'written') {
+      process.stderr.write(err.dim(tr('island.trust.typed', { host: addr.key.replace(/:443$/, '') })) + '\n')
+    }
+  }
+  return addr.url
 }
 
 /// Turn whatever `--island` carried into a URL.
@@ -84,6 +144,5 @@ export async function resolveIsland(raw: string | undefined): Promise<string> {
     process.stderr.write(err.dim(tr('islands.picked', { name: pick.name, url: pick.url })) + '\n')
     return pick.url
   }
-  const url = value.startsWith('http://') || value.startsWith('https://') ? value : `https://${value}`
-  return url.replace(/\/+$/, '')
+  return islandFromAddress(value)
 }

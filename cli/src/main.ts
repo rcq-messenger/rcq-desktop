@@ -446,7 +446,7 @@ async function cmdIsland(pos: string[], opts: Map<string, string>, flags: Set<st
       if (!raw) usageDie(tr('island.trust.needsArgs'))
       const fp = parseFingerprint(raw)
       if (!fp) usageDie(tr('island.trust.notFingerprint', { frag: raw }))
-      if (addr.fp && addr.fp !== fp) usageDie(tr('island.trust.needsArgs'))
+      if (addr.fp && addr.fp !== fp) usageDie(tr('island.trust.argsDisagree', { addr: addr.fp, arg: fp }))
       const typed = pinTyped(addr.key, fp, flags.has('--replace'))
       if (typeof typed === 'object') {
         process.stderr.write(err.yellow(describeTypedDisagreement(addr.key, typed.disagrees, fp)) + '\n')

@@ -5,7 +5,7 @@
 // that says how the island is trusted. Both draw from the snapshot that
 // lib/island-trust.ts keeps; nothing else in the app has to remember to check.
 
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useI18n } from '../lib/i18n-context'
 import { useToast } from '../lib/toast'
 import { isTauri } from '../lib/desktop'
@@ -52,10 +52,12 @@ function changedKey(island: ChangedIsland): string {
   return island.typed ? 'island.trust.changed_typed' : 'island.trust.changed'
 }
 
-/// §5.2: a changed certificate. Red, at the top, above everything but a
-/// modal, and it stays until the person decides. "Not now" folds it to a
-/// line rather than removing it: the island is still refused, and a banner
-/// that vanished would leave the app silently offline for that island.
+/// §5.2: a changed certificate. Red, at the top of the app, and it stays
+/// until the person decides. "Not now" folds it to a line rather than
+/// removing it: the island is still refused, and a banner that vanished would
+/// leave the app silently offline for that island. Folded is what most of
+/// this banner's life looks like, which is why it lives in the layout and not
+/// over it - see IslandTrustBanner below.
 function ChangedBanner({ island }: { island: ChangedIsland }) {
   const { t } = useI18n()
   const [folded, setFolded] = useState(false)
@@ -85,7 +87,7 @@ function ChangedBanner({ island }: { island: ChangedIsland }) {
       <button
         type="button"
         onClick={() => setFolded(false)}
-        className="pointer-events-auto w-full bg-red-600 text-white text-xs px-4 py-1.5 text-left truncate"
+        className="w-full bg-red-600 text-white text-xs px-4 py-1.5 text-left truncate"
       >
         {t(changedKey(island), { host: island.authority })}
       </button>
@@ -93,7 +95,7 @@ function ChangedBanner({ island }: { island: ChangedIsland }) {
   }
 
   return (
-    <div className="pointer-events-auto bg-red-600 text-white px-4 py-3 text-xs shadow-lg">
+    <div className="bg-red-600 text-white px-4 py-3 text-xs shadow-lg">
       <div className="max-w-2xl mx-auto space-y-2">
         <p className="leading-relaxed">{t(changedKey(island), { host: island.authority })}</p>
         <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 items-start">
@@ -141,7 +143,7 @@ function ChangedBanner({ island }: { island: ChangedIsland }) {
 function FirstUseNotice({ island }: { island: FirstUseIsland }) {
   const { t } = useI18n()
   return (
-    <div className="pointer-events-auto bg-surface text-fg-primary border-b border-line/60 px-4 py-2.5 text-xs shadow-md">
+    <div className="bg-surface text-fg-primary border-b border-line/60 px-4 py-2.5 text-xs shadow-md">
       <div className="max-w-2xl mx-auto flex items-start gap-3">
         <div className="min-w-0 flex-1 leading-relaxed">
           <SentenceWithFingerprint
@@ -165,13 +167,44 @@ function FirstUseNotice({ island }: { island: FirstUseIsland }) {
 /// Mounted once above every route, the login screen included: a typed
 /// fingerprint is refused before there is an account. Draws nothing until
 /// the trust layer has something to say, which off the desktop is never.
+///
+/// ⚠ In the layout, not over it (§5.2: where the other top banners live). It
+/// used to be `fixed top-0` above every header AND every modal, and the
+/// folded strip a refusal leaves behind is permanent - so it sat on the top
+/// half of every screen's header for the session, eating the clicks aimed at
+/// the back chevron under it, and drew over the very picker a typed
+/// fingerprint is refused from. Here it takes its own space, publishes the
+/// height it took so the screens that are exactly one viewport tall can
+/// subtract it, and a modal covers it instead of the other way round.
 export function IslandTrustBanner() {
   const snap = useTrustSnapshot()
+  const box = useRef<HTMLDivElement | null>(null)
   const changed = Object.values(snap.changed)
   const firstUse = Object.values(snap.firstUse)
-  if (changed.length === 0 && firstUse.length === 0) return null
+  const drawing = changed.length > 0 || firstUse.length > 0
+
+  useEffect(() => {
+    const root = document.documentElement
+    const el = box.current
+    if (!drawing || !el) {
+      root.style.setProperty('--rcq-top-inset', '0px')
+      return
+    }
+    // Its height changes as the person folds it, and with the width of the
+    // window, so it is measured rather than guessed.
+    const publish = () => root.style.setProperty('--rcq-top-inset', `${el.offsetHeight}px`)
+    publish()
+    const ro = new ResizeObserver(publish)
+    ro.observe(el)
+    return () => {
+      ro.disconnect()
+      root.style.setProperty('--rcq-top-inset', '0px')
+    }
+  }, [drawing, snap])
+
+  if (!drawing) return null
   return (
-    <div className="fixed inset-x-0 top-0 z-[55] flex flex-col pointer-events-none">
+    <div ref={box} className="relative z-[45] flex flex-col">
       {changed.map((c) => (
         <ChangedBanner key={c.authority} island={c} />
       ))}

@@ -556,7 +556,7 @@ export function Settings() {
     // pane but not the document - so the chat scrolled and this screen did not,
     // which is exactly what the report described. Chat has always been built
     // this way; these two screens were the last ones scrolling the page.
-    <div className="h-screen [height:100dvh] flex flex-col bg-surface-dim overflow-hidden">
+    <div className="h-screen [height:calc(100dvh-var(--rcq-top-inset))] flex flex-col bg-surface-dim overflow-hidden">
       <header className="rcq-header sticky top-0 z-10 shrink-0">
         <div className="max-w-2xl mx-auto px-4 h-14 flex items-center gap-3">
           {/* One arrow, two meanings, and the group is the nearer one: inside a

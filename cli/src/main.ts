@@ -1184,11 +1184,20 @@ function probeIsland(opts: Map<string, string>): string {
   return loadStoredIdentity()?.apiBase ?? DEFAULT_API_BASE
 }
 
-/// The island this command is about, resolved once: `--island` (a catalogue
-/// number for register and restore, an address anywhere) or the account's.
+/// The island this command is about, resolved once - and it has to be the one
+/// the command will really dial, because this is the single value the trust
+/// gate judges.
+///
+/// ⚠ Only `register` and `restore` are handed the resolved island; every other
+/// verb reads `identity.apiBase` (routes.ts says so: the base is read straight
+/// off it in twenty-odd places). `--island` is documented on those two alone,
+/// but `parseArgs` takes any flag on any verb, so `rcq send --island X` used
+/// to point the gate at X while the send went to the account's island - which
+/// then went out under no trust decision at all, typed pin included. The flag
+/// is inert here, so it is inert for the gate too.
 async function commandIsland(verb: string, opts: Map<string, string>): Promise<string> {
   if (verb === 'register' || verb === 'restore') return resolveIsland(opts.get('--island'))
-  return probeIsland(opts)
+  return loadStoredIdentity()?.apiBase ?? DEFAULT_API_BASE
 }
 
 /// The trust gate of island-trust.ts in front of a command, and what each

@@ -13,6 +13,7 @@
 import type { ReactNode } from 'react'
 import { tokenize, emoticonAssetURL } from '../lib/emoticons'
 import { matchMentionAt, type MentionRoster } from '../lib/mentions'
+import { siteLinkOf } from '../lib/sites'
 
 export interface MentionContext {
   /// Everyone who can be named here. Empty for a 1:1 thread, where only the
@@ -82,7 +83,11 @@ function splitLinks(text: string): { url: boolean; site?: boolean; text: string 
     const url = m[0].replace(/[.,!?;:)\]}»›>"']+$/, '')
     if (!url) continue
     if (m.index > last) out.push({ url: false, text: text.slice(last, m.index) })
-    out.push({ url: true, text: url })
+    // ⚠ A URL whose host ends in `.rcq` is a site, scheme and all: this pass
+    // used to win over the one below whenever somebody typed `https://` in
+    // front of their own site, and the menu then offered a system browser
+    // for a name no DNS knows (founder, 02.09).
+    out.push({ url: true, site: siteLinkOf(url) != null, text: url })
     last = m.index + url.length
   }
   if (last < text.length) out.push({ url: false, text: text.slice(last) })

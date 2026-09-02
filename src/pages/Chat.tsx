@@ -23,6 +23,8 @@ import { EmoticonInput, insertEmoticonAt, serialize as serializeComposer } from 
 import { EmoticonPicker } from '../components/EmoticonPicker'
 import { EmoticonText } from '../components/EmoticonText'
 import { ForwardModal, type ForwardTarget } from '../components/ForwardModal'
+import { SendTextError, sendCarbon, sendTextTo } from '../lib/send-text'
+import { siteLinkOf } from '../lib/sites'
 import { ReactionAuthors, type ReactionAuthor } from '../components/ReactionAuthors'
 import { ReactionPicker } from '../components/ReactionPicker'
 import { PersonAvatar } from '../components/PersonAvatar'
@@ -62,14 +64,12 @@ import {
   type DeleteEnvelope,
   type ReactionEnvelope,
   type ReplyContext,
-  type TextEnvelope,
 } from '../lib/crypto'
 import {
   type OutgoingRow,
   storageKey,
   loadPersisted,
   savePersisted,
-  appendToThreadLog,
   ownExpiry,
   setEditSink,
   setOutgoingSink,
@@ -99,7 +99,6 @@ import {
   lapsed,
   remainingLabel,
   setThreadTtl,
-  threadTtl,
   ttlLabelKey,
   ttlThreadKey,
   useThreadTtl,
@@ -1394,26 +1393,9 @@ export function Chat() {
     // Foreign-group sends are not mirrored: the carbon would carry the
     // server-side group id, which another of our devices would misread as a
     // LOCAL group (alias ids are per-device). v1 limit, documented in §5c.
-    if (to == null && gid == null) return
-    try {
-      const carbon: CarbonEnvelope = {
-        kind: 'carbon',
-        to,
-        gid,
-        env: inner,
-      }
-      const selfBundle = peerBundleFrom({
-        uin: identity.uin,
-        identity_key: bytesToB64(identity.identityPub),
-        signing_key: bytesToB64(identity.signingPub),
-      })
-      const wireB64 = encryptV1(carbon, identity, selfBundle)
-      // Non-pushable type — syncs over WS / the per-device queue, never pushes
-      // a "new message" alert to our own phone for a message we sent.
-      await Api.sendSealed(identity, identity.uin, wireB64, 'carbon')
-    } catch {
-      /* best-effort multi-device echo; ignore */
-    }
+    // The sealing and the deposit live in lib/send-text, shared with every
+    // send composed outside a chat.
+    await sendCarbon(identity, inner, to, gid)
   }
 
   /// Tell my OTHER devices that I read this thread (megalist A2). Rides the
@@ -2325,78 +2307,22 @@ export function Chat() {
   /// current thread's log.
   async function forwardTo(row: { text: string; author: string }, target: ForwardTarget) {
     if (!identity) return
-    const newId = newUUIDv4()
-    // Credit the ORIGINAL author, not whoever pressed forward. Sending my own
-    // name on somebody else's words is the one thing a forward must not do.
-    const fwdName = row.author
-    // ⚠ The TARGET thread's timer, not this one's. A forward is composed here
-    // but lands over there, and it was the only send path that carried no `ttl`
-    // at all: forwarding one line into a room set to five minutes left a
-    // permanent message in it, on every participant's device, in a conversation
-    // whose header says everything disappears. Same shape `dyingNow` gives the
-    // other paths, read off the destination.
-    const sentAt = Date.now()
-    const targetTtl = threadTtl(ttlThreadKey(target.kind === 'group', target.kind === 'group' ? target.id : target.uin))
-    const expiresAt = ownExpiry(targetTtl, sentAt)
-    const dying: { ttl?: number; ts?: number } =
-      targetTtl != null && expiresAt != null ? { ttl: targetTtl, ts: Math.floor(sentAt / 1000) } : {}
-    const env: TextEnvelope = { kind: 'text', id: newId, text: row.text, fwdName, ...dying }
     try {
-      if (target.kind === 'group') {
-        // target.id may be a foreign-group alias — resolve the island ctx.
-        const fctx = groupApiCtx(identity, target.id)
-        // ⚠ The picker's list is fetched without rosters, so this group can
-        // carry an empty member list. Sealing against that produces no
-        // payloads at all, and the forward would report an empty group — or
-        // worse, on a partial roster, quietly reach only some of it.
-        const full = await ensureRoster(fctx.ident, target.group)
-        // A solo group (only us in the fresh roster) takes the forward with an
-        // empty wire, same as shipEnvelopeToCurrentThread — the row lands in
-        // the target thread below and nobody else exists to reach.
-        const soloTarget =
-          full.members.some((m) => m.uin === fctx.ident.uin) && !full.members.some((m) => m.uin !== fctx.ident.uin)
-        if (!soloTarget) {
-          const { payloads, skipped } = await encryptGroupEnvelope(env, fctx.ident, full.members)
-          if (payloads.length === 0) {
-            throw new Error(
-              skipped.length > 0
-                ? t('chat.error.group_no_valid_members')
-                : t('chat.error.group_empty'),
-            )
-          }
-          await Api.sendGroupSealed(fctx.ident, fctx.gid, payloads)
-        }
-      } else {
-        const wireB64 = encryptV1(env, identity, peerBundleFrom(target.contact))
-        await Api.sendSealed(identity, target.uin, wireB64)
-      }
-      // ⚠⚠ Mirror it, like every other send does. A forward was the one path
-      // that never carboned, so a message forwarded from the desktop simply
-      // never existed on the phone - the group fan-out deliberately skips
-      // ourselves, so the carbon is the ONLY road our own words take to our own
-      // other devices. Addressed at the TARGET thread, not the one we forwarded
-      // from, because that is where the row lands.
-      void sendMessageCarbonTo(env, target.kind === 'group' ? null : target.uin,
-                               target.kind === 'group' ? target.group.id : null)
-      const newRow: OutgoingRow = {
-        id: newId,
-        text: row.text,
-        sentAt,
-        state: 'sent',
-        fwdName,
-        ...(expiresAt != null ? { expiresAt } : {}),
-      }
-      const targetKey =
-        target.kind === 'group'
-          ? storageKey(true, target.id)
-          : storageKey(false, target.uin)
-      appendToThreadLog(targetKey, newRow)
+      // Credit the ORIGINAL author, not whoever pressed forward. Sending my
+      // own name on somebody else's words is the one thing a forward must not
+      // do. The sealing, the target thread's timer, the carbon and the row in
+      // the target's log all live in lib/send-text, the same path the browser
+      // uses to hand a site's address to a chat.
+      await sendTextTo(identity, target, row.text, row.author)
       if (isSentSoundEnabled()) playSound('message_sent')
       setForwardingRow(null)
       setActionsForRowId(null)
       toast(`${t('chat.forward.sent')}: ${target.name}`)
     } catch (e) {
-      toast(e instanceof Error ? e.message : t('chat.error.send_failed'), 'error')
+      toast(
+        e instanceof SendTextError ? t(`chat.error.${e.code}`) : e instanceof Error ? e.message : t('chat.error.send_failed'),
+        'error',
+      )
     }
   }
 
@@ -2430,7 +2356,11 @@ export function Chat() {
   /// through `openLink`, whose http(s) guard would refuse it anyway.
   function openSiteFromMenu(addr: string) {
     setActionsForRowId(null)
-    navigate(`/sites?a=${encodeURIComponent(addr)}`)
+    // The text may carry a scheme and a page (`https://e2ee.rcq/en.html`):
+    // the address goes to the bar, the page opens instead of the front one.
+    const link = siteLinkOf(addr)
+    if (!link) return
+    navigate(`/sites?a=${encodeURIComponent(link.address)}${link.page ? `&p=${encodeURIComponent(link.page)}` : ''}`)
   }
 
   /// "Open link" from the message menu — the one place a message link
@@ -5979,7 +5909,20 @@ function PinnedRichText({ text, group, linksAllowed = true }: { text: string; gr
     } else if (m[2]) {
       // Links-off rooms keep even the pin's URLs literal — one rule, no
       // side door through the banner.
-      if (linksAllowed) {
+      const site = linksAllowed ? siteLinkOf(m[2]) : null
+      if (site) {
+        // A `.rcq` host with a scheme in front is still a site, and a site
+        // opens in the reader, never in a system browser (see EmoticonText).
+        nodes.push(
+          <Link
+            key={key++}
+            to={`/sites?a=${encodeURIComponent(site.address)}${site.page ? `&p=${encodeURIComponent(site.page)}` : ''}`}
+            className="text-accent hover:underline break-all"
+          >
+            {m[2]}
+          </Link>,
+        )
+      } else if (linksAllowed) {
         nodes.push(
           <a key={key++} href={m[2]} target="_blank" rel="noreferrer" className="text-accent hover:underline break-all">{m[2]}</a>,
         )

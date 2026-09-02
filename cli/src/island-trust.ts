@@ -24,12 +24,22 @@
 // certificates carry CA:TRUE (openssl's -x509 default), so an island operator
 // pinned by this device could in principle sign a certificate for any other
 // name that Node would then accept. The phones and the desktop compare the
-// leaf hash per host and have no such widening. What narrows it here: the
-// probe checks a CA-only host (the flagship, the front) against the platform
-// roots ALONE whenever an anchor is pinned, so a chain the pinned island
-// signed for api.rcq.app is refused at the probe; and an island that moves to
-// a CA has its anchor removed the moment the `ca` record is written. It is a
-// limit of the mechanism and is written down as one, not solved.
+// leaf hash per host and have no such widening.
+//
+// What narrows it, host by host: wherever the probe runs, a CA-only host (the
+// flagship, the front) is checked against the platform roots ALONE whenever
+// an anchor is pinned, so a chain the pinned island signed for api.rcq.app is
+// refused; and an island that moves to a CA has its anchor removed the moment
+// the `ca` record is written. That check only covers hosts the probe actually
+// visits, which is why `rcq islands` asks for it explicitly before reading
+// the catalogue off rcq.app - it runs outside the gate (TRUST_FREE), under
+// the widened store, and the unsigned catalogue it reads is what `--island
+// <n>` resolves against for the register that follows.
+//
+// What is NOT narrowed: every other connection a trust-free verb makes, and
+// the transport's own hosts. A widened store is widened for the whole
+// process. It is a limit of the mechanism and is written down as one, not
+// solved.
 
 import crypto from 'node:crypto'
 import fs from 'node:fs'

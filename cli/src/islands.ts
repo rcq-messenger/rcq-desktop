@@ -21,6 +21,7 @@ import {
   parseIslandAddress,
   pinTyped,
   recordFor,
+  trustIsland,
   trustJson,
 } from './island-trust'
 import { err, out } from './style'
@@ -41,6 +42,15 @@ export interface Island {
 /// it cannot be read: on a blocked network this is one more thing that does
 /// not answer, and "no islands" would read as "there are none".
 export async function fetchIslands(): Promise<Island[]> {
+  // ⚠ Before the fetch, and not because rcq.app is an island - it is never
+  // pinned. `islands` is trust-free, so nothing else asks, and a pinned
+  // island's certificate is a CA:TRUE anchor for EVERY host in this process
+  // (see the head of island-trust.ts). This is the one check that keeps a
+  // pinned operator from serving their own rcq.app: the probe judges a
+  // CA-only host against the platform roots alone. Free when nothing is
+  // pinned - no anchors, no handshake. The refusal has already been printed.
+  const gate = await trustIsland(CATALOGUE_URL)
+  if (gate === 'refused' || gate === 'unpinnable') process.exit(1)
   let body: unknown
   try {
     const res = await fetch(CATALOGUE_URL, { signal: AbortSignal.timeout(8000) })

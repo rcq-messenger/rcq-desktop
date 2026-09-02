@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "RCQ",
-  "version": "0.3.51",
+  "version": "0.3.52",
   "identifier": "app.rcq.desktop",
   "build": {
     "frontendDist": "../dist",

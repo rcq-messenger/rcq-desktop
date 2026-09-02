@@ -351,6 +351,20 @@ function candidateOrigin(url: string): string | null {
   return `https://${u.host}`
 }
 
+/// Whether the trust layer has REFUSED this url's island, and why (§5.5).
+/// The socket layer asks before it draws any conclusion from a socket that
+/// never opened: a refusal is not a blocked route. The socket the wrapper
+/// hands back while an island is refused never leaves this machine, so
+/// counting it as socket death would engage the front on evidence that has
+/// nothing to do with the island, and redialling it would spin for the life
+/// of the process - the record only changes when the person decides.
+export function islandTrustRefusal(url: string): string | null {
+  const origin = candidateOrigin(url)
+  if (!origin) return null
+  const route = routes.get(origin)
+  return route?.kind === 'refused' ? route.reason : null
+}
+
 function toLoopback(url: string, port: number): string {
   const u = new URL(url)
   u.protocol = u.protocol === 'wss:' ? 'ws:' : 'http:'

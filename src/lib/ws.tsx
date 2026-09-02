@@ -25,6 +25,7 @@ import {
 } from 'react'
 import { useIdentity } from './identity-context'
 import { escalateForDeadSockets, refreshFrontRouting } from './front'
+import { islandTrustRefusal, subscribeIslandTrust } from './island-trust'
 import { handleVaultChanged, handleVaultReset, sweepVaultSlots } from './vault-sync'
 import type { VaultChangedFrame } from './vault'
 
@@ -164,6 +165,19 @@ export function WSProvider({ children }: { children: ReactNode }) {
       console.info(`[ws] closed code=${ev.code} reason=${ev.reason || '—'} lived=${(lived / 1000).toFixed(1)}s`)
       // 4401 / 4403 are auth-rejected — reconnecting won't help.
       if (closedByUserRef.current || ev.code === 4401 || ev.code === 4403) return
+      // Neither will anything else while the island's certificate is on the
+      // banner. A trust refusal is NOT a blocked route (fingerprint design
+      // §5.5): the socket below was handed back dead by the trust wrapper and
+      // never left this machine, so the streak and the front escalation must
+      // not read it as a network that started killing sockets — the front
+      // only ever proxies the flagship anyway, and the island stays refused
+      // for the life of the process. The effect below redials when the record
+      // changes, which is the only thing that can lift this.
+      const refused = islandTrustRefusal(url)
+      if (refused) {
+        console.info(`[ws] island trust: ${refused} — no redial until the record changes`)
+        return
+      }
       // Exponential backoff capped at 30s. Mirrors common WS-client
       // behaviour; prevents thundering-herd on backend bounces.
       //
@@ -225,6 +239,19 @@ export function WSProvider({ children }: { children: ReactNode }) {
       setConnected(false)
     }
   }, [connect])
+
+  // The one way back from a refusal. The close handler above stops the loop
+  // while the island is refused, so nothing else would ever dial again: the
+  // banner's accept (and any probe that decides otherwise) replaces the trust
+  // snapshot, and that is the signal to try once more. Cheap — the snapshot
+  // changes only when a probe answers, and a dial while one is up is skipped.
+  useEffect(
+    () =>
+      subscribeIslandTrust(() => {
+        if (!sockRef.current && !closedByUserRef.current) connect()
+      }),
+    [connect],
+  )
 
   // Account-burned handler. When the server fans out the
   // `account_burned` event (e.g. user pressed "Burn" on iOS while

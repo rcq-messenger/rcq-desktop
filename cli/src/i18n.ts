@@ -2426,6 +2426,29 @@ RCQ_VERBOSE=1 显示协议细节; NO_COLOR 去掉颜色。
     uk: 'island trust чекає хост і відбиток: rcq island trust <хост[:порт]> <відбиток> [--replace]',
     'zh-Hans': 'island trust 需要主机和指纹：rcq island trust <host[:port]> <指纹> [--replace]',
   },
+  'island.trust.argsDisagree': {
+    en: `island trust: the address and the argument name different fingerprints, so nothing was written.
+  in the address: {addr}
+  given:          {arg}`,
+    ru: `island trust: отпечаток в адресе и отпечаток в аргументе разные, поэтому ничего не записано.
+  в адресе:    {addr}
+  в аргументе: {arg}`,
+    es: `island trust: la dirección y el argumento nombran huellas distintas, así que no se escribió nada.
+  en la dirección: {addr}
+  indicada:        {arg}`,
+    pt: `island trust: o endereço e o argumento nomeiam impressões digitais diferentes, então nada foi escrito.
+  no endereço: {addr}
+  informada:   {arg}`,
+    tr: `island trust: adresteki ve argumandaki parmak izleri farkli, bu yuzden hicbir sey yazilmadi.
+  adreste: {addr}
+  verilen: {arg}`,
+    uk: `island trust: відбиток в адресі та відбиток в аргументі різні, тому нічого не записано.
+  в адресі:    {addr}
+  в аргументі: {arg}`,
+    'zh-Hans': `island trust：地址中的指纹与参数中的指纹不同，因此没有写入任何内容。
+  地址中：{addr}
+  给出的：{arg}`,
+  },
   'island.trust.needsHost': {
     en: 'island forget needs a host: rcq island forget <host[:port]>', ru: 'island forget ждёт хост: rcq island forget <хост[:порт]>',
     es: 'island forget necesita un host: rcq island forget <host[:puerto]>', pt: 'island forget precisa de um host: rcq island forget <host[:porta]>',

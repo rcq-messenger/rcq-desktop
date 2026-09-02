@@ -257,7 +257,12 @@ export async function forgetIslandTrust(host: string, port: number): Promise<voi
   } catch {
     /* nothing to forget */
   }
-  routes.delete(`https://${islandAuthority(host, port)}`)
+  // Both, for the reason `prePinIsland` gives: a route decided against the
+  // record that is gone, and a probe stamp that would keep the gate from
+  // asking again for as long as the gap lasts.
+  const origin = `https://${islandAuthority(host, port)}`
+  routes.delete(origin)
+  lastProbe.delete(origin)
 }
 
 /// The destroy-everything path (§4), called by `wipeLocalAccountData`: the
@@ -320,7 +325,17 @@ export function prePinIsland(base: string, fingerprint: string): Promise<PrePinO
       } else {
         // Pinned (or the same value again): whatever route this origin had
         // was decided against a null record; probe afresh against the pin.
+        //
+        // ⚠ The probe STAMP goes with it, or the gate short-circuits on that
+        // stamp and the next request goes out under no decision at all. The
+        // stamp is there exactly when a probe left no record - the offline
+        // case - and that is precisely the state a pre-pin follows: the
+        // picker probes the island as it is typed, the island does not
+        // answer, and seconds later the person pastes `host:port#fp`. Without
+        // this line the fingerprint they just entered would not govern the
+        // connection it was entered for until the gap ran out.
         routes.delete(origin)
+        lastProbe.delete(origin)
       }
       return res.state
     } catch (e) {

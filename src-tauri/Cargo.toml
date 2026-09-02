@@ -82,6 +82,14 @@ rand = "0.8"
 # aws-lc-rs would add a C build and a second provider).
 rustls = { version = "=0.23.43", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 tokio-rustls = { version = "=0.26.4", default-features = false, features = ["ring", "tls12", "logging"] }
+# ⚠ `caValid` means "the PLATFORM accepted the chain" (§1), and the platform is
+# the store the WEBVIEW uses - the keychain on macOS, the system store on
+# Windows and Linux - so a root the person installed (mkcert, a company CA)
+# counts, the way it counts for every other program on the machine. The
+# bundled Mozilla list is the fallback for a platform whose store cannot be
+# read, never the whole answer: judging by it alone would make the two halves
+# of one client disagree about the same certificate.
+rustls-native-certs = "=0.8.4"
 webpki-roots = "=1.0.9"
 sha2 = "=0.10.9"
 hex = "=0.4.3"

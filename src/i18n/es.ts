@@ -294,6 +294,7 @@ export const es: Record<string, string> = {
   'sites.recents.remove': 'Quitar de recientes',
   'sites.share': 'Compartir la dirección',
   'sites.share.copy': 'Copiar la dirección',
+  'sites.share.title': 'Enviar la dirección a',
   'sites.by': 'de',
   'sites.error.unsigned': 'La firma de este sitio no cuadra. No se mostró nada.',
   'sites.error.tampered': 'Un archivo no coincide con lo que firmó el propietario. No se mostró nada.',

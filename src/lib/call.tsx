@@ -997,7 +997,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
           const call: CallInfo = {
             id: callId,
             peerUin: from,
-            peerName: known?.nickname || (fromHost ? `#${from}@${fromHost}` : `#${from}`),
+            peerName: known?.nickname || (fromHost ? `${from}@${fromHost}` : `${from}`),
             media,
             outgoing: false,
             peerHost: fromHost,

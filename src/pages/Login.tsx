@@ -102,7 +102,7 @@ export function Login() {
               }}
               className="w-full text-center text-sm text-fg-secondary hover:text-fg-primary transition-colors"
             >
-              {t('login.cancel_add').replace('{nick}', `#${resume.uin}`)}
+              {t('login.cancel_add').replace('{nick}', `${resume.uin}`)}
             </button>
           )}
         </div>

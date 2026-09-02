@@ -194,7 +194,7 @@ export function ForwardModal({
                     />
                     <div className="flex-1 min-w-0 text-left">
                       <div className="text-sm truncate">{name}</div>
-                      <div className="text-[0.625rem] text-fg-dim">#{c.uin}</div>
+                      <div className="text-[0.625rem] text-fg-dim">{c.uin}</div>
                     </div>
                   </Row>
                 )

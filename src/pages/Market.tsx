@@ -329,8 +329,8 @@ export function Market() {
                 <div className="font-semibold text-accent">{t('uin_market.bought.title')}</div>
                 <div className="text-fg-secondary">
                   {justSwitched
-                    ? t('uin_market.switched.body', { uin: `#${justBought}` })
-                    : t('uin_market.bought.body', { uin: `#${justBought}` })}
+                    ? t('uin_market.switched.body', { uin: `${justBought}` })
+                    : t('uin_market.bought.body', { uin: `${justBought}` })}
                 </div>
               </div>
             </motion.div>
@@ -343,11 +343,10 @@ export function Market() {
             {t('uin_market.headline')}
           </h1>
           <p className="mt-2 text-sm text-fg-secondary max-w-sm leading-relaxed">
-            {t('uin_market.subhead', { uin: `#${id.uin}` })}
+            {t('uin_market.subhead', { uin: `${id.uin}` })}
           </p>
 
-          <div className="mt-6 flex items-center h-[88px] rounded-2xl bg-fg-primary/[0.07] px-5 transition-colors focus-within:bg-fg-primary/[0.1]">
-            <span aria-hidden className="text-3xl sm:text-4xl text-fg-dim/50 select-none">#</span>
+          <div className="mt-6 flex items-center h-[88px] rounded-2xl bg-surface border border-line px-5 transition-colors focus-within:bg-field">
             <input
               ref={inputRef}
               value={typed}
@@ -359,7 +358,7 @@ export function Market() {
               pattern="[0-9]*"
               autoFocus
               aria-label={t('uin_market.input.aria')}
-              className="ml-1 flex-1 min-w-0 bg-transparent outline-none text-4xl sm:text-5xl font-semibold tracking-tight tabular-nums caret-accent"
+              className="flex-1 min-w-0 bg-transparent outline-none text-4xl sm:text-5xl font-semibold tracking-tight tabular-nums caret-accent"
             />
             {/* The count next to the number said what the number already
                 says by being looked at (megalist B6); the hint stays. */}
@@ -462,9 +461,9 @@ export function Market() {
               {t('uin_market.mine.label')}
             </h2>
 
-            <div className="rounded-2xl bg-fg-primary/[0.07] px-5 py-4">
+            <div className="rounded-2xl bg-surface border border-line px-5 py-4">
               <div className="text-[0.6875rem] uppercase tracking-wider text-fg-dim">{t('uin_market.mine.active')}</div>
-              <div className="mt-1 text-3xl font-semibold tracking-tight tabular-nums">#{mine.active}</div>
+              <div className="mt-1 text-3xl font-semibold tracking-tight tabular-nums">{mine.active}</div>
             </div>
 
             {mine.owned.length === 0 ? (
@@ -474,16 +473,16 @@ export function Market() {
                 {mine.owned.map((o) => (
                   <div
                     key={o.uin}
-                    className="flex items-center justify-between rounded-2xl bg-fg-primary/[0.06] px-4 py-3"
+                    className="flex items-center justify-between rounded-2xl bg-surface border border-line px-4 py-3"
                   >
                     <div className="min-w-0">
-                      <div className="text-lg font-semibold tracking-tight tabular-nums truncate">#{o.uin}</div>
+                      <div className="text-lg font-semibold tracking-tight tabular-nums truncate">{o.uin}</div>
                     </div>
                     <div className="shrink-0 flex items-center gap-2">
                       <button
                         onClick={() => setReleaseTarget(o.uin)}
                         disabled={switching || releasing}
-                        className="h-9 px-3 rounded-xl text-sm font-medium text-fg-secondary bg-fg-primary/[0.05]
+                        className="h-9 px-3 rounded-xl text-sm font-medium text-fg-secondary bg-field
                                    hover:bg-fg-primary/[0.09] active:scale-[0.98] disabled:opacity-40 transition"
                       >
                         {t('uin_market.mine.release')}
@@ -526,7 +525,7 @@ export function Market() {
           {loadingSuggestions && suggestions.length === 0 ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
               {Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} className="h-[74px] rounded-2xl bg-fg-primary/[0.04] animate-pulse" />
+                <div key={i} className="h-[74px] rounded-2xl bg-surface border border-line animate-pulse" />
               ))}
             </div>
           ) : suggestions.length === 0 ? (
@@ -537,10 +536,10 @@ export function Market() {
                 <button
                   key={s.uin}
                   onClick={() => pick(s.uin)}
-                  className="rounded-2xl p-3.5 text-left bg-fg-primary/[0.06] hover:bg-fg-primary/[0.1]
+                  className="rounded-2xl p-3.5 text-left bg-surface border border-line hover:bg-field
                              active:scale-[0.98] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
                 >
-                  <div className="text-lg font-semibold tracking-tight truncate">#{s.uin}</div>
+                  <div className="text-lg font-semibold tracking-tight truncate">{s.uin}</div>
                   <div className="mt-1 text-xs">
                     <span className="text-fg-secondary tabular-nums">{s.price_display}</span>
                   </div>
@@ -589,10 +588,10 @@ export function Market() {
                 { uin: 1337, by: 8042, price: '$2,400' },
                 { uin: 90210, by: 23187, price: '$180' },
               ].map((row) => (
-                <div key={row.uin} className="flex items-center justify-between rounded-xl bg-fg-primary/[0.03] px-3.5 py-2.5">
+                <div key={row.uin} className="flex items-center justify-between rounded-xl bg-surface border border-line px-3.5 py-2.5">
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="text-sm font-semibold">#{row.uin}</span>
-                    <span className="text-xs text-fg-dim truncate">{t('uin_market.p2p.listed_by', { uin: `#${row.by}` })}</span>
+                    <span className="text-sm font-semibold">{row.uin}</span>
+                    <span className="text-xs text-fg-dim truncate">{t('uin_market.p2p.listed_by', { uin: `${row.by}` })}</span>
                   </div>
                   <span className="text-sm tabular-nums text-fg-secondary">{row.price}</span>
                 </div>
@@ -651,7 +650,7 @@ export function Market() {
               onClick={(e) => e.stopPropagation()}
             >
               <div className="text-center">
-                <div className="text-4xl font-bold tracking-tight">#{typed}</div>
+                <div className="text-4xl font-bold tracking-tight">{typed}</div>
                 <div className="mt-1 text-fg-secondary tabular-nums">{priceDisplay(localCents)}</div>
               </div>
               <p className="mt-4 text-sm text-fg-secondary leading-relaxed text-center">{t('uin_market.confirm.body')}</p>
@@ -659,7 +658,7 @@ export function Market() {
                 <button
                   onClick={() => setConfirming(false)}
                   disabled={buying}
-                  className="flex-1 h-11 rounded-xl text-sm font-medium text-fg-secondary bg-fg-primary/[0.05] hover:bg-fg-primary/[0.09] active:scale-[0.99] transition"
+                  className="flex-1 h-11 rounded-xl text-sm font-medium text-fg-secondary bg-field hover:bg-line active:scale-[0.99] transition"
                 >
                   {t('common.cancel')}
                 </button>
@@ -688,10 +687,10 @@ export function Market() {
             }}
           >
             <div className="text-center">
-              <div className="text-4xl font-bold tracking-tight">#{held}</div>
+              <div className="text-4xl font-bold tracking-tight">{held}</div>
             </div>
             <p className="mt-4 text-sm text-fg-secondary leading-relaxed text-center">
-              {t('uin_market.held.body', { prev: `#${id.uin}` })}
+              {t('uin_market.held.body', { prev: `${id.uin}` })}
             </p>
             <div className="mt-6 flex gap-2.5">
               <button
@@ -700,7 +699,7 @@ export function Market() {
                   setTyped('')
                 }}
                 disabled={switching}
-                className="flex-1 h-11 rounded-xl text-sm font-medium text-fg-secondary bg-fg-primary/[0.05] hover:bg-fg-primary/[0.09] active:scale-[0.99] transition"
+                className="flex-1 h-11 rounded-xl text-sm font-medium text-fg-secondary bg-field hover:bg-line active:scale-[0.99] transition"
               >
                 {t('uin_market.held.later')}
               </button>
@@ -722,7 +721,7 @@ export function Market() {
         {releaseTarget != null && (
           <Modal onDismiss={() => !releasing && setReleaseTarget(null)}>
             <div className="text-center">
-              <div className="text-4xl font-bold tracking-tight">#{releaseTarget}</div>
+              <div className="text-4xl font-bold tracking-tight">{releaseTarget}</div>
             </div>
             <p className="mt-4 text-sm text-fg-secondary leading-relaxed text-center">
               {t('uin_market.mine.release.confirm.body')}
@@ -731,7 +730,7 @@ export function Market() {
               <button
                 onClick={() => setReleaseTarget(null)}
                 disabled={releasing}
-                className="flex-1 h-11 rounded-xl text-sm font-medium text-fg-secondary bg-fg-primary/[0.05] hover:bg-fg-primary/[0.09] active:scale-[0.99] transition"
+                className="flex-1 h-11 rounded-xl text-sm font-medium text-fg-secondary bg-field hover:bg-line active:scale-[0.99] transition"
               >
                 {t('common.cancel')}
               </button>
@@ -748,16 +747,16 @@ export function Market() {
         {switchTarget != null && (
           <Modal onDismiss={() => !switching && setSwitchTarget(null)}>
             <div className="text-center">
-              <div className="text-4xl font-bold tracking-tight">#{switchTarget}</div>
+              <div className="text-4xl font-bold tracking-tight">{switchTarget}</div>
             </div>
             <p className="mt-4 text-sm text-fg-secondary leading-relaxed text-center">
-              {t('uin_market.mine.confirm.body', { prev: `#${mine?.active ?? id.uin}` })}
+              {t('uin_market.mine.confirm.body', { prev: `${mine?.active ?? id.uin}` })}
             </p>
             <div className="mt-6 flex gap-2.5">
               <button
                 onClick={() => setSwitchTarget(null)}
                 disabled={switching}
-                className="flex-1 h-11 rounded-xl text-sm font-medium text-fg-secondary bg-fg-primary/[0.05] hover:bg-fg-primary/[0.09] active:scale-[0.99] transition"
+                className="flex-1 h-11 rounded-xl text-sm font-medium text-fg-secondary bg-field hover:bg-line active:scale-[0.99] transition"
               >
                 {t('common.cancel')}
               </button>

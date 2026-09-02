@@ -128,7 +128,7 @@ export function ReactionAuthors({
                           />
                           <div className="min-w-0 flex-1">
                             <div className="truncate text-sm">{a.name}</div>
-                            <div className="text-[0.625rem] text-fg-dim">#{a.uin}</div>
+                            <div className="text-[0.625rem] text-fg-dim">{a.uin}</div>
                           </div>
                         </>
                       )

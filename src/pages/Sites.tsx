@@ -642,8 +642,11 @@ export function Sites() {
       {/* The other pages of this site. With no scripts in the frame, a link
           inside a page cannot navigate on its own - so the doors live out
           here too, beside the links the page itself carries. */}
+      {/* The strip belongs to the header, not to the page: the same blurred
+          surface, so the chrome above a site reads as one bar (founder, 02.09)
+          rather than a blurred strip stacked on a flat one. */}
       {page && page.pages.length > 1 && (
-        <nav className="shrink-0 border-b border-border">
+        <nav className="rcq-header shrink-0 border-b border-border">
           <div className="max-w-3xl mx-auto px-3 py-1.5 flex items-center gap-1 overflow-x-auto">
             {page.pages.map((p) => (
               <button

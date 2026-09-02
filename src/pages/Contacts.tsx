@@ -700,8 +700,8 @@ export function Contacts() {
     for (const c of contacts) {
       byKey.set(peerKey(c.uin, c.host), {
         key: peerKey(c.uin, c.host),
-        title: ciAliasFor(c.uin, c.host) || c.nickname || `#${c.uin}`,
-        subtitle: c.host ? `#${c.uin} · ${c.host}` : `#${c.uin}`,
+        title: ciAliasFor(c.uin, c.host) || c.nickname || `${c.uin}`,
+        subtitle: c.host ? `${c.uin} · ${c.host}` : `${c.uin}`,
         kind: 'peer',
         status: c.status,
         crossIsland: !!c.host,
@@ -715,7 +715,7 @@ export function Contacts() {
       byKey.set(key, {
         key,
         title: ciAliasFor(ci.uin, ci.host) || ci.nickname || `${ci.uin}@${ci.host}`,
-        subtitle: `#${ci.uin} · ${ci.host}`,
+        subtitle: `${ci.uin} · ${ci.host}`,
         kind: 'peer',
         crossIsland: true,
         avatarMediaId: ci.avatarMediaId,
@@ -911,9 +911,9 @@ export function Contacts() {
                 className="flex flex-col leading-tight min-w-0 hover:opacity-80 transition-opacity"
               >
                 <span className="font-semibold text-sm truncate">
-                  {me.nickname || `#${me.uin}`}
+                  {me.nickname || `${me.uin}`}
                 </span>
-                <span className="text-[0.625rem] text-fg-dim">#{me.uin}</span>
+                <span className="text-[0.625rem] text-fg-dim">{me.uin}</span>
               </Link>
               {/* Desktop only, and only while a relay is actually carrying us. */}
               <BypassShield />
@@ -1476,7 +1476,7 @@ function ContactRow({
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5">
               <span className={'truncate ' + (unread > 0 ? 'font-bold' : 'font-medium')}>
-                {alias || contact.nickname || `#${contact.uin}`}
+                {alias || contact.nickname || `${contact.uin}`}
               </span>
               <GenderIcon gender={contact.gender} />
               {favorite && <span className="text-yellow-500 text-xs flex-none">★</span>}
@@ -1484,7 +1484,7 @@ function ContactRow({
               {contact.blocked && <BlockedIcon />}
             </div>
             <div className="flex items-center gap-1.5 text-xs text-fg-dim min-w-0">
-              <span className="flex-none">#{contact.uin}</span>
+              <span className="flex-none">{contact.uin}</span>
               {/* ⚠ Order matters, and it used to be the other way round: a
                   status message won outright, so an OFFLINE contact who had
                   one never showed when they were last around. Measured on
@@ -1548,7 +1548,7 @@ function ContactRow({
         <ChatPreviewModal
           kind="peer"
           id={contact.uin}
-          title={alias || contact.nickname || `#${contact.uin}`}
+          title={alias || contact.nickname || `${contact.uin}`}
           status={contact.status}
           avatarMediaId={contact.avatar_media_id}
           avatarMediaKey={contact.avatar_media_key}

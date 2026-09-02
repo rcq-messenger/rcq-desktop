@@ -101,7 +101,7 @@ export function MessageToasts() {
       const title =
         toast.groupId != null
           ? lookupGroupName(viewer, toast.groupId) || t('toast.group')
-          : lookupContactName(viewer, toast.from) || `#${toast.from}`
+          : lookupContactName(viewer, toast.from) || `${toast.from}`
       const preview =
         toast.expiresAt != null ? t('chat.ttl.quoted')
         : toast.kind === 'photo' ? t('toast.photo')
@@ -110,7 +110,7 @@ export function MessageToasts() {
         : toast.kind === 'other' ? t('toast.attachment')
         : toast.text
       const body =
-        toast.groupId != null ? `${lookupContactName(viewer, toast.from) || `#${toast.from}`}: ${preview}` : preview
+        toast.groupId != null ? `${lookupContactName(viewer, toast.from) || `${toast.from}`}: ${preview}` : preview
       void notifyDesktop(title, body)
     })
   }, [identity, t])
@@ -144,9 +144,9 @@ export function MessageToasts() {
         const title =
           toast.groupId != null
             ? lookupGroupName(identity!.uin, toast.groupId) || t('toast.group')
-            : lookupContactName(identity!.uin, toast.from) || `#${toast.from}`
+            : lookupContactName(identity!.uin, toast.from) || `${toast.from}`
         const sender =
-          toast.groupId != null ? lookupContactName(identity!.uin, toast.from) || `#${toast.from}` : null
+          toast.groupId != null ? lookupContactName(identity!.uin, toast.from) || `${toast.from}` : null
         const senderStatus = lookupContactStatus(identity!.uin, toast.from)
         const groupAvatar = toast.groupId != null ? lookupGroupAvatar(identity!.uin, toast.groupId) : null
         const senderAvatar = toast.groupId == null ? lookupContactAvatar(identity!.uin, toast.from) : null

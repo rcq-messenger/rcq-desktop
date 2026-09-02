@@ -65,7 +65,7 @@ export function GlobalSearchOverlay({
     const cs = contacts
       .filter((c) => (c.nickname || '').toLowerCase().includes(query) || String(c.uin).includes(query))
       .slice(0, 6)
-      .map((c) => ({ isGroup: false as const, id: c.uin, title: c.nickname || `#${c.uin}`, c, g: null as RCQGroup | null }))
+      .map((c) => ({ isGroup: false as const, id: c.uin, title: c.nickname || `${c.uin}`, c, g: null as RCQGroup | null }))
     const gs = groups
       .filter((g) => (g.name || '').toLowerCase().includes(query))
       .slice(0, 6)
@@ -92,12 +92,12 @@ export function GlobalSearchOverlay({
   }, [query])
 
   const threadTitle = (h: MsgHit): string =>
-    h.isGroup ? groupById.get(h.threadId)?.name ?? `#${h.threadId}` : contactByUin.get(h.threadId)?.nickname ?? `#${h.threadId}`
+    h.isGroup ? groupById.get(h.threadId)?.name ?? `${h.threadId}` : contactByUin.get(h.threadId)?.nickname ?? `${h.threadId}`
 
   const authorLabel = (h: MsgHit): string | null => {
     if (h.fromUin == null) return t('home.search.you')
     if (!h.isGroup) return null // the thread title already names them
-    return contactByUin.get(h.fromUin)?.nickname ?? `#${h.fromUin}`
+    return contactByUin.get(h.fromUin)?.nickname ?? `${h.fromUin}`
   }
 
   /// A window around the first match, not the whole body: a hit inside a long

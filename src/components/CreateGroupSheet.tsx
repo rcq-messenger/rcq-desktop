@@ -50,13 +50,13 @@ export function CreateGroupSheet({ contacts, onClose, onCreated }: Props) {
           uin: ci.uin,
         })
         if (there == null) {
-          notInvited.push(ci.nickname || `#${ci.uin}`)
+          notInvited.push(ci.nickname || `${ci.uin}`)
           continue
         }
         try {
           await Api.addGroupMember(identity, g.id, there)
         } catch {
-          notInvited.push(ci.nickname || `#${ci.uin}`)
+          notInvited.push(ci.nickname || `${ci.uin}`)
           continue
         }
         try {
@@ -68,7 +68,7 @@ export function CreateGroupSheet({ contacts, onClose, onCreated }: Props) {
             { identityKey: ci.identityKey, signingKey: ci.signingKey },
           )
         } catch {
-          notInvited.push(ci.nickname || `#${ci.uin}`)
+          notInvited.push(ci.nickname || `${ci.uin}`)
         }
       }
       if (notInvited.length > 0) {
@@ -158,7 +158,7 @@ export function CreateGroupSheet({ contacts, onClose, onCreated }: Props) {
                   >
                     <StatusIcon status={('host' in c && c.host ? 'offline' : (c as Contact).status) ?? 'offline'} size={18} crossIsland={'host' in c && !!c.host} />
                     <span className="flex-1 truncate text-sm">
-                      {c.nickname || `#${c.uin}`}
+                      {c.nickname || `${c.uin}`}
                       {'host' in c && c.host ? (
                         <span className="ml-1.5 text-xs text-fg-dim">· {c.host}</span>
                       ) : null}

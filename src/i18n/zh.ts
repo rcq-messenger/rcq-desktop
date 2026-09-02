@@ -120,7 +120,7 @@ export const zh: Record<string, string> = {
   'contacts.saved.subtitle': '给自己的备忘',
   // Chat
   'chat.typing': '正在输入…',
-  'chat.placeholder': '给 {nick} 发消息…',
+  'chat.placeholder': '你的消息…',
   'chat.placeholder_loading': '加载中…',
   'chat.send': '发送',
   'chat.send_only.title': '仅发送模式。',
@@ -194,7 +194,7 @@ export const zh: Record<string, string> = {
   'chat.files_off.notice': '本群已禁用文件。',
   'chat.files_off.chip': '本群已禁用文件',
   'chat.slowmode.wait': '慢速模式：请等待 {s} 秒',
-  'chat.report.title': '举报 #{uin}',
+  'chat.report.title': '举报 {uin}',
   'chat.report.placeholder': '这条消息有什么问题？',
   'chat.report.hint': '举报将连同消息片段和发送者号码一起发给岛屿运营者。',
   'chat.report.send': '发送举报',
@@ -559,7 +559,7 @@ export const zh: Record<string, string> = {
   'settings.session.unlink_footer': '退出并只清除这个浏览器里的数据（此处保存的消息、联系人和密钥）。如果你是用手机扫 QR 连接网页版的，账号仍留在手机上，只需在手机的“已连接设备”里断开这个浏览器。但如果你是用恢复短语登录的，而这里是唯一的副本，退出后账号就永久丢失了。',
   'settings.section.multihome': '在另一个岛上的备份',
   'settings.multihome.body': '你的账号还可以同时存在于第二个独立的 RCQ 岛（服务器）上。消息会同时投递到两个信箱，这样其中一个岛挂掉时也不会丢东西，另一个仍在接收。',
-  'settings.multihome.row_uin': '你在那里的号码：#{uin}',
+  'settings.multihome.row_uin': '你在那里的号码：{uin}',
   'settings.multihome.auto_label': '在另一个岛上保留我的账号备份',
   'settings.multihome.auto_sub': '岛会从公开目录里自动挑选。关掉它会断开已挑选的岛。',
   'settings.multihome.auto_busy': '正在挑选岛…',
@@ -925,7 +925,7 @@ export const zh: Record<string, string> = {
   'group_join.error.generic': '无法加载这个群组。',
   'group_join.error.blocked': '群主已禁止你进入这个群组。',
   // Group chat
-  'chat.placeholder.group': '给 {name} 发消息…',
+  'chat.placeholder.group': '你的消息…',
   // Settings: burn confirm typing
   'settings.danger.type_uin': '请在下方输入你的 UIN（{uin}）以确认。',
   // Brand

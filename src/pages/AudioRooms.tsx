@@ -423,7 +423,7 @@ function MemberSheet({
           </div>
           <div className="min-w-0">
             <div className="font-semibold text-fg-primary truncate">{member.nickname}</div>
-            <div className="text-xs text-fg-dim">#{member.uin}</div>
+            <div className="text-xs text-fg-dim">{member.uin}</div>
           </div>
           <button onClick={onClose} className="ml-auto text-fg-secondary hover:text-fg-primary px-2" aria-label={t('common.close')}>
             ✕

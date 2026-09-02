@@ -132,7 +132,7 @@ export const ru: Record<string, string> = {
 
   // Chat
   'chat.typing': 'печатает…',
-  'chat.placeholder': 'Сообщение для {nick}…',
+  'chat.placeholder': 'Ваше сообщение…',
   'chat.placeholder_loading': 'Загружаем…',
   'chat.send': 'Отправить',
   'chat.send_only.title': 'Только отправка.',
@@ -213,7 +213,7 @@ export const ru: Record<string, string> = {
   'chat.files_off.notice': 'Файлы отключены в этой группе.',
   'chat.files_off.chip': 'Файлы отключены в этой группе',
   'chat.slowmode.wait': 'Медленный режим: подождите {s} с',
-  'chat.report.title': 'Жалоба на #{uin}',
+  'chat.report.title': 'Жалоба на {uin}',
   'chat.report.placeholder': 'Что не так с этим сообщением?',
   'chat.report.hint': 'Жалоба уходит операторам острова вместе с отрывком сообщения и номером отправителя.',
   'chat.report.send': 'Отправить жалобу',
@@ -626,7 +626,7 @@ export const ru: Record<string, string> = {
   'settings.section.multihome': 'Резервная копия на другом острове',
   'settings.multihome.body':
     'Ваш аккаунт может жить ещё и на втором, независимом острове RCQ (сервере). Сообщения доставляются сразу в оба почтовых ящика: если один остров упадёт, ничего не потеряется, второй продолжит принимать.',
-  'settings.multihome.row_uin': 'ваш номер там: #{uin}',
+  'settings.multihome.row_uin': 'ваш номер там: {uin}',
   'settings.multihome.auto_label': 'Хранить копию автоматически',
   'settings.multihome.auto_sub':
     'Остров подбирается автоматически из публичного каталога. Выключение тумблера отключает подобранный остров.',
@@ -1074,7 +1074,7 @@ export const ru: Record<string, string> = {
   'group_join.error.blocked': 'Владелец заблокировал вам доступ в эту группу.',
 
   // Чат группы
-  'chat.placeholder.group': 'Сообщение в {name}…',
+  'chat.placeholder.group': 'Ваше сообщение…',
 
   // Настройки: burn confirm typing
   'settings.danger.type_uin': 'Чтобы подтвердить, введите ваш UIN ({uin}) ниже.',

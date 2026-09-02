@@ -80,7 +80,7 @@ function toMember(m: Record<string, unknown>): RoomMember {
   const uin = Number(m.uin)
   return {
     uin,
-    nickname: (m.nickname as string) || `#${uin}`,
+    nickname: (m.nickname as string) || `${uin}`,
     mutedByOwner: Boolean(m.muted_by_owner),
     avatarMediaId: (m.avatar_media_id as string | null) ?? null,
     avatarMediaKey: (m.avatar_media_key as string | null) ?? null,

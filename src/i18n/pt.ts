@@ -120,7 +120,7 @@ export const pt: Record<string, string> = {
   'contacts.saved.subtitle': 'Notas para você',
   // Chat
   'chat.typing': 'digitando…',
-  'chat.placeholder': 'Mensagem para {nick}…',
+  'chat.placeholder': 'Sua mensagem…',
   'chat.placeholder_loading': 'Carregando…',
   'chat.send': 'Enviar',
   'chat.send_only.title': 'Modo só de envio.',
@@ -194,7 +194,7 @@ export const pt: Record<string, string> = {
   'chat.files_off.notice': 'Arquivos estão desativados neste grupo.',
   'chat.files_off.chip': 'Arquivos desativados neste grupo',
   'chat.slowmode.wait': 'Modo lento: aguarde {s} s',
-  'chat.report.title': 'Denunciar #{uin}',
+  'chat.report.title': 'Denunciar {uin}',
   'chat.report.placeholder': 'O que há de errado com esta mensagem?',
   'chat.report.hint': 'A denúncia vai para os operadores da ilha junto com um trecho da mensagem e o número do remetente.',
   'chat.report.send': 'Enviar denúncia',
@@ -559,7 +559,7 @@ export const pt: Record<string, string> = {
   'settings.session.unlink_footer': 'Sai da conta e limpa só este navegador (mensagens, contatos e chaves guardados aqui). Se você conectou esta web pelo celular por QR, sua conta continua no celular: basta desconectar este navegador lá, em Dispositivos conectados. Mas se você entrou com uma frase de recuperação e esta é a única cópia, sair perde a conta de vez.',
   'settings.section.multihome': 'Backup em outra ilha',
   'settings.multihome.body': 'Sua conta também pode viver em uma segunda ilha RCQ (servidor) independente. As mensagens passam a ser entregues nas duas caixas, então se uma ilha cair nada se perde: a outra continua recebendo.',
-  'settings.multihome.row_uin': 'seu número lá: #{uin}',
+  'settings.multihome.row_uin': 'seu número lá: {uin}',
   'settings.multihome.auto_label': 'Manter um backup da minha conta em outra ilha',
   'settings.multihome.auto_sub': 'A ilha é escolhida automaticamente no catálogo público. Desligar isto desconecta a ilha escolhida.',
   'settings.multihome.auto_busy': 'Escolhendo uma ilha…',
@@ -927,7 +927,7 @@ export const pt: Record<string, string> = {
   'group_join.error.generic': 'Não foi possível carregar este grupo.',
   'group_join.error.blocked': 'O dono do grupo bloqueou você aqui.',
   // Group chat
-  'chat.placeholder.group': 'Mensagem para {name}…',
+  'chat.placeholder.group': 'Sua mensagem…',
   // Settings: burn confirm typing
   'settings.danger.type_uin': 'Para confirmar, digite seu UIN ({uin}) abaixo.',
   // Brand

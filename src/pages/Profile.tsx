@@ -108,7 +108,7 @@ export function Profile() {
         const cached = lookupContactName(identity.uin, targetUIN)
         setInfo({
           uin: targetUIN,
-          nickname: cached || `#${targetUIN}`,
+          nickname: cached || `${targetUIN}`,
           status: 'offline',
         } as UserInfo)
         if (import.meta.env.DEV) console.warn('profile: no card for', targetUIN, e)
@@ -270,7 +270,7 @@ function ReadView({
             crossIsland={!!crossIslandHost}
           />
           <div className="min-w-0">
-            <div className="text-2xl font-bold truncate">{alias || info.nickname || `#${info.uin}`}</div>
+            <div className="text-2xl font-bold truncate">{alias || info.nickname || `${info.uin}`}</div>
             {alias && selfName && alias !== selfName && (
               <div className="text-xs text-fg-secondary truncate">
                 {t('profile.their_name', { name: selfName })}
@@ -500,7 +500,7 @@ function EditView({
             {/* Your own number. It used to be on the read-only page this
                 form replaced, and it is the one thing here you cannot edit
                 but do need to read out to people. */}
-            <div className="text-xs text-fg-dim">#{draft.uin}</div>
+            <div className="text-xs text-fg-dim">{draft.uin}</div>
             <label className="text-sm text-accent cursor-pointer hover:underline">
               {draft.avatar_media_id ? t('profile.picture.change') : t('profile.picture.set')}
               <input

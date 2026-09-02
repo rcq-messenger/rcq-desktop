@@ -120,7 +120,7 @@ export const es: Record<string, string> = {
   'contacts.saved.subtitle': 'Notas para ti',
   // Chat
   'chat.typing': 'escribiendo…',
-  'chat.placeholder': 'Mensaje para {nick}…',
+  'chat.placeholder': 'Tu mensaje…',
   'chat.placeholder_loading': 'Cargando…',
   'chat.send': 'Enviar',
   'chat.send_only.title': 'Modo solo envío.',
@@ -194,7 +194,7 @@ export const es: Record<string, string> = {
   'chat.files_off.notice': 'Los archivos están desactivados en este grupo.',
   'chat.files_off.chip': 'Archivos desactivados en este grupo',
   'chat.slowmode.wait': 'Modo lento: espera {s} s',
-  'chat.report.title': 'Denunciar a #{uin}',
+  'chat.report.title': 'Denunciar a {uin}',
   'chat.report.placeholder': '¿Qué pasa con este mensaje?',
   'chat.report.hint': 'La denuncia llega a los operadores de la isla junto con un fragmento del mensaje y el número del remitente.',
   'chat.report.send': 'Enviar denuncia',
@@ -559,7 +559,7 @@ export const es: Record<string, string> = {
   'settings.session.unlink_footer': 'Cierra la sesión y borra solo este navegador (mensajes, contactos y claves guardados aquí). Si conectaste esta web desde tu teléfono con un QR, tu cuenta se queda en el teléfono: basta con desconectar este navegador allí, en Dispositivos vinculados. Pero si entraste con una frase de recuperación y esta es la única copia, al cerrar sesión pierdes la cuenta para siempre.',
   'settings.section.multihome': 'Copia en otra isla',
   'settings.multihome.body': 'Tu cuenta también puede vivir en una segunda isla (servidor) RCQ independiente. Los mensajes se entregan entonces en los dos buzones, así que si una isla se cae no se pierde nada: la otra sigue recibiendo.',
-  'settings.multihome.row_uin': 'tu número allí: #{uin}',
+  'settings.multihome.row_uin': 'tu número allí: {uin}',
   'settings.multihome.auto_label': 'Mantener una copia de mi cuenta en otra isla',
   'settings.multihome.auto_sub': 'La isla se elige sola del catálogo público. Al desactivarlo se desconecta la isla elegida.',
   'settings.multihome.auto_busy': 'Eligiendo una isla…',
@@ -927,7 +927,7 @@ export const es: Record<string, string> = {
   'group_join.error.generic': 'No se pudo cargar este grupo.',
   'group_join.error.blocked': 'El propietario te ha bloqueado el acceso a este grupo.',
   // Group chat
-  'chat.placeholder.group': 'Mensaje para {name}…',
+  'chat.placeholder.group': 'Tu mensaje…',
   // Settings: burn confirm typing
   'settings.danger.type_uin': 'Para confirmar, escribe tu UIN ({uin}) abajo.',
   // Brand

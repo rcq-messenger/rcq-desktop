@@ -18,6 +18,7 @@
 //   and that is the point rather than a limitation.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
 import { Link } from 'react-router-dom'
@@ -55,6 +56,7 @@ function SiteMark({ name, uri, size = 26 }: { name: string; uri?: string | null;
 export function Sites() {
   const { t } = useI18n()
   const { identity } = useIdentity()
+  const [params] = useSearchParams()
   const [typed, setTyped] = useState('')
   const [addr, setAddr] = useState<RcqAddress | null>(null)
   const [page, setPage] = useState<SitePage | null>(null)
@@ -95,6 +97,18 @@ export function Sites() {
       setLoading(false)
     }
   }, [ownHost])
+
+  // An address handed in from elsewhere - a tapped `.rcq` name in a chat -
+  // opens straight away, so the row in the message menu lands on the page
+  // rather than on an empty address bar.
+  const asked = params.get('a')
+  useEffect(() => {
+    if (asked) void open(asked)
+    // Deliberately only on the address itself: re-running this when `open`
+    // changes identity would reload the page under a reader who has since
+    // navigated somewhere else in the same site.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [asked])
 
   // The catalogue of the reader's own island: what there is to look at at all,
   // and only the sites that asked to be in it.

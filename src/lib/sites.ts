@@ -60,6 +60,9 @@ export interface SitePage {
   frameset: boolean
   /// Which file of the bundle this is.
   path: string
+  /// The line the manifest carries for the catalogue, so a recent opened by
+  /// address has the same row as one opened from the list.
+  title: string | null
   /// Every `.html` in the bundle, so the reader can move between pages
   /// without a single script running inside the frame.
   pages: string[]
@@ -115,6 +118,54 @@ function islandHostFromLabel(label: string, ownHost: string): string {
   return label.includes('.') || label.includes(':') ? label : `${label}.rcq.app`
 }
 
+/// The address a site is shown and shared under, from where the READER
+/// stands: `blog.rcq` for a site on their own island, `blog.is2.rcq` for one
+/// elsewhere. The inverse of `islandHostFromLabel`, and computed at the moment
+/// of showing rather than stored, because "my island" is a property of the
+/// account looking, not of the site: a recent opened under one account must
+/// not read as "on my island" to the next.
+export function displayAddress(name: string, host: string, ownHost: string): string {
+  if (host === ownHost) return `${name}.rcq`
+  const stem = host.endsWith('.rcq.app') ? host.slice(0, -'.rcq.app'.length) : null
+  const label = host === 'api.rcq.app' ? 'flagship' : stem && !stem.includes('.') ? stem : host
+  return `${name}.${label}.rcq`
+}
+
+/// A `.rcq` address the way it may arrive in a sentence or a link.
+export interface SiteLink {
+  /// The address alone, lowercased, no scheme and no path: `blog.is2.rcq`.
+  address: string
+  /// The page of the bundle the path named, or null for the front page.
+  page: string | null
+}
+
+/// Is this text a site address, and which page does it point at?
+///
+/// Bare (`blog.rcq`), with the network's own scheme (`rcq://blog.rcq`), or
+/// written the way a person writes every other address (`https://blog.rcq`,
+/// `http://blog.rcq/en.html`). ⚠ The scheme is DROPPED, not honoured: there is
+/// no DNS behind `.rcq` and the reader goes to the island the same way
+/// whatever was typed in front. Without this a person who shared their own
+/// site as `https://e2ee.rcq` sent every reader to a system browser and a
+/// search engine (founder, 02.09). A host that does not end in `.rcq` is
+/// somebody else's URL and stays one, which keeps `x.rcq.app` a website.
+///
+/// The page is the path, decoded, and only when it names an HTML file: a
+/// bundle's other files are pictures and stylesheets, and a picture "opened
+/// as a page" is a screen of bytes. Query and fragment are dropped.
+export function siteLinkOf(raw: string): SiteLink | null {
+  const m = /^(?:(?:https?|rcq):\/\/)?([^/?#\s]+)(?:\/([^?#\s]*))?(?:[?#]\S*)?$/i.exec(raw.trim())
+  if (!m) return null
+  const address = m[1].toLowerCase()
+  if (!address.endsWith('.rcq') || !parseRcqAddress(address, 'own')) return null
+  let page: string | null = (m[2] ?? '').replace(/^\/+/, '') || null
+  if (page) {
+    try { page = decodeURIComponent(page) } catch { /* left as typed */ }
+    if (!/\.html?$/i.test(page)) page = null
+  }
+  return { address, page }
+}
+
 /// Everything is https except a developer's own machine: an island is a
 /// public host, and the one exception is spelled out rather than inferred.
 function originOf(host: string): string {
@@ -157,6 +208,59 @@ export function repin(addr: RcqAddress, key: string): void {
   const pins = readPins()
   pins[display] = key
   try { localStorage.setItem(PINS_KEY, JSON.stringify(pins)) } catch { /* private mode */ }
+}
+
+/// The last sites this device opened, newest first, for the browser's start
+/// screen.
+///
+/// Keyed `name@host` like the pins, and like the pins NOT scoped to the
+/// account (founder, 02.09): this is the machine's history, the way a
+/// phone's browser has one history whoever is signed in to what. The address
+/// is not stored, only the name and the island: what the row READS as is
+/// decided by the account looking at it (`displayAddress`).
+const RECENTS_KEY = 'rcq.web.siteRecents'
+const RECENTS_MAX = 10
+
+export interface SiteRecent {
+  name: string
+  host: string
+  /// The catalogue line the manifest carried when it was opened, if any.
+  title: string | null
+  /// Last opened, epoch ms.
+  at: number
+}
+
+export function recentKey(r: { name: string; host: string }): string {
+  return `${r.name}@${r.host}`
+}
+
+export function readRecents(): SiteRecent[] {
+  try {
+    const rows = JSON.parse(localStorage.getItem(RECENTS_KEY) || '[]') as unknown
+    if (!Array.isArray(rows)) return []
+    return rows.filter(
+      (r): r is SiteRecent => !!r && typeof r === 'object' &&
+        typeof (r as SiteRecent).name === 'string' && typeof (r as SiteRecent).host === 'string',
+    )
+  } catch {
+    return []
+  }
+}
+
+function writeRecents(rows: SiteRecent[]): SiteRecent[] {
+  try { localStorage.setItem(RECENTS_KEY, JSON.stringify(rows)) } catch { /* private mode */ }
+  return rows
+}
+
+/// A site was opened: it moves to the front, and the list is cut to ten.
+export function noteRecent(addr: RcqAddress, title: string | null): SiteRecent[] {
+  const key = recentKey(addr)
+  const rest = readRecents().filter((r) => recentKey(r) !== key)
+  return writeRecents([{ name: addr.name, host: addr.host, title, at: Date.now() }, ...rest].slice(0, RECENTS_MAX))
+}
+
+export function forgetRecent(key: string): SiteRecent[] {
+  return writeRecents(readRecents().filter((r) => recentKey(r) !== key))
 }
 
 /// Is this path in the bundle? `m.files[path]` looks like the same question
@@ -492,6 +596,7 @@ export async function fetchSitePage(addr: RcqAddress, path = 'index.html', fresh
     frames,
     frameset,
     path,
+    title: typeof m.title === 'string' && m.title.trim() ? m.title.trim() : null,
     // index.html first, the rest alphabetically: the front page is the front
     // page, whatever it sorts as.
     pages: Object.keys(m.files)
@@ -571,6 +676,10 @@ export interface CatalogueEntry {
   owner_uin: number
   version: number
   updated_at: string
+  /// The island put this site at the top of its start screen: on the
+  /// flagship that is `home`, the network's own page. Absent from an island
+  /// that does not know the field yet, and absent means no.
+  featured: boolean
 }
 
 /// The catalogue of an island: only the sites that asked to be in it.
@@ -578,8 +687,8 @@ export async function fetchCatalogue(host: string): Promise<CatalogueEntry[]> {
   try {
     const res = await fetch(`${originOf(host)}/sites`, { credentials: 'omit', referrerPolicy: 'no-referrer' })
     if (!res.ok) return []
-    const rows = (await res.json()) as CatalogueEntry[]
-    return Array.isArray(rows) ? rows : []
+    const rows = (await res.json()) as (Omit<CatalogueEntry, 'featured'> & { featured?: unknown })[]
+    return Array.isArray(rows) ? rows.map((r) => ({ ...r, featured: r.featured === true })) : []
   } catch {
     return []
   }

@@ -13,15 +13,26 @@
 //   otherwise hold a journal of what its users read elsewhere.
 // * Links out of the network are text. A click is how a reader gets
 //   deanonymised, and Tor's exit-node problem is one we can simply not have.
-// * Pages of the same site are moved between HERE, in our own chrome: with no
-//   scripts in the frame there is nothing inside a page that could navigate,
-//   and that is the point rather than a limitation.
+// * Pages of the same site, and other sites, are moved between HERE, in our
+//   own chrome: with no scripts in the frame there is nothing inside a page
+//   that could navigate, and that is the point rather than a limitation. A
+//   click on a link inside a page reaches the listener we attach to the
+//   frame's document, and only the two kinds of link that stay inside the
+//   network go anywhere.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
-import { fetchCatalogue, fetchSiteIcon, fetchSitePage, parseRcqAddress, repin, type CatalogueEntry, type RcqAddress, type SitePage } from '../lib/sites'
+import { useToast } from '../lib/toast'
+import { isSentSoundEnabled, playSound } from '../lib/sounds'
+import {
+  displayAddress, fetchCatalogue, fetchSiteIcon, fetchSitePage, forgetRecent, noteRecent, parseRcqAddress,
+  readRecents, recentKey, repin, siteLinkOf,
+  type CatalogueEntry, type RcqAddress, type SitePage, type SiteRecent,
+} from '../lib/sites'
+import { SendTextError, sendTextTo, type ForwardTarget } from '../lib/send-text'
+import { ForwardModal } from '../components/ForwardModal'
 import { MySitePanel } from '../components/MySitePanel'
 
 const ERRORS = ['address', 'missing', 'frozen', 'unsigned', 'tampered', 'offline'] as const
@@ -52,9 +63,99 @@ function SiteMark({ name, uri, size = 26 }: { name: string; uri?: string | null;
   )
 }
 
+/// The share glyph: an arrow leaving a tray, the shape every phone uses for
+/// "hand this to somebody".
+function ShareGlyph({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+      <polyline points="16 6 12 2 8 6" />
+      <line x1="12" y1="2" x2="12" y2="15" />
+    </svg>
+  )
+}
+
+/// One row of the start screen: the mark, the address, the catalogue line,
+/// and at the right the share affordance (#852) - plus, for a recent, the way
+/// to forget it.
+///
+/// A <div> with a button in it rather than one big <button>: the share and
+/// the remove are buttons of their own, and a button inside a button is
+/// invalid HTML that the browser is free to lift out of its row.
+function SiteRow({
+  name, address, title, ownerUin, icon, onOpen, onShare, onRemove, t,
+}: {
+  name: string
+  address: string
+  title: string | null
+  ownerUin?: number | null
+  icon: string | null | undefined
+  onOpen: () => void
+  onShare: () => void
+  onRemove?: () => void
+  t: (key: string) => string
+}) {
+  return (
+    <div className="flex items-center rounded-md hover:bg-field">
+      <button
+        type="button"
+        onClick={onOpen}
+        className="min-w-0 flex-1 flex items-center gap-3 text-left px-3 py-2"
+      >
+        <SiteMark name={name} uri={icon} />
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-mono text-fg-primary truncate">{address}</span>
+          {title && <span className="block text-xs text-fg-secondary truncate">{title}</span>}
+          {/* Who published it, and a way to reach them. The island already
+              answers with this - a listed site is a shop window - so leaving
+              it in an unread response helped nobody. */}
+          {/* Only when the author asked to be named: the island answers with
+              no owner at all otherwise, and a row reading "by #" was the
+              shape of that decision leaking into the screen. */}
+          {ownerUin != null && (
+            <span className="block text-[0.6875rem] text-fg-dim">
+              {t('sites.by')}{' '}
+              <Link
+                to={`/chat/${ownerUin}`}
+                onClick={(e) => e.stopPropagation()}
+                className="font-mono hover:text-fg-primary underline underline-offset-2"
+              >
+                #{ownerUin}
+              </Link>
+            </span>
+          )}
+        </span>
+      </button>
+      <button
+        type="button"
+        onClick={onShare}
+        className="flex-none p-2 text-fg-dim hover:text-fg-primary"
+        title={t('sites.share')}
+        aria-label={t('sites.share')}
+      >
+        <ShareGlyph />
+      </button>
+      {onRemove && (
+        <button
+          type="button"
+          onClick={onRemove}
+          className="flex-none p-2 mr-1 text-fg-dim hover:text-fg-primary"
+          title={t('sites.recents.remove')}
+          aria-label={t('sites.recents.remove')}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+            <path d="M18 6L6 18M6 6l12 12" />
+          </svg>
+        </button>
+      )}
+    </div>
+  )
+}
+
 export function Sites() {
   const { t } = useI18n()
   const { identity } = useIdentity()
+  const { toast } = useToast()
   const navigate = useNavigate()
   const [params] = useSearchParams()
   const [typed, setTyped] = useState('')
@@ -63,10 +164,15 @@ export function Sites() {
   const [error, setError] = useState<ErrorKind | null>(null)
   const [loading, setLoading] = useState(false)
   const [catalogue, setCatalogue] = useState<CatalogueEntry[]>([])
-  /// name → the site's mark as a data URI, or null once we know there is none.
+  const [recentsAll, setRecents] = useState<SiteRecent[]>(() => readRecents())
+  /// `name@host` → the site's mark as a data URI, or null once we know there
+  /// is none. Keyed with the island, not the name alone: a recent from
+  /// another island may share its name with a site on this one.
   const [icons, setIcons] = useState<Record<string, string | null>>({})
   const [mine, setMine] = useState(false)
   const [focused, setFocused] = useState(false)
+  /// The address being handed to a chat, while the picker is up.
+  const [sharing, setSharing] = useState<string | null>(null)
   const frameRef = useRef<HTMLIFrameElement | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
   /// Bumped by every open and by every return to the catalogue: a fetch
@@ -77,6 +183,14 @@ export function Sites() {
   // "My island" for a bare `name.rcq`, taken from this session's own API base:
   // a person's first site is reachable before they know what an island is.
   const ownHost = identity ? new URL(identity.apiBase).host : 'api.rcq.app'
+
+  // The recents this account can reach by address. The list is the device's,
+  // not the account's, and an island only reachable as "my island" (a
+  // self-hosted one under a domain of its own) has no address from anywhere
+  // else - the grammar names islands as `<label>.rcq.app` or by port. Such a
+  // row under another account would open to an address error, so it waits
+  // for the account it belongs to rather than sitting there dead.
+  const recents = recentsAll.filter((r) => parseRcqAddress(displayAddress(r.name, r.host, ownHost), ownHost))
 
   /// The fetch itself. Moving between pages of one site and reloading call
   /// this directly; opening a site by address goes through `go` and the URL.
@@ -101,7 +215,11 @@ export function Sites() {
       const got = await fetchSitePage(parsed, path, fresh)
       if (mine !== turn.current) return
       setPage(got)
-      void fetchSiteIcon(parsed, fresh).then((uri) => setIcons((cur) => ({ ...cur, [parsed.name]: uri })))
+      // A site that opened is a site this device has been to. Only one that
+      // opened: an address that failed is not a place, and a row for it on
+      // the start screen would fail again.
+      setRecents(noteRecent(parsed, got.title))
+      void fetchSiteIcon(parsed, fresh).then((uri) => setIcons((cur) => ({ ...cur, [recentKey(parsed)]: uri })))
     } catch (e) {
       if (mine !== turn.current) return
       const kind = e instanceof Error ? e.message : 'missing'
@@ -117,11 +235,14 @@ export function Sites() {
   // opening and clearing for both - so the browser's own Back and Forward,
   // the chevron in the capsule and an address handed in from a chat (a
   // tapped `.rcq` name lands on the page, not on an empty bar) all go
-  // through one door and cannot disagree about where the reader is.
+  // through one door and cannot disagree about where the reader is. `p` is
+  // the page a link with a path asked for (`https://e2ee.rcq/en.html`);
+  // moving between pages from inside the site does not touch the URL.
   const asked = params.get('a')
+  const askedPage = params.get('p')
   useEffect(() => {
     if (asked) {
-      void open(asked)
+      void open(asked, askedPage || 'index.html')
       return
     }
     // Back to the catalogue: nothing of the page survives, and a fetch still
@@ -132,26 +253,33 @@ export function Sites() {
     setError(null)
     setTyped('')
     setLoading(false)
+    setRecents(readRecents())
     // Deliberately only on the address itself: re-running this when `open`
     // changes identity would reload the page under a reader who has since
     // navigated somewhere else in the same site.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [asked])
+  }, [asked, askedPage])
 
   /// Open a site by address. Every way of asking for one - Enter in the bar,
-  /// a catalogue row, one's own site in the panel - lands here, and here
-  /// means the URL, not the fetch: the effect above does the rest.
-  const go = useCallback((raw: string) => {
-    const display = parseRcqAddress(raw, ownHost)?.display ?? raw.trim()
-    if (display === asked) {
-      // The param does not change, so the effect will not fire, and for the
+  /// a catalogue row, one's own site in the panel, a link inside a page -
+  /// lands here, and here means the URL, not the fetch: the effect above does
+  /// the rest. `page` is for a link that named one.
+  const go = useCallback((raw: string, wantedPage?: string | null) => {
+    // Typed with a scheme, the way people type every other address: the
+    // scheme goes, and a path becomes the page.
+    const link = siteLinkOf(raw)
+    const address = link?.address ?? raw
+    const wanted = wantedPage ?? link?.page ?? null
+    const display = parseRcqAddress(address, ownHost)?.display ?? address.trim()
+    if (display === asked && (wanted ?? 'index.html') === (askedPage || 'index.html')) {
+      // The params do not change, so the effect will not fire, and for the
       // page already up that is the point. Enter on an address that failed
       // is a retry, though, and from an inner page it asks for the front.
-      if (!page || page.path !== 'index.html') void open(raw)
+      if (!page || page.path !== (wanted ?? 'index.html')) void open(address, wanted ?? 'index.html')
       return
     }
-    navigate(`/sites?a=${encodeURIComponent(display)}`)
-  }, [asked, navigate, open, ownHost, page])
+    navigate(`/sites?a=${encodeURIComponent(display)}${wanted ? `&p=${encodeURIComponent(wanted)}` : ''}`)
+  }, [asked, askedPage, navigate, open, ownHost, page])
 
   // The catalogue of the reader's own island: what there is to look at at all,
   // and only the sites that asked to be in it.
@@ -164,15 +292,38 @@ export function Sites() {
   // them would be a list that an offline site could hold up.
   useEffect(() => {
     let live = true
+    const wanted: RcqAddress[] = []
     for (const s of catalogue) {
-      const addr = parseRcqAddress(`${s.name}.rcq`, ownHost)
-      if (!addr) continue
-      void fetchSiteIcon(addr).then((uri) => {
-        if (live) setIcons((cur) => ({ ...cur, [s.name]: uri }))
+      const a = parseRcqAddress(`${s.name}.rcq`, ownHost)
+      if (a) wanted.push(a)
+    }
+    for (const r of recents) wanted.push({ name: r.name, host: r.host, display: displayAddress(r.name, r.host, ownHost) })
+    for (const a of wanted) {
+      void fetchSiteIcon(a).then((uri) => {
+        if (live) setIcons((cur) => ({ ...cur, [recentKey(a)]: uri }))
       })
     }
     return () => { live = false }
-  }, [catalogue, ownHost])
+  }, [catalogue, recents, ownHost])
+
+  /// Where a click inside the page goes. Kept in a ref because the listener
+  /// is attached to a document that is rewritten on every page, while the
+  /// address and `open` it needs belong to whichever render is current.
+  const route = useRef<(a: HTMLAnchorElement) => void>(() => {})
+  route.current = (a) => {
+    // A page of the same bundle: the sanitiser marked it (lib/sites), so
+    // this is a file the manifest signs, never something the author typed
+    // into the attribute.
+    const inner = a.getAttribute('data-rcq-page')
+    if (inner) {
+      if (addr) void open(addr.display, inner)
+      return
+    }
+    // Another site, bare or with a scheme: the reader, by the same door as a
+    // name tapped in a chat. Every other link stays what it is - text.
+    const link = siteLinkOf(a.getAttribute('data-rcq-external') ?? '')
+    if (link) go(link.address, link.page)
+  }
 
   // The page is WRITTEN into a blank frame rather than handed over as
   // `srcdoc`. Both end up the same document, but `srcdoc` rendered NOTHING
@@ -196,6 +347,34 @@ export function Sites() {
     doc.open()
     doc.write(html)
     doc.close()
+    if (!html) return true
+    // Links that go somewhere inside the network get a pointer, so a reader
+    // can tell them from the ones that are text. Marked here, in our chrome,
+    // after the sanitiser has had the last word on what the page contains.
+    for (const a of Array.from(doc.querySelectorAll('a[data-rcq-external]'))) {
+      if (siteLinkOf(a.getAttribute('data-rcq-external') ?? '')) a.setAttribute('data-rcq-site', '')
+    }
+    const style = doc.createElement('style')
+    style.textContent = 'a[data-rcq-page],a[data-rcq-site]{cursor:pointer}'
+    doc.head?.appendChild(style)
+    // ⚠ Attached AFTER the write, every time: document.open() discards every
+    // listener on the document, so one attached once would be gone with the
+    // first page. The listener is ours, created in the app's own realm, which
+    // is why it runs at all in a frame whose own scripts are off - and that
+    // is the whole arrangement: the page cannot navigate, we can.
+    doc.addEventListener(
+      'click',
+      (e) => {
+        const a = (e.target as Element | null)?.closest?.('a')
+        if (!a) return
+        // Nothing inside a page navigates by itself, whatever the anchor
+        // says: the two kinds that go somewhere are routed by our chrome,
+        // and the rest do nothing, exactly as before.
+        e.preventDefault()
+        route.current(a)
+      },
+      true,
+    )
     return true
   }, [])
 
@@ -207,9 +386,57 @@ export function Sites() {
     return () => clearTimeout(t)
   }, [page, paint])
 
+  /// The share picked a chat: the address goes there as an ordinary text
+  /// message (#852), by the same path a forward takes.
+  async function shareTo(target: ForwardTarget) {
+    if (!identity || !sharing) return
+    try {
+      await sendTextTo(identity, target, sharing)
+      if (isSentSoundEnabled()) playSound('message_sent')
+      setSharing(null)
+      toast(`${t('chat.forward.sent')}: ${target.name}`)
+    } catch (e) {
+      toast(
+        e instanceof SendTextError ? t(`chat.error.${e.code}`) : e instanceof Error ? e.message : t('chat.error.send_failed'),
+        'error',
+      )
+    }
+  }
+
+  /// The share picked the clipboard instead: how an address leaves the app.
+  function copyShared() {
+    if (!sharing) return
+    void navigator.clipboard?.writeText(sharing).catch(() => {})
+    setSharing(null)
+    toast(t('chat.copied'))
+  }
+
+  // The start screen, in three parts (founder, 02.09): what the island put
+  // at the top, what this device opened last, and the rest of the catalogue
+  // with those two taken out of it.
+  const pinned = catalogue.filter((s) => s.featured)
+  const shown = new Set<string>()
+  for (const s of pinned) shown.add(recentKey({ name: s.name, host: ownHost }))
+  for (const r of recents) shown.add(recentKey(r))
+  const rest = catalogue.filter((s) => !shown.has(recentKey({ name: s.name, host: ownHost })))
+
   // Idle on a page the capsule carries the site's mark and the reload glyph;
   // focused it is a plain text field and both go.
   const idleOnPage = !!page && !focused
+
+  const catalogueRow = (s: CatalogueEntry) => (
+    <SiteRow
+      key={s.name}
+      name={s.name}
+      address={`${s.name}.rcq`}
+      title={s.title}
+      ownerUin={s.owner_uin}
+      icon={icons[recentKey({ name: s.name, host: ownHost })]}
+      onOpen={() => go(`${s.name}.rcq`)}
+      onShare={() => setSharing(`${s.name}.rcq`)}
+      t={t}
+    />
+  )
 
   return (
     <div className="h-screen [height:100dvh] pt-[var(--rcq-top-inset)] flex flex-col bg-surface-dim overflow-hidden">
@@ -218,11 +445,11 @@ export function Sites() {
           left edge. On a page, or on an error for an address, the chevron
           returns to the catalogue; only from the catalogue does it leave the
           browser (founder, 02.09). Idle the address sits centred in the
-          capsule, the site's mark on its left and a reload glyph on its
-          right; focused it becomes an ordinary text field, left-aligned and
-          selected, and Enter opens. There is no Open button - a button beside
-          an address bar is a second way to do the thing the Return key
-          already does (founder, 01.09). */}
+          capsule, the site's mark on its left and the share and reload
+          glyphs on its right; focused it becomes an ordinary text field,
+          left-aligned and selected, and Enter opens. There is no Open
+          button - a button beside an address bar is a second way to do the
+          thing the Return key already does (founder, 01.09). */}
       <header className="rcq-header sticky top-0 z-10 shrink-0">
         <div className="max-w-3xl mx-auto px-3 h-14 flex items-center gap-1.5">
           <form
@@ -237,12 +464,13 @@ export function Sites() {
           >
             {/* The two ends of the capsule are the same width whatever is in
                 them, so a centred address is centred in the CAPSULE rather
-                than in what is left between the mark and the reload glyph.
-                With the chevron and the mark on one side and a single glyph
-                on the other, that leftover sat to the right, and so did the
-                domain (founder, 02.09). 26px is the chevron with its padding;
-                52 adds the gap and the 18px mark. */}
-            <div className={`flex-none flex items-center gap-2 ${idleOnPage ? 'w-[52px]' : 'w-[26px]'}`}>
+                than in what is left between the mark and the glyphs. With the
+                chevron and the mark on one side and a single glyph on the
+                other, that leftover sat to the right, and so did the domain
+                (founder, 02.09). 26px is the chevron with its padding; 56
+                holds the gap and the 18px mark on the left, and the share
+                and reload glyphs with their gap on the right. */}
+            <div className={`flex-none flex items-center gap-2 ${idleOnPage ? 'w-[56px]' : 'w-[26px]'}`}>
               <button
                 type="button"
                 onClick={() => navigate(asked ? '/sites' : '/contacts')}
@@ -257,8 +485,8 @@ export function Sites() {
               {/* The mark stands in for the padlock a browser puts here, and it
                   means the same thing: this is the site it says it is, checked
                   against the owner's signature. */}
-              {idleOnPage && (
-                <SiteMark name={addr?.name ?? ''} uri={icons[addr?.name ?? '']} size={18} />
+              {idleOnPage && addr && (
+                <SiteMark name={addr.name} uri={icons[recentKey(addr)]} size={18} />
               )}
             </div>
             <input
@@ -291,7 +519,21 @@ export function Sites() {
                 focused ? 'text-left' : 'text-center'
               }`}
             />
-            <div className={`flex-none flex items-center justify-end ${idleOnPage ? 'w-[52px]' : 'w-[26px]'}`}>
+            <div className={`flex-none flex items-center justify-end gap-2 ${idleOnPage ? 'w-[56px]' : 'w-[26px]'}`}>
+              {/* Share: the address of the page that is up, into a chat or
+                  onto the clipboard (#852). Next to reload, where a browser
+                  keeps it. */}
+              {idleOnPage && addr && (
+                <button
+                  type="button"
+                  onClick={() => setSharing(addr.display)}
+                  className="flex-none p-1 text-fg-dim hover:text-fg-primary"
+                  title={t('sites.share')}
+                  aria-label={t('sites.share')}
+                >
+                  <ShareGlyph size={15} />
+                </button>
+              )}
               {/* Reload, and it really reloads: the bundle is served with a five
                   minute cache, which is right for reading and wrong for somebody
                   who just republished. */}
@@ -338,7 +580,8 @@ export function Sites() {
       </header>
 
       {/* The other pages of this site. With no scripts in the frame, a link
-          inside a page cannot navigate - so the doors live out here. */}
+          inside a page cannot navigate on its own - so the doors live out
+          here too, beside the links the page itself carries. */}
       {page && page.pages.length > 1 && (
         <nav className="shrink-0 border-b border-border">
           <div className="max-w-3xl mx-auto px-3 py-1.5 flex items-center gap-1 overflow-x-auto">
@@ -369,43 +612,37 @@ export function Sites() {
               <div className="text-sm font-medium text-fg-primary">{t('sites.empty.title')}</div>
               <p className="text-xs text-fg-dim leading-relaxed">{t('sites.empty.body')}</p>
             </div>
-            {catalogue.length > 0 && (
+            {pinned.length > 0 && (
+              <div className="space-y-1">
+                <div className="text-xs uppercase tracking-wide text-fg-dim">{t('sites.pinned')}</div>
+                {pinned.map(catalogueRow)}
+              </div>
+            )}
+            {recents.length > 0 && (
+              <div className="space-y-1">
+                <div className="text-xs uppercase tracking-wide text-fg-dim">{t('sites.recents')}</div>
+                {recents.map((r) => {
+                  const address = displayAddress(r.name, r.host, ownHost)
+                  return (
+                    <SiteRow
+                      key={recentKey(r)}
+                      name={r.name}
+                      address={address}
+                      title={r.title}
+                      icon={icons[recentKey(r)]}
+                      onOpen={() => go(address)}
+                      onShare={() => setSharing(address)}
+                      onRemove={() => setRecents(forgetRecent(recentKey(r)))}
+                      t={t}
+                    />
+                  )
+                })}
+              </div>
+            )}
+            {rest.length > 0 && (
               <div className="space-y-1">
                 <div className="text-xs uppercase tracking-wide text-fg-dim">{t('sites.catalogue')}</div>
-                {catalogue.map((s) => (
-                  <button
-                    key={s.name}
-                    type="button"
-                    onClick={() => go(`${s.name}.rcq`)}
-                    className="w-full flex items-center gap-3 text-left px-3 py-2 rounded-md hover:bg-field"
-                  >
-                    <SiteMark name={s.name} uri={icons[s.name]} />
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-sm font-mono text-fg-primary">{s.name}.rcq</span>
-                      {s.title && <span className="block text-xs text-fg-secondary truncate">{s.title}</span>}
-                      {/* Who published it, and a way to reach them. The island
-                          already answers with this - a listed site is a shop
-                          window - so leaving it in an unread response helped
-                          nobody. */}
-                      {/* Only when the author asked to be named: the island
-                          answers with no owner at all otherwise, and a row
-                          reading "by #" was the shape of that decision leaking
-                          into the screen. */}
-                      {s.owner_uin != null && (
-                        <span className="block text-[0.6875rem] text-fg-dim">
-                          {t('sites.by')}{' '}
-                          <Link
-                            to={`/chat/${s.owner_uin}`}
-                            onClick={(e) => e.stopPropagation()}
-                            className="font-mono hover:text-fg-primary underline underline-offset-2"
-                          >
-                            #{s.owner_uin}
-                          </Link>
-                        </span>
-                      )}
-                    </span>
-                  </button>
-                ))}
+                {rest.map(catalogueRow)}
               </div>
             )}
           </div>
@@ -473,6 +710,15 @@ export function Sites() {
           onOpen={(name) => { setMine(false); go(`${name}.rcq`) }}
         />
       )}
+
+      {/* Sharing an address is picking a chat (#852): the same picker a
+          forward uses, with the clipboard as the one row that is not a chat. */}
+      <ForwardModal
+        visible={sharing != null}
+        onClose={() => setSharing(null)}
+        onPick={shareTo}
+        lead={{ label: t('sites.share.copy'), onPick: copyShared }}
+      />
     </div>
   )
 }

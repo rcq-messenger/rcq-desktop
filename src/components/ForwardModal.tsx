@@ -15,20 +15,28 @@ import { compactCount } from '../lib/format-count'
 import { useIdentity } from '../lib/identity-context'
 import { useI18n } from '../lib/i18n-context'
 import { contactAlias } from '../lib/local-store'
+import type { ForwardTarget } from '../lib/send-text'
 import { PersonAvatar } from './PersonAvatar'
 
-export type ForwardTarget =
-  | { kind: 'peer'; uin: number; name: string; contact: Contact }
-  | { kind: 'group'; id: number; name: string; group: RCQGroup }
+// The target type lives with the send path now (lib/send-text), so the
+// browser can pick a chat for a site's address without importing a chat
+// screen; re-exported here so the picker's callers keep one import.
+export type { ForwardTarget }
 
 export function ForwardModal({
   visible,
   onClose,
   onPick,
+  lead,
 }: {
   visible: boolean
   onClose: () => void
   onPick: (target: ForwardTarget) => Promise<void> | void
+  /// One row above the contacts that is not a chat: "copy the address" when
+  /// what is being shared is a site (#852). The clipboard is how an address
+  /// leaves the app, and it is also the door that is still there when the
+  /// lists below are empty.
+  lead?: { label: string; onPick: () => void }
 }) {
   const { identity } = useIdentity()
   const { t } = useI18n()
@@ -83,8 +91,8 @@ export function ForwardModal({
   )
 
   const empty = useMemo(
-    () => !loading && shownContacts.length === 0 && shownGroups.length === 0,
-    [loading, shownContacts, shownGroups],
+    () => !loading && shownContacts.length === 0 && shownGroups.length === 0 && !lead,
+    [loading, shownContacts, shownGroups, lead],
   )
 
   async function handlePick(target: ForwardTarget) {
@@ -136,6 +144,19 @@ export function ForwardModal({
         </div>
 
         <div className="flex-1 overflow-y-auto">
+          {lead && !q && (
+            <ul>
+              <Row busy={false} onClick={lead.onPick}>
+                <div className="w-8 h-8 rounded-full bg-field text-fg-secondary flex items-center justify-center flex-none">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <rect x="9" y="9" width="13" height="13" rx="2" />
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                  </svg>
+                </div>
+                <div className="flex-1 min-w-0 text-left text-sm truncate">{lead.label}</div>
+              </Row>
+            </ul>
+          )}
           {loading && (
             <div className="px-4 py-6 text-center text-sm text-fg-secondary">…</div>
           )}

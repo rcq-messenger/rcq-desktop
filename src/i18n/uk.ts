@@ -72,6 +72,7 @@ export const uk: Record<string, string> = {
   'island.trust.entered': 'Введений відбиток {host} не збігається з тим, якому цей пристрій уже довіряє.',
   'island.trust.on_file': 'Збережений',
   'island.trust.presented': 'Показаний зараз',
+  'island.trust.entered_label': 'Введений',
   'island.trust.via_ca': 'центр сертифікації',
   'island.trust.accept': 'Довіряти новому відбитку',
   'island.trust.later': 'Не зараз',

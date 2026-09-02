@@ -78,6 +78,7 @@ export const en: Record<string, string> = {
   'island.trust.entered': 'The fingerprint entered for {host} differs from the one this device already trusts.',
   'island.trust.on_file': 'On file',
   'island.trust.presented': 'Presented now',
+  'island.trust.entered_label': 'Entered',
   'island.trust.via_ca': 'a certificate authority',
   'island.trust.accept': 'Trust the new fingerprint',
   'island.trust.later': 'Not now',

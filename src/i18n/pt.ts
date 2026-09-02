@@ -72,6 +72,7 @@ export const pt: Record<string, string> = {
   'island.trust.entered': 'A impressão digital digitada para {host} não bate com a que este dispositivo já conhece.',
   'island.trust.on_file': 'Guardada',
   'island.trust.presented': 'Apresentada agora',
+  'island.trust.entered_label': 'Digitada',
   'island.trust.via_ca': 'uma autoridade certificadora',
   'island.trust.accept': 'Confiar na nova impressão digital',
   'island.trust.later': 'Agora não',

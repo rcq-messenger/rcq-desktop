@@ -72,6 +72,7 @@ export const tr: Record<string, string> = {
   'island.trust.entered': '{host} için girilen parmak izi, bu cihazın zaten güvendiğiyle uyuşmuyor.',
   'island.trust.on_file': 'Kayıtlı',
   'island.trust.presented': 'Şimdi sunulan',
+  'island.trust.entered_label': 'Girilen',
   'island.trust.via_ca': 'bir sertifika otoritesi',
   'island.trust.accept': 'Yeni parmak izine güven',
   'island.trust.later': 'Şimdi değil',

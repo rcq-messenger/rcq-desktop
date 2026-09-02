@@ -196,8 +196,15 @@ export async function drainVisitedQueues(
   identity: WebIdentity,
   handle: (row: GuestQueueRow, host: string) => Promise<void>,
   log?: GuestLogDrainHooks,
+  opts: {
+    /// An island the caller's trust layer has refused: nothing is sent to
+    /// it, not even the token refresh. The console pins islands by their
+    /// certificate fingerprint and needs this to hold a refusal here.
+    skip?: (host: string) => boolean
+  } = {},
 ): Promise<void> {
   for (const v of listVisitedIslands()) {
+    if (opts.skip?.(v.host)) continue
     try {
       const get = (jwt: string) =>
         fetch(`https://${v.host}/messages/queue`, {

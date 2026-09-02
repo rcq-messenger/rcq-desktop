@@ -7,15 +7,17 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { Console } from 'node:console'
-import { engageProxy } from './env-proxy'
+import { engageStartupEnv } from './env-proxy'
 import { readState, statePath, writeState } from './state'
 
 // FIRST, before this file's own shims and before any other module of main.ts
-// has been evaluated: if the user configured their own proxy, this process
-// replaces itself with one that has the environment Node reads at startup and
-// never re-reads. Returns immediately when no proxy is configured, which is
-// the default. See cli/src/env-proxy.ts for why it has to be an exec.
-engageProxy()
+// has been evaluated: if the user configured their own proxy, or pinned an
+// island by its fingerprint, this process replaces itself with one that has
+// the environment Node reads at startup and never re-reads (the proxy
+// variables, the extra trust anchors). Returns immediately when neither is
+// set, which is the default. See cli/src/env-proxy.ts for why it has to be
+// an exec.
+engageStartupEnv()
 
 // Everything the reused src/lib modules say via console.* (silence-probe
 // traces, decrypt warnings) is STATUS, not data — and under Node console.log/

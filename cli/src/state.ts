@@ -71,14 +71,25 @@ export function acquireStateLock(): void {
       }
     }
   }
-  const release = () => {
-    try {
-      if (Number(fs.readFileSync(lock, 'utf8')) === process.pid) fs.unlinkSync(lock)
-    } catch {
-      /* already gone */
-    }
+  lockFile = lock
+  process.on('exit', releaseStateLock)
+}
+
+let lockFile: string | null = null
+
+/// Let go of the lock before the process replaces its own image. ⚠ An exec
+/// runs no 'exit' hook (verified: the handler above never fires across
+/// process.execve), and the new image has the SAME pid, so it would find the
+/// file, see itself alive in it, and refuse to start.
+export function releaseStateLock(): void {
+  const lock = lockFile
+  if (!lock) return
+  lockFile = null
+  try {
+    if (Number(fs.readFileSync(lock, 'utf8')) === process.pid) fs.unlinkSync(lock)
+  } catch {
+    /* already gone */
   }
-  process.on('exit', release)
 }
 
 // tmp + rename: the identity and the libsignal ratchet live in these files,
@@ -110,7 +121,19 @@ const VAULT_FILE = 'vault.json'
 /// route ladder needs to reach an island at all. None of it says who you are
 /// or who you talk to; sealing the route config would mean a blocked network
 /// could not even be climbed until after the passphrase, which is backwards.
-const NEVER_SEALED = new Set([VAULT_FILE, '.lock', 'lang', 'update-check.json', 'routes.json', 'proxy.json'])
+/// The island pins and their PEMs are of the same kind: a pin is a statement
+/// about an island, not a secret, and Node reads the bundle before any of
+/// our code runs.
+const NEVER_SEALED = new Set([
+  VAULT_FILE,
+  '.lock',
+  'lang',
+  'update-check.json',
+  'routes.json',
+  'proxy.json',
+  'island-pins.json',
+  'island-certs',
+])
 const NEVER_SEALED_PREFIX = ['relay-config', 'singbox', 'routes']
 
 /// Every file in the dir that a seal applies to.

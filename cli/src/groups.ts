@@ -19,6 +19,13 @@ import type { Envelope, TextEnvelope, WebIdentity } from '../../src/lib/crypto'
 import { buildGroupDualSend, encryptGroupEnvelope } from '../../src/lib/group-crypto'
 import { hostOfApiBase, normalizeIslandHost } from '../../src/lib/multihome'
 import { aliasFor, ensureGuestAuth, ensureGuestOn } from '../../src/lib/visited-islands'
+import {
+  describeAddressProblem,
+  describeTypedDisagreement,
+  parseIslandAddress,
+  pinTyped,
+  visitedTrusted,
+} from './island-trust'
 import { cachedGroups, groupSize } from './directory'
 import {
   foreignGroupCtx,
@@ -267,9 +274,24 @@ export async function joinForeignRoom(
   remoteGid: number,
   hostInput: string,
 ): Promise<{ alias: number; name: string; host: string }> {
-  const host = normalizeIslandHost(hostInput)
+  // The fragment first (`host#fp`, the address an operator hands out), so
+  // the web's normaliser below never sees it: that one drops a fragment
+  // without a word, which would take a first-use pin from whoever answers
+  // while the person believes they pinned.
+  const addr = parseIslandAddress(hostInput)
+  if ('error' in addr) {
+    throw new Error(addr.error === 'syntax' ? tr('join.badHost', { host: hostInput }) : describeAddressProblem(addr))
+  }
+  const host = normalizeIslandHost(addr.url)
   if (!host) throw new Error(tr('join.badHost', { host: hostInput }))
   if (host === hostOfApiBase(identity.apiBase)) throw new Error(tr('join.ownIsland', { gid: remoteGid }))
+  if (addr.fp) {
+    const typed = pinTyped(addr.key, addr.fp)
+    if (typeof typed === 'object') throw new Error(describeTypedDisagreement(addr.key, typed.disagrees, addr.fp))
+  }
+  // The trust gate, right before the first packet: refused means nothing
+  // leaves, and the gate has said why.
+  if (!(await visitedTrusted(host))) throw new Error(tr('island.trust.refusedLine', { host }))
   await ensureGuestOn(identity, host)
   const guest = await ensureGuestAuth(identity, host)
   if (!guest) throw new Error(tr('visited.noAuth', { host }))

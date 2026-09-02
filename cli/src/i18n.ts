@@ -115,6 +115,7 @@ for scripts and one-shots (stdout is data, status goes to stderr):
                                             (Tor, i2p, ssh -D); plain "rcq proxy" explains it
   rcq lang (lng) [{codes}]     show or set the language
   rcq islands (isl)            the island catalogue, numbered for --island
+  rcq island trust|fingerprint|forget   an island with no certificate authority, trusted by its fingerprint
   rcq update                   fetch the newest release over this install
   rcq lock | unlock            seal this state dir under a passphrase, or take it off
   rcq safety (sn) <uin>        the safety number for this person: compare it out loud
@@ -161,6 +162,7 @@ RCQ_VERBOSE=1 shows protocol detail; NO_COLOR strips colour.
                                             (Tor, i2p, ssh -D); просто "rcq proxy" объяснит
   rcq lang (lng) [{codes}]     показать или сменить язык
   rcq islands (isl)            каталог островов, с номерами для --island
+  rcq island trust|fingerprint|forget   остров без удостоверяющего центра: доверие по отпечатку сертификата
   rcq update                   скачать свежую версию поверх этой установки
   rcq lock | unlock            зашифровать каталог состояния паролем или снять шифрование
   rcq safety (sn) <uin>        безопасное число этого человека: сверьте его голосом
@@ -207,6 +209,7 @@ para scripts y comandos únicos (stdout son datos, el estado va a stderr):
                                             (Tor, i2p, ssh -D); "rcq proxy" solo lo explica
   rcq lang (lng) [{codes}]     mostrar o cambiar el idioma
   rcq islands (isl)            el catálogo de islas, numerado para --island
+  rcq island trust|fingerprint|forget   una isla sin autoridad de certificación, de confianza por su huella
   rcq update                   descargar la versión más nueva sobre esta
   rcq lock | unlock            sellar este directorio con una contraseña, o quitarlo
   rcq safety (sn) <uin>        el número de seguridad de esta persona: compárenlo en voz alta
@@ -253,6 +256,7 @@ para scripts e comandos avulsos (stdout são dados, o status vai para stderr):
                                             (Tor, i2p, ssh -D); "rcq proxy" sozinho explica
   rcq lang (lng) [{codes}]     mostrar ou trocar o idioma
   rcq islands (isl)            o catálogo de ilhas, numerado para --island
+  rcq island trust|fingerprint|forget   uma ilha sem autoridade certificadora, confiada pela impressão digital
   rcq update                   baixar a versão mais nova sobre esta
   rcq lock | unlock            selar este diretório com uma senha, ou remover
   rcq safety (sn) <uin>        o número de segurança desta pessoa: comparem em voz alta
@@ -299,6 +303,7 @@ betikler ve tek seferlik komutlar için (stdout veridir, durum stderr'e gider):
                                             (Tor, i2p, ssh -D); tek başına "rcq proxy" anlatır
   rcq lang (lng) [{codes}]     dili göster veya ayarla
   rcq islands (isl)            ada katalogu, --island icin numarali
+  rcq island trust|fingerprint|forget   sertifika otoritesi olmayan bir ada, parmak iziyle guvenilir
   rcq update                   en yeni surumu bu kurulumun uzerine indir
   rcq lock | unlock            bu durum dizinini parolayla muhurle ya da muhru kaldir
   rcq safety (sn) <uin>        bu kisinin guvenlik numarasi: sesli olarak karsilastirin
@@ -345,6 +350,7 @@ RCQ_VERBOSE=1 protokol ayrıntısını gösterir; NO_COLOR rengi kaldırır.
                                             (Tor, i2p, ssh -D); просто "rcq proxy" пояснить
   rcq lang (lng) [{codes}]     показати або змінити мову
   rcq islands (isl)            каталог островів, з номерами для --island
+  rcq island trust|fingerprint|forget   острів без центру сертифікації: довіра за відбитком сертифіката
   rcq update                   завантажити свіжу версію поверх цієї
   rcq lock | unlock            зашифрувати каталог стану паролем або зняти шифрування
   rcq safety (sn) <uin>        безпечне число цієї людини: звірте його голосом
@@ -391,6 +397,7 @@ RCQ_VERBOSE=1 показує деталі протоколу; NO_COLOR приб�
                                             (Tor, i2p, ssh -D); 单写 "rcq proxy" 会解释
   rcq lang (lng) [{codes}]     显示或设置语言
   rcq islands (isl)            岛屿目录，编号用于 --island
+  rcq island trust|fingerprint|forget   没有证书颁发机构的岛屿，按证书指纹信任
   rcq update                   下载最新版本覆盖此安装
   rcq lock | unlock            用密码加密状态目录，或解除加密
   rcq safety (sn) <uin>        这个人的安全码：请口头核对
@@ -2226,6 +2233,252 @@ RCQ_VERBOSE=1 显示协议细节; NO_COLOR 去掉颜色。
     tr: 'birine kaydolmak icin: rcq register --island <numara|adres>',
     uk: 'зареєструватися на обраному: rcq register --island <номер|адреса>',
     'zh-Hans': '在其中注册：rcq register --island <编号|地址>',
+  },
+  // An island trusted by its fingerprint (island-trust.ts). The keys and the
+  // English source strings are the ones every client shares
+  // (docs/island-fingerprint-design.md §5); the console adds its own for what
+  // it prints instead of a banner and buttons.
+  'islands.known': {
+    en: 'also known to this device:',
+    ru: 'также известны этому устройству:',
+    es: 'también conocidas por este dispositivo:',
+    pt: 'também conhecidas por este dispositivo:',
+    tr: 'bu cihazin ayrica tanidigi adalar:',
+    uk: 'також відомі цьому пристрою:',
+    'zh-Hans': '此设备还认识：',
+  },
+  'label.trust': { en: 'trust', ru: 'доверие', es: 'confianza', pt: 'confiança', tr: 'guven', uk: 'довіра', 'zh-Hans': '信任' },
+  'island.trust.first_use': {
+    en: 'first connection to {host}. Its fingerprint is {fp}. Compare it with what the operator published before you rely on this island.',
+    ru: 'первое подключение к {host}. Его отпечаток: {fp}. Сверьте с тем, что опубликовал оператор, прежде чем полагаться на этот остров.',
+    es: 'primera conexión con {host}. Su huella es {fp}. Compárala con lo que publicó el operador antes de confiar en esta isla.',
+    pt: 'primeira conexão com {host}. Sua impressão digital é {fp}. Compare com o que o operador publicou antes de confiar nesta ilha.',
+    tr: '{host} ile ilk baglanti. Parmak izi: {fp}. Bu adaya guvenmeden once operatorun yayinladigiyla karsilastirin.',
+    uk: 'перше підключення до {host}. Його відбиток: {fp}. Звірте з тим, що опублікував оператор, перш ніж покладатися на цей острів.',
+    'zh-Hans': '首次连接 {host}。它的指纹是 {fp}。在依赖这个岛屿之前，请与运营者公布的指纹核对。',
+  },
+  'island.trust.changed': {
+    en: '{host} presented a different certificate than the one this device trusts. Someone may be intercepting the connection, or the operator replaced the certificate. Compare the new fingerprint with what the operator published before trusting it.',
+    ru: '{host} предъявил не тот сертификат, которому доверяет это устройство. Либо кто-то перехватывает соединение, либо оператор сменил сертификат. Сверьте новый отпечаток с тем, что опубликовал оператор, прежде чем доверять ему.',
+    es: '{host} presentó un certificado distinto del que confía este dispositivo. Alguien puede estar interceptando la conexión, o el operador cambió el certificado. Compara la nueva huella con lo que publicó el operador antes de confiar en ella.',
+    pt: '{host} apresentou um certificado diferente do que este dispositivo confia. Alguém pode estar interceptando a conexão, ou o operador trocou o certificado. Compare a nova impressão digital com o que o operador publicou antes de confiar nela.',
+    tr: '{host}, bu cihazin guvendiginden farkli bir sertifika sundu. Biri baglantiyi dinliyor olabilir ya da operator sertifikayi degistirdi. Guvenmeden once yeni parmak izini operatorun yayinladigiyla karsilastirin.',
+    uk: '{host} показав не той сертифікат, якому довіряє цей пристрій. Або хтось перехоплює з’єднання, або оператор змінив сертифікат. Звірте новий відбиток з тим, що опублікував оператор, перш ніж довіряти йому.',
+    'zh-Hans': '{host} 出示的证书与此设备信任的不同。可能有人在拦截连接，也可能是运营者更换了证书。在信任之前，请将新指纹与运营者公布的核对。',
+  },
+  'island.trust.changed_typed': {
+    en: '{host} presented a different fingerprint than the one you entered.',
+    ru: '{host} предъявил отпечаток, отличный от того, что вы ввели.',
+    es: '{host} presentó una huella distinta de la que introdujiste.',
+    pt: '{host} apresentou uma impressão digital diferente da que você digitou.',
+    tr: '{host}, girdiginizden farkli bir parmak izi sundu.',
+    uk: '{host} показав відбиток, відмінний від того, що ви ввели.',
+    'zh-Hans': '{host} 出示的指纹与你输入的不同。',
+  },
+  'island.trust.typedDisagrees': {
+    en: '{host} already has something else on file; the fingerprint you entered is not it.',
+    ru: 'у {host} уже есть запись, и введённый отпечаток с ней не совпадает.',
+    es: '{host} ya tiene otra cosa registrada; la huella que introdujiste no coincide.',
+    pt: '{host} já tem outra coisa registrada; a impressão digital que você digitou não é essa.',
+    tr: '{host} icin zaten baska bir kayit var; girdiginiz parmak izi o degil.',
+    uk: 'у {host} вже є запис, і введений відбиток з ним не збігається.',
+    'zh-Hans': '{host} 已有另一条记录；你输入的指纹与之不符。',
+  },
+  'island.trust.on_file': { en: 'on file', ru: 'в записи', es: 'registrada', pt: 'registrada', tr: 'kayitli', uk: 'у записі', 'zh-Hans': '已记录' },
+  'island.trust.presented': {
+    en: 'presented now', ru: 'предъявлен сейчас', es: 'presentada ahora', pt: 'apresentada agora',
+    tr: 'simdi sunulan', uk: 'показано зараз', 'zh-Hans': '当前出示',
+  },
+  'island.trust.entered': { en: 'entered', ru: 'введён', es: 'introducida', pt: 'digitada', tr: 'girilen', uk: 'введено', 'zh-Hans': '输入的' },
+  'island.trust.via_ca': {
+    en: 'a certificate authority', ru: 'удостоверяющий центр', es: 'una autoridad de certificación',
+    pt: 'uma autoridade certificadora', tr: 'bir sertifika otoritesi', uk: 'центр сертифікації', 'zh-Hans': '证书颁发机构',
+  },
+  'island.trust.accept': {
+    en: 'to trust the new fingerprint: rcq island trust {host} {fp} --replace',
+    ru: 'чтобы доверять новому отпечатку: rcq island trust {host} {fp} --replace',
+    es: 'para confiar en la nueva huella: rcq island trust {host} {fp} --replace',
+    pt: 'para confiar na nova impressão digital: rcq island trust {host} {fp} --replace',
+    tr: 'yeni parmak izine guvenmek icin: rcq island trust {host} {fp} --replace',
+    uk: 'щоб довіряти новому відбитку: rcq island trust {host} {fp} --replace',
+    'zh-Hans': '要信任新指纹：rcq island trust {host} {fp} --replace',
+  },
+  'island.trust.settings.ca': {
+    en: 'trusted through a certificate authority', ru: 'доверие через удостоверяющий центр',
+    es: 'de confianza por una autoridad de certificación', pt: 'confiada por uma autoridade certificadora',
+    tr: 'bir sertifika otoritesi uzerinden guvenilir', uk: 'довіра через центр сертифікації', 'zh-Hans': '通过证书颁发机构信任',
+  },
+  'island.trust.settings.pinned': {
+    en: 'trusted by fingerprint', ru: 'доверие по отпечатку', es: 'de confianza por huella', pt: 'confiada por impressão digital',
+    tr: 'parmak iziyle guvenilir', uk: 'довіра за відбитком', 'zh-Hans': '按指纹信任',
+  },
+  'island.trust.settings.none': {
+    en: 'nothing on file for this island yet', ru: 'об этом острове пока ничего не записано',
+    es: 'aún no hay nada registrado para esta isla', pt: 'ainda não há nada registrado para esta ilha',
+    tr: 'bu ada icin henuz kayit yok', uk: 'про цей острів поки нічого не записано', 'zh-Hans': '此岛屿尚无记录',
+  },
+  'island.trust.notFingerprint': {
+    en: 'not a fingerprint: {frag} (64 hex characters; colons, spaces and case do not matter)',
+    ru: 'это не отпечаток: {frag} (64 шестнадцатеричных знака; двоеточия, пробелы и регистр не важны)',
+    es: 'no es una huella: {frag} (64 caracteres hex; dos puntos, espacios y mayúsculas no importan)',
+    pt: 'não é uma impressão digital: {frag} (64 caracteres hex; dois-pontos, espaços e caixa não importam)',
+    tr: 'parmak izi degil: {frag} (64 hex karakter; iki nokta, bosluk ve buyuk-kucuk harf fark etmez)',
+    uk: 'це не відбиток: {frag} (64 шістнадцяткових знаки; двокрапки, пробіли та регістр не важливі)',
+    'zh-Hans': '不是指纹：{frag}（64 个十六进制字符；冒号、空格和大小写无关）',
+  },
+  'island.trust.caOnly': {
+    en: '{host} is trusted through a certificate authority only; a fingerprint cannot be pinned for it',
+    ru: '{host} доверяется только через удостоверяющий центр; отпечаток для него закрепить нельзя',
+    es: '{host} solo se confía por una autoridad de certificación; no se le puede fijar una huella',
+    pt: '{host} só é confiada por uma autoridade certificadora; não dá para fixar uma impressão digital nela',
+    tr: '{host} yalnizca bir sertifika otoritesi uzerinden guvenilir; ona parmak izi sabitlenemez',
+    uk: '{host} довіряється лише через центр сертифікації; відбиток для нього закріпити не можна',
+    'zh-Hans': '{host} 只通过证书颁发机构信任；不能为它固定指纹',
+  },
+  'island.trust.badAddress': {
+    en: 'not an island address: {addr}', ru: 'это не адрес острова: {addr}', es: 'no es una dirección de isla: {addr}',
+    pt: 'não é um endereço de ilha: {addr}', tr: 'ada adresi degil: {addr}', uk: 'це не адреса острова: {addr}', 'zh-Hans': '不是岛屿地址：{addr}',
+  },
+  'island.trust.caOnlyRefused': {
+    en: '{host} presented a certificate no authority on this machine trusts ({code}); it is never pinned',
+    ru: '{host} предъявил сертификат, которому не доверяет ни один центр на этой машине ({code}); он никогда не закрепляется',
+    es: '{host} presentó un certificado en el que ninguna autoridad de esta máquina confía ({code}); nunca se fija',
+    pt: '{host} apresentou um certificado em que nenhuma autoridade desta máquina confia ({code}); ele nunca é fixado',
+    tr: '{host}, bu makinedeki hicbir otoritenin guvenmedigi bir sertifika sundu ({code}); asla sabitlenmez',
+    uk: '{host} показав сертифікат, якому не довіряє жоден центр на цій машині ({code}); він ніколи не закріплюється',
+    'zh-Hans': '{host} 出示了此机器上没有任何机构信任的证书（{code}）；它永远不会被固定',
+  },
+  'island.trust.notAnchor': {
+    en: '{host} presents a certificate this client cannot use as a trust anchor ({code}): it needs the address in its SAN and valid dates. The phone and desktop apps can still pin it; this client cannot.',
+    ru: '{host} предъявляет сертификат, который этот клиент не может сделать якорем доверия ({code}): в SAN должен быть адрес, а даты должны быть действительны. Приложения на телефоне и десктопе его закрепят; этот клиент не может.',
+    es: '{host} presenta un certificado que este cliente no puede usar como ancla de confianza ({code}): necesita la dirección en su SAN y fechas válidas. Las apps de teléfono y escritorio aún pueden fijarlo; este cliente no.',
+    pt: '{host} apresenta um certificado que este cliente não consegue usar como âncora de confiança ({code}): precisa do endereço no SAN e de datas válidas. Os apps de telefone e desktop ainda podem fixá-lo; este cliente não.',
+    tr: '{host}, bu istemcinin guven capasi olarak kullanamayacagi bir sertifika sunuyor ({code}): SAN icinde adres ve gecerli tarihler gerekir. Telefon ve masaustu uygulamalari yine de sabitleyebilir; bu istemci yapamaz.',
+    uk: '{host} показує сертифікат, який цей клієнт не може зробити якорем довіри ({code}): у SAN має бути адреса, а дати мають бути чинними. Застосунки на телефоні та десктопі його закріплять; цей клієнт не може.',
+    'zh-Hans': '{host} 出示的证书此客户端无法用作信任锚（{code}）：它的 SAN 中需要包含该地址，且日期必须有效。手机和桌面应用仍可固定它；此客户端不能。',
+  },
+  'island.trust.typed': {
+    en: '{host}: pinned the fingerprint you entered; the next connection has to match it',
+    ru: '{host}: введённый отпечаток закреплён; следующее подключение должно с ним совпасть',
+    es: '{host}: huella introducida fijada; la próxima conexión tiene que coincidir con ella',
+    pt: '{host}: impressão digital digitada fixada; a próxima conexão tem que bater com ela',
+    tr: '{host}: girdiginiz parmak izi sabitlendi; sonraki baglanti bununla eslesmeli',
+    uk: '{host}: введений відбиток закріплено; наступне підключення має з ним збігтися',
+    'zh-Hans': '{host}：已固定你输入的指纹；下一次连接必须与之匹配',
+  },
+  'island.trust.same': {
+    en: '{host}: that fingerprint is already on file', ru: '{host}: этот отпечаток уже записан',
+    es: '{host}: esa huella ya está registrada', pt: '{host}: essa impressão digital já está registrada',
+    tr: '{host}: bu parmak izi zaten kayitli', uk: '{host}: цей відбиток уже записано', 'zh-Hans': '{host}：该指纹已有记录',
+  },
+  'island.trust.forgotten': {
+    en: '{host}: forgotten; the next connection is a first use again',
+    ru: '{host}: забыт; следующее подключение снова будет первым',
+    es: '{host}: olvidada; la próxima conexión vuelve a ser un primer uso',
+    pt: '{host}: esquecida; a próxima conexão volta a ser um primeiro uso',
+    tr: '{host}: unutuldu; sonraki baglanti yeniden ilk kullanim olacak',
+    uk: '{host}: забуто; наступне підключення знову буде першим',
+    'zh-Hans': '{host}：已忘记；下一次连接将再次视为首次使用',
+  },
+  'island.trust.nothingToForget': {
+    en: '{host}: nothing on file', ru: '{host}: записи нет', es: '{host}: no hay nada registrado',
+    pt: '{host}: nada registrado', tr: '{host}: kayit yok', uk: '{host}: запису немає', 'zh-Hans': '{host}：没有记录',
+  },
+  'island.trust.restart': {
+    en: '{host}: pinned, but this process started without it and this Node cannot take it in; run the command again',
+    ru: '{host}: закреплён, но процесс стартовал без него, и эта Node не может подхватить его на ходу; запустите команду ещё раз',
+    es: '{host}: fijada, pero este proceso arrancó sin ella y este Node no puede incorporarla; vuelve a ejecutar el comando',
+    pt: '{host}: fixada, mas este processo começou sem ela e este Node não consegue incorporá-la; rode o comando de novo',
+    tr: '{host}: sabitlendi, ancak bu surec onsuz basladi ve bu Node onu calisirken alamiyor; komutu yeniden calistirin',
+    uk: '{host}: закріплено, але процес стартував без нього, і ця Node не може підхопити його на ходу; запустіть команду ще раз',
+    'zh-Hans': '{host}：已固定，但此进程启动时尚未包含它，且此 Node 无法在运行中加载；请重新运行该命令',
+  },
+  'island.trust.refusedLine': {
+    en: '{host}: refused until its new fingerprint is trusted', ru: '{host}: отказ, пока новый отпечаток не принят',
+    es: '{host}: rechazada hasta que se confíe en su nueva huella', pt: '{host}: recusada até que a nova impressão digital seja confiada',
+    tr: '{host}: yeni parmak izine guvenilene kadar reddedildi', uk: '{host}: відмова, доки новий відбиток не прийнято', 'zh-Hans': '{host}：在信任其新指纹之前被拒绝',
+  },
+  'island.trust.unreachable': {
+    en: '{host} did not answer and nothing is on file for it', ru: '{host} не ответил, и записи о нём нет',
+    es: '{host} no respondió y no hay nada registrado', pt: '{host} não respondeu e nada está registrado',
+    tr: '{host} yanit vermedi ve kaydi yok', uk: '{host} не відповів, і запису про нього немає', 'zh-Hans': '{host} 没有回应，且没有它的记录',
+  },
+  'island.trust.unreachableNote': {
+    en: '{host} did not answer just now; this is what is on file', ru: '{host} сейчас не ответил; это то, что записано',
+    es: '{host} no respondió ahora; esto es lo registrado', pt: '{host} não respondeu agora; isto é o que está registrado',
+    tr: '{host} su an yanit vermedi; kayitli olan bu', uk: '{host} зараз не відповів; це те, що записано', 'zh-Hans': '{host} 刚才没有回应；这是记录中的内容',
+  },
+  'island.trust.needsArgs': {
+    en: 'island trust needs a host and a fingerprint: rcq island trust <host[:port]> <fingerprint> [--replace]',
+    ru: 'island trust ждёт хост и отпечаток: rcq island trust <хост[:порт]> <отпечаток> [--replace]',
+    es: 'island trust necesita un host y una huella: rcq island trust <host[:puerto]> <huella> [--replace]',
+    pt: 'island trust precisa de um host e uma impressão digital: rcq island trust <host[:porta]> <impressão> [--replace]',
+    tr: 'island trust bir host ve parmak izi ister: rcq island trust <host[:port]> <parmakizi> [--replace]',
+    uk: 'island trust чекає хост і відбиток: rcq island trust <хост[:порт]> <відбиток> [--replace]',
+    'zh-Hans': 'island trust 需要主机和指纹：rcq island trust <host[:port]> <指纹> [--replace]',
+  },
+  'island.trust.needsHost': {
+    en: 'island forget needs a host: rcq island forget <host[:port]>', ru: 'island forget ждёт хост: rcq island forget <хост[:порт]>',
+    es: 'island forget necesita un host: rcq island forget <host[:puerto]>', pt: 'island forget precisa de um host: rcq island forget <host[:porta]>',
+    tr: 'island forget bir host ister: rcq island forget <host[:port]>', uk: 'island forget чекає хост: rcq island forget <хост[:порт]>',
+    'zh-Hans': 'island forget 需要主机：rcq island forget <host[:port]>',
+  },
+  'island.trust.usage': {
+    en: `usage: rcq island trust <host[:port]> <fingerprint> [--replace]
+       rcq island fingerprint [host[:port]]
+       rcq island forget <host[:port]>
+  an island with no certificate authority is trusted by the sha-256 fingerprint of its
+  certificate, the way ssh trusts a host key. The operator publishes it, and every place
+  that takes an address also takes host[:port]#fingerprint. The first connection to an
+  unknown island pins whatever it presents and says so once; a changed certificate is
+  refused until \`island trust ... --replace\` accepts the new one.`,
+    ru: `использование: rcq island trust <хост[:порт]> <отпечаток> [--replace]
+               rcq island fingerprint [хост[:порт]]
+               rcq island forget <хост[:порт]>
+  острову без удостоверяющего центра доверяют по sha-256 отпечатку его сертификата,
+  как ssh доверяет ключу хоста. Оператор публикует отпечаток, и везде, где принимается
+  адрес, принимается и хост[:порт]#отпечаток. Первое подключение к незнакомому острову
+  закрепляет то, что он предъявил, и один раз говорит об этом; сменившийся сертификат
+  отклоняется, пока \`island trust ... --replace\` не примет новый.`,
+    es: `uso: rcq island trust <host[:puerto]> <huella> [--replace]
+     rcq island fingerprint [host[:puerto]]
+     rcq island forget <host[:puerto]>
+  una isla sin autoridad de certificación se confía por la huella sha-256 de su certificado,
+  como ssh confía en la clave de un host. El operador la publica, y todo lugar que acepta
+  una dirección acepta también host[:puerto]#huella. La primera conexión con una isla
+  desconocida fija lo que presenta y lo dice una vez; un certificado cambiado se rechaza
+  hasta que \`island trust ... --replace\` acepte el nuevo.`,
+    pt: `uso: rcq island trust <host[:porta]> <impressão> [--replace]
+     rcq island fingerprint [host[:porta]]
+     rcq island forget <host[:porta]>
+  uma ilha sem autoridade certificadora é confiada pela impressão digital sha-256 do seu
+  certificado, como o ssh confia na chave de um host. O operador a publica, e todo lugar
+  que aceita um endereço aceita também host[:porta]#impressão. A primeira conexão com uma
+  ilha desconhecida fixa o que ela apresenta e avisa uma vez; um certificado trocado é
+  recusado até que \`island trust ... --replace\` aceite o novo.`,
+    tr: `kullanim: rcq island trust <host[:port]> <parmakizi> [--replace]
+          rcq island fingerprint [host[:port]]
+          rcq island forget <host[:port]>
+  sertifika otoritesi olmayan bir adaya, ssh'in host anahtarina guvendigi gibi,
+  sertifikasinin sha-256 parmak iziyle guvenilir. Operator bunu yayinlar ve adres alan
+  her yer host[:port]#parmakizi de alir. Bilinmeyen bir adaya ilk baglanti sundugunu
+  sabitler ve bir kez soyler; degisen sertifika, \`island trust ... --replace\` yenisini
+  kabul edene kadar reddedilir.`,
+    uk: `використання: rcq island trust <хост[:порт]> <відбиток> [--replace]
+              rcq island fingerprint [хост[:порт]]
+              rcq island forget <хост[:порт]>
+  острову без центру сертифікації довіряють за sha-256 відбитком його сертифіката,
+  як ssh довіряє ключу хоста. Оператор публікує відбиток, і всюди, де приймається
+  адреса, приймається і хост[:порт]#відбиток. Перше підключення до незнайомого острова
+  закріплює те, що він показав, і один раз про це каже; змінений сертифікат
+  відхиляється, доки \`island trust ... --replace\` не прийме новий.`,
+    'zh-Hans': `用法: rcq island trust <host[:port]> <指纹> [--replace]
+      rcq island fingerprint [host[:port]]
+      rcq island forget <host[:port]>
+  没有证书颁发机构的岛屿按其证书的 sha-256 指纹信任，就像 ssh 信任主机密钥一样。
+  运营者公布指纹，所有接受地址的地方也接受 host[:port]#指纹。首次连接未知岛屿会
+  固定它出示的证书并提示一次；证书变化后会被拒绝，直到 \`island trust ... --replace\`
+  接受新的为止。`,
   },
   'safety.needsUin': {
     en: 'safety needs a numeric UIN', ru: 'safety ждёт числовой UIN',

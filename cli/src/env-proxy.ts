@@ -44,7 +44,11 @@ import http from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { canonical } from './aliases'
 import { tr } from './i18n'
-import { statePath, writeFileAtomic } from './state'
+// Circular on purpose (island-trust asks this file whether the runtime
+// honours the proxy environment); both sides only meet inside function
+// bodies, never at module init.
+import { trustBundle, trustVars } from './island-trust'
+import { releaseStateLock, statePath, writeFileAtomic } from './state'
 
 const FILE = 'proxy.json'
 
@@ -183,16 +187,15 @@ export function clearProxyUrl(): boolean {
   }
 }
 
-/// The environment a proxied RCQ process runs in.
+/// The proxy half of the environment an RCQ process runs in.
 ///
 /// Both cases of every variable are written, to the SAME value: undici reads
 /// `https_proxy` as well as `HTTPS_PROXY`, PREFERS the lowercase one, and
 /// throws when the two disagree. NO_PROXY is emptied for the same class of
 /// reason - a leftover `NO_PROXY=*` sends everything direct while the config
 /// still says the proxy is on, which is the worst possible way to be wrong.
-export function proxyEnv(url: string): NodeJS.ProcessEnv {
+function proxyVars(url: string): NodeJS.ProcessEnv {
   return {
-    ...process.env,
     NODE_USE_ENV_PROXY: '1',
     HTTP_PROXY: url,
     http_proxy: url,
@@ -202,6 +205,15 @@ export function proxyEnv(url: string): NodeJS.ProcessEnv {
     no_proxy: '',
     RCQ_PROXY_ENGAGED: '1',
   }
+}
+
+/// The environment a proxied RCQ process runs in: this process's own, the
+/// proxy variables, and the pinned islands' anchors when there are any (the
+/// probe child of `rcq proxy test` has to be able to reach a fingerprint
+/// island through the proxy it is testing).
+export function proxyEnv(url: string): NodeJS.ProcessEnv {
+  const bundle = trustBundle()
+  return { ...process.env, ...proxyVars(url), ...(bundle ? trustVars(bundle) : {}) }
 }
 
 /// Node prints "SOCKS5 proxy support is experimental" on every start once the
@@ -246,50 +258,91 @@ function envCarries(url: string): boolean {
   )
 }
 
-/// Engage the configured proxy for THIS command, by replacing the process with
-/// a copy of itself that has the environment Node needs. Returns only when
-/// there is nothing to do; otherwise the call never comes back, or the command
-/// is refused outright.
+/// Engage the startup-only environment for THIS command, by replacing the
+/// process with a copy of itself that has what Node reads once and never
+/// re-reads: the configured proxy, and NODE_EXTRA_CA_CERTS pointing at the
+/// bundle of every island pinned by its fingerprint (island-trust.ts). ONE
+/// exec carries both. Returns only when there is nothing to do; otherwise the
+/// call never comes back, or the command is refused outright.
 ///
-/// ⚠ Everything that can go wrong here fails CLOSED. A proxy is a promise
-/// about who sees the connection, and every way of half-keeping it (a value we
-/// cannot parse, a runtime that ignores the environment) is a direct
-/// connection made by somebody who asked for the opposite. Refusing the
-/// command is loud and recoverable; leaking is neither.
-export function engageProxy(): void {
-  if (process.env.RCQ_PROXY_ENGAGED === '1') return
+/// ⚠ Everything that can go wrong on the proxy side fails CLOSED. A proxy is
+/// a promise about who sees the connection, and every way of half-keeping it
+/// (a value we cannot parse, a runtime that ignores the environment) is a
+/// direct connection made by somebody who asked for the opposite. Refusing
+/// the command is loud and recoverable; leaking is neither. The anchors have
+/// the opposite failure shape: a bundle this process does not carry makes a
+/// pinned island UNREACHABLE (Node refuses its certificate), never reachable
+/// under weaker trust, so they need no refusal of their own.
+export function engageStartupEnv(): void {
   if (configuresProxy(process.argv.slice(2))) return
-  const cfg = readProxyConfig()
-  if (cfg && 'invalid' in cfg) {
-    // `RCQ_PROXY=socks5h://127.0.0.1:9050 rcq send ...` used to send the
-    // message over the user's own address, with no diagnostic and exit 0,
-    // while `rcq proxy set` refused the same spelling to their face.
-    process.stderr.write(
-      tr(cfg.error === 'scheme' ? 'proxy.scheme' : 'proxy.syntax', { scheme: cfg.detail, arg: cfg.detail }) +
-        '\n' +
-        tr('proxy.refusedBadValue', { source: cfg.from === 'env' ? 'RCQ_PROXY' : 'proxy.json' }) +
-        '\n',
-    )
-    process.exit(1)
+  let url: string | null = null
+  if (process.env.RCQ_PROXY_ENGAGED !== '1') {
+    const cfg = readProxyConfig()
+    if (cfg && 'invalid' in cfg) {
+      // `RCQ_PROXY=socks5h://127.0.0.1:9050 rcq send ...` used to send the
+      // message over the user's own address, with no diagnostic and exit 0,
+      // while `rcq proxy set` refused the same spelling to their face.
+      process.stderr.write(
+        tr(cfg.error === 'scheme' ? 'proxy.scheme' : 'proxy.syntax', { scheme: cfg.detail, arg: cfg.detail }) +
+          '\n' +
+          tr('proxy.refusedBadValue', { source: cfg.from === 'env' ? 'RCQ_PROXY' : 'proxy.json' }) +
+          '\n',
+      )
+      process.exit(1)
+    }
+    if (cfg) {
+      if (!envProxySupported()) {
+        // Node 22 and 23 set the variables and read none of them. Running
+        // anyway is the one outcome that cannot be allowed: it registers the
+        // throwaway account from the real address while `whoami` prints the
+        // proxy.
+        process.stderr.write(tr('proxy.ignored', { version: process.version }) + '\n')
+        process.stderr.write(tr('proxy.refusedUnsupported') + '\n')
+        process.exit(1)
+      }
+      if (!envCarries(cfg.url)) url = cfg.url
+    }
   }
-  if (!cfg) return
-  if (!envProxySupported()) {
-    // Node 22 and 23 set the variables and read none of them. Running anyway
-    // is the one outcome that cannot be allowed: it registers the throwaway
-    // account from the real address while `whoami` prints the proxy.
-    process.stderr.write(tr('proxy.ignored', { version: process.version }) + '\n')
-    process.stderr.write(tr('proxy.refusedUnsupported') + '\n')
-    process.exit(1)
+  // The anchors are compared by content, not by presence: a process started
+  // with last week's bundle must not carry it past a pin taken since, and
+  // the exec'd image, seeing its own hash, must not exec again.
+  const bundle = trustBundle()
+  const certs = bundle !== null && process.env.RCQ_TRUST_BUNDLE !== bundle.hash
+  if (!url && !certs) return
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    ...(url ? proxyVars(url) : {}),
+    ...(bundle ? trustVars(bundle) : {}),
   }
-  const url = cfg.url
-  if (envCarries(url)) return
-  const args = [QUIET, ...process.execArgv, ...process.argv.slice(1)]
-  const env = proxyEnv(url)
-  if (process.env.RCQ_VERBOSE) process.stderr.write(`[proxy] ${redactProxyUrl(url)}\n`)
+  if (process.env.RCQ_VERBOSE) {
+    if (url) process.stderr.write(`[proxy] ${redactProxyUrl(url)}\n`)
+    if (certs) process.stderr.write(`[trust] ${bundle.path}\n`)
+  }
+  execSelf(env)
+}
+
+/// Carry a pin taken by THIS process into the command that has not run yet:
+/// exec again when the bundle on disk is not the one the environment names.
+/// For the one place (the gate in main.ts) where nothing has been sent and
+/// nothing has to be re-run; everywhere else a fresh pin waits for the next
+/// process. Returns when there is nothing to carry.
+export function carryTrust(): void {
+  const bundle = trustBundle()
+  if (!bundle || process.env.RCQ_TRUST_BUNDLE === bundle.hash) return
+  if (process.env.RCQ_VERBOSE) process.stderr.write(`[trust] re-exec with ${bundle.path}\n`)
+  execSelf({ ...process.env, ...trustVars(bundle) })
+}
+
+/// Replace this process with a copy of itself under `env`. Never returns.
+function execSelf(env: NodeJS.ProcessEnv): never {
+  // The lock, if this process holds one: the image that replaces us has the
+  // same pid and would refuse to start on finding itself (state.ts).
+  releaseStateLock()
+  // De-duplicated: a second exec in the same chain must not stack the flag.
+  const args = [...new Set([QUIET, ...process.execArgv]), ...process.argv.slice(1)]
   const execve = (process as { execve?: (f: string, a: string[], e: NodeJS.ProcessEnv) => never }).execve
   if (typeof execve === 'function') {
     execve(process.execPath, [process.execPath, ...args], env)
-    return // unreachable: the image is gone
   }
   // No execve (Windows; POSIX has had it since Node 23.11). A blocking child
   // with our own stdio is second best - it costs a parent sitting there doing

@@ -551,12 +551,24 @@ export async function fetchSiteIcon(addr: RcqAddress, fresh = false): Promise<st
   return uri
 }
 
+/// A row of an island's catalogue.
+export interface CatalogueEntry {
+  name: string
+  title: string | null
+  /// Who published it. The island answers with this already - a listed site is
+  /// a shop window, and its owner is how a reader reaches the author - so the
+  /// screen shows it rather than leaving it in a response nobody reads.
+  owner_uin: number
+  version: number
+  updated_at: string
+}
+
 /// The catalogue of an island: only the sites that asked to be in it.
-export async function fetchCatalogue(host: string): Promise<Array<{ name: string; title: string | null }>> {
+export async function fetchCatalogue(host: string): Promise<CatalogueEntry[]> {
   try {
     const res = await fetch(`${originOf(host)}/sites`, { credentials: 'omit', referrerPolicy: 'no-referrer' })
     if (!res.ok) return []
-    const rows = (await res.json()) as Array<{ name: string; title: string | null }>
+    const rows = (await res.json()) as CatalogueEntry[]
     return Array.isArray(rows) ? rows : []
   } catch {
     return []

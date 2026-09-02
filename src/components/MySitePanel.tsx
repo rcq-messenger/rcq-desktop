@@ -37,12 +37,20 @@ export function MySitePanel({ onClose, onOpen }: Props) {
   const [files, setFiles] = useState<File[]>([])
   const [title, setTitle] = useState('')
   const [listed, setListed] = useState(false)
+  const [showOwner, setShowOwner] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   /// A .ico the browser decoded into the icon.png the network carries.
   const [converted, setConverted] = useState<string | null>(null)
   const pick = useRef<HTMLInputElement | null>(null)
+  const pickMark = useRef<HTMLInputElement | null>(null)
+  /// The mark as it will be published, ready to look at. Naming a file
+  /// correctly turned out to be the hard part of publishing a site, so this
+  /// is a picture and a button rather than an instruction.
+  const [mark, setMark] = useState<File | null>(null)
+  const [markUrl, setMarkUrl] = useState<string | null>(null)
+  const [renaming, setRenaming] = useState(false)
 
   const reload = useCallback(async () => {
     if (!identity) return
@@ -54,6 +62,7 @@ export function MySitePanel({ onClose, onOpen }: Props) {
       setName(first.name)
       setTitle(first.title ?? '')
       setListed(first.listed)
+      setShowOwner(first.show_owner)
     }
     setLoading(false)
   }, [identity])
@@ -63,7 +72,7 @@ export function MySitePanel({ onClose, onOpen }: Props) {
   // The name is checked as it is typed, but only once it could be a name at
   // all: an island should not be asked about every keystroke of "b", "bl".
   useEffect(() => {
-    if (!identity || site || name.length < 2) { setNameState(null); return }
+    if (!identity || (site && !renaming) || name.length < 2) { setNameState(null); return }
     const id = window.setTimeout(() => { void checkName(identity, name).then(setNameState) }, 350)
     return () => window.clearTimeout(id)
   }, [identity, name, site])
@@ -77,11 +86,23 @@ export function MySitePanel({ onClose, onOpen }: Props) {
   const canPublish =
     !busy && files.length > 0 && hasIndex && rejected.length === 0 && oversize.length === 0 &&
     files.length <= SITE_LIMITS.maxFiles && total <= SITE_LIMITS.maxBundleBytes &&
-    /^[a-z0-9][a-z0-9-]{0,31}$/.test(name) && (site != null || nameState === 'free')
+    /^[a-z0-9][a-z0-9-]{0,31}$/.test(name) && (nameState === 'free' || (site != null && !renaming))
 
   /// Take a pick of files, converting the two things people reasonably try
   /// and the network cannot carry as a mark: a `.ico` and an `.svg`.
   /// Everything else is passed through and judged by the rules below.
+  /// A picked mark: any image at all, drawn onto a canvas and handed on as
+  /// icon.png. This is the answer to "how do I set a favicon" being a naming
+  /// puzzle for the first person who tried it.
+  async function takeMark(picked: File | undefined) {
+    if (!picked) return
+    setError(null)
+    const png = await rasterizeMark(picked)
+    if (!png) { setError(t('sites.publish.error.bad_type')); return }
+    setMark(png)
+    setMarkUrl((cur) => { if (cur) URL.revokeObjectURL(cur); return URL.createObjectURL(png) })
+  }
+
   async function take(picked: File[]) {
     setError(null)
     setConverted(null)
@@ -101,7 +122,16 @@ export function MySitePanel({ onClose, onOpen }: Props) {
     setBusy(true)
     setError(null)
     try {
-      const out = await publishSite(identity, { name, files, title, listed, previousVersion: site?.version })
+      const withMark = mark ? files.filter((f) => !/^icon\.png$/i.test(f.name)).concat(mark) : files
+      const out = await publishSite(identity, {
+        name, files: withMark, title, listed, showOwner,
+        previousVersion: renaming ? 0 : site?.version,
+      })
+      // Changing the address is a publish under the new name followed by
+      // letting the old one go: the name is INSIDE the signature, so an island
+      // cannot rename a site without the owner signing the new name.
+      if (renaming && site && site.name !== name) await deleteSite(identity, site.name)
+      setRenaming(false)
       setSite(out)
       setFiles([])
     } catch (e) {
@@ -187,7 +217,7 @@ export function MySitePanel({ onClose, onOpen }: Props) {
                       onChange={(e) => setName(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
                       // The name is the address, and an address that changes is
                       // a different site: once published, it is fixed here.
-                      disabled={site != null}
+                      disabled={site != null && !renaming}
                       spellCheck={false}
                       placeholder="blog"
                       className="flex-1 h-9 px-3 rounded-md bg-field text-fg-primary text-sm font-mono outline-none focus:ring-1 focus:ring-accent disabled:opacity-60"
@@ -209,6 +239,35 @@ export function MySitePanel({ onClose, onOpen }: Props) {
                     className="w-full h-9 px-3 rounded-md bg-field text-fg-primary text-sm outline-none focus:ring-1 focus:ring-accent"
                   />
                 </label>
+
+                <div className="space-y-2">
+                  <span className="text-xs text-fg-secondary">{t('sites.publish.mark')}</span>
+                  <div className="flex items-center gap-3">
+                    <span className="h-11 w-11 flex-none rounded-lg bg-field overflow-hidden flex items-center justify-center">
+                      {markUrl
+                        ? <img src={markUrl} alt="" className="h-full w-full object-cover" />
+                        : <span className="text-fg-dim text-xs font-mono uppercase">{(name || '?').slice(0, 1)}</span>}
+                    </span>
+                    <input
+                      ref={pickMark}
+                      type="file"
+                      accept="image/*,.ico,.svg"
+                      className="hidden"
+                      onChange={(e) => { void takeMark(e.target.files?.[0]) }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => pickMark.current?.click()}
+                      className="h-9 px-3 rounded-md bg-field text-sm text-fg-primary hover:bg-line/40"
+                    >
+                      {t('sites.publish.mark.pick')}
+                    </button>
+                  </div>
+                  {/* Naming a file correctly turned out to be the hard part of
+                      publishing a site, so this says what happens instead of
+                      what to do: any picture, converted here. */}
+                  <p className="text-[0.6875rem] text-fg-dim">{t('sites.publish.mark.hint')}</p>
+                </div>
 
                 <div className="space-y-2">
                   <input
@@ -255,6 +314,19 @@ export function MySitePanel({ onClose, onOpen }: Props) {
                 <label className="flex items-start gap-2 text-xs text-fg-secondary">
                   <input
                     type="checkbox"
+                    checked={showOwner}
+                    onChange={(e) => setShowOwner(e.target.checked)}
+                    className="mt-0.5"
+                  />
+                  {/* Off by default, and enforced by the island rather than by
+                      this checkbox: publishing a page is not a decision to
+                      publish the number that receives your messages. */}
+                  <span>{t('sites.publish.show_owner')}</span>
+                </label>
+
+                <label className="flex items-start gap-2 text-xs text-fg-secondary">
+                  <input
+                    type="checkbox"
                     checked={listed}
                     onChange={(e) => setListed(e.target.checked)}
                     className="mt-0.5"
@@ -274,6 +346,19 @@ export function MySitePanel({ onClose, onOpen }: Props) {
                 >
                   {busy ? t('sites.publish.busy') : site ? t('sites.publish.update') : t('sites.publish.cta')}
                 </button>
+
+                {site && !renaming && (
+                  <button
+                    type="button"
+                    onClick={() => { setRenaming(true); setName('') }}
+                    className="w-full h-9 rounded-md bg-field text-sm text-fg-secondary hover:text-fg-primary"
+                  >
+                    {t('sites.publish.rename')}
+                  </button>
+                )}
+                {renaming && (
+                  <p className="text-[0.6875rem] text-fg-dim leading-relaxed">{t('sites.publish.rename.body')}</p>
+                )}
 
                 {site && (
                   confirmDelete ? (

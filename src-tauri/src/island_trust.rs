@@ -637,6 +637,7 @@ async fn probe_at(host: &str, port: u16, ca_only: bool, socks: Option<u16>) -> P
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Reachability {
+    /// The island answered a REQUEST on this road, not just a handshake.
     Reachable,
     /// The island answered and the rule refused its certificate. NOT a
     /// blocked route: no tunnel, no relay, no retry helps.
@@ -644,10 +645,51 @@ pub enum Reachability {
     Unreachable,
 }
 
+/// `GET /health` on a connection the rule has already accepted, and whether
+/// the island answered it.
+///
+/// ⚠ A completed handshake is not an answer. A middlebox can finish the TLS -
+/// a TLS 1.3 client does not wait on the server to consider it done - and
+/// reset the stream on the first byte of the request, which is the shape of
+/// blocking the bypass probes exist to catch; and a TLS terminator can be up
+/// with nothing behind it. Judging reachability on the handshake alone would
+/// also let the shield report a route "verified" over which nothing was ever
+/// sent. Only the status line is read: the answer is whether the island
+/// spoke, not what it said.
+async fn health(tls: &mut tokio_rustls::client::TlsStream<TcpStream>, host: &str, port: u16) -> bool {
+    let req = format!(
+        "GET /health HTTP/1.1\r\nHost: {}\r\nUser-Agent: rcq-desktop\r\nAccept: */*\r\nConnection: close\r\n\r\n",
+        authority(host, port)
+    );
+    if tls.write_all(req.as_bytes()).await.is_err() || tls.flush().await.is_err() {
+        return false;
+    }
+    let mut line = Vec::new();
+    let mut byte = [0u8; 1];
+    // The status line is the first thing on the wire and is short; anything
+    // longer than this is not one.
+    while line.len() < 128 {
+        match tls.read(&mut byte).await {
+            Ok(0) | Err(_) => return false,
+            Ok(_) => {}
+        }
+        if byte[0] == b'\n' {
+            break;
+        }
+        line.push(byte[0]);
+    }
+    let status = String::from_utf8_lossy(&line);
+    // "HTTP/1.1 200 OK" - the same bar the reqwest probe set with
+    // `status().is_success()`.
+    status.starts_with("HTTP/1.") && status.split(' ').nth(1).is_some_and(|c| c.starts_with('2'))
+}
+
 /// The bypass probes' question about an island that is not the flagship,
 /// answered under the rule rather than by a plain HTTP client that knows
-/// nothing of pins. Blocking on the caller's budget. None for a CA-only host:
-/// the caller's own probe covers the flagship.
+/// nothing of pins - but answered with a request, exactly as that client
+/// asked it. Blocking on the caller's budget, which covers the handshake and
+/// the request together. None for a CA-only host: the caller's own probe
+/// covers the flagship.
 pub fn reachability(app: &AppHandle, authority: &str, socks: Option<u16>, budget: Duration) -> Option<Reachability> {
     let (host, port) = split_authority(authority)?;
     if check_host(&host, port).is_err() || is_ca_only(&host, front(app).as_deref()) {
@@ -655,14 +697,27 @@ pub fn reachability(app: &AppHandle, authority: &str, socks: Option<u16>, budget
     }
     ensure_loaded(app);
     let outcome = tauri::async_runtime::block_on(async {
-        tokio::time::timeout(budget, handshake(&host, port, false, socks)).await
+        tokio::time::timeout(budget, async {
+            let (result, verdict) = handshake(&host, port, false, socks).await;
+            // A refusal IS the answer, and the island is the one thing it is
+            // not a question about: it answered, and no road changes that.
+            if matches!(verdict, Some(Verdict::RefuseChanged { .. }) | Some(Verdict::RefuseCaOnly)) {
+                return Reachability::Refused;
+            }
+            match result {
+                Ok(mut tls) => {
+                    if health(&mut tls, &host, port).await {
+                        Reachability::Reachable
+                    } else {
+                        Reachability::Unreachable
+                    }
+                }
+                Err(_) => Reachability::Unreachable,
+            }
+        })
+        .await
     });
-    Some(match outcome {
-        Err(_) => Reachability::Unreachable,
-        Ok((_, Some(Verdict::RefuseChanged { .. }))) | Ok((_, Some(Verdict::RefuseCaOnly))) => Reachability::Refused,
-        Ok((Ok(_), _)) => Reachability::Reachable,
-        Ok((Err(_), _)) => Reachability::Unreachable,
-    })
+    Some(outcome.unwrap_or(Reachability::Unreachable))
 }
 
 #[derive(Serialize, Debug)]
@@ -1527,6 +1582,23 @@ mod tests {
         assert_eq!(again.noticed, Some(false));
         assert!(changed().lock().unwrap().get(&k).is_none());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// What the bypass probes really ask. A handshake that completes says
+    /// nothing about the road: this is the half that catches a middlebox
+    /// which finishes the TLS and resets the stream.
+    #[test]
+    #[ignore]
+    fn the_probe_asks_the_island_a_question_over_the_connection_the_rule_took() {
+        let Some((host, port)) = live_island() else { return };
+        scratch_store();
+        let answered = tauri::async_runtime::block_on(async {
+            let (result, verdict) = handshake(&host, port, false, None).await;
+            assert!(matches!(verdict, Some(Verdict::Accept) | Some(Verdict::AcceptFirstUse(_))), "{verdict:?}");
+            let mut tls = result.expect("a live island");
+            health(&mut tls, &host, port).await
+        });
+        assert!(answered, "the island answers /health on the connection the rule accepted");
     }
 
     #[test]

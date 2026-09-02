@@ -450,7 +450,9 @@ fn probe_once(app: &AppHandle, host: &str, budget: Duration) -> bool {
     // fails every CA check and would have raised the tunnel at every launch,
     // and a REFUSED certificate is an island that answered - no tunnel helps
     // that, and raising one would make the banner and the shield fight (§5.5
-    // of the fingerprint design).
+    // of the fingerprint design). It is the same /health question this asks
+    // below, over a connection the rule accepted, so the answer is still
+    // "the island answered a request" and not "the handshake finished".
     if let Some(answer) = crate::island_trust::reachability(app, host, None, budget) {
         return answer != crate::island_trust::Reachability::Unreachable;
     }
@@ -470,7 +472,9 @@ fn probe_once(app: &AppHandle, host: &str, budget: Duration) -> bool {
 
 fn probe(app: &AppHandle, host: &str, proxy: Option<&str>) -> bool {
     // Same as probe_once: the trust rule answers for any island but the
-    // flagship, over the tunnel when the route being checked is the tunnel.
+    // flagship - with a request of its own, over the tunnel when the route
+    // being checked is the tunnel, so `route_ok` means the route carried
+    // something and not merely that a handshake completed on it.
     let socks = proxy.and(socks_port());
     if let Some(answer) = crate::island_trust::reachability(app, host, socks, Duration::from_secs(15)) {
         return answer != crate::island_trust::Reachability::Unreachable;

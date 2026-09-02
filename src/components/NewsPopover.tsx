@@ -17,6 +17,8 @@ import { useWS } from '../lib/ws'
 import { scopedKey } from '../lib/account-scope'
 import { useIdentity } from '../lib/identity-context'
 import { useI18n } from '../lib/i18n-context'
+import { useIslandCard } from '../lib/use-server-info'
+import { IslandAvatar } from './IslandAvatar'
 
 const SEEN_KEY = () => scopedKey('news.seen')
 
@@ -92,16 +94,46 @@ function NewsMedia({ atts, apiBase }: { atts: NewsAttachment[]; apiBase: string 
   )
 }
 
-function NewsItem({ post, lang, t, apiBase }: { post: NewsPost; lang: string; t: (k: string) => string; apiBase: string }) {
+/// What is left of `author_label` once the island itself is the author: the
+/// operator's own words, or nothing.
+///
+/// Founder's decision (02.09): on every client the news section is the
+/// ISLAND's, drawn by its logo and its name. A self-hoster's feed comes from
+/// their own island under their own name, and "RCQ Team" over a post they
+/// wrote themselves was simply untrue. So the stock labels go, and a label is
+/// shown only when somebody typed one.
+///
+/// ⚠ A label EQUAL to the island's name is a stock label too. The island's
+/// default is "RCQ Team" today and becomes the island's own name server-side
+/// (changed in parallel with this); without this test every post would read
+/// "Island Island" the day that ships. Case-insensitive throughout: an
+/// operator who typed "rcq team" did not name anybody either.
+function customAuthor(label: string | null, islandName: string): string {
+  const own = (label ?? '').trim()
+  const norm = own.toLowerCase()
+  if (!norm || norm === 'rcq team' || norm === 'rcq' || norm === islandName.trim().toLowerCase()) return ''
+  return own
+}
+
+function NewsItem({ post, lang, t, apiBase, islandName }: { post: NewsPost; lang: string; t: (k: string) => string; apiBase: string; islandName: string }) {
   const [open, setOpen] = useState(false)
   const text = inLanguage(post.body, lang)
   const { head, rest } = splitHeadline(text)
   const atts = Array.isArray(post.attachments) ? post.attachments : []
+  const suffix = customAuthor(post.author_label, islandName)
   return (
     <article className="space-y-1">
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="text-xs font-semibold text-fg-secondary">{post.author_label || 'RCQ'}</span>
-        <span className="text-[0.625rem] text-fg-dim">
+      {/* The island's face and name, complete on the first frame off the same
+          per-island cache Settings and Login draw from, the bare host standing
+          in for an island that has never said its name. `items-center`, not
+          baseline: a picture has no baseline for the date to sit on. */}
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex items-center gap-1.5 min-w-0 text-xs font-semibold text-fg-secondary">
+          <IslandAvatar apiBase={apiBase} name={islandName} size={18} />
+          <span className="truncate">{islandName || apiBase.replace(/^https?:\/\//, '')}</span>
+          {suffix && <span className="font-normal text-fg-dim truncate">{suffix}</span>}
+        </span>
+        <span className="flex-none text-[0.625rem] text-fg-dim">
           {new Date(post.published_at).toLocaleDateString(lang === 'ru' ? 'ru-RU' : undefined, {
             day: '2-digit', month: '2-digit', year: '2-digit',
           })}
@@ -132,6 +164,9 @@ function NewsItem({ post, lang, t, apiBase }: { post: NewsPost; lang: string; t:
 export function NewsButton({ className }: { className?: string }) {
   const { identity } = useIdentity()
   const { t, lang } = useI18n()
+  // Once, here, not in every row: the answer is the same run-cached one either
+  // way, and NewsItem stays a plain row that draws what it is handed.
+  const islandName = useIslandCard(identity?.apiBase).name
   const [open, setOpen] = useState(false)
   const [posts, setPosts] = useState<NewsPost[] | null>(null)
   const [error, setError] = useState(false)
@@ -248,7 +283,7 @@ export function NewsButton({ className }: { className?: string }) {
 
       {/* Rendering is deliberately dumb: plain text, no markdown, no HTML from
           the server. */}
-      {posts?.map((p) => <NewsItem key={p.id} post={p} lang={lang} t={t} apiBase={identity?.apiBase ?? ''} />)}
+      {posts?.map((p) => <NewsItem key={p.id} post={p} lang={lang} t={t} apiBase={identity?.apiBase ?? ''} islandName={islandName} />)}
     </>
   )
 

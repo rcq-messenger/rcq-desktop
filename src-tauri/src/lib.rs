@@ -14,6 +14,7 @@ mod relay;
 mod dns_txt;
 mod signing_keys;
 mod vault;
+mod island_trust;
 
 #[cfg(desktop)]
 use tauri::{
@@ -198,6 +199,80 @@ async fn network_diagnostics(app: tauri::AppHandle, host: String) -> bypass::Dia
 #[tauri::command]
 async fn turn_tunnel_url(turn_host: String) -> Option<String> {
     turn_tunnel::ensure(&turn_host).await
+}
+
+// ── Island trust without a CA ───────────────────────────────────────────────
+// See island_trust.rs. The page (lib/island-trust.ts) asks `probe` before it
+// sends a fingerprint island's traffic through `open`'s loopback listener,
+// and the banner and Settings read the rest.
+
+/// One TLS handshake to `host:port` with the rule of §1 applied. Async so a
+/// censored network's timeout is waited out on the runtime, not by the page.
+#[cfg(desktop)]
+#[tauri::command]
+async fn island_trust_probe(app: tauri::AppHandle, host: String, port: u16) -> Result<island_trust::Probe, String> {
+    island_trust::probe(&app, &host, port).await
+}
+
+/// The loopback port that bridges to this island; armed on first call.
+#[cfg(desktop)]
+#[tauri::command]
+async fn island_trust_open(app: tauri::AppHandle, host: String, port: u16) -> Result<u16, String> {
+    island_trust::open(&app, &host, port).await
+}
+
+/// The fingerprint typed with the address (§3), BEFORE the first request:
+/// pinned when nothing is on file, a refusal for the banner when the record
+/// on file disagrees. Never a silent overwrite.
+#[cfg(desktop)]
+#[tauri::command]
+fn island_trust_prepin(
+    app: tauri::AppHandle,
+    host: String,
+    port: u16,
+    fingerprint: String,
+) -> Result<island_trust::PrePinResult, String> {
+    island_trust::prepin_island(&app, &host, port, &fingerprint)
+}
+
+/// Pin a fingerprint the person vouched for from the banner. What is written
+/// depends on the refusal it answers (a CA-valid chain over a typed pin is
+/// recorded as `ca`, §5.2); `source` is "typed" only for the form's value.
+#[cfg(desktop)]
+#[tauri::command]
+fn island_trust_accept(
+    app: tauri::AppHandle,
+    host: String,
+    port: u16,
+    fingerprint: String,
+    source: Option<String>,
+) -> Result<(), String> {
+    island_trust::accept(&app, &host, port, &fingerprint, source.as_deref().unwrap_or("accepted"))
+}
+
+#[cfg(desktop)]
+#[tauri::command]
+fn island_trust_forget(app: tauri::AppHandle, host: String, port: u16) -> Result<(), String> {
+    island_trust::forget(&app, &host, port)
+}
+
+/// The first-use notice was shown for this island; it is owed no second one.
+#[cfg(desktop)]
+#[tauri::command]
+fn island_trust_noticed(app: tauri::AppHandle, host: String, port: u16) -> Result<(), String> {
+    island_trust::noticed(&app, &host, port)
+}
+
+#[cfg(desktop)]
+#[tauri::command]
+fn island_trust_status(app: tauri::AppHandle, host: String, port: u16) -> Result<island_trust::Status, String> {
+    island_trust::status(&app, &host, port)
+}
+
+#[cfg(desktop)]
+#[tauri::command]
+fn island_trust_list(app: tauri::AppHandle) -> Vec<island_trust::Entry> {
+    island_trust::list(&app)
 }
 
 /// Which desktop this is, so the app can name itself correctly instead of
@@ -392,6 +467,14 @@ pub fn run() {
                 relay_key_status,
                 network_diagnostics,
                 turn_tunnel_url,
+                island_trust_probe,
+                island_trust_open,
+                island_trust_prepin,
+                island_trust_accept,
+                island_trust_forget,
+                island_trust_noticed,
+                island_trust_status,
+                island_trust_list,
                 desktop_platform,
                 open_external,
                 vault_state,

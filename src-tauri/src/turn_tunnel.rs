@@ -209,7 +209,7 @@ async fn bridge(mut client: TcpStream, host: &str) -> std::io::Result<()> {
     // not kept from arming time: the core can stop or rebuild underneath us.
     let socks = crate::bypass::socks_port()
         .ok_or_else(|| std::io::Error::other("bypass core is gone"))?;
-    let mut upstream = tokio::time::timeout(CONNECT_TIMEOUT, socks_connect(socks, host))
+    let mut upstream = tokio::time::timeout(CONNECT_TIMEOUT, socks_connect(socks, host, TURN_TCP_PORT))
         .await
         .map_err(|_| std::io::Error::other("socks connect timed out"))??;
     let _ = client.set_nodelay(true); // TURN carries latency-sensitive media
@@ -229,7 +229,16 @@ async fn bridge(mut client: TcpStream, host: &str) -> std::io::Result<()> {
 /// Android, not reasoned: a STUN Binding Request through a relay gets a
 /// Binding Success by name and a closed connection by address, over one and
 /// the same tunnel.
-async fn socks_connect(socks_port: u16, host: &str) -> std::io::Result<TcpStream> {
+///
+/// Shared with the island forwarder (island_trust.rs), which dials whatever
+/// host and port an island lives on. A host that IS an address (an island
+/// reachable only by IP, the fingerprint case) travels as one: the rule above
+/// is about not resolving names here, and there is nothing to resolve.
+pub(crate) async fn socks_connect(socks_port: u16, host: &str, port: u16) -> std::io::Result<TcpStream> {
+    let bare = host.trim_start_matches('[').trim_end_matches(']');
+    if host.is_empty() || host.len() > 255 {
+        return Err(std::io::Error::other("host does not fit a socks request"));
+    }
     let mut s = TcpStream::connect(("127.0.0.1", socks_port)).await?;
     s.set_nodelay(true)?;
     s.write_all(&[0x05, 0x01, 0x00]).await?; // SOCKS5, one method: no auth
@@ -238,11 +247,25 @@ async fn socks_connect(socks_port: u16, host: &str) -> std::io::Result<TcpStream
     if method != [0x05, 0x00] {
         return Err(std::io::Error::other("socks method refused"));
     }
-    let name = host.as_bytes(); // length-checked in ensure()
-    let mut req = Vec::with_capacity(7 + name.len());
-    req.extend_from_slice(&[0x05, 0x01, 0x00, 0x03, name.len() as u8]);
-    req.extend_from_slice(name);
-    req.extend_from_slice(&TURN_TCP_PORT.to_be_bytes());
+    let mut req = Vec::with_capacity(7 + host.len());
+    req.extend_from_slice(&[0x05, 0x01, 0x00]);
+    match bare.parse::<std::net::IpAddr>() {
+        Ok(std::net::IpAddr::V4(ip)) => {
+            req.push(0x01);
+            req.extend_from_slice(&ip.octets());
+        }
+        Ok(std::net::IpAddr::V6(ip)) => {
+            req.push(0x04);
+            req.extend_from_slice(&ip.octets());
+        }
+        Err(_) => {
+            let name = host.as_bytes();
+            req.push(0x03);
+            req.push(name.len() as u8);
+            req.extend_from_slice(name);
+        }
+    }
+    req.extend_from_slice(&port.to_be_bytes());
     s.write_all(&req).await?;
     let mut head = [0u8; 4];
     s.read_exact(&mut head).await?;
@@ -273,7 +296,7 @@ async fn socks_connect(socks_port: u16, host: &str) -> std::io::Result<TcpStream
 /// count as a leg.
 async fn leg_carries_turn(socks_port: u16, host: &str) -> bool {
     let attempt = async {
-        let mut s = socks_connect(socks_port, host).await?;
+        let mut s = socks_connect(socks_port, host, TURN_TCP_PORT).await?;
         let txid: [u8; 12] = rand::random();
         let mut req = Vec::with_capacity(20);
         req.extend_from_slice(&0x0001u16.to_be_bytes()); // Binding Request

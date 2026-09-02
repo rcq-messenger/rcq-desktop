@@ -14,6 +14,9 @@ import { Dropdown, type DropdownOption } from '../components/Dropdown'
 import { LanguagePicker } from '../components/LanguagePicker'
 import { Logo } from '../components/Logo'
 import { IslandAvatar } from '../components/IslandAvatar'
+import { IslandTrustRow } from '../components/IslandTrust'
+import { hostnameOf, normaliseIsland } from '../lib/island-choice'
+import { isCaOnlyHost, prePinIsland } from '../lib/island-trust'
 import { useIslandCard } from '../lib/use-server-info'
 import { MyQRCode } from '../components/MyQRCode'
 import { Api, REPORT_TAG, reportTextLimit } from '../lib/api'
@@ -405,8 +408,29 @@ export function Settings() {
   async function addBackup() {
     setMhBusy(true)
     setMhError(null)
+    // The address may carry the island's certificate fingerprint after a `#`
+    // (docs/island-fingerprint-design.md §3). It is split off here, because
+    // the host normaliser underneath drops a fragment without a word, and a
+    // bad one is an error rather than something to drop: connecting anyway
+    // would take a first-use pin while the person believes they pinned.
+    const address = normaliseIsland(mhHost)
+    if (address.badFingerprint) {
+      setMhError(t('island.trust.not_fingerprint'))
+      setMhBusy(false)
+      return
+    }
+    if (address.fingerprint && isCaOnlyHost(hostnameOf(address.base))) {
+      setMhError(t('island.trust.ca_only'))
+      setMhBusy(false)
+      return
+    }
     try {
-      await addBackupIsland(identity!, mhHost)
+      if (address.fingerprint) {
+        // On file before the first request. A conflict is on the banner now
+        // and nothing is dialled; the form only has to say it did not connect.
+        if ((await prePinIsland(address.base, address.fingerprint)) === 'conflict') throw new Error('')
+      }
+      await addBackupIsland(identity!, address.fingerprint ? address.base : mhHost)
       setBackups(listBackupHomes())
       setMhHost('')
       setMhAdding(false)
@@ -759,6 +783,11 @@ export function Settings() {
               )}
             </div>
           </div>
+          {/* How this island is trusted (fingerprint design §5.3): through an
+              authority, or by a fingerprint the person can copy with the
+              address and hand to somebody. Off the desktop it is always the
+              authority, because a browser trusts nothing else. */}
+          <IslandTrustRow apiBase={identity?.apiBase} />
           {islandRules && (
             <>
               <button

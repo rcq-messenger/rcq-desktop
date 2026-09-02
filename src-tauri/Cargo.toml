@@ -64,12 +64,24 @@ url = "2"
 base64 = "0.22"
 ed25519-dalek = "2"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls", "socks"] }
-# The TURN tunnel (src/turn_tunnel.rs) runs on tauri's own tokio runtime;
-# these features only widen what that runtime already links.
-tokio = { version = "1", features = ["net", "io-util", "time", "sync"] }
+# The TURN tunnel (src/turn_tunnel.rs) and the island forwarder
+# (src/island_trust.rs) run on tauri's own tokio runtime; these features only
+# widen what that runtime already links.
+tokio = { version = "1", features = ["net", "io-util", "time", "sync", "macros"] }
 # The PIN vault (src/vault.rs): Argon2id over the PIN, AES-256-GCM over the
 # account material. Both are the reference Rust implementations; nothing here
 # is hand-rolled.
 argon2 = "0.5"
 aes-gcm = "0.10"
 rand = "0.8"
+# Island trust without a certificate authority (src/island_trust.rs): the
+# loopback forwarder terminates TLS for fingerprint islands with rustls, so the
+# verifier can run our own rule where the webview cannot be told anything. Every
+# one of these was already in the tree through reqwest, pinned to the exact
+# versions it resolves so there is one rustls and one crypto provider (ring;
+# aws-lc-rs would add a C build and a second provider).
+rustls = { version = "=0.23.43", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+tokio-rustls = { version = "=0.26.4", default-features = false, features = ["ring", "tls12", "logging"] }
+webpki-roots = "=1.0.9"
+sha2 = "=0.10.9"
+hex = "=0.4.3"

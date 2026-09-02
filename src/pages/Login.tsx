@@ -28,7 +28,8 @@ import { defaultHome } from '../lib/routing'
 import { clientLabel } from '../lib/client-name'
 import { bytesToB64, newLinkEphemeral, openLinkSeal, type WebIdentity } from '../lib/crypto'
 import { IslandPickerModal } from '../components/IslandPickerModal'
-import { islandLabel, rememberIsland, rememberedIsland } from '../lib/island-choice'
+import { islandLabel, rememberIsland, rememberedIsland, type IslandAddress } from '../lib/island-choice'
+import { engageIslandEagerly, prePinIsland } from '../lib/island-trust'
 import { IslandAvatar } from '../components/IslandAvatar'
 import { useIslandCard } from '../lib/use-server-info'
 import { useI18n } from '../lib/i18n-context'
@@ -513,9 +514,25 @@ function IslandField() {
   // kept saying "ISLAND" until the page was loaded a second time.
   const islandName = useIslandCard(base).name
 
-  function commit(next: string) {
-    setBase(next)
-    rememberIsland(next)
+  // The desktop decides how the island is trusted BEFORE the first request to
+  // it (docs/island-fingerprint-design.md §7.3). The remembered island is
+  // asked on mount so the probe is done by the time the button is pressed;
+  // the fetch wrapper would hold the request for it anyway.
+  useEffect(() => {
+    void engageIslandEagerly(base)
+    // Once, for the island this page opened with; a pick below asks for its own.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  function commit(next: IslandAddress) {
+    setBase(next.base)
+    rememberIsland(next.base)
+    // §3: a fingerprint typed with the address goes on file before anything is
+    // dialled - the island card's request that follows this render waits on it
+    // inside the wrapper. Against a record that disagrees it is a refusal with
+    // the banner, and nothing is dialled until the person chooses.
+    if (next.fingerprint) void prePinIsland(next.base, next.fingerprint)
+    void engageIslandEagerly(next.base)
   }
 
   return (

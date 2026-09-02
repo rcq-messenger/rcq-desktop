@@ -18,10 +18,9 @@
 //   and that is the point rather than a limitation.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
-import { Link } from 'react-router-dom'
 import { fetchCatalogue, fetchSiteIcon, fetchSitePage, parseRcqAddress, repin, type CatalogueEntry, type RcqAddress, type SitePage } from '../lib/sites'
 import { MySitePanel } from '../components/MySitePanel'
 
@@ -56,6 +55,7 @@ function SiteMark({ name, uri, size = 26 }: { name: string; uri?: string | null;
 export function Sites() {
   const { t } = useI18n()
   const { identity } = useIdentity()
+  const navigate = useNavigate()
   const [params] = useSearchParams()
   const [typed, setTyped] = useState('')
   const [addr, setAddr] = useState<RcqAddress | null>(null)
@@ -69,46 +69,89 @@ export function Sites() {
   const [focused, setFocused] = useState(false)
   const frameRef = useRef<HTMLIFrameElement | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
+  /// Bumped by every open and by every return to the catalogue: a fetch
+  /// that lands after the reader has moved on is dropped, not drawn over
+  /// wherever they moved on to.
+  const turn = useRef(0)
 
   // "My island" for a bare `name.rcq`, taken from this session's own API base:
   // a person's first site is reachable before they know what an island is.
   const ownHost = identity ? new URL(identity.apiBase).host : 'api.rcq.app'
 
+  /// The fetch itself. Moving between pages of one site and reloading call
+  /// this directly; opening a site by address goes through `go` and the URL.
   const open = useCallback(async (raw: string, path = 'index.html', fresh = false) => {
+    const mine = ++turn.current
     const parsed = parseRcqAddress(raw, ownHost)
     if (!parsed) {
       setError('address')
       setPage(null)
+      setAddr(null)
+      setTyped(raw)
       return
     }
+    // The bar shows the address from the moment it is asked for, the way a
+    // browser does, so an error that follows is an error FOR that address
+    // and Back knows what it is leaving.
+    setAddr(parsed)
+    setTyped(parsed.display)
     setLoading(true)
     setError(null)
     try {
       const got = await fetchSitePage(parsed, path, fresh)
+      if (mine !== turn.current) return
       setPage(got)
       void fetchSiteIcon(parsed, fresh).then((uri) => setIcons((cur) => ({ ...cur, [parsed.name]: uri })))
-      setAddr(parsed)
-      setTyped(parsed.display)
     } catch (e) {
+      if (mine !== turn.current) return
       const kind = e instanceof Error ? e.message : 'missing'
       setPage(null)
       setError((ERRORS as readonly string[]).includes(kind) ? (kind as ErrorKind) : 'missing')
     } finally {
-      setLoading(false)
+      if (mine === turn.current) setLoading(false)
     }
   }, [ownHost])
 
-  // An address handed in from elsewhere - a tapped `.rcq` name in a chat -
-  // opens straight away, so the row in the message menu lands on the page
-  // rather than on an empty address bar.
+  // The `a` param IS the reader's position. Opening a site pushes `?a=`,
+  // the way back pushes the bare `/sites`, and this effect does the actual
+  // opening and clearing for both - so the browser's own Back and Forward,
+  // the chevron in the capsule and an address handed in from a chat (a
+  // tapped `.rcq` name lands on the page, not on an empty bar) all go
+  // through one door and cannot disagree about where the reader is.
   const asked = params.get('a')
   useEffect(() => {
-    if (asked) void open(asked)
+    if (asked) {
+      void open(asked)
+      return
+    }
+    // Back to the catalogue: nothing of the page survives, and a fetch still
+    // in flight for it is disowned rather than allowed to land on top.
+    turn.current++
+    setPage(null)
+    setAddr(null)
+    setError(null)
+    setTyped('')
+    setLoading(false)
     // Deliberately only on the address itself: re-running this when `open`
     // changes identity would reload the page under a reader who has since
     // navigated somewhere else in the same site.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [asked])
+
+  /// Open a site by address. Every way of asking for one - Enter in the bar,
+  /// a catalogue row, one's own site in the panel - lands here, and here
+  /// means the URL, not the fetch: the effect above does the rest.
+  const go = useCallback((raw: string) => {
+    const display = parseRcqAddress(raw, ownHost)?.display ?? raw.trim()
+    if (display === asked) {
+      // The param does not change, so the effect will not fire, and for the
+      // page already up that is the point. Enter on an address that failed
+      // is a retry, though, and from an inner page it asks for the front.
+      if (!page || page.path !== 'index.html') void open(raw)
+      return
+    }
+    navigate(`/sites?a=${encodeURIComponent(display)}`)
+  }, [asked, navigate, open, ownHost, page])
 
   // The catalogue of the reader's own island: what there is to look at at all,
   // and only the sites that asked to be in it.
@@ -166,30 +209,38 @@ export function Sites() {
 
   return (
     <div className="h-screen [height:100dvh] flex flex-col bg-surface-dim overflow-hidden">
-      {/* One capsule, the way a desktop browser does it: the address IS the
-          control. Idle it sits centred with the site's mark and a reload
-          glyph; focused it becomes an ordinary text field, left-aligned and
-          selected, and Enter opens. There is no Open button - a button beside
-          an address bar is a second way to do the thing the Return key
-          already does (founder, 01.09). */}
+      {/* One capsule across the row, the way a desktop browser does it: the
+          address IS the control, and the way back lives inside it, at the
+          left edge. On a page, or on an error for an address, the chevron
+          returns to the catalogue; only from the catalogue does it leave the
+          browser (founder, 02.09). Idle the address sits centred between the
+          site's mark and a reload glyph; focused it becomes an ordinary text
+          field, left-aligned and selected, and Enter opens. There is no Open
+          button - a button beside an address bar is a second way to do the
+          thing the Return key already does (founder, 01.09). */}
       <header className="rcq-header sticky top-0 z-10 shrink-0">
         <div className="max-w-3xl mx-auto px-3 h-14 flex items-center gap-1.5">
-          <Link to="/contacts" className="text-fg-secondary hover:text-fg-primary p-1.5 rounded-md hover:bg-field" aria-label={t('sites.back')}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-              <path d="M15 18l-6-6 6-6" />
-            </svg>
-          </Link>
-
           <form
-            className={`group flex-1 flex items-center gap-2 h-9 px-3 rounded-full bg-field transition-shadow ${
+            className={`group flex-1 flex items-center gap-2 h-9 pl-1.5 pr-3 rounded-full bg-field transition-shadow ${
               focused ? 'ring-1 ring-accent' : 'hover:bg-line/40'
             }`}
             onSubmit={(e) => {
               e.preventDefault()
-              void open(typed)
+              go(typed)
               inputRef.current?.blur()
             }}
           >
+            <button
+              type="button"
+              onClick={() => navigate(asked ? '/sites' : '/contacts')}
+              className="flex-none p-1 text-fg-secondary hover:text-fg-primary"
+              title={t('sites.back')}
+              aria-label={t('sites.back')}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M15 18l-6-6 6-6" />
+              </svg>
+            </button>
             {/* The mark stands in for the padlock a browser puts here, and it
                 means the same thing: this is the site it says it is, checked
                 against the owner's signature. */}
@@ -210,7 +261,7 @@ export function Sites() {
                 // address back the way a browser does.
                 if (e.key === 'Enter') {
                   e.preventDefault()
-                  void open(e.currentTarget.value)
+                  go(e.currentTarget.value)
                   e.currentTarget.blur()
                 } else if (e.key === 'Escape') {
                   inputRef.current?.blur()
@@ -309,7 +360,7 @@ export function Sites() {
                   <button
                     key={s.name}
                     type="button"
-                    onClick={() => void open(`${s.name}.rcq`)}
+                    onClick={() => go(`${s.name}.rcq`)}
                     className="w-full flex items-center gap-3 text-left px-3 py-2 rounded-md hover:bg-field"
                   >
                     <SiteMark name={s.name} uri={icons[s.name]} />
@@ -403,7 +454,7 @@ export function Sites() {
       {mine && (
         <MySitePanel
           onClose={() => setMine(false)}
-          onOpen={(name) => { setMine(false); void open(`${name}.rcq`) }}
+          onOpen={(name) => { setMine(false); go(`${name}.rcq`) }}
         />
       )}
     </div>

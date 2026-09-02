@@ -803,6 +803,36 @@ pub fn accept(app: &AppHandle, host: &str, port: u16, fingerprint: &str, source:
     Ok(())
 }
 
+/// The destroy-everything path (§4): every pin, and the file itself.
+///
+/// ⚠ The desktop has no panic wipe, so this is the whole of what §4 means by
+/// "the panic wipe clears it with everything else": sign-out, "remove this
+/// account" and "forgot PIN -> reset the vault" all end in
+/// `wipeLocalAccountData`, and that is what calls this. What the file holds is
+/// exactly the residue that function deletes `rcq.island.*` for - host:port
+/// and a date for the account's own island, its backup homes, correspondents'
+/// islands and every visited group's island - and a laptop about to be handed
+/// over must not carry it.
+pub fn clear(app: &AppHandle) -> Result<(), String> {
+    ensure_loaded(app);
+    {
+        let mut s = store().lock().unwrap();
+        s.pins.clear();
+        if let Some(path) = s.path.clone() {
+            // Removed, not written empty: an empty file is still a file that
+            // says this device runs RCQ, and persist() would recreate it.
+            match std::fs::remove_file(&path) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(format!("cannot remove {}: {e}", path.display())),
+            }
+            let _ = std::fs::remove_file(path.with_extension("json.part"));
+        }
+    }
+    changed().lock().unwrap().clear();
+    Ok(())
+}
+
 pub fn forget(app: &AppHandle, host: &str, port: u16) -> Result<(), String> {
     check_host(host, port)?;
     ensure_loaded(app);

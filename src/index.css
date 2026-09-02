@@ -123,6 +123,26 @@ html, body, #root {
   height: 100%;
 }
 
+/* How much of the viewport the island trust banner is holding at the top
+   (components/IslandTrust.tsx sets it, in pixels, whenever it draws).
+   The banner sits IN the layout rather than over it: unlike a toast it has to
+   be able to stay - while an island is refused the folded strip is there for
+   the session - and a permanent strip floating over every screen would cover
+   the top of every header and swallow the clicks aimed at it. The screens
+   that are exactly one viewport tall subtract this so nothing is pushed under
+   the fold; the ones that already scroll need nothing. */
+:root {
+  --rcq-top-inset: 0px;
+}
+/* The screens that only need to FILL the viewport reserve it the same way,
+   without every page having to say so. Identical to Tailwind's own rule while
+   nothing is drawing at the top, which is almost always. */
+@layer utilities {
+  .min-h-screen {
+    min-height: calc(100vh - var(--rcq-top-inset));
+  }
+}
+
 /* The page background belongs on <html> as well as <body>: the root element is
    what the browser paints over the whole canvas during a reload, before the
    body box exists. Without it a reload showed the UA's white for a frame even

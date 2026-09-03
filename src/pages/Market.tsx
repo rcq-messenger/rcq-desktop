@@ -346,7 +346,7 @@ export function Market() {
             {t('uin_market.subhead', { uin: `${id.uin}` })}
           </p>
 
-          <div className="mt-6 flex items-center h-[88px] rounded-2xl bg-surface border border-line px-5 transition-colors focus-within:bg-field">
+          <div className="mt-6 flex items-center h-[88px] rounded-2xl bg-surface dark:bg-field px-5 transition-colors focus-within:bg-field dark:focus-within:bg-line">
             <input
               ref={inputRef}
               value={typed}
@@ -461,7 +461,7 @@ export function Market() {
               {t('uin_market.mine.label')}
             </h2>
 
-            <div className="rounded-2xl bg-surface border border-line px-5 py-4">
+            <div className="rounded-2xl bg-surface dark:bg-field px-5 py-4">
               <div className="text-[0.6875rem] uppercase tracking-wider text-fg-dim">{t('uin_market.mine.active')}</div>
               <div className="mt-1 text-3xl font-semibold tracking-tight tabular-nums">{mine.active}</div>
             </div>
@@ -473,7 +473,7 @@ export function Market() {
                 {mine.owned.map((o) => (
                   <div
                     key={o.uin}
-                    className="flex items-center justify-between rounded-2xl bg-surface border border-line px-4 py-3"
+                    className="flex items-center justify-between rounded-2xl bg-surface-dim dark:bg-fg-primary/[0.07] px-4 py-3"
                   >
                     <div className="min-w-0">
                       <div className="text-lg font-semibold tracking-tight tabular-nums truncate">{o.uin}</div>
@@ -525,7 +525,7 @@ export function Market() {
           {loadingSuggestions && suggestions.length === 0 ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
               {Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} className="h-[74px] rounded-2xl bg-surface border border-line animate-pulse" />
+                <div key={i} className="h-[74px] rounded-2xl bg-surface dark:bg-field animate-pulse" />
               ))}
             </div>
           ) : suggestions.length === 0 ? (
@@ -536,7 +536,7 @@ export function Market() {
                 <button
                   key={s.uin}
                   onClick={() => pick(s.uin)}
-                  className="rounded-2xl p-3.5 text-left bg-surface border border-line hover:bg-field
+                  className="rounded-2xl p-3.5 text-left bg-surface dark:bg-field hover:bg-field dark:hover:bg-line
                              active:scale-[0.98] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
                 >
                   <div className="text-lg font-semibold tracking-tight truncate">{s.uin}</div>
@@ -566,7 +566,11 @@ export function Market() {
                     {t(`uin_market.tiers.len${d}`)}
                   </span>
                   <span className={'relative text-sm tabular-nums transition-colors ' + (active ? 'font-semibold text-accent' : 'text-fg-primary')}>
-                    {priceDisplay(PRICE_CENTS_BY_LENGTH[d])}
+                    {/* Three digits are not on sale (founder, 03.09). There are 761 of
+                        them left in the whole network and no more are ever made, so
+                        they are given by hand rather than priced. Saying so is worth a
+                        row; hiding the row would only move the question. */}
+                    {d === 3 ? t('uin_market.tiers.reserved') : priceDisplay(PRICE_CENTS_BY_LENGTH[d])}
                   </span>
                 </div>
               )
@@ -583,20 +587,6 @@ export function Market() {
             body={t('uin_market.p2p.body')}
             icon={<P2PIcon />}
           >
-            <div className="mt-4 space-y-1.5">
-              {[
-                { uin: 1337, by: 8042, price: '$2,400' },
-                { uin: 90210, by: 23187, price: '$180' },
-              ].map((row) => (
-                <div key={row.uin} className="flex items-center justify-between rounded-xl bg-surface border border-line px-3.5 py-2.5">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="text-sm font-semibold">{row.uin}</span>
-                    <span className="text-xs text-fg-dim truncate">{t('uin_market.p2p.listed_by', { uin: `${row.by}` })}</span>
-                  </div>
-                  <span className="text-sm tabular-nums text-fg-secondary">{row.price}</span>
-                </div>
-              ))}
-            </div>
           </FoundationCard>
 
           <FoundationCard
@@ -606,11 +596,14 @@ export function Market() {
             icon={<CoinIcon />}
           >
             <div className="mt-4 flex flex-wrap gap-2">
+              {/* ⚠ Only what an island can actually SEE arriving. Monero cannot be
+                  watched without a private view key and a wallet scanning the
+                  chain, so no explorer can answer for it; Bitcoin's fee and its
+                  twenty-minute wait eat a fifteen-dollar sale; Ethereum's gas
+                  does the same. Drawing a coin here is a promise. */}
               {[
-                { name: 'Monero', color: '#FF6600' },
-                { name: 'Bitcoin', color: '#F7931A' },
-                { name: 'Ethereum', color: '#7B7FE8' },
-                { name: 'USDT', color: '#26A17B' },
+                { name: 'USDT · TRON', color: '#26A17B' },
+                { name: 'TON', color: '#3AA6E9' },
               ].map((m) => (
                 <span
                   key={m.name}
@@ -658,7 +651,7 @@ export function Market() {
                 <button
                   onClick={() => setConfirming(false)}
                   disabled={buying}
-                  className="flex-1 h-11 rounded-xl text-sm font-medium text-fg-secondary bg-field hover:bg-line active:scale-[0.99] transition"
+                  className="flex-1 h-11 rounded-xl text-sm font-medium text-fg-secondary bg-surface dark:bg-field hover:bg-field dark:hover:bg-line active:scale-[0.99] transition"
                 >
                   {t('common.cancel')}
                 </button>
@@ -699,7 +692,7 @@ export function Market() {
                   setTyped('')
                 }}
                 disabled={switching}
-                className="flex-1 h-11 rounded-xl text-sm font-medium text-fg-secondary bg-field hover:bg-line active:scale-[0.99] transition"
+                className="flex-1 h-11 rounded-xl text-sm font-medium text-fg-secondary bg-surface dark:bg-field hover:bg-field dark:hover:bg-line active:scale-[0.99] transition"
               >
                 {t('uin_market.held.later')}
               </button>
@@ -730,7 +723,7 @@ export function Market() {
               <button
                 onClick={() => setReleaseTarget(null)}
                 disabled={releasing}
-                className="flex-1 h-11 rounded-xl text-sm font-medium text-fg-secondary bg-field hover:bg-line active:scale-[0.99] transition"
+                className="flex-1 h-11 rounded-xl text-sm font-medium text-fg-secondary bg-surface dark:bg-field hover:bg-field dark:hover:bg-line active:scale-[0.99] transition"
               >
                 {t('common.cancel')}
               </button>
@@ -756,7 +749,7 @@ export function Market() {
               <button
                 onClick={() => setSwitchTarget(null)}
                 disabled={switching}
-                className="flex-1 h-11 rounded-xl text-sm font-medium text-fg-secondary bg-field hover:bg-line active:scale-[0.99] transition"
+                className="flex-1 h-11 rounded-xl text-sm font-medium text-fg-secondary bg-surface dark:bg-field hover:bg-field dark:hover:bg-line active:scale-[0.99] transition"
               >
                 {t('common.cancel')}
               </button>
@@ -814,10 +807,10 @@ function FoundationCard({
   children?: ReactNode
 }) {
   return (
-    <div className="rounded-3xl bg-fg-primary/[0.025] p-5">
+    <div className="rounded-3xl bg-surface dark:bg-field p-5">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
-          <span className="grid place-items-center h-9 w-9 rounded-xl bg-fg-primary/[0.06] text-fg-secondary shrink-0">
+          <span className="grid place-items-center h-9 w-9 rounded-xl bg-surface-dim dark:bg-fg-primary/[0.09] text-fg-secondary shrink-0">
             {icon}
           </span>
           <h3 className="text-[0.9375rem] font-semibold tracking-tight truncate">{title}</h3>

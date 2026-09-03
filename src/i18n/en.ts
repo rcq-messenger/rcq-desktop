@@ -1137,7 +1137,7 @@ export const en: Record<string, string> = {
   'uin_market.p2p.body': 'Buy and sell UINs directly with other people. Listings open soon.',
   'uin_market.p2p.listed_by': 'listed by {uin}',
   'uin_market.crypto.title': 'Crypto checkout',
-  'uin_market.crypto.body': 'Pay with crypto, Monero first for privacy. Checkout is coming; the market runs in preview today.',
+  'uin_market.crypto.body': 'Pay in USDT on TRON or in TON. Checkout is coming; the market runs in preview today.',
   'uin_market.suggest.label': 'Available now',
   'uin_market.suggest.refresh': 'Shuffle',
   'uin_market.suggest.empty': 'No suggestions right now. Try typing a number above.',
@@ -1150,6 +1150,7 @@ export const en: Record<string, string> = {
   'uin_market.tiers.len7': 'seven-digit',
   'uin_market.tiers.len8': 'eight-digit',
   'uin_market.tiers.len9': 'nine-digit',
+  'uin_market.tiers.reserved': 'not for sale',
   'uin_market.tiers.note': 'Shorter is rarer, so it costs more. The price depends only on the digit count.',
   'uin_market.info.what.title': 'What is a UIN',
   'uin_market.info.what.body':

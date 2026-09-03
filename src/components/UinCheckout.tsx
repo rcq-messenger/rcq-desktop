@@ -20,6 +20,7 @@ import { motion } from 'framer-motion'
 import QRCode from 'qrcode'
 import { Till, TillError, rememberInvoice, forgetInvoice, type UinInvoice } from '../lib/till'
 import { useI18n } from '../lib/i18n-context'
+import { CoinIcon } from './CoinIcons'
 
 const SPRING = { type: 'spring' as const, stiffness: 420, damping: 34 }
 
@@ -28,11 +29,6 @@ const SPRING = { type: 'spring' as const, stiffness: 420, damping: 34 }
 /// once a minute, so anything faster is asking a question that cannot have
 /// changed.
 const POLL_MS = 6000
-
-const CHAIN_COLOR: Record<string, string> = {
-  tron: '#26A17B',
-  ton: '#3AA6E9',
-}
 
 /// Wallets read `ton://` and `tron:` links; a plain address in the QR is what
 /// every wallet understands when it does not. ⚠ The amount goes in the link
@@ -224,7 +220,7 @@ export function UinCheckout({
 
   return (
     <motion.div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-fg-primary/30 backdrop-blur-xl"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xl"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
@@ -265,10 +261,7 @@ export function UinCheckout({
                                hover:bg-field dark:hover:bg-line active:scale-[0.99] transition
                                flex items-center justify-center gap-2.5 disabled:opacity-50"
                   >
-                    <span
-                      className="h-2 w-2 rounded-full"
-                      style={{ backgroundColor: CHAIN_COLOR[c.id] ?? '#888' }}
-                    />
+                    <CoinIcon chain={c.id} className="h-6 w-6 shrink-0" />
                     {c.label}
                   </button>
                 ))}

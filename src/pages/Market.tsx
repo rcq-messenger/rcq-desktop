@@ -23,6 +23,9 @@ import { Api, ApiError, type MyUins, type UinQuote, type UinSuggestion } from '.
 import { useToast } from '../lib/toast'
 import { Logo } from '../components/Logo'
 import { UinCheckout } from '../components/UinCheckout'
+// ⚠ Aliased: this file already has its own `CoinIcon`, the generic coin glyph
+// used as the crypto card's badge. This one is the actual coin's mark.
+import { CoinIcon as ChainMark } from '../components/CoinIcons'
 import { Till, forgetInvoice, listInvoices, type StoredInvoice } from '../lib/till'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
@@ -728,14 +731,14 @@ export function Market() {
                   twenty-minute wait eat a fifteen-dollar sale; Ethereum's gas
                   does the same. Drawing a coin here is a promise. */}
               {[
-                { name: 'USDT · TRON', color: '#26A17B' },
-                { name: 'TON', color: '#3AA6E9' },
+                { id: 'tron', name: 'USDT · TRON' },
+                { id: 'ton', name: 'TON' },
               ].map((m) => (
                 <span
-                  key={m.name}
-                  className="rounded-lg px-2.5 py-1 text-xs font-semibold"
-                  style={{ color: m.color, backgroundColor: m.color + '24' }}
+                  key={m.id}
+                  className="flex items-center gap-1.5 rounded-lg bg-surface dark:bg-fg-primary/[0.06] px-2 py-1 text-xs font-semibold text-fg-secondary"
                 >
+                  <ChainMark chain={m.id} className="h-4 w-4" />
                   {m.name}
                 </span>
               ))}
@@ -771,7 +774,7 @@ export function Market() {
       <AnimatePresence>
         {confirming && liveQuote?.available && localCents != null && (
           <motion.div
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-fg-primary/30 backdrop-blur-xl"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xl"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -919,7 +922,7 @@ export function Market() {
 function Modal({ onDismiss, children }: { onDismiss: () => void; children: ReactNode }) {
   return (
     <motion.div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-fg-primary/30 backdrop-blur-xl"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xl"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}

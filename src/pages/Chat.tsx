@@ -111,6 +111,7 @@ import { DecryptedImage } from '../components/DecryptedImage'
 import { DecryptedVideo } from '../components/DecryptedVideo'
 import { FileBubble } from '../components/FileBubble'
 import { VoiceBubble } from '../components/VoiceBubble'
+import { MenuPanel } from '../components/MenuPanel'
 import { uploadEncryptedImage, uploadEncryptedFile, uploadEncryptedAudio, downloadEncryptedFile } from '../lib/media'
 import { emoticonAssetURL } from '../lib/emoticons'
 import { useI18n } from '../lib/i18n-context'
@@ -3857,13 +3858,11 @@ export function Chat() {
             </div>
           ) : (
           <div className="relative">
-          {/* ⚠ The focus ring lives HERE, not on the field. The field lost its
-              own pill when the capsule became the surface, and with it the
-              `focus:ring` that told you the caret was in it — so the ring moved
-              out to the capsule with `focus-within`. Losing it entirely is the
-              kind of thing that only shows up for somebody navigating by
-              keyboard, who is exactly the person least able to guess. */}
-          <div className="rcq-composer-shell flex items-end gap-2 rounded-3xl px-2 py-2 shadow-lg focus-within:ring-1 focus-within:ring-accent/70 transition-shadow">
+          {/* ⚠ No focus ring, by decision (founder, 03.09: "убери зеленую
+              обводку у композера, не надо ни при наведении ни при нажатии").
+              I had put one here when the field lost its own pill; it is gone
+              again. The caret itself is the indicator now. */}
+          <div className="rcq-composer-shell flex items-end gap-2 rounded-3xl px-2 py-2 shadow-lg">
             <input
               ref={fileInputRef}
               type="file"
@@ -3908,19 +3907,29 @@ export function Chat() {
               <AnimatePresence>
                 {attachMenuOpen && (
                   <>
-                    <motion.div
-                      initial={{ opacity: 0, y: 6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: 6 }}
-                      transition={{ duration: 0.14 }}
-                      data-chat-menu
-                      data-attach-menu
-                      // Wide enough for the longest label in the longest
-                      // language: RU's «Приглашение в группу» wrapped to two
-                      // lines at w-44 and left the row ragged next to the
-                      // one-word ones.
-                      className="absolute bottom-full left-0 mb-2 z-20 w-52 rounded-xl bg-surface shadow-lg overflow-hidden"
-                    >
+                    {/* ⚠⚠ PORTALLED via MenuPanel, and that is the whole
+                        reason it looked "просто прозрачное, а не блюр"
+                        (founder, 03.09). An element with `backdrop-filter` is
+                        a BACKDROP ROOT: the composer capsule now has one, so a
+                        menu nested inside it has only the capsule's own
+                        painting to filter — which above the capsule is
+                        nothing, so the fill shows and the blur does not.
+                        MenuPanel exists for exactly this, says so in its own
+                        header, and throws in window-clamping and the shared
+                        `rcq-menu` surface. Third time this trap has been hit
+                        in this codebase, and the first two are documented in
+                        index.css.
+                        ⚠ Width is a MINIMUM now, not `w-52`: with
+                        `whitespace-nowrap` and `overflow-hidden` the longest
+                        timer label was clipped, so the menu was hiding the
+                        option somebody had chosen. */}
+                    {/* ⚠ No `data-attach-menu` here any more: MenuPanel is
+                        portalled out of the trigger's subtree, so the marker
+                        would not help the document's click-outside check
+                        anyway — and it does not need to. The panel stops
+                        `mousedown` itself, which is the same fix, applied once
+                        for every menu instead of per caller. */}
+                    <MenuPanel className="min-w-56 w-max max-w-[22rem] overflow-hidden">
                       {attachView === 'ttl' ? (
                         // Disappearing-message timers (founder item 20). A
                         // second VIEW of this panel rather than a menu of its
@@ -3931,7 +3940,7 @@ export function Chat() {
                         <>
                           <button
                             onClick={() => setAttachView('main')}
-                            className="flex w-full items-center gap-2.5 whitespace-nowrap border-b border-line/60 px-3 py-2.5 text-left text-sm text-fg-secondary hover:bg-field transition-colors"
+                            className="flex w-full items-center gap-2.5 border-b border-line/60 px-3 py-2.5 text-left text-sm text-fg-secondary hover:bg-field transition-colors"
                           >
                             ← {t('chat.ttl.title')}
                           </button>
@@ -3943,7 +3952,7 @@ export function Chat() {
                                 setAttachView('main')
                                 setAttachMenuOpen(false)
                               }}
-                              className={`flex w-full items-center gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm hover:bg-field transition-colors ${
+                              className={`flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm hover:bg-field transition-colors ${
                                 (threadTtlSec ?? null) === opt.seconds ? 'text-accent' : ''
                               }`}
                             >
@@ -3969,7 +3978,7 @@ export function Chat() {
                           setAttachMenuOpen(false)
                           fileInputRef.current?.click()
                         }}
-                        className="flex w-full items-center gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm hover:bg-field transition-colors"
+                        className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm hover:bg-field transition-colors"
                       >
                         <AttachIcon />
                         {t('chat.attach.photo')}
@@ -3983,7 +3992,7 @@ export function Chat() {
                             setAttachMenuOpen(false)
                             docInputRef.current?.click()
                           }}
-                          className="flex w-full items-center gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm hover:bg-field transition-colors"
+                          className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm hover:bg-field transition-colors"
                         >
                           <DocIcon />
                           {t('chat.attach.file')}
@@ -3991,9 +4000,9 @@ export function Chat() {
                       )}
                       <button
                         onClick={() => void sendLocation()}
-                        className="flex w-full items-center gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm hover:bg-field transition-colors"
+                        className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm hover:bg-field transition-colors"
                       >
-                        <PinIcon />
+                        <PinIcon size={20} className="" />
                         {t('chat.attach.location')}
                       </button>
                       {/* An invite is a link, so a links-off room hides it. */}
@@ -4003,9 +4012,9 @@ export function Chat() {
                             setAttachMenuOpen(false)
                             setShareGroupOpen(true)
                           }}
-                          className="flex w-full items-center gap-2.5 whitespace-nowrap px-3 py-2.5 text-left text-sm hover:bg-field transition-colors"
+                          className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm hover:bg-field transition-colors"
                         >
-                          <GroupInviteIcon />
+                          <GroupInviteIcon size={20} className="" />
                           {t('chat.attach.group')}
                         </button>
                       )}
@@ -4017,7 +4026,7 @@ export function Chat() {
                         onClick={() => setAttachView('ttl')}
                         className="flex w-full items-center gap-2.5 whitespace-nowrap border-t border-line/60 px-3 py-2.5 text-left text-sm hover:bg-field transition-colors"
                       >
-                        <ClockIcon className="text-fg-secondary" />
+                        <ClockIcon size={20} className="" />
                         <span className="flex-1">{t('chat.ttl.title')}</span>
                         <span className={`text-[0.625rem] ${threadTtlSec ? 'text-accent' : 'text-fg-dim'}`}>
                           {/* A number some future build wrote and this one has
@@ -4028,7 +4037,7 @@ export function Chat() {
                       </button>
                       </>
                       )}
-                    </motion.div>
+                    </MenuPanel>
                   </>
                 )}
               </AnimatePresence>
@@ -4037,7 +4046,9 @@ export function Chat() {
               data-emoji-panel
               onClick={() => setShowPicker((v) => !v)}
               className={`h-10 w-10 rounded-full flex items-center justify-center flex-none transition-colors ${
-                showPicker ? 'bg-accent/15 ring-1 ring-accent/40' : 'hover:bg-line/60'
+                // ⚠ Fill only, no ring: "ни при нажатии по нему или элементов
+                // внутри". The tint already says the picker is open.
+                showPicker ? 'bg-accent/15' : 'hover:bg-line/60'
               } ${rec ? 'hidden' : ''}`}
               title={t('chat.emoticons')}
               aria-label={t('chat.emoticons')}
@@ -4488,7 +4499,14 @@ const IncomingMessageRow = memo(function IncomingMessageRow({
         {senderName && !cont && (
           <Link
             to={`/profile/${m.from}`}
-            className="flex items-center gap-1.5 text-[0.625rem] text-fg-dim px-1 hover:text-accent transition-colors"
+            // ⚠ 0.75rem and `text-fg-secondary`, up from 0.625rem and
+            // `text-fg-dim`. In a group the only thing that says WHO is
+            // talking was 10px of the dimmest colour in the palette: "так
+            // мелко что ничего не видно кто, пока условно лупой не
+            // присмотришься" (#875, on Windows). Two changes because it was
+            // failing twice — too small AND too faint — and fixing one of
+            // those leaves it hard to read.
+            className="flex items-center gap-1.5 text-xs font-medium text-fg-secondary px-1 hover:text-accent transition-colors"
           >
             {/* Beside the nick, never instead of it, and only
                 when there is a picture. */}
@@ -5832,9 +5850,16 @@ function PinnedBanner({ text, group, expanded, onToggle, linksAllowed = true }: 
   )
 }
 
-function PinIcon() {
+// ⚠ Size and stroke are ARGUMENTS, not constants, and that is the whole of
+// "иконки пина и группы и исчезающих не похожи на иконки файла/фото, будто
+// разные паки" (founder, 03.09). In one menu `DocIcon` was 20px at stroke 2
+// while these were 14px at stroke 1.8 with a colour of their own — three
+// differences at once, which is exactly what reads as a different icon set.
+// The defaults keep the two places that already used them (the pinned banner)
+// pixel-identical.
+function PinIcon({ size = 14, className = 'text-fg-secondary' }: { size?: number; className?: string }) {
   return (
-    <svg className="text-fg-secondary shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <svg className={`shrink-0 ${className}`} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={size >= 18 ? 2 : 1.8} strokeLinecap="round" strokeLinejoin="round">
       <line x1="12" y1="17" x2="12" y2="22" />
       <path d="M5 17h14l-1.5-3V6a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v8L5 17z" />
     </svg>
@@ -5842,9 +5867,9 @@ function PinIcon() {
 }
 
 /// Two people — "hand this group to someone" in the attach menu.
-function GroupInviteIcon() {
+function GroupInviteIcon({ size = 14, className = 'text-fg-secondary' }: { size?: number; className?: string }) {
   return (
-    <svg className="text-fg-secondary shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <svg className={`shrink-0 ${className}`} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={size >= 18 ? 2 : 1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
       <circle cx="9" cy="7" r="4" />
       <path d="M22 21v-2a4 4 0 0 0-3-3.87" />

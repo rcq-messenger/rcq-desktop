@@ -443,3 +443,35 @@ html.desktop *::-webkit-scrollbar {
   width: 0;
   height: 0;
 }
+
+/* ── the hidden title bar, macOS only ────────────────────────────────────
+ *
+ * Founder, 2026-09-03: "можно ли у десктопа убрать системную шапку? а то у нас
+ * своя шапка есть". On macOS the system bar is hidden (TitleBarStyle::Overlay)
+ * and the traffic lights are left floating over the window's top-left corner.
+ *
+ * Two things have to follow, or the window becomes unusable rather than
+ * tidier:
+ *
+ * ⚠ THE WINDOW MUST STILL BE DRAGGABLE. Without the bar there is nothing to
+ * grab, so a strip across the top carries `data-tauri-drag-region`. It is 28px
+ * tall, sits under everything interactive (`z-index: 0`) and takes pointer
+ * events only where nothing else claims them, so a header button on top of it
+ * still receives its click.
+ *
+ * ⚠ AND THE CORNER MUST STAY CLEAR. The traffic lights are drawn by the OS on
+ * top of our pixels; a back arrow underneath them is a button nobody can hit.
+ * The app's first row gets padding on macOS to give them room.
+ */
+html.desktop.mac body {
+  padding-top: 28px;
+}
+html.desktop.mac .rcq-drag {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 28px;
+  z-index: 0;
+  -webkit-app-region: drag;
+}

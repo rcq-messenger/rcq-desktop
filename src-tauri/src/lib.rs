@@ -542,6 +542,31 @@ pub fn run() {
                     .min_inner_size(380.0, 560.0)
                     .resizable(true)
                     .center()
+                    // ⚠ macOS ONLY, and the app draws its own header, so the
+                    // system bar above it was a second bar saying "RCQ" over a
+                    // screen that already says RCQ (founder, 03.09). Overlay
+                    // hides the bar and KEEPS the traffic lights: they belong
+                    // to the OS, and an app that draws its own close button on
+                    // a Mac looks wrong on a Mac. The layout leaves their
+                    // corner clear (`html.desktop.mac` in index.css) and a
+                    // 28px strip carries `data-tauri-drag-region`, because
+                    // without the bar there is otherwise nothing to grab.
+                    //
+                    // Windows and Linux keep their frame: their minimise,
+                    // maximise and close live in the bar we would be removing,
+                    // and nothing draws replacements yet. Taking it away there
+                    // would leave a window that cannot be closed.
+                    .title_bar_style({
+                        #[cfg(target_os = "macos")]
+                        { tauri::TitleBarStyle::Overlay }
+                        #[cfg(not(target_os = "macos"))]
+                        { tauri::TitleBarStyle::Visible }
+                    })
+                    // ⚠ Overlay alone is not enough: it removes the BAR and
+                    // leaves the word "RCQ" floating next to the traffic
+                    // lights, over a screen whose own header already says who
+                    // you are. `hidden_title` is the half that takes the text.
+                    .hidden_title(true)
                     // An ordinary <a href> to another site would navigate THIS
                     // window away from the app. The user is then looking at a
                     // web page where they are not signed in, with no way back

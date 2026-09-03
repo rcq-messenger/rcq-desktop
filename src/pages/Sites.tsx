@@ -536,7 +536,7 @@ export function Sites() {
   )
 
   return (
-    <div className="h-screen [height:100dvh] pt-[var(--rcq-top-inset)] flex flex-col bg-surface-dim overflow-hidden">
+    <div className="h-screen [height:calc(100dvh-var(--rcq-titlebar-inset))] pt-[var(--rcq-top-inset)] flex flex-col bg-surface-dim overflow-hidden">
       {/* One capsule across the row, the way a desktop browser does it: the
           address IS the control, and the way back lives inside it, at the
           left edge. On a page, or on an error for an address, the chevron

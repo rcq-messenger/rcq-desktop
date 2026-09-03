@@ -138,7 +138,6 @@ export const uk: Record<string, string> = {
   'chat.blocked.unblock': 'Розблокувати',
   'chat.owner_only.notice': 'Писати в цю групу може лише власник.',
   'chat.attach': 'Прикріпити',
-  'chat.photo.caption_hint': 'Фото готове. Підпишіть його в полі нижче і надішліть одним повідомленням.',
   'chat.attach.photo': 'Фото',
   'chat.attach.file': 'Файл',
   'chat.attach.location': 'Геопозиція',

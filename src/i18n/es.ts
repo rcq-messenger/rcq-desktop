@@ -138,7 +138,6 @@ export const es: Record<string, string> = {
   'chat.blocked.unblock': 'Desbloquear',
   'chat.owner_only.notice': 'Solo el propietario del grupo puede escribir aquí.',
   'chat.attach': 'Adjuntar',
-  'chat.photo.caption_hint': 'Foto lista. Escribe un pie abajo y envíalos como un solo mensaje.',
   'chat.attach.photo': 'Foto',
   'chat.attach.file': 'Archivo',
   'chat.attach.location': 'Ubicación',

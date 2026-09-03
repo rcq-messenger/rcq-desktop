@@ -2253,6 +2253,33 @@ export function Chat() {
   /// moderators keep both abilities so they can inspect what they moderate.
   const linksAllowed = !isGroup || group?.links_allowed !== false || roomExempt
   const filesAllowed = !isGroup || group?.files_allowed !== false || roomExempt
+  /// What the attach menu is allowed to change its mind about while it is
+  /// OPEN, which is nothing.
+  ///
+  /// ⚠⚠ Every row in that panel is derived from data that keeps arriving: the
+  /// room's `files_allowed`/`links_allowed` (and so the File and Invite rows)
+  /// come from `group`, which is refetched, and the timer's current value is
+  /// read per render. A refetch landing while the panel is up added or removed
+  /// a row, the panel changed height, and the placement — which now follows
+  /// height, deliberately — moved it under the pointer. "При открытии меню оно
+  /// скачет внутри" (founder, 03.09).
+  ///
+  /// So the panel renders from a snapshot taken the moment it opens. The menu
+  /// is on screen for a second or two; a rule that changes inside that second
+  /// belongs to the NEXT opening, not to this one. Closing clears it, so
+  /// nothing stale survives to the next open.
+  const [attachSnap, setAttachSnap] = useState<{
+    files: boolean
+    links: boolean
+    ttl: number | null
+  } | null>(null)
+
+  /// What the panel actually renders from: the snapshot while it is open,
+  /// the live values while it is not (so the next open sees the truth).
+  const menuFiles = attachSnap?.files ?? filesAllowed
+  const menuLinks = attachSnap?.links ?? linksAllowed
+  const menuTtl = attachSnap ? attachSnap.ttl : threadTtlSec ?? null
+
   /// Effective slowmode step for ME in this room (0 = none).
   const slowmodeSec = isGroup && !roomExempt ? group?.slowmode_sec ?? 0 : 0
   const slowActive = slowmodeSec > 0 && slowLeft > 0
@@ -3071,7 +3098,7 @@ export function Chat() {
     // all the way back up to find the way out. `h-screen` is the floor that
     // survives, `dvh` wins wherever it is understood.
     <div
-      className="h-screen [height:100dvh] pt-[var(--rcq-top-inset)] flex flex-col bg-surface-dim overflow-hidden relative"
+      className="h-screen [height:calc(100dvh-var(--rcq-titlebar-inset))] pt-[var(--rcq-top-inset)] flex flex-col bg-surface-dim overflow-hidden relative"
       // Drop a file anywhere on the conversation to send it. The upload paths
       // already existed; the only way to reach them was the paperclip and a
       // system dialog, which on a desktop is the long way round for a file
@@ -3782,11 +3809,15 @@ export function Chat() {
                 everything floating above the composer lives in one stack; the
                 preview was simply never moved into it. */}
             {pendingPhoto && (
-              <div className="max-w-2xl mx-auto flex items-center gap-3 rounded-xl bg-surface/90 backdrop-blur-md px-3 py-2 shadow-lg">
+              // The picture and a way to drop it. The sentence that used to sit
+              // between them ("Фото готово. Подпишите его в поле ниже...")
+              // explained a thumbnail sitting on top of a text field, which is
+              // not a thing that needs explaining, and it was the widest thing
+              // in the strip. `rcq-menu` so it matches the menus and the reply
+              // strip rather than being a third kind of surface.
+              <div className="rcq-menu max-w-2xl mx-auto flex items-center gap-3 rounded-xl px-3 py-2 shadow-lg">
                   <img src={pendingPhoto.url} alt="" className="h-12 w-12 rounded-md object-cover flex-none" />
-                  <span className="flex-1 min-w-0 text-xs text-fg-secondary truncate">
-                    {t('chat.photo.caption_hint')}
-                  </span>
+                  <span className="flex-1" />
                   <button
                     type="button"
                     onClick={unstagePhoto}
@@ -3805,7 +3836,7 @@ export function Chat() {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 6 }}
                   transition={{ duration: 0.14 }}
-                  className="flex items-start gap-2 rounded-2xl bg-surface shadow-lg px-3 py-2 text-xs"
+                  className="rcq-menu flex items-start gap-2 rounded-2xl shadow-lg px-3 py-2 text-xs"
                 >
                   <div className="border-l-2 border-accent/60 pl-2 flex-1 min-w-0">
                     <div className="text-[0.625rem] text-accent uppercase tracking-wider">
@@ -3828,7 +3859,7 @@ export function Chat() {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 6 }}
                   transition={{ duration: 0.14 }}
-                  className="flex items-start gap-2 rounded-2xl bg-surface shadow-lg px-3 py-2 text-xs"
+                  className="rcq-menu flex items-start gap-2 rounded-2xl shadow-lg px-3 py-2 text-xs"
                 >
                   <div className="border-l-2 border-accent/60 pl-2 flex-1 min-w-0">
                     <div className="text-[0.625rem] text-fg-dim">
@@ -3914,7 +3945,10 @@ export function Chat() {
                   // was last showing the timers would hide the attachments
                   // behind a back arrow for no reason anyone could guess.
                   setAttachView('main')
-                  setAttachMenuOpen((v) => !v)
+                  setAttachMenuOpen((v) => {
+                    setAttachSnap(v ? null : { files: filesAllowed, links: linksAllowed, ttl: threadTtlSec ?? null })
+                    return !v
+                  })
                 }}
                 disabled={(!peer && !group) || uploadingPhoto || uploadingFile || readOnlyHere}
                 className="h-10 w-10 rounded-full flex items-center justify-center text-fg-secondary hover:bg-line/60 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
@@ -3967,7 +4001,7 @@ export function Chat() {
                       // the timer view, which is measured mid-entrance (the
                       // animation lifts it) and so lands a little lower.
                       flipGap={30}
-                      className="min-w-[26ch] max-w-[38ch] max-h-[60vh] overflow-y-auto overscroll-contain"
+                      className="min-w-[24ch] max-w-[28ch] max-h-[60vh] overflow-y-auto overscroll-contain"
                     >
                       {/* ⚠⚠ A ceiling and a scroller, because the timer list
                           is eight rows and the trigger sits at the BOTTOM of
@@ -3999,11 +4033,11 @@ export function Chat() {
                                 setAttachMenuOpen(false)
                               }}
                               className={`flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm hover:bg-field transition-colors ${
-                                (threadTtlSec ?? null) === opt.seconds ? 'text-accent' : ''
+                                menuTtl === opt.seconds ? 'text-accent' : ''
                               }`}
                             >
                               <span className="w-3.5 flex-none text-center">
-                                {(threadTtlSec ?? null) === opt.seconds ? '✓' : ''}
+                                {menuTtl === opt.seconds ? '✓' : ''}
                               </span>
                               {t(opt.i18n)}
                             </button>
@@ -4032,7 +4066,7 @@ export function Chat() {
                       {/* Files switched off by the group's owner: no dead
                           button — the entry simply is not there. sendFile
                           still guards, for drag-drop and stale menus. */}
-                      {filesAllowed && (
+                      {menuFiles && (
                         <button
                           onClick={() => {
                             setAttachMenuOpen(false)
@@ -4052,7 +4086,7 @@ export function Chat() {
                         {t('chat.attach.location')}
                       </button>
                       {/* An invite is a link, so a links-off room hides it. */}
-                      {linksAllowed && (
+                      {menuLinks && (
                         <button
                           onClick={() => {
                             setAttachMenuOpen(false)
@@ -4074,11 +4108,11 @@ export function Chat() {
                       >
                         <ClockIcon size={20} className="" />
                         <span className="flex-1">{t('chat.ttl.title')}</span>
-                        <span className={`text-[0.625rem] ${threadTtlSec ? 'text-accent' : 'text-fg-dim'}`}>
+                        <span className={`text-[0.625rem] ${menuTtl ? 'text-accent' : 'text-fg-dim'}`}>
                           {/* A number some future build wrote and this one has
                               no label for prints as seconds rather than as
                               "Off", which would be a lie about a live timer. */}
-                          {ttlLabelKey(threadTtlSec) ? t(ttlLabelKey(threadTtlSec)!) : `${threadTtlSec}s`}
+                          {ttlLabelKey(menuTtl) ? t(ttlLabelKey(menuTtl)!) : `${menuTtl}s`}
                         </span>
                       </button>
                       </>

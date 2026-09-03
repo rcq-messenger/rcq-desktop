@@ -151,7 +151,6 @@ export const ru: Record<string, string> = {
   'chat.blocked.unblock': 'Разблокировать',
   'chat.owner_only.notice': 'В этой группе писать может только владелец.',
   'chat.attach': 'Прикрепить',
-  'chat.photo.caption_hint': 'Фото готово. Подпишите его в поле ниже и отправьте одним сообщением.',
   'chat.attach.photo': 'Фото',
   'chat.attach.file': 'Файл',
   'chat.attach.location': 'Геопозиция',

@@ -556,17 +556,15 @@ pub fn run() {
                     // maximise and close live in the bar we would be removing,
                     // and nothing draws replacements yet. Taking it away there
                     // would leave a window that cannot be closed.
-                    .title_bar_style({
-                        #[cfg(target_os = "macos")]
-                        { tauri::TitleBarStyle::Overlay }
-                        #[cfg(not(target_os = "macos"))]
-                        { tauri::TitleBarStyle::Visible }
-                    })
-                    // ⚠ Overlay alone is not enough: it removes the BAR and
-                    // leaves the word "RCQ" floating next to the traffic
-                    // lights, over a screen whose own header already says who
-                    // you are. `hidden_title` is the half that takes the text.
-                    .hidden_title(true)
+                    //
+                    // ⚠⚠ And the CALLS are applied below, under `cfg`, not
+                    // here with a cfg'd ARGUMENT. `title_bar_style` and
+                    // `hidden_title` do not exist on the Linux and Windows
+                    // builders at all, so choosing `TitleBarStyle::Visible` for
+                    // them still failed to compile: "no method named
+                    // `title_bar_style`", and 0.3.57 shipped a macOS build with
+                    // no Windows or Linux build beside it. A Mac cannot catch
+                    // this: the method is there.
                     // An ordinary <a href> to another site would navigate THIS
                     // window away from the app. The user is then looking at a
                     // web page where they are not signed in, with no way back
@@ -643,6 +641,20 @@ pub fn run() {
                         Ok(url) => window = window.proxy_url(url),
                         Err(e) => log::error!("bad proxy url {url}: {e}"),
                     }
+                }
+                // macOS only, and applied HERE because these two methods do
+                // not exist on the other platforms' builders (see the comment
+                // in the chain above). Overlay hides the system bar and keeps
+                // the traffic lights, which belong to the OS; `hidden_title`
+                // takes the word "RCQ" that Overlay leaves floating beside
+                // them. Windows and Linux keep their frame: their minimise,
+                // maximise and close live in the bar this would remove, and
+                // nothing draws replacements yet.
+                #[cfg(target_os = "macos")]
+                {
+                    window = window
+                        .title_bar_style(tauri::TitleBarStyle::Overlay)
+                        .hidden_title(true);
                 }
                 let main_window = window.build()?;
 

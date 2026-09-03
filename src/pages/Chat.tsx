@@ -1803,9 +1803,34 @@ export function Chat() {
   ///
   /// The browser asks its own permission prompt; a refusal is a decision, not an
   /// error, so it says so quietly and leaves the composer alone.
+  /// ⚠⚠ ASKS FIRST, and asks before reading the position, not after.
+  ///
+  /// "Геопозиция отправляется в чат без подтверждения, можно случайно выдать
+  /// своё местоположение, промахнувшись в меню" (#876). It was one tap in a
+  /// list where the tap above it attaches a file: the OS prompt only appears
+  /// the FIRST time, and after that a miss put real coordinates in somebody
+  /// else's hands with nothing in between. Of everything in that menu this is
+  /// the only item that cannot be undone by deleting the message, because the
+  /// other person has already read where you are.
+  ///
+  /// The question comes before `getCurrentPosition`, so a miss does not even
+  /// cause the position to be read.
+  function askToSendLocation() {
+    setAttachMenuOpen(false)
+    if (readOnlyHere) {
+      toast(t('chat.owner_only.notice'), 'error')
+      return
+    }
+    if (!navigator.geolocation) {
+      toast(t(isTauri() ? 'chat.error.no_geolocation.desktop' : 'chat.error.no_geolocation'), 'error')
+      return
+    }
+    setConfirmLocation(true)
+  }
+
   async function sendLocation() {
     if (!identity) return
-    setAttachMenuOpen(false)
+    setConfirmLocation(false)
     if (readOnlyHere) {
       toast(t('chat.owner_only.notice'), 'error')
       return
@@ -2253,6 +2278,9 @@ export function Chat() {
   /// moderators keep both abilities so they can inspect what they moderate.
   const linksAllowed = !isGroup || group?.links_allowed !== false || roomExempt
   const filesAllowed = !isGroup || group?.files_allowed !== false || roomExempt
+  /// The location question is up. Nothing has been read yet when it is.
+  const [confirmLocation, setConfirmLocation] = useState(false)
+
   /// What the attach menu is allowed to change its mind about while it is
   /// OPEN, which is nothing.
   ///
@@ -4079,7 +4107,7 @@ export function Chat() {
                         </button>
                       )}
                       <button
-                        onClick={() => void sendLocation()}
+                        onClick={askToSendLocation}
                         className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm hover:bg-field transition-colors"
                       >
                         <PinIcon size={20} className="" />
@@ -4265,6 +4293,46 @@ export function Chat() {
           onClose={() => setShareGroupOpen(false)}
           onPick={(link) => void sendGroupInvite(link)}
         />
+      )}
+
+      {/* The one item in the attach menu that cannot be taken back. See
+          [askToSendLocation]. Portalled, because the composer bar it is opened
+          from carries a backdrop-filter and would be the containing block for
+          anything fixed inside it — the trap this file records twice. */}
+      {confirmLocation && createPortal(
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50"
+          onClick={() => setConfirmLocation(false)}
+        >
+          <div
+            className="rcq-menu w-full max-w-sm rounded-2xl p-5 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-base font-medium text-fg-primary">
+              {t('chat.location.confirm.title')}
+            </div>
+            <p className="mt-2 text-sm text-fg-secondary leading-relaxed">
+              {t('chat.location.confirm.body', {
+                who: isGroup ? group?.name ?? t('chat.attach.group_invite') : peer?.nickname ?? `#${peerUIN ?? ''}`,
+              })}
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                className="px-3 py-2 rounded-lg text-sm text-fg-secondary hover:bg-field transition-colors"
+                onClick={() => setConfirmLocation(false)}
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                className="px-3 py-2 rounded-lg text-sm font-medium bg-accent text-black hover:opacity-90 transition-opacity"
+                onClick={() => void sendLocation()}
+              >
+                {t('chat.location.confirm.send')}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
       )}
     </div>
   )

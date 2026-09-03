@@ -335,6 +335,39 @@ html.dark .rcq-wave {
   backdrop-filter: blur(16px) saturate(150%);
   -webkit-backdrop-filter: blur(16px) saturate(150%);
 }
+
+/* ── the composer, one floating piece ───────────────────────────────────
+ *
+ * Founder, 2026-09-03: "убрать нижний футер (блюр), оставь поле для ввода в
+ * воздухе и помести блюр фон только позади кнопок" — and then, seeing discs
+ * under each control: "я думал что композер будет цельным, а не под каждую
+ * кнопку".
+ *
+ * So: the band across the whole window is gone, and what replaces it is ONE
+ * rounded capsule holding the field and the controls, floating over the thread.
+ * The field itself carries no fill inside it — the capsule is the surface, and
+ * a pill inside a pill was the thing that made the old bar read as two layers
+ * of chrome.
+ *
+ * ⚠ The fill is not optional. Text over somebody's photo is text you cannot
+ * read, and 0.55 is chosen the way `.rcq-menu` documents above: thick enough
+ * to read on, thin enough that the blur is visibly doing something.
+ *
+ * ⚠⚠ `backdrop-filter` makes an element the containing block for its `fixed`
+ * descendants — the trap the header and the old bar both record. The attach
+ * menu and the mention list hang off this capsule as `absolute`, which is
+ * fine; anything `fixed` added inside it later has to be portalled. */
+/* ⚠⚠ `-shell`, and NOT `.rcq-composer`, which is already taken by the
+ * contenteditable FIELD further down this file (placeholder, min-height,
+ * word-break). Naming this one that would have put a blur and a fill on the
+ * field itself, and handed the wrapper the field's `min-height` and
+ * `:empty::before` placeholder rules. Caught by grepping the built bundle for
+ * the class name and finding it already there, on another element. */
+.rcq-composer-shell {
+  background-color: rgb(var(--c-surface) / 0.55);
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+}
 /* The per-row action menus (contact, cross-island contact, group). They float
    over the list the same way the bars float over the thread, and as a flat
    opaque slab they were the one surface here that did not.

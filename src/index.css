@@ -66,10 +66,16 @@ html.dark {
    grow the layout on phones too. */
 html.dark {
   --c-surface-dim: 0 0 0;      /* page / large-area background → true black */
-  --c-surface: 20 20 23;       /* panels, cards, composer — lifted off black */
-  --c-line: 38 40 47;          /* borders read against pure black */
-  --c-bubble-other: 32 32 37;  /* incoming bubbles */
-  --c-field: 32 32 37;         /* inputs, soft buttons, chips */
+  /* Panels and fields sit CLOSER to black since 2026-09-03 (founder: "сделай
+     контейнеры и поле для ввода чуть темнее"). They were drawn to be legible
+     against a grey dark theme; against true black the same lift reads as a
+     pale slab, and the page stops looking black at all. Moved together so the
+     relationship between a panel and the field inside it is unchanged — a
+     field is still one step above the panel it sits on. */
+  --c-surface: 14 14 17;       /* panels, cards, composer — lifted off black */
+  --c-line: 32 34 40;          /* borders read against pure black */
+  --c-bubble-other: 24 24 29;  /* incoming bubbles */
+  --c-field: 24 24 29;         /* inputs, soft buttons, chips */
 }
 
 /* This interface was drawn for a phone held at arm's length. In a 1100px
@@ -411,4 +417,29 @@ html.desktop .rcq-selectable * {
   content: attr(data-placeholder);
   color: rgb(var(--c-fg-dim));
   pointer-events: none;
+}
+
+/* ── the scrollbar, on the desktop app only ──────────────────────────────
+ *
+ * Founder, 2026-09-03: "на десктопах я бы скрыл везде скролл бар вообще (не
+ * очень выглядит)". The app window is a chat, not a document: every scrolling
+ * surface in it is a list you flick through, and the track is a grey strip
+ * down the edge of a black interface.
+ *
+ * ⚠ DESKTOP ONLY, and that is deliberate. In a browser at chat.rcq.app the
+ * scrollbar is the page's only affordance for "there is more, and you are
+ * here" — a visitor who has never used RCQ reads it, and some people navigate
+ * by dragging it. The desktop app has its own frame, its own trackpad
+ * conventions, and a person who installed it already knows the lists scroll.
+ *
+ * ⚠ Scrolling itself is untouched: this hides the bar, it does not disable
+ * overflow. Keyboard, wheel and trackpad all behave exactly as before.
+ */
+html.desktop * {
+  scrollbar-width: none;          /* Firefox, and Chromium 121+ */
+  -ms-overflow-style: none;
+}
+html.desktop *::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }

@@ -140,6 +140,7 @@ export const ru: Record<string, string> = {
     'То что вы пишете здесь, прилетает в iOS-приложение собеседника. Ответ приходит туда, не сюда: это ограничение phase-1, пока добавляем полную крипту в браузере.',
   'chat.error.peer_not_in_contacts': 'UIN {uin} не в ваших контактах.',
   'chat.error.peer_load_failed': 'Не удалось загрузить собеседника.',
+  'chat.error.rate_limited': 'Слишком часто. Попробуйте через {s} с.',
   'chat.error.send_failed': 'Не удалось отправить.',
   'chat.error.group_empty': 'В этой группе больше никого нет.',
   'chat.error.group_no_valid_members': 'Ни у одного участника группы пока нет рабочего ключа.',

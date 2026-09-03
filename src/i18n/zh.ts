@@ -127,6 +127,7 @@ export const zh: Record<string, string> = {
   'chat.send_only.body': '你在这里写的内容会发到对方的 iOS 应用。对方的回复也到那里，不到这里：这是 phase-1 的限制，我们正在为浏览器补齐完整的加密。',
   'chat.error.peer_not_in_contacts': 'UIN {uin} 不在你的联系人里。',
   'chat.error.peer_load_failed': '无法加载对方的资料。',
+  'chat.error.rate_limited': '发送过于频繁，请在 {s} 秒后重试。',
   'chat.error.send_failed': '发送失败。',
   'chat.error.group_empty': '这个群组里没有其他成员。',
   'chat.error.group_no_valid_members': '群组成员暂时都还没有可用的密钥。',

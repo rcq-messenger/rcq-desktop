@@ -77,7 +77,13 @@ done
 echo "==> signature"
 if codesign -v --deep --strict "$APP" 2>/dev/null; then say "ok" "signature verifies"
 else say "FAIL" "signature does not verify"; fail=1; fi
-if codesign -dv --verbose=2 "$APP" 2>&1 | grep -q "Developer ID Application"; then
+# ⚠ Read it into a variable first. Under `set -o pipefail` this was
+# `codesign ... | grep -q`, and `grep -q` exits the moment it matches, which
+# SIGPIPEs codesign, which fails the pipeline, which sends a correctly signed
+# app down the else branch: 0.3.58 is Developer ID signed and this said it was
+# not. A gate that cries wolf about the signature is a gate you stop reading.
+sig=$(codesign -dv --verbose=2 "$APP" 2>&1 || true)
+if grep -q "Developer ID Application" <<<"$sig"; then
     say "ok" "Developer ID"
 else say "warn" "not Developer-ID signed"; fi
 

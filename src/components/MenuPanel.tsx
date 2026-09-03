@@ -43,12 +43,25 @@ export function MenuPanel({
   children,
   onClick,
   panelRef,
+  flipGap = 4,
 }: {
   className?: string
   children: ReactNode
   onClick?: (e: React.MouseEvent) => void
   /** For the caller's click-outside check — the measuring ref stays internal. */
   panelRef?: React.MutableRefObject<HTMLDivElement | null>
+  /**
+   * Distance to leave above the trigger when the panel flips upward.
+   *
+   * ⚠ Clearing the TRIGGER is not always clearing what the trigger sits in.
+   * The attach button lives inside the composer capsule, which has padding of
+   * its own, so the default 4px put the panel's bottom edge 9px INSIDE the
+   * capsule — measured on the dev build, and the reason it still read as
+   * "прямо прикасается с композером" after the first attempt at lifting it.
+   * A caller whose trigger is inset like that passes the inset plus the gap it
+   * actually wants to see.
+   */
+  flipGap?: number
 }) {
   const anchor = useRef<HTMLSpanElement | null>(null)
   const ref = useRef<HTMLDivElement | null>(null)
@@ -63,17 +76,17 @@ export function MenuPanel({
     if (!a) return
     const t = a.getBoundingClientRect()
     const h = el?.getBoundingClientRect().height ?? 0
-    const flip = t.bottom + h + 8 > window.innerHeight && t.top > h + 16
+    const flip = t.bottom + h + 8 > window.innerHeight && t.top > h + flipGap + 12
     const right = insetOf(className, 'right')
     const left = insetOf(className, 'left')
     setBox({
-      top: flip ? t.top - h - 4 : t.bottom + 4,
+      top: flip ? t.top - h - flipGap : t.bottom + 4,
       ...(right !== null
         ? { right: Math.max(8, window.innerWidth - t.right + right) }
         : { left: Math.max(8, t.left + (left ?? 0)) }),
       flip,
     })
-  }, [className])
+  }, [className, flipGap])
 
   useLayoutEffect(() => {
     place()
@@ -82,7 +95,17 @@ export function MenuPanel({
     // about a menu that has drifted away from it.
     window.addEventListener('scroll', place, true)
     window.addEventListener('resize', place)
+    // ⚠⚠ And the PANEL can change height under its own feet. The attach menu
+    // swaps its five rows for the eight-row timer list in place, and the flip
+    // decision was made once, at mount, against the short version: the tall one
+    // then opened downward from a trigger at the bottom of the window and ran
+    // straight off the edge, which is "исчезающие сообщения не вмещают
+    // выбранную опцию" (founder, 03.09). Re-measuring on resize is the whole
+    // fix, and it cannot loop: repositioning does not change the height.
+    const ro = new ResizeObserver(place)
+    if (ref.current) ro.observe(ref.current)
     return () => {
+      ro.disconnect()
       window.removeEventListener('scroll', place, true)
       window.removeEventListener('resize', place)
     }

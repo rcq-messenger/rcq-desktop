@@ -45,10 +45,12 @@ async function request<T>(
   method: string,
   path: string,
   body?: unknown,
+  opts?: { headers?: Record<string, string> },
   retried = false,
 ): Promise<T> {
   const headers: Record<string, string> = {
     Authorization: `Bearer ${identity.jwt}`,
+    ...(opts?.headers ?? {}),
   }
   let payload: BodyInit | undefined
   if (body !== undefined) {
@@ -69,7 +71,7 @@ async function request<T>(
       // that must end as a sign-out rather than a loop.
       if (!retried && tokenRefresher) {
         const fresh = await tokenRefresher(identity)
-        if (fresh) return request<T>({ ...identity, jwt: fresh }, method, path, body, true)
+        if (fresh) return request<T>({ ...identity, jwt: fresh }, method, path, body, opts, true)
       }
       // ⚠ Only a token that was REFUSED ends the session. A call made with no
       // token at all (a tokenless account that started offline and has not
@@ -378,6 +380,13 @@ export interface UinQuote {
   /// ⚠ Older islands do not send it; treat a missing value as 'free', which is
   /// exactly what they meant by `available: true`.
   acquire?: 'free' | 'purchase' | 'closed'
+  /// WHERE to pay when `acquire` is 'purchase' — the island's OWN till.
+  ///
+  /// ⚠⚠ Use it, never the built-in address. A till serves one island: paying
+  /// the wrong one puts real money where the number is not, and no refund path
+  /// exists. It is only ever sent to a client that declared `X-RCQ-Checkout:
+  /// island`, which is exactly the promise to use this field.
+  checkout_url?: string | null
 }
 
 export interface UinSuggestion {
@@ -877,7 +886,16 @@ export const Api = {
   /// authority for availability; `reason` explains an unavailable one
   /// (taken/too_short/too_long/self).
   uinQuote(id: WebIdentity, uin: number): Promise<UinQuote> {
-    return request<UinQuote>(id, 'POST', '/uin/quote', { uin })
+    // ⚠⚠ The declaration, not a version number. `X-RCQ-Checkout: island` says
+    // "whatever address you hand back in `checkout_url`, that is where I will
+    // pay". An island only offers a scarce number to a client that says this,
+    // because a till serves ONE island and every build before this one had a
+    // single address compiled in — so a self-hosted island answering "for
+    // sale" to an older client would send its customer to somebody else's
+    // checkout. Saying it is what makes buying from a self-hoster possible.
+    return request<UinQuote>(id, 'POST', '/uin/quote', { uin }, {
+      headers: { 'X-RCQ-Checkout': 'island' },
+    })
   },
 
   /// A handful of random available UINs to seed discovery. Snapshot only

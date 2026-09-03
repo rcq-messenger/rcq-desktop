@@ -82,12 +82,20 @@ function CopyRow({ label, value, mono = true }: { label: string; value: string; 
 export function UinCheckout({
   uin,
   priceDisplay,
+  checkoutUrl,
   resumeId,
   onPaid,
   onClose,
 }: {
   uin: number
   priceDisplay: string
+  /// The till of the island selling this number, from its own quote.
+  ///
+  /// ⚠⚠ Passed down rather than assumed, because a till serves ONE island.
+  /// Paying the built-in address for a number on somebody else's island sends
+  /// real money where the number is not, and nothing can undo it. Undefined
+  /// only for an island too old to name one, which can only be ours.
+  checkoutUrl?: string | null
   /// An invoice this browser already opened for this number. ⚠ Passing it is
   /// what stops a reload from stranding somebody mid-payment: without it the
   /// sheet would offer to create a second invoice for a number the first one
@@ -111,7 +119,7 @@ export function UinCheckout({
   useEffect(() => {
     if (!resumeId) return
     let dead = false
-    Till.invoice(resumeId).then(
+    Till.invoice(resumeId, checkoutUrl).then(
       (inv) => {
         if (dead) return
         setInvoice(inv)
@@ -135,7 +143,7 @@ export function UinCheckout({
   useEffect(() => {
     let dead = false
     if (resumeId) return
-    Till.prices().then(
+    Till.prices(checkoutUrl).then(
       (p) => !dead && setChains(p.chains.map((c) => ({ id: c.id, label: c.label }))),
       // A till that cannot be reached is worth saying out loud rather than
       // showing an empty row of buttons.
@@ -151,10 +159,10 @@ export function UinCheckout({
       setBusy(true)
       setError(null)
       try {
-        const inv = await Till.createInvoice(uin, chain)
+        const inv = await Till.createInvoice(uin, chain, checkoutUrl)
         // Stored BEFORE anything else can fail: an invoice we cannot find
         // again is money that cannot be accounted for.
-        rememberInvoice(inv)
+        rememberInvoice(inv, checkoutUrl)
         setInvoice(inv)
         setQr(
           await QRCode.toDataURL(payUri(inv.chain, inv.address, inv.amount), {
@@ -189,7 +197,7 @@ export function UinCheckout({
     let dead = false
     const tick = async () => {
       try {
-        const fresh = await Till.invoice(invoice.id)
+        const fresh = await Till.invoice(invoice.id, checkoutUrl)
         if (dead) return
         setInvoice(fresh)
         if (fresh.status === 'paid' && fresh.voucher && !handed.current) {

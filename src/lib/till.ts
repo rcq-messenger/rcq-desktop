@@ -15,7 +15,19 @@
 // when the payment lands: an invoice you cannot find again is money you cannot
 // account for.
 
-const TILL = 'https://console-api.rcq.app'
+/// The checkout compiled in, used only when an island does not name its own.
+///
+/// ⚠⚠ It serves ONE island — ours. Paying it for a number on somebody else's
+/// island puts real money where the number is not, and there is no way back.
+/// So every call takes the address from the quote (`checkout_url`) when there
+/// is one, and this constant is the flagship's own address, kept for islands
+/// too old to send the field.
+const BUILT_IN_TILL = 'https://console-api.rcq.app'
+
+function base(checkoutUrl?: string | null): string {
+  const named = (checkoutUrl ?? '').trim().replace(/\/+$/, '')
+  return named || BUILT_IN_TILL
+}
 
 export interface TillPrices {
   prices_cents: Record<string, number>
@@ -43,10 +55,10 @@ export class TillError extends Error {
   }
 }
 
-async function call<T>(path: string, init?: RequestInit): Promise<T> {
+async function call<T>(path: string, init?: RequestInit, checkoutUrl?: string | null): Promise<T> {
   let r: Response
   try {
-    r = await fetch(`${TILL}${path}`, init)
+    r = await fetch(`${base(checkoutUrl)}${path}`, init)
   } catch {
     // A blocked or unreachable till is a different problem from a refused
     // sale, and saying so is the difference between "try again" and "this
@@ -59,8 +71,8 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const Till = {
-  prices(): Promise<TillPrices> {
-    return call<TillPrices>('/v1/uin/prices')
+  prices(checkoutUrl?: string | null): Promise<TillPrices> {
+    return call<TillPrices>('/v1/uin/prices', undefined, checkoutUrl)
   },
 
   /// Reserve a number and quote an exact amount for it.
@@ -68,16 +80,19 @@ export const Till = {
   /// ⚠ The amount is exact to the last digit on purpose: it is what tells this
   /// payment from every other one. Rounding it, or sending it twice, is the
   /// one way to pay and not be recognised.
-  createInvoice(uin: number, chain: string): Promise<UinInvoice> {
+  createInvoice(uin: number, chain: string, checkoutUrl?: string | null): Promise<UinInvoice> {
     return call<UinInvoice>('/v1/uin/invoice', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ uin, chain }),
-    })
+    }, checkoutUrl)
   },
 
-  invoice(id: string): Promise<UinInvoice> {
-    return call<UinInvoice>(`/v1/uin/invoice/${encodeURIComponent(id)}`)
+  /// ⚠ Takes the same address the invoice was created against. An invoice id
+  /// only exists at the till that issued it; asking a different one returns a
+  /// confident "no such invoice" for a payment that is really in flight.
+  invoice(id: string, checkoutUrl?: string | null): Promise<UinInvoice> {
+    return call<UinInvoice>(`/v1/uin/invoice/${encodeURIComponent(id)}`, undefined, checkoutUrl)
   },
 }
 
@@ -94,12 +109,20 @@ export interface StoredInvoice {
   uin: number
   chain: string
   created_at: number
+  /// ⚠⚠ WHICH till issued it. An invoice id only exists at the till that made
+  /// it, so a payment resumed against a different one comes back "no such
+  /// invoice" while real money is in flight. Absent on rows written before
+  /// islands could name their own, and those were all ours.
+  checkoutUrl?: string | null
 }
 
-export function rememberInvoice(inv: UinInvoice): void {
+export function rememberInvoice(inv: UinInvoice, checkoutUrl?: string | null): void {
   try {
     const all = listInvoices().filter((i) => i.id !== inv.id)
-    all.unshift({ id: inv.id, uin: inv.uin, chain: inv.chain, created_at: Date.now() })
+    all.unshift({
+      id: inv.id, uin: inv.uin, chain: inv.chain, created_at: Date.now(),
+      checkoutUrl: checkoutUrl ?? null,
+    })
     localStorage.setItem(KEY, JSON.stringify(all.slice(0, 20)))
   } catch {
     // A browser with storage switched off can still buy a number; it just

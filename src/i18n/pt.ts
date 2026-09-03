@@ -127,6 +127,7 @@ export const pt: Record<string, string> = {
   'chat.send_only.body': 'Tudo que você escrever aqui vai para o app iOS de quem recebe. As respostas chegam lá, não aqui: é o limite da fase 1 enquanto terminamos a criptografia completa no navegador.',
   'chat.error.peer_not_in_contacts': 'O UIN {uin} não está nos seus contatos.',
   'chat.error.peer_load_failed': 'Não foi possível carregar o contato.',
+  'chat.error.rate_limited': 'Envios muito rápidos. Tente em {s} s.',
   'chat.error.send_failed': 'Falha no envio.',
   'chat.error.group_empty': 'Este grupo não tem outros membros.',
   'chat.error.group_no_valid_members': 'Nenhum membro do grupo tem uma chave utilizável ainda.',

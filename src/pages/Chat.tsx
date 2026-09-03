@@ -1546,11 +1546,22 @@ export function Chat() {
         const m = /"hours_left"\s*:\s*(\d+)/.exec(errText)
         errText = t('chat.age_gate.wait', { h: m ? m[1] : '?' })
       }
-      if (errText && slowmodeSec > 0 && /"code"\s*:\s*"rate_limited"/.test(errText)) {
+      // Any 429 from the island, not just the room's pacing. The old guard was
+      // `slowmodeSec > 0`, so a caller the CLIENT believes exempt (owner, admin,
+      // capability holder) or a 429 from a route budget / fan-out ceiling landed
+      // in the bubble as raw JSON. Measured on prod 03.09: one such bubble read
+      // `{"code":"rate_limited","retry_after":1}`.
+      if (errText && /"code"\s*:\s*"(rate_limited|fanout_budget_exhausted)"/.test(errText)) {
         const m = /"retry_after"\s*:\s*(\d+)/.exec(errText)
-        const wait = m ? Number(m[1]) : slowmodeSec
-        errText = t('chat.slowmode.wait', { s: String(wait) })
-        if (groupId != null && wait > 0) {
+        const wait = Math.max(1, m ? Number(m[1]) : slowmodeSec)
+        errText =
+          slowmodeSec > 0
+            ? t('chat.slowmode.wait', { s: String(wait) })
+            : t('chat.error.rate_limited', { s: String(wait) })
+        // Re-arm the composer's countdown from the island's own clock, but only
+        // when the room actually paces us: a route budget is not a room rule and
+        // must not paint a slowmode timer on a room that has none.
+        if (groupId != null && slowmodeSec > 0) {
           const until = Date.now() + wait * 1000
           _slowUntil.set(groupId, until)
           setSlowUntil(until)
@@ -2020,6 +2031,12 @@ export function Chat() {
   async function retry(msgId: string) {
     const row = outgoing.find((r) => r.id === msgId)
     if (!row) return
+    // A retry is a SEND, and the island prices it as one. Without this guard the
+    // button burned a slowmode slot and came back red, which is what three 429s
+    // a second apart from one phone looked like on prod 03.09. Toast the wait
+    // instead, and pace the retry like any other send.
+    if (slowmodeBlocked()) return
+    armSlowmode()
     setOutgoing((rows) =>
       rows.map((r) => (r.id === msgId ? { ...r, state: 'sending', error: undefined } : r)),
     )
@@ -3415,7 +3432,9 @@ export function Chat() {
         }}
       >
         {error && (
-          <div className="bg-red-50 border border-red-200 rounded-md p-3 text-sm text-red-600 mb-4">
+          // Same light-palette bug the failed bubble had: `bg-red-50` on a
+          // true-black theme is near-white paper with red text on it.
+          <div className="bg-red-500/15 rounded-md p-3 text-sm text-fg-primary mb-4">
             {error}
           </div>
         )}
@@ -3929,7 +3948,34 @@ export function Chat() {
                         anyway — and it does not need to. The panel stops
                         `mousedown` itself, which is the same fix, applied once
                         for every menu instead of per caller. */}
-                    <MenuPanel className="min-w-56 w-max max-w-[22rem] overflow-hidden">
+                    {/* ⚠⚠ NO `w-max`, and that is what made it enormous. The
+                        timer row holds a `flex-1` label, and `width: max-content`
+                        on a panel containing a growing flex child resolves to
+                        "as wide as it can possibly be" rather than "as wide as
+                        the text". A fixed-positioned element with `width: auto`
+                        already shrinks to fit, bounded by max-width, which is
+                        all this needed.
+                        ⚠ And the ceiling is in `ch`, not `rem`: the desktop
+                        build lifts the root font size, so every rem here
+                        inflated with it — my own mock did not do that, which is
+                        exactly why the width looked right to me and wrong in
+                        the app. */}
+                    <MenuPanel
+                      // 13px of composer padding above the button plus daylight
+                      // you can actually see. Clearing the button alone left the
+                      // panel 9px INSIDE the capsule. The extra few px are for
+                      // the timer view, which is measured mid-entrance (the
+                      // animation lifts it) and so lands a little lower.
+                      flipGap={30}
+                      className="min-w-[26ch] max-w-[38ch] max-h-[60vh] overflow-y-auto overscroll-contain"
+                    >
+                      {/* ⚠⚠ A ceiling and a scroller, because the timer list
+                          is eight rows and the trigger sits at the BOTTOM of
+                          the window: it fits neither below nor above, so
+                          MenuPanel's flip has nothing to flip into and the last
+                          option was simply cut off by the window edge (founder
+                          screenshot, 03.09). 60vh always fits, and eight rows
+                          rarely need the scroll at all. */}
                       {attachView === 'ttl' ? (
                         // Disappearing-message timers (founder item 20). A
                         // second VIEW of this panel rather than a menu of its
@@ -5130,7 +5176,14 @@ const OutgoingMessageRow = memo(function OutgoingMessageRow({
           onContextMenu={(e) => { e.preventDefault(); h.toggleActions(row.id, e.currentTarget, e) }}
           className={`rounded-lg px-3 py-2 text-sm text-left transition-colors ${
             row.state === 'failed'
-              ? 'bg-red-50 border border-red-200'
+              // ⚠⚠ `bg-red-50 border border-red-200` was Tailwind's LIGHT red:
+              // a near-white slab under this app's light-on-dark text, so the
+              // message you failed to send was the one message you could not
+              // read (founder screenshot, 03.09). A tint of the same red at
+              // 15% keeps the text at full contrast and still says "this one
+              // did not go" — and the border goes with it, because fill plus
+              // border on one element is the thing this project does not do.
+              ? 'bg-red-500/15 text-fg-primary rcq-selectable'
               : 'bg-bubble-self rcq-selectable hover:bg-bubble-self rcq-selectable/90'
           }`}
         >
@@ -5608,7 +5661,9 @@ function MoreIcon() {
 
 function SendIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    // 18px on purpose: it sits inside a filled circle, where a glyph the size
+    // of its bare neighbours reads as too big. The WEIGHT still matches them.
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <line x1="12" y1="19" x2="12" y2="5" />
       <polyline points="5 12 12 5 19 12" />
     </svg>
@@ -5884,7 +5939,10 @@ function GroupInviteIcon({ size = 14, className = 'text-fg-secondary' }: { size?
 /// same on a phone and on a desktop.
 function ClockIcon({ size = 14, className = '' }: { size?: number; className?: string }) {
   return (
-    <svg className={`shrink-0 ${className}`} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    // ⚠ strokeWidth 2, not 1.8. Every other icon in the attach menu (photo,
+    // file, pin, group) is drawn at 2, and one row at 1.8 is exactly what
+    // "иконки не похожи, будто разные паки" (founder, 03.09) was looking at.
+    <svg className={`shrink-0 ${className}`} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <circle cx="12" cy="12" r="9" />
       <polyline points="12 7 12 12 15.5 14" />
     </svg>
@@ -6055,7 +6113,10 @@ function SearchGlyph({ size = 17 }: { size?: number }) {
 
 function MicGlyph() {
   return (
-    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-fg-secondary">
+    // ⚠ 20px @2, like [AttachIcon] two buttons away. The composer carried three
+    // glyphs at three weights and three sizes (20/2, 19/1.8, 18/2.2), which is
+    // what reads as "разные паки" even when every shape is right.
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-fg-secondary">
       <path d="M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z" />
       <path d="M19 10v1a7 7 0 0 1-14 0v-1" />
       <line x1="12" y1="18" x2="12" y2="22" />

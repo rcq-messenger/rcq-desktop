@@ -141,6 +141,7 @@ export const en: Record<string, string> = {
     'Anything you write here goes to the recipient\'s iOS app. Their replies arrive there, not here: that\'s the phase-1 limit while we add full browser crypto.',
   'chat.error.peer_not_in_contacts': 'UIN {uin} is not in your contacts.',
   'chat.error.peer_load_failed': 'Could not load peer.',
+  'chat.error.rate_limited': 'Sending too fast. Try again in {s} s.',
   'chat.error.send_failed': 'Send failed.',
   'chat.error.group_empty': 'This group has no other members.',
   'chat.error.group_no_valid_members': 'No group members have a usable key yet.',

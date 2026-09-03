@@ -127,6 +127,7 @@ export const uk: Record<string, string> = {
   'chat.send_only.body': 'Усе, що ти пишеш тут, іде в застосунок iOS отримувача. Його відповіді приходять туди, а не сюди: це обмеження першого етапу, поки ми доробляємо повну криптографію в браузері.',
   'chat.error.peer_not_in_contacts': 'UIN {uin} немає у твоїх контактах.',
   'chat.error.peer_load_failed': 'Не вдалося завантажити співрозмовника.',
+  'chat.error.rate_limited': 'Занадто часто. Спробуйте через {s} с.',
   'chat.error.send_failed': 'Не вдалося надіслати.',
   'chat.error.group_empty': 'У цій групі немає інших учасників.',
   'chat.error.group_no_valid_members': 'У жодного учасника групи ще немає придатного ключа.',

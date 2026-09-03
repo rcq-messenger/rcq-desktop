@@ -127,6 +127,7 @@ export const tr: Record<string, string> = {
   'chat.send_only.body': 'Burada yazdığın her şey alıcının iOS uygulamasına gider. Cevapları buraya değil oraya düşer; tarayıcı şifrelemesini tamamlarken geçerli olan 1. aşama sınırı bu.',
   'chat.error.peer_not_in_contacts': 'UIN {uin} kişilerinde yok.',
   'chat.error.peer_load_failed': 'Kişi yüklenemedi.',
+  'chat.error.rate_limited': 'Çok hızlı gönderiyorsunuz. {s} sn sonra deneyin.',
   'chat.error.send_failed': 'Gönderilemedi.',
   'chat.error.group_empty': 'Bu grupta başka üye yok.',
   'chat.error.group_no_valid_members': 'Henüz hiçbir grup üyesinin kullanılabilir anahtarı yok.',

@@ -169,12 +169,36 @@ body {
 /* A gradient the person picked, painted under everything. `apply()` in
    lib/custom-theme.ts sets --rcq-gradient and the surface variables together,
    so panels and bubbles stay related to it instead of becoming a second
-   palette. The gradient is fixed to the viewport: scrolled with the content it
-   would band visibly on a long thread. */
-html.rcq-custom-theme body {
+   palette. Fixed to the viewport: scrolled with the content it would band
+   visibly on a long thread.
+ *
+ * ⚠⚠ ON `html`, NOT ON `body`, and that is the whole of a bug the founder
+ * screenshotted (03.09): "в некоторых местах где прокрутка вниз у страницы, то
+ * фон там не рисуется... на вебе также, если сделать окно браузера меньше".
+ *
+ * `background-attachment: fixed` POSITIONS the image against the viewport but
+ * it is still CLIPPED to the element's own box. `body` is only as tall as its
+ * layout makes it — on the login screen the card is centred with
+ * `items-center`, so a card taller than the window overflows the container
+ * instead of growing it, and body's box stops at one screen. Everything below
+ * that line showed the root's flat colour, which is exactly what the shot
+ * shows: gradient above, black below, a clean seam across the window.
+ *
+ * The root element is different: its background paints the whole canvas, past
+ * the end of the document and past the end of any box inside it. Moving one
+ * selector up fixes every screen at once, including ones nobody has scrolled
+ * yet, and needs no layout changes anywhere. */
+html.rcq-custom-theme {
   background-image: var(--rcq-gradient);
   background-attachment: fixed;
   background-size: cover;
+}
+/* ⚠ And `body` has to get out of the way, for the same reason the screen roots
+   below do: its own `background-color` is opaque, so left alone it would cover
+   the gradient that now sits one element above it — the very mistake this file
+   already documents for `.min-h-screen.bg-surface-dim`. */
+html.rcq-custom-theme body {
+  background-color: transparent;
 }
 
 /* ⚠⚠ …and the page has to let it through. Every screen paints its own root

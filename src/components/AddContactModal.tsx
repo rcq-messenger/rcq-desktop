@@ -7,7 +7,10 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { useI18n } from '../lib/i18n-context'
 import { AddContact } from '../pages/AddContact'
 
-export function AddContactModal({ onClose }: { onClose: () => void }) {
+export function AddContactModal({
+  onClose,
+  initialQuery,
+}: { onClose: () => void; initialQuery?: string }) {
   const { t } = useI18n()
   return (
     <AnimatePresence>
@@ -43,7 +46,7 @@ export function AddContactModal({ onClose }: { onClose: () => void }) {
             search field sits 12px under the header and its focus ring is
             clipped along the top edge. */}
         <div className="flex-1 overflow-y-auto pt-3">
-            <AddContact embedded />
+            <AddContact embedded initialQuery={initialQuery} />
           </div>
         </motion.div>
       </motion.div>

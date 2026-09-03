@@ -21,7 +21,7 @@
 //   network go anywhere.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
 import { useToast } from '../lib/toast'
@@ -33,6 +33,8 @@ import {
 } from '../lib/sites'
 import { SendTextError, sendTextTo, type ForwardTarget } from '../lib/send-text'
 import { ForwardModal } from '../components/ForwardModal'
+import { AddContactModal } from '../components/AddContactModal'
+import { lookupContactName } from '../lib/contacts-cache'
 import { MySitePanel } from '../components/MySitePanel'
 
 const ERRORS = ['address', 'missing', 'frozen', 'unsigned', 'tampered', 'offline'] as const
@@ -83,12 +85,14 @@ function ShareGlyph({ size = 16 }: { size?: number }) {
 /// the remove are buttons of their own, and a button inside a button is
 /// invalid HTML that the browser is free to lift out of its row.
 function SiteRow({
-  name, address, title, ownerUin, icon, onOpen, onShare, onRemove, t,
+  name, address, title, ownerUin, icon, onOpen, onShare, onRemove, onOwner, t,
 }: {
   name: string
   address: string
   title: string | null
   ownerUin?: number | null
+  /// Tapping the author. The page owns the decision — see the comment below.
+  onOwner?: (uin: number) => void
   icon: string | null | undefined
   onOpen: () => void
   onShare: () => void
@@ -115,13 +119,22 @@ function SiteRow({
           {ownerUin != null && (
             <span className="block text-[0.6875rem] text-fg-dim">
               {t('sites.by')}{' '}
-              <Link
-                to={`/chat/${ownerUin}`}
-                onClick={(e) => e.stopPropagation()}
+              {/* ⚠ Not a straight link into the thread any more (founder,
+                  03.09). Tapping the author of a site you just found opened a
+                  chat with a stranger, whose only content was a line saying
+                  they are not in your contacts — a dead end reached by doing
+                  the obvious thing. The page decides now: a contact opens the
+                  conversation, anybody else opens "add contact", already
+                  looking at that exact number.
+                  And no hash before it: that went everywhere else on 03.09
+                  and this row was missed. */}
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onOwner?.(ownerUin) }}
                 className="font-mono hover:text-fg-primary underline underline-offset-2"
               >
-                #{ownerUin}
-              </Link>
+                {ownerUin}
+              </button>
             </span>
           )}
         </span>
@@ -181,6 +194,8 @@ export function Sites() {
   const [focused, setFocused] = useState(false)
   /// The address being handed to a chat, while the picker is up.
   const [sharing, setSharing] = useState<string | null>(null)
+  // The author of a site, tapped. Holds the number while the add sheet is up.
+  const [addOwner, setAddOwner] = useState<number | null>(null)
   const frameRef = useRef<HTMLIFrameElement | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
   /// Bumped by every open and by every return to the catalogue: a fetch
@@ -281,6 +296,27 @@ export function Sites() {
   /// a catalogue row, one's own site in the panel, a link inside a page -
   /// lands here, and here means the URL, not the fetch: the effect above does
   /// the rest. `page` is for a link that named one.
+  /**
+   * Where tapping a site's author goes.
+   *
+   * A contact opens the conversation, which is what it always did and what you
+   * want. Anybody else opens "add contact" already looking at their number,
+   * because a thread with a stranger has nothing in it but a line explaining
+   * that they are a stranger — a dead end reached by doing the obvious thing
+   * (founder, 03.09).
+   *
+   * ⚠ The membership test reads the warm contacts cache, so a cold cache can
+   * send an existing contact to the add sheet by mistake. That way round is
+   * survivable: the sheet shows them, already added, and the conversation is
+   * one tap further. The other way round is the dead end being fixed.
+   */
+  const openOwner = useCallback((uin: number) => {
+    if (!identity) return
+    if (lookupContactName(identity.uin, uin)) navigate(`/chat/${uin}`)
+    else setAddOwner(uin)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [identity?.uin, navigate])
+
   const go = useCallback((raw: string, wantedPage?: string | null) => {
     // Typed with a scheme, the way people type every other address: the
     // scheme goes, and a path becomes the page.
@@ -494,6 +530,7 @@ export function Sites() {
       icon={icons[recentKey({ name: s.name, host: ownHost })]}
       onOpen={() => go(`${s.name}.rcq`)}
       onShare={() => setSharing(`${s.name}.rcq`)}
+      onOwner={openOwner}
       t={t}
     />
   )
@@ -776,6 +813,9 @@ export function Sites() {
 
       {/* Sharing an address is picking a chat (#852): the same picker a
           forward uses, with the clipboard as the one row that is not a chat. */}
+      {addOwner != null && (
+        <AddContactModal initialQuery={`#${addOwner}`} onClose={() => setAddOwner(null)} />
+      )}
       <ForwardModal
         visible={sharing != null}
         onClose={() => setSharing(null)}

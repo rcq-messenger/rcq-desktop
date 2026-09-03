@@ -965,6 +965,7 @@ export const tr: Record<string, string> = {
   'uin_market.status.idle': 'Bir numara seç',
   'uin_market.status.checking': 'Kontrol ediliyor…',
   'uin_market.status.available': 'Boşta',
+  'uin_market.status.for_sale': 'Satılık',
   'uin_market.status.taken': 'Alınmış',
   'uin_market.status.reserved': 'Ayrılmış',
   'uin_market.status.self': 'Bu senin şimdiki UIN\'in',

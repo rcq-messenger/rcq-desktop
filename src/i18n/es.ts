@@ -965,6 +965,7 @@ export const es: Record<string, string> = {
   'uin_market.status.idle': 'Elige un número',
   'uin_market.status.checking': 'Comprobando…',
   'uin_market.status.available': 'Libre',
+  'uin_market.status.for_sale': 'En venta',
   'uin_market.status.taken': 'Ya está ocupado',
   'uin_market.status.reserved': 'Reservado',
   'uin_market.status.self': 'Este es tu UIN actual',

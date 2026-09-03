@@ -523,7 +523,15 @@ export function Market() {
                       {availabilityKey === 'idle' && <span className="text-fg-dim">{t('uin_market.status.idle')}</span>}
                     </div>
                   </div>
-                  <div className="text-3xl font-semibold tabular-nums tracking-tight">{priceDisplay(localCents)}</div>
+                  {/* ⚠ A number you take for NOTHING must not wear a price.
+                      The island quotes `price_cents` for ordinary space too —
+                      it is the ladder figure, not a charge — so the field said
+                      "$1.99" over a number the very next screen hands over
+                      free, and the tier list right below said "free" for the
+                      same length. One of the two had to stop lying. */}
+                  <div className="text-3xl font-semibold tabular-nums tracking-tight">
+                    {acquire === 'free' ? t('uin_market.tiers.free') : priceDisplay(localCents)}
+                  </div>
                 </div>
 
                 <button

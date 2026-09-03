@@ -3754,6 +3754,29 @@ export function Chat() {
             document.body,
           )}
           <div className="absolute bottom-full inset-x-0 px-3 mb-2 z-10 flex flex-col gap-2 pointer-events-none [&>*]:pointer-events-auto">
+            {/* ⚠⚠ The staged photo belongs in THIS stack, and it used to be its
+                own `absolute bottom-full` sibling instead — pinned to the same
+                edge as the reply strip, with no z of its own, so the two landed
+                on top of each other and the picture went UNDER the message you
+                were answering (founder, 03.09). The comment below already said
+                everything floating above the composer lives in one stack; the
+                preview was simply never moved into it. */}
+            {pendingPhoto && (
+              <div className="max-w-2xl mx-auto flex items-center gap-3 rounded-xl bg-surface/90 backdrop-blur-md px-3 py-2 shadow-lg">
+                  <img src={pendingPhoto.url} alt="" className="h-12 w-12 rounded-md object-cover flex-none" />
+                  <span className="flex-1 min-w-0 text-xs text-fg-secondary truncate">
+                    {t('chat.photo.caption_hint')}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={unstagePhoto}
+                    aria-label={t('common.cancel')}
+                    className="text-fg-secondary hover:text-fg-primary px-1"
+                  >
+                    ✕
+                  </button>
+                </div>
+            )}
             <AnimatePresence>
               {editingRow && (
                 <motion.div
@@ -4004,24 +4027,6 @@ export function Chat() {
                 )}
               </AnimatePresence>
             </div>
-            {pendingPhoto && (
-              <div className="absolute bottom-full left-0 right-0 mb-1">
-                <div className="max-w-2xl mx-auto flex items-center gap-3 rounded-xl bg-surface/90 backdrop-blur-md px-3 py-2 shadow-lg">
-                  <img src={pendingPhoto.url} alt="" className="h-12 w-12 rounded-md object-cover flex-none" />
-                  <span className="flex-1 min-w-0 text-xs text-fg-secondary truncate">
-                    {t('chat.photo.caption_hint')}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={unstagePhoto}
-                    aria-label={t('common.cancel')}
-                    className="text-fg-secondary hover:text-fg-primary px-1"
-                  >
-                    ✕
-                  </button>
-                </div>
-              </div>
-            )}
             <button
               data-emoji-panel
               onClick={() => setShowPicker((v) => !v)}
@@ -4844,6 +4849,31 @@ const OutgoingMessageRow = memo(function OutgoingMessageRow({
   /// `retryable` is false for a row this build can no longer put on the wire at
   /// all (a legacy poll): offering ↻ there promises a send that `attemptSendRow`
   /// refuses, and used to promise a worse one than that.
+  // ⚠⚠ The reply header, hoisted out of the text branch (founder, 03.09: "если
+  // я отвечаю на чьё-то сообщение только с помощью фото, то reply в чате не
+  // отображается"). This renderer returns EARLY for every media kind, and the
+  // header was written only in the final, text-shaped return - so answering
+  // with a picture showed the picture and nothing else, in the sender's own
+  // chat. The recipient always saw it: the incoming renderer draws the header
+  // BEFORE it branches on kind, which is exactly the shape this one lacked.
+  //
+  // The data was never lost - `reply` rides in the envelope for photo, file,
+  // location and text - so this is only what the sender is shown. Kept as one
+  // element rather than copied into seven branches, because a copy is how it
+  // goes missing from the eighth.
+  const replyHeader = row.replyTo ? (
+    <button
+      type="button"
+      onClick={() => h.jumpToMessage(row.replyTo!.id)}
+      className="border-l-2 border-accent/60 pl-2 max-w-full text-left rounded-r hover:bg-line/30 transition-colors cursor-pointer"
+    >
+      <div className="text-[0.625rem] text-fg-dim">{row.replyTo.authorName}</div>
+      <div className="text-[0.6875rem] text-fg-secondary line-clamp-3 break-words max-w-[18rem]">
+        <EmoticonText text={row.replyTo.snippet} emoticonSize={14} />
+      </div>
+    </button>
+  ) : null
+
   const deliveryLine = (withDismiss: boolean, retryable = true) => (
     <div className="flex items-center justify-end gap-1 text-[0.625rem] text-fg-dim">
       {new Date(row.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -4884,6 +4914,7 @@ const OutgoingMessageRow = memo(function OutgoingMessageRow({
     return (
       <li id={`msg-${row.id}`} className={liClass}>
         <div className="relative max-w-[80%] flex flex-col items-end gap-1" {...pressAttrs()}>
+          {replyHeader}
           {/* An invite I sent had no menu on any gesture at all:
               the card swallowed the tap into Join and the row
               carried nothing else. Retracting your own invite is
@@ -4904,6 +4935,7 @@ const OutgoingMessageRow = memo(function OutgoingMessageRow({
     return (
       <li id={`msg-${row.id}`} className={liClass}>
         <div className="relative max-w-[80%] flex flex-col items-end gap-1" {...pressAttrs()}>
+          {replyHeader}
           <div className="relative">
             <DecryptedImage mediaId={row.mediaId} mediaKey={row.mediaKey} apiBase={mediaBase} />
             {menuButton('over')}
@@ -4925,6 +4957,7 @@ const OutgoingMessageRow = memo(function OutgoingMessageRow({
     return (
       <li id={`msg-${row.id}`} className={liClass}>
         <div className="relative max-w-[80%] flex flex-col items-end gap-1" {...pressAttrs()}>
+          {replyHeader}
           <div className="relative rounded-lg px-3 py-1.5 bg-bubble-self rcq-selectable">
             <VoiceBubble
               apiBase={mediaBase}
@@ -4948,6 +4981,7 @@ const OutgoingMessageRow = memo(function OutgoingMessageRow({
     return (
       <li id={`msg-${row.id}`} className={liClass}>
         <div className="relative max-w-[80%] flex flex-col items-end gap-1" {...pressAttrs()}>
+          {replyHeader}
           <div className="relative">
             <DecryptedVideo
               mediaId={row.mediaId}
@@ -4979,6 +5013,7 @@ const OutgoingMessageRow = memo(function OutgoingMessageRow({
     return (
       <li id={`msg-${row.id}`} className={liClass}>
         <div className="relative max-w-[80%] flex flex-col items-end gap-1" {...pressAttrs()}>
+          {replyHeader}
           <FileBubble
             mediaId={row.mediaId}
             mediaKey={row.mediaKey}
@@ -5012,6 +5047,7 @@ const OutgoingMessageRow = memo(function OutgoingMessageRow({
     return (
       <li id={`msg-${row.id}`} className={liClass}>
         <div className="relative max-w-[80%] flex flex-col items-end gap-1" {...pressAttrs()}>
+          {replyHeader}
           <div className="relative">
             <MediaPlaceholder mediaKind="poll" />
             {menuButton('chrome')}
@@ -5031,6 +5067,7 @@ const OutgoingMessageRow = memo(function OutgoingMessageRow({
     return (
       <li id={`msg-${row.id}`} className={liClass}>
         <div className="relative max-w-[80%] flex flex-col items-end gap-1" {...pressAttrs()}>
+          {replyHeader}
           <div className="relative">
             <MediaPlaceholder mediaKind={row.mediaKind} />
             {menuButton('chrome')}
@@ -5054,18 +5091,7 @@ const OutgoingMessageRow = memo(function OutgoingMessageRow({
             ↗ {t('chat.forwarded_label', { name: row.fwdName })}
           </div>
         )}
-        {row.replyTo && (
-          <button
-            type="button"
-            onClick={() => h.jumpToMessage(row.replyTo!.id)}
-            className="border-l-2 border-accent/60 pl-2 max-w-full text-left rounded-r hover:bg-line/30 transition-colors cursor-pointer"
-          >
-            <div className="text-[0.625rem] text-fg-dim">{row.replyTo.authorName}</div>
-            <div className="text-[0.6875rem] text-fg-secondary line-clamp-3 break-words max-w-[18rem]">
-              <EmoticonText text={row.replyTo.snippet} emoticonSize={14} />
-            </div>
-          </button>
-        )}
+        {replyHeader}
         <button
           data-chat-menu
           onClick={(e) => h.toggleActions(row.id, e.currentTarget, e)}

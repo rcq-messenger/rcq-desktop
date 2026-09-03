@@ -18,11 +18,18 @@ import { sendContactRequest } from '../lib/crossisland-contactreq'
 /// [embedded] drops the page chrome so the same body can live inside a modal.
 /// The founder's rule for the desktop: fewer full-page detours, more windows
 /// over the list you were already looking at.
-export function AddContact({ embedded = false }: { embedded?: boolean } = {}) {
+export function AddContact({
+  embedded = false,
+  initialQuery = '',
+}: { embedded?: boolean; initialQuery?: string } = {}) {
   const { identity } = useIdentity()
   const { t } = useI18n()
   const navigate = useNavigate()
-  const [query, setQuery] = useState('')
+  // ⚠ Seeded, not forced: the field stays editable. `#123` is the syntax for
+  // "that exact number and nothing else", which is what a caller who already
+  // knows the number wants — see the ordering comment in the island's
+  // /users/search.
+  const [query, setQuery] = useState(initialQuery)
   const [results, setResults] = useState<UserInfo[]>([])
   const [searching, setSearching] = useState(false)
   const [error, setError] = useState<string | null>(null)

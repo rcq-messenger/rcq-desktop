@@ -22,6 +22,8 @@ import { useNavigate } from 'react-router-dom'
 import { Api, ApiError, type MyUins, type UinQuote, type UinSuggestion } from '../lib/api'
 import { useToast } from '../lib/toast'
 import { Logo } from '../components/Logo'
+import { UinCheckout } from '../components/UinCheckout'
+import { Till, forgetInvoice, listInvoices, type StoredInvoice } from '../lib/till'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
 
@@ -40,13 +42,12 @@ const JUST_BOUGHT_KEY = 'rcq.web.uin.justBought'
 /// "you now answer as N" rather than "you now hold N".
 const JUST_SWITCHED_KEY = 'rcq.web.uin.justSwitched'
 
-// Checkout gate. The buy path works end-to-end (backend accepts a mock
-// receipt + migrates the account), but on the PUBLIC web that would let
-// anyone claim a premium short UIN for free before real payments exist. So
-// until the crypto checkout lands, browsing + availability + price are live
-// and the buy button is a "coming soon" — consistent with the crypto section.
-// Flip to true (or wire a server flag) when payments are real.
-const CHECKOUT_ENABLED = false
+// ⚠ There is no checkout GATE any more, and there must not be one: the server
+// decides. A quote comes back saying how a number is obtained — `free` for
+// ordinary space, `purchase` for the scarce stock, `closed` for what is not
+// sold at all — and this page draws the button that answer implies. The old
+// boolean here was a promise made in a file nobody deploying the island reads;
+// an island with no till now says so itself, in the quote.
 
 // One reused spring + ease, applied consistently (premium motion is
 // coherent, not per-element improvisation).
@@ -92,6 +93,18 @@ export function Market() {
   const [releaseTarget, setReleaseTarget] = useState<number | null>(null)
   const [releasing, setReleasing] = useState(false)
   const [switching, setSwitching] = useState(false)
+  // The number being paid for right now, if the checkout sheet is open.
+  const [checkout, setCheckout] = useState<number | null>(null)
+  const [redeeming, setRedeeming] = useState(false)
+  // ⚠ Guards the one thing in this page that money depends on: a voucher must
+  // be redeemed once. The poll keeps returning it and React may run an effect
+  // twice, so the guard is a ref, not state.
+  const redeemed = useRef<Set<string>>(new Set())
+  // Invoices this browser has open. ⚠ Kept in state, not read from storage at
+  // render time: a number you are already paying for must offer the payment
+  // back, not a second invoice the till would refuse because the first one is
+  // holding the number.
+  const [openInvoices, setOpenInvoices] = useState<StoredInvoice[]>(() => listInvoices())
 
   useEffect(() => {
     const v = sessionStorage.getItem(JUST_BOUGHT_KEY)
@@ -113,10 +126,19 @@ export function Market() {
 
   const len = typed.length
   const validLen = len >= 3 && len <= 9
-  const localCents = validLen ? PRICE_CENTS_BY_LENGTH[len] : null
   const liveQuote = quote && quote.uin === Number(typed) ? quote : null
   const available = liveQuote?.available ?? false
-  const canBuy = CHECKOUT_ENABLED && validLen && available && !buying
+  // ⚠ The price the island quoted, not the one this file believes. The local
+  // ladder is for the tier list, where no number has been typed yet; once one
+  // has, a figure the browser computed is a figure the browser could change.
+  const localCents = liveQuote?.price_cents ?? (validLen ? PRICE_CENTS_BY_LENGTH[len] : null)
+  // Missing on an island older than 03.09, where `available` meant "free".
+  const acquire = liveQuote?.acquire ?? 'free'
+  const canTake = validLen && available && acquire === 'free' && !buying
+  const canPay = validLen && available && acquire === 'purchase' && !buying && !redeeming
+  // An invoice already open on the number in the field. It holds that number,
+  // which is exactly why the quote says unavailable.
+  const resumable = validLen ? openInvoices.find((i) => i.uin === Number(typed)) : undefined
 
   useEffect(() => {
     if (!validLen || !Number(typed)) {
@@ -186,7 +208,7 @@ export function Market() {
   /// answers as — that is the separate step below, offered right away in the
   /// "it is yours" dialog for whoever wants it now.
   async function doPurchase() {
-    if (!canBuy) return
+    if (!canTake) return
     const target = Number(typed)
     setBuying(true)
     setError(null)
@@ -212,6 +234,85 @@ export function Market() {
       setBuying(false)
     }
   }
+
+  /// Turn a voucher into a number.
+  ///
+  /// ⚠ Called from two places that both mean "somebody has paid": the open
+  /// checkout sheet, and the sweep below that finds a payment made before the
+  /// page was last closed. Both funnel through here so the once-only guard is
+  /// in one place.
+  const doRedeem = useCallback(
+    async (target: number, voucher: string, invoiceId: string) => {
+      if (redeemed.current.has(invoiceId)) return
+      redeemed.current.add(invoiceId)
+      setRedeeming(true)
+      setError(null)
+      try {
+        await Api.uinRedeem(id, target, voucher, false)
+        forgetInvoice(invoiceId)
+        setOpenInvoices(listInvoices())
+        setCheckout(null)
+        setHeld(target)
+        await loadMine()
+      } catch (e) {
+        setCheckout(null)
+        // ⚠ `voucher_spent` is not a failure to show in red: it means this
+        // number is already in the collection, which is what the buyer wanted.
+        // Anything else keeps the invoice, so a retry is still possible.
+        const spent = e instanceof ApiError && e.body.includes('voucher_spent')
+        if (spent) {
+          forgetInvoice(invoiceId)
+          setOpenInvoices(listInvoices())
+          await loadMine()
+        } else {
+          redeemed.current.delete(invoiceId)
+          setError(
+            e instanceof ApiError && e.body.includes('taken')
+              ? t('uin_market.error.taken_paid')
+              : t('uin_market.error.generic'),
+          )
+        }
+      } finally {
+        setRedeeming(false)
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [id.uin],
+  )
+
+  /// A payment that landed while nobody was looking.
+  ///
+  /// ⚠⚠ This is the whole reason invoices are kept in this browser. Somebody
+  /// pays, closes the tab before the confirmation, and comes back: without
+  /// this sweep their money bought a voucher that is sitting in a till nobody
+  /// asks. It runs once per page load, quietly, and only ever finishes what
+  /// was already paid for.
+  useEffect(() => {
+    let dead = false
+    void (async () => {
+      for (const stored of listInvoices()) {
+        if (dead) return
+        try {
+          const inv = await Till.invoice(stored.id)
+          if (dead) return
+          if (inv.status === 'paid' && inv.voucher) {
+            await doRedeem(inv.uin, inv.voucher, inv.id)
+          } else if (inv.status === 'expired') {
+            // Nothing was paid and the invoice is dead. A transfer already
+            // sent is still matched for a day by the till, so this only drops
+            // what has no payment behind it.
+            forgetInvoice(inv.id)
+            setOpenInvoices(listInvoices())
+          }
+        } catch {
+          /* a till we cannot reach today is one we ask again tomorrow */
+        }
+      }
+    })()
+    return () => {
+      dead = true
+    }
+  }, [doRedeem])
 
   /// Answer as a number already held. This IS a migration: the JWT changes and
   /// libsignal sessions reset, so the page reloads under the new identity the
@@ -408,27 +509,28 @@ export function Market() {
                 </div>
 
                 <button
-                  onClick={() => canBuy && setConfirming(true)}
-                  disabled={!canBuy}
+                  onClick={() => {
+                    if (resumable || canPay) setCheckout(Number(typed))
+                    else if (canTake) setConfirming(true)
+                  }}
+                  disabled={!canTake && !canPay && !resumable}
                   className="mt-4 w-full h-12 rounded-xl text-sm font-semibold bg-accent text-white
                              hover:bg-accent-dim active:scale-[0.99] disabled:bg-fg-primary/[0.06] disabled:text-fg-dim
                              focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-dim
                              transition flex items-center justify-center gap-2"
                 >
-                  {buying ? (
+                  {buying || redeeming ? (
                     <>
                       <Spinner light /> {t('uin_market.cta.processing')}
                     </>
-                  ) : !CHECKOUT_ENABLED ? (
-                    available ? (
-                      t('uin_market.cta.soon')
-                    ) : checking ? (
-                      t('uin_market.status.checking')
-                    ) : (
-                      t('uin_market.cta.unavailable')
-                    )
+                  ) : resumable ? (
+                    t('uin_market.cta.resume')
                   ) : available ? (
-                    t('uin_market.cta.buy', { price: priceDisplay(localCents) })
+                    acquire === 'purchase' ? (
+                      t('uin_market.cta.buy', { price: priceDisplay(localCents) })
+                    ) : (
+                      t('uin_market.cta.take')
+                    )
                   ) : checking ? (
                     t('uin_market.status.checking')
                   ) : (
@@ -541,7 +643,11 @@ export function Market() {
                 >
                   <div className="text-lg font-semibold tracking-tight truncate">{s.uin}</div>
                   <div className="mt-1 text-xs">
-                    <span className="text-fg-secondary tabular-nums">{s.price_display}</span>
+                    {/* ⚠ Every number the island suggests is ordinary space,
+                        which is free: the endpoint skips the scarce stock on
+                        purpose. Printing its price-by-length here was quoting
+                        a figure nobody is ever charged. */}
+                    <span className="text-fg-secondary">{t('uin_market.tiers.free')}</span>
                   </div>
                 </button>
               ))}
@@ -570,7 +676,15 @@ export function Market() {
                         them left in the whole network and no more are ever made, so
                         they are given by hand rather than priced. Saying so is worth a
                         row; hiding the row would only move the question. */}
-                    {d === 3 ? t('uin_market.tiers.reserved') : priceDisplay(PRICE_CENTS_BY_LENGTH[d])}
+                    {d === 3
+                      ? t('uin_market.tiers.reserved')
+                      : d >= 7
+                        // ⚠ Ordinary space is free, so a price here would be a
+                        // lie for almost every number of this length. The
+                        // patterned ones that DO cost money say so in the
+                        // field, where a real number has been typed.
+                        ? t('uin_market.tiers.free')
+                        : priceDisplay(PRICE_CENTS_BY_LENGTH[d])}
                   </span>
                 </div>
               )
@@ -590,7 +704,6 @@ export function Market() {
           </FoundationCard>
 
           <FoundationCard
-            soon={t('uin_market.soon')}
             title={t('uin_market.crypto.title')}
             body={t('uin_market.crypto.body')}
             icon={<CoinIcon />}
@@ -623,6 +736,23 @@ export function Market() {
           <InfoRow title={t('uin_market.info.migrate.title')} body={t('uin_market.info.migrate.body')} />
         </section>
       </main>
+
+      {/* Paying for a scarce number. The sheet knows nothing about the island;
+          it hands back a signed voucher and this page redeems it. */}
+      <AnimatePresence>
+        {checkout != null && (
+          <UinCheckout
+            uin={checkout}
+            priceDisplay={priceDisplay(localCents ?? 0)}
+            resumeId={resumable?.id}
+            onPaid={(voucher, invoiceId) => void doRedeem(checkout, voucher, invoiceId)}
+            onClose={() => {
+              setCheckout(null)
+              setOpenInvoices(listInvoices())
+            }}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Confirm — modal enters with weight, neutral surface, solid CTA. */}
       <AnimatePresence>
@@ -800,7 +930,10 @@ function FoundationCard({
   icon,
   children,
 }: {
-  soon: string
+  /// The "soon" pill. ⚠ Optional since 03.09: crypto checkout stopped being a
+  /// promise, and a card that says SOON above a working payment sheet is worse
+  /// than no card at all.
+  soon?: string
   title: string
   body: string
   icon: ReactNode
@@ -815,9 +948,11 @@ function FoundationCard({
           </span>
           <h3 className="text-[0.9375rem] font-semibold tracking-tight truncate">{title}</h3>
         </div>
-        <span className="shrink-0 rounded-full bg-fg-primary/[0.06] px-2.5 py-1 text-[0.6875rem] font-semibold uppercase tracking-wide text-fg-dim">
-          {soon}
-        </span>
+        {soon && (
+          <span className="shrink-0 rounded-full bg-fg-primary/[0.06] px-2.5 py-1 text-[0.6875rem] font-semibold uppercase tracking-wide text-fg-dim">
+            {soon}
+          </span>
+        )}
       </div>
       <p className="mt-2.5 text-sm text-fg-secondary leading-relaxed">{body}</p>
       {children}

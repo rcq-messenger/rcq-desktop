@@ -1135,7 +1135,7 @@ export const ru: Record<string, string> = {
   'uin_market.p2p.body': 'Покупайте и продавайте UIN напрямую между людьми. Листинги откроются скоро.',
   'uin_market.p2p.listed_by': 'продаёт {uin}',
   'uin_market.crypto.title': 'Оплата криптой',
-  'uin_market.crypto.body': 'Оплата криптой, в основе Monero для приватности. Чекаут скоро, пока маркет работает в превью.',
+  'uin_market.crypto.body': 'Оплата в USDT в сети TRON или в TON. Чекаут скоро, пока маркет работает в превью.',
   'uin_market.suggest.label': 'Свободные сейчас',
   'uin_market.suggest.refresh': 'Обновить',
   'uin_market.suggest.empty': 'Сейчас вариантов нет. Попробуйте ввести номер выше.',
@@ -1148,6 +1148,7 @@ export const ru: Record<string, string> = {
   'uin_market.tiers.len7': 'семизначные',
   'uin_market.tiers.len8': 'восьмизначные',
   'uin_market.tiers.len9': 'девятизначные',
+  'uin_market.tiers.reserved': 'не продаются',
   'uin_market.tiers.note': 'Чем короче, тем реже и дороже. Цена зависит только от числа цифр.',
   'uin_market.info.what.title': 'Что такое UIN',
   'uin_market.info.what.body':

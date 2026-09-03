@@ -49,6 +49,11 @@ export default function App() {
   // Theme → I18n → Identity → WS → Router.
   return (
     <ThemeProvider>
+      {/* The strip the window is dragged by on macOS, where the system title
+          bar is hidden. Empty, 28px, behind everything: see index.css. It
+          renders on every platform and costs nothing where the CSS does not
+          claim it. */}
+      <div className="rcq-drag" data-tauri-drag-region />
       <I18nProvider>
         {/* Above the identity provider on purpose: while the desktop app is
             locked there is no account in the page at all — not a hidden one,

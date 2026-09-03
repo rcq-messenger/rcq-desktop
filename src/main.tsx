@@ -15,7 +15,21 @@ import { initFontScale } from './lib/fontscale'
 // are true black since 2026-08-05 — but the type size still is: it answers a
 // window on a monitor, and lifting it in the browser would grow the layout on
 // phones too.
-if (isTauri()) document.documentElement.classList.add('desktop')
+if (isTauri()) {
+  document.documentElement.classList.add('desktop')
+  // ⚠ macOS gets its own class, and only macOS. The system title bar is hidden
+  // there (TitleBarStyle::Overlay in src-tauri/src/lib.rs) because the app has
+  // a header of its own and two stacked bars is one too many. The traffic
+  // lights stay - they are the OS's, not ours, and an app that draws its own
+  // close button on a Mac is an app that looks wrong on a Mac - so they float
+  // over the top-left corner and the layout has to keep that corner clear.
+  //
+  // Windows and Linux keep their frame: their controls live in the bar we
+  // would be removing, and nothing here draws replacements yet.
+  if (/Mac/i.test(navigator.platform) || /Mac OS X/i.test(navigator.userAgent)) {
+    document.documentElement.classList.add('mac')
+  }
+}
 
 // The user's own multiplier on that root size (#477). Applied here rather than
 // from a component for the same reason as the class above: after the first

@@ -1117,6 +1117,7 @@ export const ru: Record<string, string> = {
   'uin_market.status.idle': 'Выберите номер',
   'uin_market.status.checking': 'Проверяем…',
   'uin_market.status.available': 'Свободен',
+  'uin_market.status.for_sale': 'Продаётся',
   'uin_market.status.taken': 'Уже занят',
   'uin_market.status.reserved': 'Зарезервирован',
   'uin_market.status.self': 'Это ваш текущий UIN',

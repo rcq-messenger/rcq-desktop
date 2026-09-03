@@ -963,6 +963,7 @@ export const zh: Record<string, string> = {
   'uin_market.status.idle': '选择号码',
   'uin_market.status.checking': '检查中…',
   'uin_market.status.available': '可用',
+  'uin_market.status.for_sale': '可购买',
   'uin_market.status.taken': '已被占用',
   'uin_market.status.reserved': '已保留',
   'uin_market.status.self': '这是你当前的 UIN',

@@ -1119,6 +1119,7 @@ export const en: Record<string, string> = {
   'uin_market.status.idle': 'Pick a number',
   'uin_market.status.checking': 'Checking…',
   'uin_market.status.available': 'Available',
+  'uin_market.status.for_sale': 'For sale',
   'uin_market.status.taken': 'Already taken',
   'uin_market.status.reserved': 'Reserved',
   'uin_market.status.self': 'This is your current UIN',

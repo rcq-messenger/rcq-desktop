@@ -132,10 +132,15 @@ export function Market() {
   // ladder is for the tier list, where no number has been typed yet; once one
   // has, a figure the browser computed is a figure the browser could change.
   const localCents = liveQuote?.price_cents ?? (validLen ? PRICE_CENTS_BY_LENGTH[len] : null)
-  // Missing on an island older than 03.09, where `available` meant "free".
+  // ⚠⚠ Missing on an island older than 03.09, where `available` meant "free".
   const acquire = liveQuote?.acquire ?? 'free'
+  // ⚠⚠ `available` is FALSE for scarce stock, deliberately: three released
+  // clients read that field alone and would otherwise offer, for free, exactly
+  // the numbers that are now for sale. So a paid number is recognised by
+  // `acquire`, and a free one by `available` as before.
+  const forSale = validLen && acquire === 'purchase' && (liveQuote?.price_cents ?? 0) > 0
   const canTake = validLen && available && acquire === 'free' && !buying
-  const canPay = validLen && available && acquire === 'purchase' && !buying && !redeeming
+  const canPay = forSale && !buying && !redeeming
   // An invoice already open on the number in the field. It holds that number,
   // which is exactly why the quote says unavailable.
   const resumable = validLen ? openInvoices.find((i) => i.uin === Number(typed)) : undefined
@@ -363,7 +368,14 @@ export function Market() {
     }
   }
 
-  const availabilityKey = checking && !liveQuote ? 'checking' : liveQuote ? (liveQuote.available ? 'ok' : 'no') : 'idle'
+  const availabilityKey =
+    checking && !liveQuote
+      ? 'checking'
+      : liveQuote
+        ? liveQuote.available || liveQuote.acquire === 'purchase'
+          ? 'ok'
+          : 'no'
+        : 'idle'
 
   function reasonText(reason?: string | null): string {
     switch (reason) {
@@ -496,7 +508,9 @@ export function Market() {
                           </span>
                         )}
                         {availabilityKey === 'ok' && (
-                          <span className="font-medium text-accent">{t('uin_market.status.available')}</span>
+                          <span className="font-medium text-accent">
+                            {forSale ? t('uin_market.status.for_sale') : t('uin_market.status.available')}
+                          </span>
                         )}
                         {availabilityKey === 'no' && (
                           <span className="font-medium text-fg-secondary">{reasonText(liveQuote?.reason)}</span>
@@ -525,12 +539,10 @@ export function Market() {
                     </>
                   ) : resumable ? (
                     t('uin_market.cta.resume')
+                  ) : forSale ? (
+                    t('uin_market.cta.buy', { price: priceDisplay(localCents) })
                   ) : available ? (
-                    acquire === 'purchase' ? (
-                      t('uin_market.cta.buy', { price: priceDisplay(localCents) })
-                    ) : (
-                      t('uin_market.cta.take')
-                    )
+                    t('uin_market.cta.take')
                   ) : checking ? (
                     t('uin_market.status.checking')
                   ) : (

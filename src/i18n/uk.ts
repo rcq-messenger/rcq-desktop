@@ -965,6 +965,7 @@ export const uk: Record<string, string> = {
   'uin_market.status.idle': 'Обери номер',
   'uin_market.status.checking': 'Перевірка…',
   'uin_market.status.available': 'Вільний',
+  'uin_market.status.for_sale': 'Продається',
   'uin_market.status.taken': 'Уже зайнятий',
   'uin_market.status.reserved': 'Зарезервований',
   'uin_market.status.self': 'Це твій нинішній UIN',

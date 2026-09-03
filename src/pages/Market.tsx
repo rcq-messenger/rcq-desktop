@@ -492,32 +492,33 @@ export function Market() {
                 className="overflow-hidden"
               >
                 <div className="mt-4 flex items-center justify-between">
+                  {/* ⚠⚠ NOT an AnimatePresence. This line has been INVISIBLE on
+                      the live site: nested inside the height-animating parent
+                      above, the presence swap stalled at opacity 0 and the
+                      replacement never mounted, so the one place that says
+                      whether a number is free showed the word it was born with
+                      and then faded to nothing. A crossfade is not worth a
+                      status line nobody can read. */}
                   <div className="h-6 flex items-center">
-                    <AnimatePresence mode="wait">
-                      <motion.div
-                        key={availabilityKey}
-                        initial={{ opacity: 0, y: 3 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -3 }}
-                        transition={{ duration: 0.15 }}
-                        className="flex items-center gap-2 text-sm"
-                      >
-                        {availabilityKey === 'checking' && (
-                          <span className="flex items-center gap-2 text-fg-dim">
-                            <Spinner /> {t('uin_market.status.checking')}
-                          </span>
-                        )}
-                        {availabilityKey === 'ok' && (
-                          <span className="font-medium text-accent">
-                            {forSale ? t('uin_market.status.for_sale') : t('uin_market.status.available')}
-                          </span>
-                        )}
-                        {availabilityKey === 'no' && (
-                          <span className="font-medium text-fg-secondary">{reasonText(liveQuote?.reason)}</span>
-                        )}
-                        {availabilityKey === 'idle' && <span className="text-fg-dim">{t('uin_market.status.idle')}</span>}
-                      </motion.div>
-                    </AnimatePresence>
+                    <div
+                      key={availabilityKey}
+                      className="flex items-center gap-2 text-sm"
+                    >
+                      {availabilityKey === 'checking' && (
+                        <span className="flex items-center gap-2 text-fg-dim">
+                          <Spinner /> {t('uin_market.status.checking')}
+                        </span>
+                      )}
+                      {availabilityKey === 'ok' && (
+                        <span className="font-medium text-accent">
+                          {forSale ? t('uin_market.status.for_sale') : t('uin_market.status.available')}
+                        </span>
+                      )}
+                      {availabilityKey === 'no' && (
+                        <span className="font-medium text-fg-secondary">{reasonText(liveQuote?.reason)}</span>
+                      )}
+                      {availabilityKey === 'idle' && <span className="text-fg-dim">{t('uin_market.status.idle')}</span>}
+                    </div>
                   </div>
                   <div className="text-3xl font-semibold tabular-nums tracking-tight">{priceDisplay(localCents)}</div>
                 </div>
@@ -786,7 +787,10 @@ export function Market() {
             >
               <div className="text-center">
                 <div className="text-4xl font-bold tracking-tight">{typed}</div>
-                <div className="mt-1 text-fg-secondary tabular-nums">{priceDisplay(localCents)}</div>
+                {/* ⚠ This dialog only ever confirms a FREE take now - anything
+                    with a price goes through the checkout sheet - so printing
+                    the price-by-length here was quoting a figure nobody pays. */}
+                <div className="mt-1 text-fg-secondary">{t('uin_market.tiers.free')}</div>
               </div>
               <p className="mt-4 text-sm text-fg-secondary leading-relaxed text-center">{t('uin_market.confirm.body')}</p>
               <div className="mt-6 flex gap-2.5">

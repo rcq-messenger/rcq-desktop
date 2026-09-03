@@ -3686,7 +3686,7 @@ export function Chat() {
           the bottom-pin maths. */}
       <div
         ref={composerRef}
-        className="rcq-floating-bar absolute bottom-0 inset-x-0 z-[18] pb-[env(safe-area-inset-bottom)]"
+        className="absolute bottom-0 inset-x-0 z-[18] pb-[env(safe-area-inset-bottom)]"
       >
         <div className="relative max-w-lg mx-auto px-3 py-3">
           {/* Everything that floats above the composer lives in ONE stack: the
@@ -3857,7 +3857,13 @@ export function Chat() {
             </div>
           ) : (
           <div className="relative">
-          <div className="flex items-end gap-2">
+          {/* ⚠ The focus ring lives HERE, not on the field. The field lost its
+              own pill when the capsule became the surface, and with it the
+              `focus:ring` that told you the caret was in it — so the ring moved
+              out to the capsule with `focus-within`. Losing it entirely is the
+              kind of thing that only shows up for somebody navigating by
+              keyboard, who is exactly the person least able to guess. */}
+          <div className="rcq-composer-shell flex items-end gap-2 rounded-3xl px-2 py-2 shadow-lg focus-within:ring-1 focus-within:ring-accent/70 transition-shadow">
             <input
               ref={fileInputRef}
               type="file"
@@ -4082,7 +4088,7 @@ export function Chat() {
             ) : (
             <EmoticonInput
               ref={taRef}
-              className="flex-1 rounded-2xl bg-surface px-4 py-2.5 text-sm outline-none leading-snug focus:ring-1 focus:ring-accent transition-colors max-h-[8.75rem] overflow-y-auto"
+              className="flex-1 rounded-2xl bg-transparent px-2 py-2.5 text-sm outline-none leading-snug transition-colors max-h-[8.75rem] overflow-y-auto"
               placeholder={
                 // The reason, where the user is already looking. A broadcast
                 // group used to swap the whole bar for a notice; the bar is
@@ -4121,7 +4127,9 @@ export function Chat() {
             <button
               onClick={() => void send()}
               disabled={(!peer && !group) || (!input.trim() && !pendingPhoto) || slowActive || readOnlyHere}
-              className="h-10 w-10 rounded-full bg-accent hover:bg-accent-dim text-white flex items-center justify-center flex-none disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              // Smaller than the round controls beside it (founder, 03.09):
+              // it is the one button you never hunt for, because Enter sends.
+              className="h-9 w-9 rounded-full bg-accent hover:bg-accent-dim text-white flex items-center justify-center flex-none disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               aria-label={slowActive ? t('chat.slowmode.wait', { s: String(slowLeft) }) : t('chat.send')}
               title={slowActive ? t('chat.slowmode.wait', { s: String(slowLeft) }) : t('chat.send')}
             >

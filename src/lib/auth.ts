@@ -689,6 +689,16 @@ export interface TokenMint {
   token: string | null
   dead: boolean
   unsupported: boolean
+  /// ⚠⚠ The number this account answers as NOW, when it is not the one we
+  /// asked about. Set only when the island said in so many words that the
+  /// account moved off the number we named (`moved_from`), which is a
+  /// different thing from a shared key handing back a stranger.
+  ///
+  /// This exists because the old answer to "that number is not here" was
+  /// `identity_not_found`, and this client reads that as a burn and signs
+  /// itself out. A person who buys a shorter number on their laptop should not
+  /// find their browser logged out and their phone wiped.
+  movedTo?: number
 }
 
 /// Ask this account's island for a fresh session token, proving possession of
@@ -733,10 +743,16 @@ export async function mintSessionToken(id: WebIdentity, deviceIdOverride?: strin
       }),
     })
     if (res.ok) {
-      const out = (await res.json()) as { uin?: number; token?: string }
-      // The island answering with a different number is not a token we can
-      // use — it is a bug or a shared key, and adopting it would put this
-      // browser into somebody else's account.
+      const out = (await res.json()) as { uin?: number; token?: string; moved_from?: number }
+      // A different number is only ever acceptable when the island names the
+      // one we asked about as the one this account LEFT. Anything else is a
+      // bug or a shared key, and adopting it would put this browser into
+      // somebody else's account.
+      if (out.token && typeof out.uin === 'number' && out.uin !== id.uin
+          && out.moved_from === id.uin) {
+        rememberSessionDevice(out.uin, deviceId)
+        return { token: out.token, dead: false, unsupported: false, movedTo: out.uin }
+      }
       if (out.token && out.uin === id.uin) {
         // Survive the reload: a tokenless account has no token to read the id
         // back out of next time. No-op unless this is a linked session.

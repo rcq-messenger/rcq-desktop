@@ -89,6 +89,18 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
     let cancelled = false
     void mintSessionToken(stored).then((mint) => {
       if (cancelled) return
+      if (mint.token && mint.movedTo) {
+        // ⚠⚠ The account moved while this browser was closed - somebody bought
+        // a shorter number on another device. Before this branch existed the
+        // island said `identity_not_found` and the answer here was to sign the
+        // account out, which is the wrong ending for an account that is alive
+        // and one number over.
+        clearSessionRevoked(stored.uin)
+        setIdentity(adoptMigratedUin(stored, mint.movedTo, mint.token))
+        setAccounts(listStoredIdentities())
+        setHydrated(true)
+        return
+      }
       if (mint.token) {
         // #718: the island just minted a token for this account, so whatever
         // ended the previous session is over. The mark has to go here too: this
@@ -144,6 +156,15 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
     if (Date.now() < mintBackoffRef.current.until) return Promise.resolve(null)
     const p = mintSessionToken(target)
       .then((mint) => {
+        if (mint.token && mint.movedTo) {
+          // The account moved on another device WHILE this tab was open. Every
+          // module-level cache here is keyed by the old number, so this is the
+          // same hard reload a migration made from this tab takes.
+          migrating.current = true
+          setIdentity(adoptMigratedUin(target, mint.movedTo, mint.token))
+          void flushVaultWriter().finally(() => window.location.assign('/'))
+          return mint.token
+        }
         if (mint.token) {
           adoptToken(target, mint.token)
           mintBackoffRef.current = { until: 0, delayMs: 5_000 }

@@ -369,6 +369,15 @@ export interface UinQuote {
   price_cents: number | null
   price_display: string | null
   reason?: 'taken' | 'too_short' | 'too_long' | 'self' | 'reserved' | null
+  /// How this number would be obtained, so the page draws one button rather
+  /// than guessing from the length:
+  ///   'free'     - ordinary space, `uinPurchase` takes it for nothing;
+  ///   'purchase' - scarce stock, only a paid voucher opens it (`uinRedeem`);
+  ///   'closed'   - not obtainable here (three digits, or an island with no
+  ///                till behind it).
+  /// ⚠ Older islands do not send it; treat a missing value as 'free', which is
+  /// exactly what they meant by `available: true`.
+  acquire?: 'free' | 'purchase' | 'closed'
 }
 
 export interface UinSuggestion {
@@ -905,6 +914,22 @@ export const Api = {
 
   uinActivate(id: WebIdentity, uin: number): Promise<UinPurchaseResult> {
     return request<UinPurchaseResult>(id, 'POST', '/uin/activate', { uin })
+  },
+
+  /// Turn a paid voucher into a number.
+  ///
+  /// The voucher comes from the till (see `lib/till.ts`), which watched the
+  /// payment land and signed a document naming the number. The island checks
+  /// that signature and nothing else about the money: it has no wallet, no
+  /// price list and no idea what anything cost.
+  ///
+  /// ⚠ Redeemable exactly once, by nonce, so a retry after a dropped
+  /// connection is safe right up until the first one succeeded - after which
+  /// it answers `voucher_spent` and the number is already in the collection.
+  uinRedeem(id: WebIdentity, uin: number, voucher: string, switchNow = false):
+      Promise<UinPurchaseResult> {
+    return request<UinPurchaseResult>(id, 'POST', '/uin/redeem',
+                                      { uin, voucher, switch: switchNow })
   },
 
   /// Take this session out of the account's linked-device list, on the way

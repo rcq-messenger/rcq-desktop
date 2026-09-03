@@ -139,13 +139,20 @@ html, body, #root {
    the fold; the ones that already scroll need nothing. */
 :root {
   --rcq-top-inset: 0px;
+  /* The corner the macOS traffic lights are drawn in, once the system title
+     bar is hidden. Zero everywhere else, including the browser at
+     chat.rcq.app. A VARIABLE and not a number in three places because the
+     padding that reserves it and the heights that subtract it have to agree
+     exactly: they did not, and the window scrolled by precisely the
+     difference (see html.desktop.mac below). */
+  --rcq-titlebar-inset: 0px;
 }
 /* The screens that only need to FILL the viewport reserve it the same way,
    without every page having to say so. Identical to Tailwind's own rule while
    nothing is drawing at the top, which is almost always. */
 @layer utilities {
   .min-h-screen {
-    min-height: calc(100vh - var(--rcq-top-inset));
+    min-height: calc(100vh - var(--rcq-top-inset) - var(--rcq-titlebar-inset));
   }
 }
 
@@ -520,8 +527,18 @@ html.desktop *::-webkit-scrollbar {
  * top of our pixels; a back arrow underneath them is a button nobody can hit.
  * The app's first row gets padding on macOS to give them room.
  */
+html.desktop.mac {
+  --rcq-titlebar-inset: 28px;
+}
+/* ⚠⚠ The padding alone was the bug. Every full-height screen is `height:
+   100dvh`, so pushing it down by 28px made the document 28px taller than the
+   window: a gap above the header, a scrollbar in a window that should never
+   have one, and the gap scrolled away if you put the cursor on the header and
+   scrolled up. Reported on 0.3.58 the moment the system bar came off, on the
+   contact list and in chats alike. Whatever reserves this space has to be
+   subtracted from those heights too, which is what the variable is for. */
 html.desktop.mac body {
-  padding-top: 28px;
+  padding-top: var(--rcq-titlebar-inset);
 }
 html.desktop.mac .rcq-drag {
   position: fixed;

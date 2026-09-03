@@ -388,7 +388,7 @@ export function PinGate({ children }: { children: ReactNode }) {
   // something, which is wrong here — there is nothing underneath while the app
   // is locked, because the account is not in the page at all.
   return (
-    <div className="relative h-screen [height:100dvh] overflow-hidden bg-surface-dim">
+    <div className="relative h-screen [height:calc(100dvh-var(--rcq-titlebar-inset))] overflow-hidden bg-surface-dim">
       <div
         aria-hidden
         // Rising, not falling: the tint sits at the BOTTOM and fades upward

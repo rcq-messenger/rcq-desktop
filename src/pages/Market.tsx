@@ -301,7 +301,7 @@ export function Market() {
       for (const stored of listInvoices()) {
         if (dead) return
         try {
-          const inv = await Till.invoice(stored.id)
+          const inv = await Till.invoice(stored.id, stored.checkoutUrl)
           if (dead) return
           if (inv.status === 'paid' && inv.voucher) {
             await doRedeem(inv.uin, inv.voucher, inv.id)
@@ -768,6 +768,9 @@ export function Market() {
           <UinCheckout
             uin={checkout}
             priceDisplay={priceDisplay(localCents ?? 0)}
+            /// Straight from the quote for THIS number on THIS island — never
+            /// a default. See the note on the prop.
+            checkoutUrl={liveQuote?.checkout_url}
             resumeId={resumable?.id}
             onPaid={(voucher, invoiceId) => void doRedeem(checkout, voucher, invoiceId)}
             onClose={() => {

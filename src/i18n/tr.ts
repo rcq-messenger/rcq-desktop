@@ -1003,6 +1003,7 @@ export const tr: Record<string, string> = {
   'uin_market.tiers.len8': 'sekiz haneli',
   'uin_market.tiers.len9': 'dokuz haneli',
   'uin_market.tiers.reserved': 'satılık değil',
+  'uin_market.status.resale': 'birisi satıyor',
   'uin_market.resale.seller': '#{uin} satıyor',
   'uin_market.tab.island': 'Adadan',
   'uin_market.tab.people': 'Kişilerden',

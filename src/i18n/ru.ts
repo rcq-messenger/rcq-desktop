@@ -1155,6 +1155,7 @@ export const ru: Record<string, string> = {
   'uin_market.tiers.len8': 'восьмизначные',
   'uin_market.tiers.len9': 'девятизначные',
   'uin_market.tiers.reserved': 'не продаются',
+  'uin_market.status.resale': 'номер продаёт человек',
   'uin_market.resale.seller': 'продаёт #{uin}',
   'uin_market.tab.island': 'От острова',
   'uin_market.tab.people': 'От людей',

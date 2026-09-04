@@ -983,8 +983,6 @@ export const zh: Record<string, string> = {
   'uin_market.cta.soon': '结账即将上线',
   'uin_market.cta.processing': '处理中…',
   'uin_market.soon': '即将',
-  'uin_market.p2p.title': '点对点市场',
-  'uin_market.p2p.body': '直接与其他人买卖 UIN。挂牌很快开放。',
   'uin_market.p2p.listed_by': '由 {uin} 挂牌',
   'uin_market.crypto.title': '加密货币结账',
   'uin_market.crypto.body': '用 TRON 网络的 USDT 或 TON 付款。付款期间号码为你保留，转账确认后立即归你。',

@@ -985,8 +985,6 @@ export const tr: Record<string, string> = {
   'uin_market.cta.soon': 'Ödeme yakında',
   'uin_market.cta.processing': 'İşleniyor…',
   'uin_market.soon': 'Yakında',
-  'uin_market.p2p.title': 'Kişiden kişiye pazar',
-  'uin_market.p2p.body': 'UIN\'leri doğrudan başkalarıyla al ve sat. İlanlar yakında açılıyor.',
   'uin_market.p2p.listed_by': 'ilan sahibi {uin}',
   'uin_market.crypto.title': 'Kripto ödeme',
   'uin_market.crypto.body': 'TRON ağında USDT ile ya da TON ile öde. Sen öderken numara sana ayrılır ve transfer onaylanır onaylanmaz senin olur.',

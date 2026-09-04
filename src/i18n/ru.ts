@@ -1137,8 +1137,6 @@ export const ru: Record<string, string> = {
   'uin_market.cta.soon': 'Чекаут скоро',
   'uin_market.cta.processing': 'Обрабатываем…',
   'uin_market.soon': 'Скоро',
-  'uin_market.p2p.title': 'P2P-маркет',
-  'uin_market.p2p.body': 'Покупайте и продавайте UIN напрямую между людьми. Листинги откроются скоро.',
   'uin_market.p2p.listed_by': 'продаёт {uin}',
   'uin_market.crypto.title': 'Оплата криптой',
   'uin_market.crypto.body': 'Оплата в USDT в сети TRON или в TON. Пока вы платите, номер держится за вами, и он ваш, как только перевод подтвердится.',

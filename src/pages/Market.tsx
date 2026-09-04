@@ -903,14 +903,6 @@ export function Market() {
         {/* FOUNDATION — the UIN economy scaffolding, designed (not stubbed). */}
         <section className="mt-12 space-y-3">
           <FoundationCard
-            soon={t('uin_market.soon')}
-            title={t('uin_market.p2p.title')}
-            body={t('uin_market.p2p.body')}
-            icon={<P2PIcon />}
-          >
-          </FoundationCard>
-
-          <FoundationCard
             title={t('uin_market.crypto.title')}
             body={t('uin_market.crypto.body')}
             icon={<CoinIcon />}
@@ -1269,13 +1261,6 @@ function BackIcon() {
   )
 }
 
-function P2PIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M7 8h11l-2.5-2.5M17 16H6l2.5 2.5" />
-    </svg>
-  )
-}
 
 function CoinIcon() {
   return (

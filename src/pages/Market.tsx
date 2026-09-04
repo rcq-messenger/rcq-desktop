@@ -606,7 +606,7 @@ export function Market() {
                 transition={{ duration: 0.22, ease: EASE }}
                 className="overflow-hidden"
               >
-                <div className="mt-4 flex items-center justify-between">
+                <div className="mt-4 flex items-baseline justify-between gap-3">
                   {/* ⚠⚠ NOT an AnimatePresence. This line has been INVISIBLE on
                       the live site: nested inside the height-animating parent
                       above, the presence swap stalled at opacity 0 and the
@@ -627,7 +627,7 @@ export function Market() {
                       {availabilityKey === 'ok' && (
                         <span className="font-medium text-accent">
                           {fromPerson != null
-                            ? t('uin_market.status.resale')
+                            ? t('uin_market.resale.seller', { uin: String(fromPerson) })
                             : forSale
                               ? t('uin_market.status.for_sale')
                               : t('uin_market.status.available')}
@@ -645,17 +645,10 @@ export function Market() {
                       "$1.99" over a number the very next screen hands over
                       free, and the tier list right below said "free" for the
                       same length. One of the two had to stop lying. */}
-                  <div className="text-3xl font-semibold tabular-nums tracking-tight">
+                  <div className="shrink-0 text-2xl font-semibold tabular-nums tracking-tight">
                     {acquire === 'free' ? t('uin_market.tiers.free') : priceDisplay(localCents)}
                   </div>
-                  {/* Whose number it is, when it is somebody's. The price above
-                      is theirs, and so is the money: it goes straight to their
-                      wallet and this island never touches it. */}
-                  {fromPerson != null && (
-                    <div className="mt-1 text-xs text-fg-dim">
-                      {t('uin_market.resale.seller', { uin: String(fromPerson) })}
-                    </div>
-                  )}
+
                 </div>
 
                 <button
@@ -676,7 +669,7 @@ export function Market() {
                   ) : resumable ? (
                     t('uin_market.cta.resume')
                   ) : forSale ? (
-                    t('uin_market.cta.buy', { price: priceDisplay(localCents) })
+                    t('uin_market.cta.buy_short')
                   ) : available ? (
                     t('uin_market.cta.take')
                   ) : checking ? (
@@ -733,17 +726,17 @@ export function Market() {
                 {mine.owned.map((o) => (
                   <div
                     key={o.uin}
-                    className="flex items-center justify-between rounded-2xl bg-surface-dim dark:bg-fg-primary/[0.07] px-4 py-3"
+                    className="flex flex-wrap items-center gap-x-3 gap-y-2.5 rounded-2xl bg-surface-dim dark:bg-fg-primary/[0.07] px-4 py-3"
                   >
-                    <div className="min-w-0">
+                    <div className="min-w-0 grow basis-28">
                       <div className="text-lg font-semibold tracking-tight tabular-nums truncate">{o.uin}</div>
                       {myListing(o.uin) && (
-                        <div className="text-xs text-fg-dim truncate">
+                        <div className="text-xs text-fg-dim">
                           {t('uin_market.sell.listed', { price: myListing(o.uin)!.price_display })}
                         </div>
                       )}
                     </div>
-                    <div className="shrink-0 flex items-center gap-2">
+                    <div className="ml-auto shrink-0 flex items-center gap-2">
                       {/* Selling is a third thing you can do with a number you
                           hold, next to giving it back and answering as it. The
                           island refuses the one you are answering as, so this
@@ -851,7 +844,7 @@ export function Market() {
                         className="h-9 px-4 rounded-xl text-sm font-semibold text-accent bg-accent/10
                                    hover:bg-accent/[0.18] active:scale-[0.98] transition"
                       >
-                        {t('uin_market.cta.buy', { price: l.price_display })}
+                        {t('uin_market.cta.buy_short')}
                       </button>
                     )}
                   </div>

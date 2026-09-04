@@ -1168,6 +1168,8 @@ export const en: Record<string, string> = {
   'uin_market.sell.title': 'Sell #{uin}',
   'uin_market.sell.price': 'Your price, in dollars',
   'uin_market.sell.wallet': 'Your {chain} address',
+  'uin_market.sell.echo': 'Buyers will pay {price}',
+  'uin_market.sell.bad_address': 'That is not a TRON address. It should start with T and be 34 characters.',
   'uin_market.sell.note': 'The buyer pays you directly. This island never holds the money and cannot get it back if the address is wrong.',
   'uin_market.sell.confirm': 'Put on sale',
   'uin_market.sell.being_paid': 'Somebody is paying for it right now. Try again in a few minutes.',
@@ -1219,6 +1221,9 @@ export const en: Record<string, string> = {
   'uin_market.error.taken': 'That UIN was just taken. Try another.',
   'uin_market.error.taken_paid': 'Someone took that number while the payment was on its way. Nothing was spent twice: write to support and we will sort it out.',
   'uin_market.error.cooldown': 'You changed your UIN recently. Please wait a bit before changing again.',
+  'uin_market.error.offer_changed': 'The seller changed the price while you were paying, so this voucher no longer opens it. Nothing was taken from your collection. Contact them about the payment.',
+  'uin_market.error.seller_gone': 'The seller no longer holds this number, so it cannot be handed over. Your payment went straight to them, so contact them about it.',
+  'uin_market.error.too_many_paid': 'Your collection is full, so this number has nowhere to go. Release one and try the voucher again.',
   'uin_market.error.generic': 'Something went wrong. Please try again.',
   'uin_market.settings.row': 'Claim a shorter, custom UIN',
 

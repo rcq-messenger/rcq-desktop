@@ -1166,6 +1166,8 @@ export const ru: Record<string, string> = {
   'uin_market.sell.title': 'Продажа #{uin}',
   'uin_market.sell.price': 'Ваша цена, в долларах',
   'uin_market.sell.wallet': 'Ваш адрес {chain}',
+  'uin_market.sell.echo': 'Покупатель заплатит {price}',
+  'uin_market.sell.bad_address': 'Это не адрес TRON. Он начинается с T и состоит из 34 символов.',
   'uin_market.sell.note': 'Покупатель платит вам напрямую. Остров денег не держит и не вернёт их, если адрес неверный.',
   'uin_market.sell.confirm': 'Выставить',
   'uin_market.sell.being_paid': 'Прямо сейчас за него платят. Попробуйте через несколько минут.',
@@ -1217,6 +1219,9 @@ export const ru: Record<string, string> = {
   'uin_market.error.taken': 'Этот UIN только что заняли. Выберите другой.',
   'uin_market.error.taken_paid': 'Номер успели забрать, пока шёл платёж. Дважды ничего не списалось: напишите в поддержку, разберёмся.',
   'uin_market.error.cooldown': 'Вы недавно меняли UIN. Подождите немного перед следующей сменой.',
+  'uin_market.error.offer_changed': 'Продавец поменял цену, пока вы платили, и этот ваучер её больше не открывает. Из вашей коллекции ничего не пропало. Свяжитесь с ним по поводу платежа.',
+  'uin_market.error.seller_gone': 'Номер уже не у продавца, передать его нечем. Деньги ушли напрямую ему, так что вопрос к нему.',
+  'uin_market.error.too_many_paid': 'Коллекция заполнена, номеру некуда лечь. Освободите место и попробуйте ваучер снова.',
   'uin_market.error.generic': 'Что-то пошло не так. Попробуйте ещё раз.',
   'uin_market.settings.row': 'Занять короткий, свой UIN',
 

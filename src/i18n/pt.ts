@@ -1014,6 +1014,8 @@ export const pt: Record<string, string> = {
   'uin_market.sell.title': 'Vender #{uin}',
   'uin_market.sell.price': 'O seu preço, em dólares',
   'uin_market.sell.wallet': 'O seu endereço {chain}',
+  'uin_market.sell.echo': 'Os compradores vão pagar {price}',
+  'uin_market.sell.bad_address': 'Esse não é um endereço TRON. Começa por T e tem 34 caracteres.',
   'uin_market.sell.note': 'O comprador paga-lhe diretamente. A ilha não guarda o dinheiro nem o recupera se o endereço estiver errado.',
   'uin_market.sell.confirm': 'Pôr à venda',
   'uin_market.sell.being_paid': 'Alguém está a pagá-lo agora. Tente daqui a alguns minutos.',
@@ -1056,6 +1058,9 @@ export const pt: Record<string, string> = {
   'uin_market.error.taken': 'Esse UIN acabou de ser pego. Tente outro.',
   'uin_market.error.taken_paid': 'Alguém pegou esse número enquanto o pagamento estava a caminho. Nada foi cobrado duas vezes: escreva para o suporte e resolvemos.',
   'uin_market.error.cooldown': 'Você trocou de UIN faz pouco tempo. Espere um pouco antes de trocar de novo.',
+  'uin_market.error.offer_changed': 'O vendedor mudou o preço enquanto pagava, por isso este voucher já não o abre. Nada saiu da sua coleção. Fale com ele sobre o pagamento.',
+  'uin_market.error.seller_gone': 'O vendedor já não tem este número, por isso não pode ser entregue. O seu pagamento foi direto para ele.',
+  'uin_market.error.too_many_paid': 'A sua coleção está cheia e o número não tem onde ficar. Liberte um e use o voucher outra vez.',
   'uin_market.error.generic': 'Algo deu errado. Tente de novo.',
   'uin_market.settings.row': 'Pegar um UIN mais curto e personalizado',
   // Desktop update prompt. This one is drawn by the OS, not by us, so the

@@ -1014,6 +1014,8 @@ export const tr: Record<string, string> = {
   'uin_market.sell.title': '#{uin} satışı',
   'uin_market.sell.price': 'Fiyatınız, dolar',
   'uin_market.sell.wallet': '{chain} adresiniz',
+  'uin_market.sell.echo': 'Alıcılar {price} ödeyecek',
+  'uin_market.sell.bad_address': 'Bu bir TRON adresi değil. T ile başlar ve 34 karakterdir.',
   'uin_market.sell.note': 'Alıcı doğrudan size öder. Ada parayı tutmaz ve adres yanlışsa geri getiremez.',
   'uin_market.sell.confirm': 'Satışa çıkar',
   'uin_market.sell.being_paid': 'Şu anda biri ödüyor. Birkaç dakika sonra deneyin.',
@@ -1056,6 +1058,9 @@ export const tr: Record<string, string> = {
   'uin_market.error.taken': 'O UIN az önce alındı. Başkasını dene.',
   'uin_market.error.taken_paid': 'Ödeme yoldayken o numarayı biri aldı. İki kez tahsilat olmadı: destek ekibine yaz, çözelim.',
   'uin_market.error.cooldown': 'Kısa süre önce UIN\'ini değiştirdin. Tekrar değiştirmek için biraz bekle.',
+  'uin_market.error.offer_changed': 'Siz öderken satıcı fiyatı değiştirdi, bu kupon artık onu açmıyor. Koleksiyonunuzdan bir şey eksilmedi. Ödeme için ona ulaşın.',
+  'uin_market.error.seller_gone': 'Numara artık satıcıda değil, devredilemiyor. Ödemeniz doğrudan ona gitti.',
+  'uin_market.error.too_many_paid': 'Koleksiyonunuz dolu, numaranın gidecek yeri yok. Birini bırakıp kuponu tekrar deneyin.',
   'uin_market.error.generic': 'Bir şeyler ters gitti. Lütfen tekrar dene.',
   'uin_market.settings.row': 'Daha kısa, kendi seçtiğin bir UIN al',
   // Desktop update prompt. This one is drawn by the OS, not by us, so the

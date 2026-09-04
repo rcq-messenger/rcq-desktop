@@ -1014,6 +1014,8 @@ export const uk: Record<string, string> = {
   'uin_market.sell.title': 'Продаж #{uin}',
   'uin_market.sell.price': 'Ваша ціна, у доларах',
   'uin_market.sell.wallet': 'Ваша адреса {chain}',
+  'uin_market.sell.echo': 'Покупець заплатить {price}',
+  'uin_market.sell.bad_address': 'Це не адреса TRON. Вона починається з T і має 34 символи.',
   'uin_market.sell.note': 'Покупець платить вам напряму. Острів грошей не тримає і не поверне їх, якщо адреса хибна.',
   'uin_market.sell.confirm': 'Виставити',
   'uin_market.sell.being_paid': 'Просто зараз за нього платять. Спробуйте за кілька хвилин.',
@@ -1056,6 +1058,9 @@ export const uk: Record<string, string> = {
   'uin_market.error.taken': 'Цей UIN щойно зайняли. Спробуй інший.',
   'uin_market.error.taken_paid': 'Номер устигли забрати, поки йшов платіж. Двічі нічого не списалося: напишіть у підтримку, розберемося.',
   'uin_market.error.cooldown': 'Ти нещодавно міняв UIN. Зачекай трохи перед наступною зміною.',
+  'uin_market.error.offer_changed': 'Продавець змінив ціну, поки ви платили, і цей ваучер її вже не відкриває. З вашої колекції нічого не зникло. Зверніться до нього щодо платежу.',
+  'uin_market.error.seller_gone': 'Номер уже не у продавця, передати його нічим. Гроші пішли напряму йому, тож питання до нього.',
+  'uin_market.error.too_many_paid': 'Колекція заповнена, номеру немає куди лягти. Звільніть місце і спробуйте ваучер ще раз.',
   'uin_market.error.generic': 'Щось пішло не так. Спробуй ще раз.',
   'uin_market.settings.row': 'Узяти коротший, свій UIN',
   // Desktop update prompt. This one is drawn by the OS, not by us, so the

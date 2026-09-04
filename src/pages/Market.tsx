@@ -40,6 +40,18 @@ const PRICE_CENTS_BY_LENGTH: Record<number, number> = {
   3: 99900,
 }
 const TIER_LENGTHS = [3, 4, 5, 6, 7, 8, 9]
+/// The most an island will take for one number, mirroring `price_cents`'s own
+/// bound on the server. Kept as one number so the field and any message about
+/// it can never drift apart.
+const MAX_PRICE_USD = 100_000
+
+/// A TRON address, by shape. ⚠ Not a checksum: this catches the population of
+/// mistakes people actually make — an Ethereum address pasted from the wrong
+/// wallet (0x…), a TON one (UQ…/EQ…), a truncated paste — and those are the
+/// ones that cost a seller their number and their payment at once. The island
+/// only checks the string is non-empty, and nothing downstream can undo a
+/// payment sent where the seller cannot reach it.
+const TRON_ADDRESS = /^T[1-9A-HJ-NP-Za-km-z]{33}$/
 const JUST_BOUGHT_KEY = 'rcq.web.uin.justBought'
 /// Set right before the reload that follows a switch, so the banner can say
 /// "you now answer as N" rather than "you now hold N".
@@ -277,6 +289,10 @@ export function Market() {
         setCheckout(null)
         setHeld(target)
         await loadMine()
+        // ⚠ And out of the market window. Without this the number sits in
+        // "Your numbers" and in FROM PEOPLE at the same time, still priced,
+        // still offering to be bought — by the person who just bought it.
+        await loadListings()
       } catch (e) {
         setCheckout(null)
         // ⚠ `voucher_spent` is not a failure to show in red: it means this
@@ -289,10 +305,22 @@ export function Market() {
           await loadMine()
         } else {
           redeemed.current.delete(invoiceId)
+          // ⚠⚠ These arrive AFTER the money is gone, so "something went
+          // wrong" is the one thing not to say. Each names what actually
+          // happened and what is left to do, because the buyer's next move
+          // differs: a re-priced offer can be bought again, a seller who no
+          // longer holds the number cannot be bought from at all.
+          const body = e instanceof ApiError ? e.body : ''
           setError(
-            e instanceof ApiError && e.body.includes('taken')
-              ? t('uin_market.error.taken_paid')
-              : t('uin_market.error.generic'),
+            body.includes('offer_changed') || body.includes('price_changed')
+              ? t('uin_market.error.offer_changed')
+              : body.includes('seller_gone')
+                ? t('uin_market.error.seller_gone')
+                : body.includes('too_many_uins')
+                  ? t('uin_market.error.too_many_paid')
+                  : body.includes('taken')
+                    ? t('uin_market.error.taken_paid')
+                    : t('uin_market.error.generic'),
           )
         }
       } finally {
@@ -408,7 +436,7 @@ export function Market() {
 
   async function putOnSale() {
     if (sellTarget == null) return
-    const dollars = Number(sellPrice.replace(',', '.'))
+    const dollars = Number(sellPrice)
     const wallet = sellWallet.trim()
     if (!Number.isFinite(dollars) || dollars <= 0 || !wallet) return
     setSelling(true)
@@ -688,6 +716,16 @@ export function Market() {
               <div className="mt-1 text-3xl font-semibold tracking-tight tabular-nums">{mine.active}</div>
             </div>
 
+            {/* ⚠⚠ A second place for the message, because the first one is
+                inside the typed-number panel and that panel only exists while
+                3-9 digits are in the field at the top. Selling, unlisting,
+                releasing and switching all happen down here, with the field
+                empty — so every refusal on those paths had nowhere to render
+                and looked like nothing happening. */}
+            {error && (
+              <p className="mt-3 text-sm text-red-500">{error}</p>
+            )}
+
             {mine.owned.length === 0 ? (
               <p className="mt-3 text-sm text-fg-dim">{t('uin_market.mine.empty')}</p>
             ) : (
@@ -710,7 +748,16 @@ export function Market() {
                           hold, next to giving it back and answering as it. The
                           island refuses the one you are answering as, so this
                           row never offers it for the active number. */}
-                      {listings != null && (myListing(o.uin) ? (
+                      {/* ⚠ A listing somebody is paying for offers neither
+                          way out: the island refuses both while the hold is
+                          live, and an enabled button that always fails is
+                          worse than one that says why. */}
+                      {myListing(o.uin)?.held && (
+                        <span className="h-9 px-3 inline-flex items-center rounded-xl text-xs text-fg-dim bg-field">
+                          {t('uin_market.people.held')}
+                        </span>
+                      )}
+                      {listings != null && !myListing(o.uin)?.held && (myListing(o.uin) ? (
                         <button
                           onClick={() => void takeOffSale(o.uin)}
                           disabled={switching || releasing || selling}
@@ -735,7 +782,7 @@ export function Market() {
                       ))}
                       <button
                         onClick={() => setReleaseTarget(o.uin)}
-                        disabled={switching || releasing}
+                        disabled={switching || releasing || myListing(o.uin)?.held === true}
                         className="h-9 px-3 rounded-xl text-sm font-medium text-fg-secondary bg-field
                                    hover:bg-fg-primary/[0.09] active:scale-[0.98] disabled:opacity-40 transition"
                       >
@@ -743,7 +790,7 @@ export function Market() {
                       </button>
                       <button
                         onClick={() => setSwitchTarget(o.uin)}
-                        disabled={switching || releasing}
+                        disabled={switching || releasing || myListing(o.uin)?.held === true}
                         className="h-9 px-4 rounded-xl text-sm font-semibold text-accent bg-accent/10
                                    hover:bg-accent/[0.18] active:scale-[0.98] disabled:opacity-40 transition"
                       >
@@ -943,9 +990,11 @@ export function Market() {
           <UinCheckout
             uin={checkout}
             priceDisplay={priceDisplay(localCents ?? 0)}
-            /// Straight from the quote for THIS number on THIS island — never
-            /// a default. See the note on the prop.
-            checkoutUrl={liveQuote?.checkout_url}
+            /// The invoice's OWN till wins when there is one. An invoice id
+            /// exists only at the till that issued it, so resuming against any
+            /// other is told "no such invoice" about a payment really in
+            /// flight. The quote's address is for a purchase not yet started.
+            checkoutUrl={resumable?.checkoutUrl ?? liveQuote?.checkout_url}
             resumeId={resumable?.id}
             onPaid={(voucher, invoiceId) => void doRedeem(checkout, voucher, invoiceId)}
             onClose={() => {
@@ -1062,7 +1111,24 @@ export function Market() {
               autoFocus
               inputMode="decimal"
               value={sellPrice}
-              onChange={(e) => setSellPrice(e.target.value.replace(/[^0-9.,]/g, ''))}
+              /// ⚠ Capped at what the island will actually accept ($100,000,
+              /// `price_cents` le=100_000_00). Without it a mistyped or pasted
+              /// figure sails through the form and comes back as a bare 422
+              /// the person cannot act on, and the commonest way to get one is
+              /// a stray paste into the wrong field.
+              /// ⚠⚠ NO COMMA. It is ambiguous about money and the ambiguity is
+              /// expensive: "1,500" is fifteen hundred to one person and one
+              /// and a half to another, and this field decides what a stranger
+              /// pays. Accepting it and guessing a locale would list a $1,500
+              /// number for $1.50, so it is not accepted at all — digits and at
+              /// most one dot, which reads the same everywhere.
+              onChange={(e) => {
+                const cleaned = e.target.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1')
+                const asNumber = Number(cleaned)
+                if (cleaned === '' || (Number.isFinite(asNumber) && asNumber <= MAX_PRICE_USD)) {
+                  setSellPrice(cleaned)
+                }
+              }}
               placeholder="250"
               className="mt-1.5 w-full h-11 px-3 rounded-xl bg-surface dark:bg-field text-base tabular-nums
                          outline-none focus:ring-2 focus:ring-accent/40"
@@ -1078,6 +1144,18 @@ export function Market() {
               className="mt-1.5 w-full h-11 px-3 rounded-xl bg-surface dark:bg-field text-sm font-mono
                          outline-none focus:ring-2 focus:ring-accent/40"
             />
+            {/* ⚠ The parsed figure, read back before it is committed. The
+                field takes text and the sale is irreversible, so the last
+                thing a seller sees is the number a stranger will actually
+                pay, formatted the way money is written. */}
+            {Number(sellPrice) > 0 && (
+              <p className="mt-2 text-sm">
+                {t('uin_market.sell.echo', { price: priceDisplay(Math.round(Number(sellPrice) * 100)) })}
+              </p>
+            )}
+            {sellWallet !== '' && !TRON_ADDRESS.test(sellWallet) && (
+              <p className="mt-2 text-sm text-red-500">{t('uin_market.sell.bad_address')}</p>
+            )}
             <p className="mt-3 text-xs text-fg-dim leading-relaxed">{t('uin_market.sell.note')}</p>
             <div className="mt-6 flex gap-2.5">
               <button
@@ -1089,7 +1167,7 @@ export function Market() {
               </button>
               <button
                 onClick={() => void putOnSale()}
-                disabled={selling || !sellPrice || !sellWallet}
+                disabled={selling || !(Number(sellPrice) > 0) || !TRON_ADDRESS.test(sellWallet)}
                 className="flex-1 h-11 rounded-xl text-sm font-semibold text-white bg-accent hover:bg-accent-dim active:scale-[0.99] disabled:opacity-40 transition flex items-center justify-center gap-2"
               >
                 {selling ? <Spinner light /> : t('uin_market.sell.confirm')}

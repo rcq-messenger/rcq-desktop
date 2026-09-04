@@ -364,6 +364,17 @@ export interface ProfileUpdate {
 /// UIN market — mirrors backend `app/routers/uin_shop.py` (`/uin/*`).
 /// A custom 3-9 digit handle is bought (mock IAP today) and the account
 /// is migrated to it; price is a pure function of digit count.
+export interface UinListing {
+  uin: number
+  seller_uin: number
+  price_cents: number
+  price_display: string
+  /// Somebody is paying for it right now, so the buy button is spent. Short
+  /// by design: a listing blocked for hours by a payment that never arrives is
+  /// a listing nobody can buy.
+  held: boolean
+}
+
 export interface UinQuote {
   uin: number
   length: number
@@ -379,7 +390,10 @@ export interface UinQuote {
   ///                till behind it).
   /// ⚠ Older islands do not send it; treat a missing value as 'free', which is
   /// exactly what they meant by `available: true`.
-  acquire?: 'free' | 'purchase' | 'closed'
+  acquire?: 'free' | 'purchase' | 'resale' | 'closed'
+  /// Whose number it is when `acquire` is 'resale'. A person, not the island:
+  /// what they ask is their price and the money goes to them.
+  seller_uin?: number | null
   /// WHERE to pay when `acquire` is 'purchase' — the island's OWN till.
   ///
   /// ⚠⚠ Use it, never the built-in address. A till serves one island: paying
@@ -417,7 +431,9 @@ export interface OwnedUin {
 export interface MyUins {
   /// The number this account answers as right now.
   active: number
-  owned: OwnedUin[]
+  owned: OwnedUin[]  /// What this account is SELLING. The market window hides your own listings
+  /// on purpose, so this is where you see them and what you asked.
+  listed?: UinListing[]
 }
 
 /// TURN relay credentials, minted per call and short-lived (`ttl` seconds).
@@ -932,6 +948,39 @@ export const Api = {
 
   uinActivate(id: WebIdentity, uin: number): Promise<UinPurchaseResult> {
     return request<UinPurchaseResult>(id, 'POST', '/uin/activate', { uin })
+  },
+
+  /// What people are selling right now: a window, not a catalogue.
+  ///
+  /// Deliberately a handful with a refresh rather than an endless list. A
+  /// market with ten thousand rows is a scroll, and the number somebody
+  /// actually wants is found by typing it, where the quote says who is selling
+  /// it and for how much.
+  ///
+  /// Your own listings are never in it. You know what you are selling, and the
+  /// place that shows it is your own collection.
+  uinListings(id: WebIdentity, count = 12): Promise<UinListing[]> {
+    return request<UinListing[]>(id, 'GET', `/uin/listings?count=${count}`)
+  },
+
+  /// Put a number you hold up for sale, or change what you are asking.
+  ///
+  /// ⚠ `payout` is where the buyer pays YOU, by chain. The island never holds
+  /// the money: it goes straight from their wallet to this address, and
+  /// nothing here can undo a payment sent to the wrong one.
+  ///
+  /// Refused for the number you are answering as (`in_use`), for one you do
+  /// not hold (`not_owned`), for three digits (`not_for_sale`), and while
+  /// somebody is paying for it (`being_paid`).
+  uinList(id: WebIdentity, uin: number, priceCents: number, payout: Record<string, string>):
+      Promise<UinListing> {
+    return request<UinListing>(id, 'POST', '/uin/listings',
+                               { uin, price_cents: priceCents, payout })
+  },
+
+  /// Take your number off the market. Refused while somebody is paying for it.
+  uinUnlist(id: WebIdentity, uin: number): Promise<void> {
+    return request<void>(id, 'DELETE', `/uin/listings/${uin}`)
   },
 
   /// Turn a paid voucher into a number.

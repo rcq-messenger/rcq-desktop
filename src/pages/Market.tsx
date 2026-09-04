@@ -19,7 +19,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
-import { Api, ApiError, type MyUins, type UinQuote, type UinSuggestion } from '../lib/api'
+import { Api, ApiError, type MyUins, type UinListing, type UinQuote, type UinSuggestion } from '../lib/api'
 import { useToast } from '../lib/toast'
 import { Logo } from '../components/Logo'
 import { UinCheckout } from '../components/UinCheckout'
@@ -87,6 +87,16 @@ export function Market() {
   // The collection. `null` = not loaded (or the island is too old to know
   // /uin/mine), which hides the whole section rather than showing an empty one.
   const [mine, setMine] = useState<MyUins | null>(null)
+  /// What other people are selling. A window with a refresh, not a catalogue.
+  const [listings, setListings] = useState<UinListing[] | null>(null)
+  /// What THIS account is selling, read straight off `/uin/mine`: the market
+  /// window hides your own listings on purpose, so it cannot be the source.
+  const [loadingListings, setLoadingListings] = useState(false)
+  /// The number whose sale sheet is open, and what is typed into it.
+  const [sellTarget, setSellTarget] = useState<number | null>(null)
+  const [sellPrice, setSellPrice] = useState('')
+  const [sellWallet, setSellWallet] = useState('')
+  const [selling, setSelling] = useState(false)
   // A number just taken: "it is yours, move onto it now or later?"
   const [held, setHeld] = useState<number | null>(null)
   // The held number the user tapped Switch on, awaiting confirmation.
@@ -141,7 +151,12 @@ export function Market() {
   // clients read that field alone and would otherwise offer, for free, exactly
   // the numbers that are now for sale. So a paid number is recognised by
   // `acquire`, and a free one by `available` as before.
-  const forSale = validLen && acquire === 'purchase' && (liveQuote?.price_cents ?? 0) > 0
+  // A number the island itself is selling, and one a PERSON is selling. Both
+  // end in a payment and a voucher, so the button is the same; what differs is
+  // whose money it becomes and whether a name is shown next to the price.
+  const forSale = validLen && (acquire === 'purchase' || acquire === 'resale')
+    && (liveQuote?.price_cents ?? 0) > 0
+  const fromPerson = acquire === 'resale' ? liveQuote?.seller_uin ?? null : null
   const canTake = validLen && available && acquire === 'free' && !buying
   const canPay = forSale && !buying && !redeeming
   // An invoice already open on the number in the field. It holds that number,
@@ -371,6 +386,74 @@ export function Market() {
     }
   }
 
+  /// Refresh the window of what people are selling. Cheap and idempotent, so
+  /// the "show others" button is simply this again.
+  const loadListings = useCallback(async () => {
+    setLoadingListings(true)
+    try {
+      setListings(await Api.uinListings(id, 12))
+    } catch {
+      // An island too old to know about resale, or the shop switched off. An
+      // empty market is not an error worth a red banner.
+      setListings([])
+    } finally {
+      setLoadingListings(false)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id.uin])
+
+  useEffect(() => {
+    void loadListings()
+  }, [loadListings])
+
+  async function putOnSale() {
+    if (sellTarget == null) return
+    const dollars = Number(sellPrice.replace(',', '.'))
+    const wallet = sellWallet.trim()
+    if (!Number.isFinite(dollars) || dollars <= 0 || !wallet) return
+    setSelling(true)
+    try {
+      // ⚠ Cents, and rounded once here rather than left to float arithmetic
+      // downstream: this figure is what somebody is charged.
+      await Api.uinList(id, sellTarget, Math.round(dollars * 100), { tron: wallet })
+      setSellTarget(null)
+      setSellPrice('')
+      setSellWallet('')
+      await loadMine()
+      await loadListings()
+    } catch (e) {
+      setError(e instanceof ApiError && e.body.includes('being_paid')
+        ? t('uin_market.sell.being_paid')
+        : t('uin_market.error.generic'))
+    } finally {
+      setSelling(false)
+    }
+  }
+
+  async function takeOffSale(uin: number) {
+    setSelling(true)
+    try {
+      await Api.uinUnlist(id, uin)
+      await loadMine()
+      await loadListings()
+    } catch (e) {
+      setError(e instanceof ApiError && e.body.includes('being_paid')
+        ? t('uin_market.sell.being_paid')
+        : t('uin_market.error.generic'))
+    } finally {
+      setSelling(false)
+    }
+  }
+
+  /// My own listing for a number, if I have one.
+  ///
+  /// ⚠ The market window deliberately excludes your own listings, so this
+  /// cannot read from it. It comes from a separate, unfiltered fetch of what
+  /// this account is selling.
+  function myListing(uin: number): UinListing | undefined {
+    return (mine?.listed ?? []).find((l) => l.uin === uin)
+  }
+
   const availabilityKey =
     checking && !liveQuote
       ? 'checking'
@@ -532,6 +615,14 @@ export function Market() {
                   <div className="text-3xl font-semibold tabular-nums tracking-tight">
                     {acquire === 'free' ? t('uin_market.tiers.free') : priceDisplay(localCents)}
                   </div>
+                  {/* Whose number it is, when it is somebody's. The price above
+                      is theirs, and so is the money: it goes straight to their
+                      wallet and this island never touches it. */}
+                  {fromPerson != null && (
+                    <div className="mt-1 text-xs text-fg-dim">
+                      {t('uin_market.resale.seller', { uin: String(fromPerson) })}
+                    </div>
+                  )}
                 </div>
 
                 <button
@@ -603,8 +694,40 @@ export function Market() {
                   >
                     <div className="min-w-0">
                       <div className="text-lg font-semibold tracking-tight tabular-nums truncate">{o.uin}</div>
+                      {myListing(o.uin) && (
+                        <div className="text-xs text-fg-dim truncate">
+                          {t('uin_market.sell.listed', { price: myListing(o.uin)!.price_display })}
+                        </div>
+                      )}
                     </div>
                     <div className="shrink-0 flex items-center gap-2">
+                      {/* Selling is a third thing you can do with a number you
+                          hold, next to giving it back and answering as it. The
+                          island refuses the one you are answering as, so this
+                          row never offers it for the active number. */}
+                      {listings != null && (myListing(o.uin) ? (
+                        <button
+                          onClick={() => void takeOffSale(o.uin)}
+                          disabled={switching || releasing || selling}
+                          className="h-9 px-3 rounded-xl text-sm font-medium text-fg-secondary bg-field
+                                     hover:bg-fg-primary/[0.09] active:scale-[0.98] disabled:opacity-40 transition"
+                        >
+                          {t('uin_market.sell.unlist')}
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            setSellTarget(o.uin)
+                            setSellPrice('')
+                            setSellWallet('')
+                          }}
+                          disabled={switching || releasing || selling}
+                          className="h-9 px-3 rounded-xl text-sm font-medium text-fg-secondary bg-field
+                                     hover:bg-fg-primary/[0.09] active:scale-[0.98] disabled:opacity-40 transition"
+                        >
+                          {t('uin_market.sell.action')}
+                        </button>
+                      ))}
                       <button
                         onClick={() => setReleaseTarget(o.uin)}
                         disabled={switching || releasing}
@@ -628,6 +751,61 @@ export function Market() {
             )}
 
             <p className="mt-3 text-xs text-fg-dim">{t('uin_market.mine.note')}</p>
+          </section>
+        )}
+
+        {/* FROM PEOPLE — what others are selling. A window with a refresh
+            rather than a catalogue: the number somebody actually wants is
+            found by typing it, where the quote names the seller and the
+            price. This is for browsing, and for knowing the market exists. */}
+        {listings != null && listings.length > 0 && (
+          <section className="mt-11">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-[0.8125rem] font-semibold uppercase tracking-wider text-fg-secondary">
+                {t('uin_market.tab.people')}
+              </h2>
+              <button
+                onClick={() => void loadListings()}
+                disabled={loadingListings}
+                className="text-xs font-medium text-accent disabled:opacity-40"
+              >
+                {t('uin_market.people.refresh')}
+              </button>
+            </div>
+            <div className="space-y-2">
+              {listings.map((l) => (
+                <div
+                  key={l.uin}
+                  className="flex items-center justify-between rounded-2xl bg-surface-dim dark:bg-fg-primary/[0.07] px-4 py-3"
+                >
+                  <div className="min-w-0">
+                    <div className="text-lg font-semibold tracking-tight tabular-nums truncate">{l.uin}</div>
+                    <div className="text-xs text-fg-dim truncate">
+                      {t('uin_market.resale.seller', { uin: String(l.seller_uin) })}
+                    </div>
+                  </div>
+                  <div className="shrink-0 flex items-center gap-3">
+                    <span className="text-sm font-semibold tabular-nums">{l.price_display}</span>
+                    {l.held ? (
+                      /* Somebody is paying for it. The button is spent rather
+                         than hidden: a row that vanished would look like the
+                         number was gone, and it is not. */
+                      <span className="h-9 px-3 inline-flex items-center rounded-xl text-xs text-fg-dim bg-field">
+                        {t('uin_market.people.held')}
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => pick(l.uin)}
+                        className="h-9 px-4 rounded-xl text-sm font-semibold text-accent bg-accent/10
+                                   hover:bg-accent/[0.18] active:scale-[0.98] transition"
+                      >
+                        {t('uin_market.cta.buy', { price: l.price_display })}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
           </section>
         )}
 
@@ -871,6 +1049,57 @@ export function Market() {
       {/* Switch — names the number being left, because it is the one everybody
           currently knows this account by. */}
       <AnimatePresence>
+        {/* Putting your own number on sale. Two fields and one warning,
+            because the warning is the important part: the buyer pays this
+            address directly and nothing here can undo a payment sent to the
+            wrong one. */}
+        {sellTarget != null && (
+          <Modal onDismiss={() => !selling && setSellTarget(null)}>
+            <div className="text-center">
+              <div className="text-4xl font-bold tracking-tight">{sellTarget}</div>
+            </div>
+            <label className="mt-5 block text-xs font-medium text-fg-secondary">
+              {t('uin_market.sell.price')}
+            </label>
+            <input
+              autoFocus
+              inputMode="decimal"
+              value={sellPrice}
+              onChange={(e) => setSellPrice(e.target.value.replace(/[^0-9.,]/g, ''))}
+              placeholder="250"
+              className="mt-1.5 w-full h-11 px-3 rounded-xl bg-surface dark:bg-field text-base tabular-nums
+                         outline-none focus:ring-2 focus:ring-accent/40"
+            />
+            <label className="mt-4 block text-xs font-medium text-fg-secondary">
+              {t('uin_market.sell.wallet', { chain: 'USDT (TRC-20)' })}
+            </label>
+            <input
+              value={sellWallet}
+              onChange={(e) => setSellWallet(e.target.value.trim())}
+              placeholder="T..."
+              spellCheck={false}
+              className="mt-1.5 w-full h-11 px-3 rounded-xl bg-surface dark:bg-field text-sm font-mono
+                         outline-none focus:ring-2 focus:ring-accent/40"
+            />
+            <p className="mt-3 text-xs text-fg-dim leading-relaxed">{t('uin_market.sell.note')}</p>
+            <div className="mt-6 flex gap-2.5">
+              <button
+                onClick={() => setSellTarget(null)}
+                disabled={selling}
+                className="flex-1 h-11 rounded-xl text-sm font-medium text-fg-secondary bg-surface dark:bg-field hover:bg-field dark:hover:bg-line active:scale-[0.99] transition"
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                onClick={() => void putOnSale()}
+                disabled={selling || !sellPrice || !sellWallet}
+                className="flex-1 h-11 rounded-xl text-sm font-semibold text-white bg-accent hover:bg-accent-dim active:scale-[0.99] disabled:opacity-40 transition flex items-center justify-center gap-2"
+              >
+                {selling ? <Spinner light /> : t('uin_market.sell.confirm')}
+              </button>
+            </div>
+          </Modal>
+        )}
         {releaseTarget != null && (
           <Modal onDismiss={() => !releasing && setReleaseTarget(null)}>
             <div className="text-center">

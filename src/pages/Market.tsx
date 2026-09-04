@@ -459,6 +459,7 @@ export function Market() {
       ? 'checking'
       : liveQuote
         ? liveQuote.available || liveQuote.acquire === 'purchase'
+          || liveQuote.acquire === 'resale'
           ? 'ok'
           : 'no'
         : 'idle'
@@ -597,7 +598,11 @@ export function Market() {
                       )}
                       {availabilityKey === 'ok' && (
                         <span className="font-medium text-accent">
-                          {forSale ? t('uin_market.status.for_sale') : t('uin_market.status.available')}
+                          {fromPerson != null
+                            ? t('uin_market.status.resale')
+                            : forSale
+                              ? t('uin_market.status.for_sale')
+                              : t('uin_market.status.available')}
                         </span>
                       )}
                       {availabilityKey === 'no' && (

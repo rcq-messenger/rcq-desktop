@@ -1003,6 +1003,7 @@ export const es: Record<string, string> = {
   'uin_market.tiers.len8': 'de ocho cifras',
   'uin_market.tiers.len9': 'de nueve cifras',
   'uin_market.tiers.reserved': 'no están a la venta',
+  'uin_market.status.resale': 'lo vende una persona',
   'uin_market.resale.seller': 'lo vende #{uin}',
   'uin_market.tab.island': 'De la isla',
   'uin_market.tab.people': 'De personas',

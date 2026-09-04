@@ -1003,6 +1003,7 @@ export const uk: Record<string, string> = {
   'uin_market.tiers.len8': 'восьмизначні',
   'uin_market.tiers.len9': "дев'ятизначні",
   'uin_market.tiers.reserved': 'не продаються',
+  'uin_market.status.resale': 'номер продає людина',
   'uin_market.resale.seller': 'продає #{uin}',
   'uin_market.tab.island': 'Від острова',
   'uin_market.tab.people': 'Від людей',

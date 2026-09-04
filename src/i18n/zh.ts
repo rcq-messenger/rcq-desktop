@@ -1001,6 +1001,7 @@ export const zh: Record<string, string> = {
   'uin_market.tiers.len8': '8 位号',
   'uin_market.tiers.len9': '9 位号',
   'uin_market.tiers.reserved': '不出售',
+  'uin_market.status.resale': '有人在出售',
   'uin_market.resale.seller': '#{uin} 出售',
   'uin_market.tab.island': '来自岛屿',
   'uin_market.tab.people': '来自他人',

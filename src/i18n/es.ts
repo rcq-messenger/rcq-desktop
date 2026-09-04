@@ -141,7 +141,7 @@ export const es: Record<string, string> = {
   'chat.attach.photo': 'Foto',
   'chat.attach.file': 'Archivo',
   'chat.location.confirm.title': '¿Enviar tu ubicación?',
-  'chat.location.confirm.body': 'Tus coordenadas actuales se enviarán a {who} como mensaje. No hay forma de retirarlas una vez que lleguen.',
+  'chat.location.confirm.body': 'Tus coordenadas actuales se enviarán a {who} como mensaje. Puedes borrarlo después, pero no hacer que no lo vean.',
   'chat.location.confirm.send': 'Enviar ubicación',
   'chat.attach.location': 'Ubicación',
   'chat.attach.group': 'Invitación a grupo',

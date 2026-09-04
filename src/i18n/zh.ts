@@ -141,7 +141,7 @@ export const zh: Record<string, string> = {
   'chat.attach.photo': '照片',
   'chat.attach.file': '文件',
   'chat.location.confirm.title': '发送你的位置？',
-  'chat.location.confirm.body': '你当前的坐标将作为消息发送给 {who}。一旦送达就无法收回。',
+  'chat.location.confirm.body': '你当前的坐标将作为消息发送给 {who}。之后可以删除，但对方看过就无法收回。',
   'chat.location.confirm.send': '发送位置',
   'chat.attach.location': '位置',
   'chat.attach.group': '群组邀请',

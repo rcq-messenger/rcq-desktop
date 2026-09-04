@@ -141,7 +141,7 @@ export const uk: Record<string, string> = {
   'chat.attach.photo': 'Фото',
   'chat.attach.file': 'Файл',
   'chat.location.confirm.title': 'Надіслати геопозицію?',
-  'chat.location.confirm.body': 'Ваші поточні координати підуть до {who} повідомленням. Забрати їх назад після доставки не можна.',
+  'chat.location.confirm.body': 'Ваші поточні координати підуть до {who} повідомленням. Видалити його потім можна, але якщо встигли прочитати, це вже не скасувати.',
   'chat.location.confirm.send': 'Надіслати геопозицію',
   'chat.attach.location': 'Геопозиція',
   'chat.attach.group': 'Запрошення в групу',

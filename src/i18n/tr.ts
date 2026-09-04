@@ -141,7 +141,7 @@ export const tr: Record<string, string> = {
   'chat.attach.photo': 'Fotoğraf',
   'chat.attach.file': 'Dosya',
   'chat.location.confirm.title': 'Konumunuz gönderilsin mi?',
-  'chat.location.confirm.body': 'Mevcut koordinatlarınız {who} kişisine mesaj olarak gidecek. Ulaştıktan sonra geri alınamaz.',
+  'chat.location.confirm.body': 'Mevcut koordinatlarınız {who} kişisine mesaj olarak gidecek. Sonra silebilirsiniz, ama okunduysa geri alınmaz.',
   'chat.location.confirm.send': 'Konumu gönder',
   'chat.attach.location': 'Konum',
   'chat.attach.group': 'Grup daveti',

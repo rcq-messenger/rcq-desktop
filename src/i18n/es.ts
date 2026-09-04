@@ -1014,6 +1014,8 @@ export const es: Record<string, string> = {
   'uin_market.sell.title': 'Vender #{uin}',
   'uin_market.sell.price': 'Tu precio, en dólares',
   'uin_market.sell.wallet': 'Tu dirección de {chain}',
+  'uin_market.sell.echo': 'Los compradores pagarán {price}',
+  'uin_market.sell.bad_address': 'Esa no es una dirección TRON. Empieza por T y tiene 34 caracteres.',
   'uin_market.sell.note': 'El comprador te paga directamente. La isla no guarda el dinero ni puede recuperarlo si la dirección es incorrecta.',
   'uin_market.sell.confirm': 'Poner en venta',
   'uin_market.sell.being_paid': 'Alguien lo está pagando ahora. Inténtalo en unos minutos.',
@@ -1056,6 +1058,9 @@ export const es: Record<string, string> = {
   'uin_market.error.taken': 'Ese UIN lo acaban de tomar. Prueba con otro.',
   'uin_market.error.taken_paid': 'Alguien tomó ese número mientras iba el pago. No se cobró dos veces: escribe a soporte y lo resolvemos.',
   'uin_market.error.cooldown': 'Cambiaste tu UIN hace poco. Espera un poco antes de volver a cambiarlo.',
+  'uin_market.error.offer_changed': 'El vendedor cambió el precio mientras pagabas, así que este vale ya no lo abre. No se quitó nada de tu colección. Contáctalo por el pago.',
+  'uin_market.error.seller_gone': 'El vendedor ya no tiene este número, así que no puede entregarse. Tu pago fue directo a él, así que háblale a él.',
+  'uin_market.error.too_many_paid': 'Tu colección está llena y el número no tiene dónde ir. Libera uno y vuelve a usar el vale.',
   'uin_market.error.generic': 'Algo salió mal. Inténtalo de nuevo.',
   'uin_market.settings.row': 'Toma un UIN más corto y a tu gusto',
   // Desktop update prompt. This one is drawn by the OS, not by us, so the

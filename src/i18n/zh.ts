@@ -1012,6 +1012,8 @@ export const zh: Record<string, string> = {
   'uin_market.sell.title': '出售 #{uin}',
   'uin_market.sell.price': '你的价格，美元',
   'uin_market.sell.wallet': '你的 {chain} 地址',
+  'uin_market.sell.echo': '买家将支付 {price}',
+  'uin_market.sell.bad_address': '这不是 TRON 地址。它以 T 开头，共 34 个字符。',
   'uin_market.sell.note': '买家直接付款给你。岛屿不保管这笔钱，地址填错也无法追回。',
   'uin_market.sell.confirm': '上架出售',
   'uin_market.sell.being_paid': '现在有人正在付款。请几分钟后再试。',
@@ -1054,6 +1056,9 @@ export const zh: Record<string, string> = {
   'uin_market.error.taken': '这个 UIN 刚刚被占用了。换一个试试。',
   'uin_market.error.taken_paid': '付款在路上时，这个号码被别人拿走了。没有重复扣款：联系客服，我们会处理。',
   'uin_market.error.cooldown': '你最近刚换过 UIN。请稍等一会儿再换。',
+  'uin_market.error.offer_changed': '你付款时卖家改了价格，这张凭证已经打不开它了。你的收藏没有减少。请就付款联系卖家。',
+  'uin_market.error.seller_gone': '这个号码已不在卖家手里，无法交付。你的钱直接付给了他，请与他联系。',
+  'uin_market.error.too_many_paid': '你的收藏已满，号码无处安放。释放一个后再用这张凭证。',
   'uin_market.error.generic': '出了点问题。请再试一次。',
   'uin_market.settings.row': '获取更短的自选 UIN',
   // Desktop update prompt. This one is drawn by the OS, not by us, so the

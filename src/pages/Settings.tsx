@@ -6,6 +6,7 @@
 // a nav-row that opens the dedicated surface.
 
 import { SettingsSectionIcon } from '../components/SettingsSectionIcon'
+import { BadgeMark } from '../components/BadgeMark'
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { currentRecoveryPhrase, forgetRecoverySeed, revokedAccounts } from '../lib/auth'
@@ -670,7 +671,11 @@ export function Settings() {
                       apiBase={a.apiBase}
                     />
                     <span className="min-w-0 flex-1">
-                      <span className="block text-sm font-medium truncate">{name}</span>
+                      <span className="flex items-center gap-1.5 min-w-0">
+                        <span className="block text-sm font-medium truncate">{name}</span>
+                        {/* The island's mark on the person looking (founder, 05.09). */}
+                        <BadgeMark kind={who?.badge} />
+                      </span>
                       <span className="block text-xs text-fg-dim truncate">{a.uin}</span>
                       {/* Every row names its island, the flagship included.
                           It used to be hidden for the default host on the

@@ -555,3 +555,8 @@ html.desktop *::-webkit-scrollbar {
  * scrollbar reported on 0.3.58).
  */
 
+
+/* Overlays (badge card, report dialog): the backdrop fades and the card
+   settles in, instead of both appearing on the frame of the click. */
+@keyframes rcq-fade-in { from { opacity: 0 } to { opacity: 1 } }
+@keyframes rcq-pop-in { from { opacity: 0; transform: scale(0.96) translateY(6px) } to { opacity: 1; transform: none } }

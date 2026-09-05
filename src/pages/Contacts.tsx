@@ -349,11 +349,20 @@ export function Contacts() {
       ])
       const allGroups = [...groupList, ...foreignGroups]
       setContacts(list)
-      setPending(pendingList)
+      // #900: the block lives on this device, so the island still delivers a
+      // blocked person's request. Declined here, quietly, before it reaches the
+      // list: what the person would have done by hand, and the requester
+      // learns nothing new.
+      const blockedUins = new Set(list.filter((c) => c.blocked).map((c) => c.uin))
+      const keptPending = pendingList.filter((r) => !blockedUins.has(r.from_uin))
+      for (const r of pendingList) {
+        if (blockedUins.has(r.from_uin)) void Api.respondToRequest(identity, r.id, false).catch(() => {})
+      }
+      setPending(keptPending)
       setMe(myInfo)
       const overlaid = await applySealedStateAll(allGroups)
       setGroups(overlaid)
-      persistSnapshot(identity.uin, { contacts: list, groups: overlaid, pending: pendingList, me: myInfo })
+      persistSnapshot(identity.uin, { contacts: list, groups: overlaid, pending: keptPending, me: myInfo })
       // Stage 4, mirror phase: the list the island just served is sealed into
       // the account's vault slot so a reinstall has a roster once the island
       // stops serving one. Behind the paint, never blocking, never throwing;
@@ -410,7 +419,13 @@ export function Contacts() {
     const offResponse = ws.on('contact_response', () => void refresh(true))
     const offRequest = ws.on('contact_request', () => {
       if (!identity) return
-      Api.pendingRequests(identity).then(setPending).catch(() => {})
+      Api.pendingRequests(identity).then((rows) => {
+        const blockedUins = new Set(contacts.filter((c) => c.blocked).map((c) => c.uin))
+        for (const r of rows) {
+          if (blockedUins.has(r.from_uin)) void Api.respondToRequest(identity, r.id, false).catch(() => {})
+        }
+        setPending(rows.filter((r) => !blockedUins.has(r.from_uin)))
+      }).catch(() => {})
     })
     return () => {
       offPresence()

@@ -811,6 +811,12 @@ export function Settings() {
               address and hand to somebody. Off the desktop it is always the
               authority, because a browser trusts nothing else. */}
           <IslandTrustRow apiBase={identity?.apiBase} />
+          {/* What the line above means. It reports a decision the person did
+              not make and cannot change, so without a sentence under it the
+              row is a piece of vocabulary rather than an answer (founder,
+              05.09). Placed on the section, not inside the row, because the
+              row itself is conditional on the desktop. */}
+          <p className="text-xs text-fg-dim leading-relaxed">{t('island.trust.settings.footer')}</p>
           {islandRules && (
             <>
               <button

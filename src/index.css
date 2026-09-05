@@ -145,6 +145,13 @@ html, body, #root {
      padding that reserves it and the heights that subtract it have to agree
      exactly: they did not, and the window scrolled by precisely the
      difference (see html.desktop.mac below). */
+  /* ⚠⚠ NOT FOR A HEIGHT. Zero everywhere since the system title bar came
+     back (05.09), and it must stay out of `height:` even so: a shell sized
+     `calc(100dvh - var(...))` collapses on the desktop webview, which is how
+     the sites reader became a strip a few pixels tall twice now (#856/#858 on
+     0.3.52, #894 on 0.3.61). Anything that needs to reserve space at the top
+     does it with PADDING inside a height that never changes, the way
+     `--rcq-top-inset` does. */
   --rcq-titlebar-inset: 0px;
   /* ⚠ The chat's two bars are measured into these by an effect, which by
      definition runs after the browser has painted. Without a starting value
@@ -161,7 +168,7 @@ html, body, #root {
    nothing is drawing at the top, which is almost always. */
 @layer utilities {
   .min-h-screen {
-    min-height: calc(100vh - var(--rcq-top-inset) - var(--rcq-titlebar-inset));
+    min-height: calc(100vh - var(--rcq-top-inset));
   }
 }
 

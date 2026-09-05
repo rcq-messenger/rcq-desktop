@@ -629,6 +629,8 @@ export const ru: Record<string, string> = {
   'settings.bypass.unsupported': 'Эта сборка собрана без поддержки релеев RCQ.',
 
   // Только для десктопной сборки, в браузере обновлять нечего.
+  "settings.about.privacy": "Политика конфиденциальности",
+  "settings.about.terms": "Условия использования",
   'settings.about.version': 'Версия',
   'settings.about.update_check': 'Проверить обновления',
   'settings.about.update_checking': 'Проверяем…',

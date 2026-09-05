@@ -578,6 +578,8 @@ export const uk: Record<string, string> = {
   // every Mac that saw it: the released builds simply had the feature off.
   'settings.bypass.unsupported': 'Цю збірку зібрано без підтримки релеїв RCQ.',
   // Desktop build only: the browser has nothing to update.
+  "settings.about.privacy": "Політика конфіденційності",
+  "settings.about.terms": "Умови використання",
   'settings.about.version': 'Версія',
   'settings.about.update_check': 'Перевірити оновлення',
   'settings.about.update_checking': 'Перевірка…',

@@ -578,6 +578,8 @@ export const tr: Record<string, string> = {
   // every Mac that saw it: the released builds simply had the feature off.
   'settings.bypass.unsupported': 'Bu sürüm RCQ röleleri desteği olmadan derlendi.',
   // Desktop build only: the browser has nothing to update.
+  "settings.about.privacy": "Gizlilik Politikası",
+  "settings.about.terms": "Kullanım Koşulları",
   'settings.about.version': 'Sürüm',
   'settings.about.update_check': 'Güncelleme denetle',
   'settings.about.update_checking': 'Denetleniyor…',

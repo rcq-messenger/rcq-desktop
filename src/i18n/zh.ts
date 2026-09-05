@@ -578,6 +578,8 @@ export const zh: Record<string, string> = {
   // every Mac that saw it: the released builds simply had the feature off.
   'settings.bypass.unsupported': '此版本在编译时没有包含 RCQ 中继支持。',
   // Desktop build only: the browser has nothing to update.
+  "settings.about.privacy": "隐私政策",
+  "settings.about.terms": "服务条款",
   'settings.about.version': '版本',
   'settings.about.update_check': '检查更新',
   'settings.about.update_checking': '检查中…',

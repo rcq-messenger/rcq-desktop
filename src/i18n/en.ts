@@ -634,6 +634,8 @@ export const en: Record<string, string> = {
   'settings.bypass.unsupported': 'This build was compiled without RCQ relay support.',
 
   // Desktop build only: the browser has nothing to update.
+  "settings.about.privacy": "Privacy Policy",
+  "settings.about.terms": "Terms of Service",
   'settings.about.version': 'Version',
   'settings.about.update_check': 'Check for updates',
   'settings.about.update_checking': 'Checking…',

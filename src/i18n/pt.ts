@@ -638,6 +638,7 @@ export const pt: Record<string, string> = {
   'profile.saved': 'Perfil salvo.',
   'profile.picture.failed': 'Não foi possível enviar a imagem.',
   'profile.picture.unsupported': 'O servidor desta ilha é antigo demais para fotos de perfil. Peça ao operador que atualize.',
+  'profile.cta.add_contact': 'Adicionar aos contactos',
   'profile.cta.send_message': 'Enviar mensagem',
   'profile.section.personal': 'Pessoal',
   'profile.section.location': 'Localização',

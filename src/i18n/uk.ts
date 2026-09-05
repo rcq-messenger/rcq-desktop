@@ -638,6 +638,7 @@ export const uk: Record<string, string> = {
   'profile.saved': 'Профіль збережено.',
   'profile.picture.failed': 'Не вдалося завантажити зображення.',
   'profile.picture.unsupported': 'Сервер цього острова застарий для аватарок. Попросіть його власника оновитися.',
+  'profile.cta.add_contact': 'Додати в контакти',
   'profile.cta.send_message': 'Написати',
   'profile.section.personal': 'Особисте',
   'profile.section.location': 'Місце',

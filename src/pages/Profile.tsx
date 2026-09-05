@@ -20,7 +20,8 @@ import { useIdentity } from '../lib/identity-context'
 import { getCrossIsland } from '../lib/crossisland-store'
 import { pushProfileToCrossIslandContacts } from '../lib/crossisland-profile'
 import { useContactAliases } from '../lib/local-store'
-import { lookupContactName } from '../lib/contacts-cache'
+import { lookupContactName, snapshotFor } from '../lib/contacts-cache'
+import { AddContactModal } from '../components/AddContactModal'
 import { uploadImageUnderKey } from '../lib/media'
 import { ensureMyProfileKey, fanOutMyProfileKey } from '../lib/profile-key'
 import { useToast } from '../lib/toast'
@@ -52,6 +53,14 @@ export function Profile() {
   const isSelf = !!identity && targetUIN === identity.uin && !crossIslandHost
 
   const [info, setInfo] = useState<UserInfo | null>(null)
+  /// Whether this person can actually be written to. A stranger's card opens
+  /// from plenty of places (a reactions sheet, a member list, a mention), and
+  /// the island answers /users/{uin}/info for anyone, so the card is real
+  /// while the conversation behind "Send message" is not: /chat/:uin refuses a
+  /// non-contact outright. Tri-state, because the roster may not be in hand
+  /// yet and guessing "stranger" would offer to add somebody already added.
+  const [relationship, setRelationship] = useState<'contact' | 'stranger' | 'unknown'>('unknown')
+  const [adding, setAdding] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
@@ -59,6 +68,30 @@ export function Profile() {
   // lands (there is no "start editing" step any more), and left alone
   // afterwards so a refresh can never overwrite what is being typed.
   const [draft, setDraft] = useState<UserInfo | null>(null)
+
+  // Is this person in the roster? Answered from the snapshot first so the
+  // button is right on the first paint, then confirmed against the island.
+  useEffect(() => {
+    if (!identity || !targetUIN || isSelf) return
+    if (crossIslandHost) {
+      // A card is the only way somebody from another island is in the roster
+      // at all — the island's contacts table is a pair of local uins, so it
+      // cannot answer this. Synchronous, and never unknown.
+      setRelationship(getCrossIsland(targetUIN, crossIslandHost) ? 'contact' : 'stranger')
+      return
+    }
+    const snap = snapshotFor(identity.uin)
+    if (snap) setRelationship(snap.contacts.some((c) => c.uin === targetUIN) ? 'contact' : 'stranger')
+    let alive = true
+    void Api.contacts(identity)
+      .then((list) => {
+        if (alive) setRelationship(list.some((c) => c.uin === targetUIN) ? 'contact' : 'stranger')
+      })
+      // An island that cannot be asked is not evidence either way, and
+      // offering to add somebody who is already a contact is the worse guess.
+      .catch(() => {})
+    return () => { alive = false }
+  }, [identity, targetUIN, crossIslandHost, isSelf])
 
   useEffect(() => {
     if (!identity || !targetUIN) return
@@ -201,7 +234,18 @@ export function Profile() {
           <CenteredLoader />
         )}
 
-        {info && !isSelf && <ReadView info={info} t={t} isSelf={isSelf} navigate={navigate} crossIslandHost={crossIslandHost} />}
+        {info && !isSelf && (
+          <ReadView
+            info={info}
+            t={t}
+            isSelf={isSelf}
+            navigate={navigate}
+            crossIslandHost={crossIslandHost}
+            relationship={relationship}
+            adding={adding}
+            setAdding={setAdding}
+          />
+        )}
         {info && isSelf && draft && (
           <EditView
             draft={draft}
@@ -232,12 +276,18 @@ function ReadView({
   isSelf,
   navigate,
   crossIslandHost,
+  relationship,
+  adding,
+  setAdding,
 }: {
   info: UserInfo
   t: (k: string, p?: Record<string, string | number>) => string
   isSelf: boolean
   navigate: ReturnType<typeof useNavigate>
   crossIslandHost?: string | null
+  relationship: 'contact' | 'stranger' | 'unknown'
+  adding: boolean
+  setAdding: (v: boolean) => void
 }) {
   // My own name for them. Device-only, and shown alongside what they call
   // themselves so a rename never hides who you are actually talking to.
@@ -327,13 +377,29 @@ function ReadView({
         )}
         {!isSelf && (
           <div className="mt-3">
-            <button
-              onClick={() => navigate(crossIslandHost ? `/chat/${info.uin}?i=${encodeURIComponent(crossIslandHost)}` : `/chat/${info.uin}`)}
-              className="w-full h-10 rounded-md bg-accent hover:bg-accent-dim text-white text-sm font-semibold transition-colors"
-            >
-              {t('profile.cta.send_message')}
-            </button>
+            {relationship === 'stranger' ? (
+              // ⚠ Not a disabled "Send message". The door out of this screen
+              // for a stranger is adding them, and sending them into a chat
+              // that greets them with "this UIN is not in your contacts" is
+              // the app asking a question it already knows the answer to.
+              <button
+                onClick={() => setAdding(true)}
+                className="w-full h-10 rounded-md bg-accent hover:bg-accent-dim text-white text-sm font-semibold transition-colors"
+              >
+                {t('profile.cta.add_contact')}
+              </button>
+            ) : (
+              <button
+                onClick={() => navigate(crossIslandHost ? `/chat/${info.uin}?i=${encodeURIComponent(crossIslandHost)}` : `/chat/${info.uin}`)}
+                className="w-full h-10 rounded-md bg-accent hover:bg-accent-dim text-white text-sm font-semibold transition-colors"
+              >
+                {t('profile.cta.send_message')}
+              </button>
+            )}
           </div>
+        )}
+        {adding && info && (
+          <AddContactModal initialQuery={`#${info.uin}`} onClose={() => setAdding(false)} />
         )}
       </section>
 

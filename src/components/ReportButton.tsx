@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
+import type { WebIdentity } from '../lib/crypto'
 import { Api } from '../lib/api'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
@@ -8,14 +10,21 @@ import { useToast } from '../lib/toast'
 /// a profile, a room, a site (founder, 05.09). `targetUin` is 0 when there is
 /// nobody to name (a site with no published owner); `context` tells the
 /// operator where it happened.
-export function ReportButton({ targetUin, context, label, className = '' }: {
+export function ReportButton({ targetUin, context, label, className = '', glyph = false, ident }: {
   targetUin: number
   context: string
   label: string
   className?: string
+  /// A flag icon instead of the word, for trays sized for glyphs.
+  glyph?: boolean
+  /// The identity to file under. Cross-island things belong to THEIR island:
+  /// a foreign profile reported to the home island names whoever wears the
+  /// same digits there. Defaults to the signed-in identity.
+  ident?: WebIdentity | null
 }) {
   const { t } = useI18n()
-  const { identity } = useIdentity()
+  const { identity: own } = useIdentity()
+  const identity = ident ?? own
   const { toast } = useToast()
   const [open, setOpen] = useState(false)
   const [reason, setReason] = useState('')
@@ -38,12 +47,38 @@ export function ReportButton({ targetUin, context, label, className = '' }: {
 
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} className={className || 'text-xs text-fg-dim hover:text-red-500 transition-colors'}>
-        {t('report.cta')}
+      <button
+        type="button"
+        onClick={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          setOpen(true)
+        }}
+        className={className || (glyph ? 'flex-none p-1 text-fg-dim hover:text-red-500 transition-colors' : 'text-xs text-fg-dim hover:text-red-500 transition-colors')}
+        title={glyph ? t('report.cta') : undefined}
+        aria-label={glyph ? t('report.cta') : undefined}
+      >
+        {glyph ? <FlagGlyph size={15} /> : t('report.cta')}
       </button>
-      {open && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={() => setOpen(false)}>
-          <div className="w-full max-w-sm rounded-2xl bg-surface p-5 space-y-3" onClick={(e) => e.stopPropagation()}>
+      {/* Portalled: rendered in place this sat inside headers with a
+          backdrop-filter, which turns `fixed` into "fixed to the header", and
+          the dialog was confined to a 56px strip. Backdrop clicks stop here so
+          the row behind the button does not fire. */}
+      {open && createPortal(
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation()
+            setOpen(false)
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') setOpen(false)
+          }}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="w-full max-w-sm rounded-2xl bg-surface p-5 space-y-3" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
             <div className="text-sm font-semibold text-fg-primary">{t('report.title').replace('{name}', label)}</div>
             <p className="text-xs text-fg-dim">{t('report.body')}</p>
             <textarea
@@ -67,8 +102,18 @@ export function ReportButton({ targetUin, context, label, className = '' }: {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
+  )
+}
+
+function FlagGlyph({ size }: { size: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4 22V4" />
+      <path d="M4 4h11l-1 4h6l-2 6h-6l1-4H4" />
+    </svg>
   )
 }

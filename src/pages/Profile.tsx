@@ -10,6 +10,8 @@
 // that points here (Settings, the Contacts header, the self-chat header, your
 // own row in a group) means "let me change this".
 
+import type { WebIdentity } from '../lib/crypto'
+import { guestIdentityFor } from '../lib/visited-islands'
 import { CenteredLoader } from '../components/Spinner'
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
@@ -53,6 +55,7 @@ export function Profile() {
   // renamed my account.
   const crossIslandHost = searchParams.get('i')
   const isSelf = !!identity && targetUIN === identity.uin && !crossIslandHost
+  const reportIdent = identity && crossIslandHost ? guestIdentityFor(identity, crossIslandHost) : null
 
   const [info, setInfo] = useState<UserInfo | null>(null)
   /// Whether this person can actually be written to. A stranger's card opens
@@ -239,6 +242,7 @@ export function Profile() {
         {info && !isSelf && (
           <ReadView
             info={info}
+            reportIdent={reportIdent}
             t={t}
             isSelf={isSelf}
             navigate={navigate}
@@ -281,6 +285,7 @@ function ReadView({
   relationship,
   adding,
   setAdding,
+  reportIdent,
 }: {
   info: UserInfo
   t: (k: string, p?: Record<string, string | number>) => string
@@ -290,6 +295,9 @@ function ReadView({
   relationship: 'contact' | 'stranger' | 'unknown'
   adding: boolean
   setAdding: (v: boolean) => void
+  /// Identity a report is filed under: the guest identity for a cross-island
+  /// card, null when there is none (then no report button at all).
+  reportIdent: WebIdentity | null
 }) {
   // My own name for them. Device-only, and shown alongside what they call
   // themselves so a rename never hides who you are actually talking to.
@@ -401,9 +409,13 @@ function ReadView({
                 {t('profile.cta.send_message')}
               </button>
             )}
-            {info && !isSelf && (
+            {info && !isSelf && (!crossIslandHost || reportIdent) && (
               <div className="pt-2 text-center">
-                <ReportButton targetUin={info.uin} context="profile" label={info.nickname || `#${info.uin}`} />
+                {/* A cross-island card is reported to ITS island under the
+                    guest identity for that host: the same digits on the home
+                    island are a different person. No guest identity, no
+                    button rather than a wrong report. */}
+                <ReportButton targetUin={info.uin} context="profile" label={info.nickname || `#${info.uin}`} ident={reportIdent} />
               </div>
             )}
           </div>

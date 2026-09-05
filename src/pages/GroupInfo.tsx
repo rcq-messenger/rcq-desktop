@@ -666,6 +666,16 @@ export function GroupInfo() {
               </section>
             )}
 
+            {/* Reporting a room is not part of leaving it: its own quiet row,
+                visible to every member who is not the owner. A foreign room
+                is reported to ITS island under the guest identity, by the id
+                that island knows (gctx.gid), not the local alias. */}
+            {group && !isOwner && gctx && (
+              <div className="text-center py-1">
+                <ReportButton targetUin={group.owner_uin ?? 0} context={`group:${gctx.gid}`} label={group.name} ident={gctx.ident} />
+              </div>
+            )}
+
             <section className="bg-surface rounded-lg p-2">
               {!confirmDestroy ? (
                 <button
@@ -691,11 +701,6 @@ export function GroupInfo() {
                     >
                       {t('common.cancel')}
                     </button>
-                    {group && !isOwner && (
-                      <div className="text-center pb-2">
-                        <ReportButton targetUin={group.owner_uin ?? 0} context={`group:${group.id}`} label={group.name} />
-                      </div>
-                    )}
                     <button
                       onClick={() => void leaveOrDelete()}
                       disabled={busy}

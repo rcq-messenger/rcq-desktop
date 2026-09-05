@@ -2514,7 +2514,7 @@ export function Chat() {
     const where = isGroup && gctx ? `group ${gctx.gid}` : '1:1'
     const reason = `${text.trim()}\n\n[${where}] message from #${target.from}: ${target.excerpt}`
     try {
-      await Api.reportAbuse(ident, target.from, reason)
+      await Api.reportAbuse(ident, target.from, reason, 'message')
       setReportingMsg(null)
       toast(t('chat.report.sent'))
     } catch (e) {

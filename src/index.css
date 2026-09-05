@@ -146,6 +146,15 @@ html, body, #root {
      exactly: they did not, and the window scrolled by precisely the
      difference (see html.desktop.mac below). */
   --rcq-titlebar-inset: 0px;
+  /* ⚠ The chat's two bars are measured into these by an effect, which by
+     definition runs after the browser has painted. Without a starting value
+     the first painted frame of every chat had 16px of top padding instead of
+     ~72px, so the first rows appeared under the header and jumped down on the
+     next frame: "иногда захожу в чат и он на миллисекунду подпрыгивает"
+     (founder, 05.09). These are the two bars at rest; the effect corrects
+     them to the real numbers, and now it corrects rather than reveals. */
+  --rcq-topbars-h: 56px;
+  --rcq-composer-h: 72px;
 }
 /* The screens that only need to FILL the viewport reserve it the same way,
    without every page having to say so. Identical to Tailwind's own rule while

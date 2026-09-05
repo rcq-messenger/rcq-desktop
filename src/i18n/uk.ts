@@ -8,7 +8,11 @@ export const uk: Record<string, string> = {
   // Common
   'badge.official': 'Офіційний',
   'badge.tester': 'Тестер',
-  'badge.special': 'Особливий',
+  'badge.special': 'Особливий внесок',
+  "badge.desc.official": "Офіційний акаунт, підтверджений островом: команда RCQ або джерело, за яке острів відповідає.",
+  "badge.desc.tester": "Тестер. Брав участь в альфа- та бета-тестуванні RCQ і допомагав знаходити поламки.",
+  "badge.desc.special": "Видається за вражаючий внесок на етапі альфа- та бета-тестування RCQ.",
+  "badge.desc.unknown": "Знак, виданий цим островом.",
   'common.cancel': 'Скасувати',
   'common.close': 'Закрити',
   'common.save': 'Зберегти',

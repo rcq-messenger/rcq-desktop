@@ -8,7 +8,11 @@ export const zh: Record<string, string> = {
   // Common
   'badge.official': '官方',
   'badge.tester': '测试者',
-  'badge.special': '特别',
+  'badge.special': '特殊贡献',
+  "badge.desc.official": "官方账号，由岛屿确认：RCQ 团队或岛屿担保的来源。",
+  "badge.desc.tester": "测试者。参与了 RCQ 的 alpha 和 beta 测试，帮助发现问题。",
+  "badge.desc.special": "因在 RCQ alpha 和 beta 阶段的杰出贡献而授予。",
+  "badge.desc.unknown": "由本岛授予的标记。",
   'common.cancel': '取消',
   'common.close': '关闭',
   'common.save': '保存',

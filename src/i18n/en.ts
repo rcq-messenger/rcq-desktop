@@ -5,7 +5,11 @@ export const en: Record<string, string> = {
   // Common
   'badge.official': 'Official',
   'badge.tester': 'Tester',
-  'badge.special': 'Special',
+  'badge.special': 'Special contribution',
+  "badge.desc.official": "Official account, confirmed by the island: the RCQ team or a source it vouches for.",
+  "badge.desc.tester": "Tester. Took part in the alpha and beta of RCQ and helped find what was broken.",
+  "badge.desc.special": "Given for an outstanding contribution during the alpha and beta of RCQ.",
+  "badge.desc.unknown": "A mark given by this island.",
   'common.cancel': 'Cancel',
   'common.close': 'Close',
   'common.save': 'Save',

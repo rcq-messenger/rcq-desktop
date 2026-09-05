@@ -8,7 +8,11 @@ export const pt: Record<string, string> = {
   // Common
   'badge.official': 'Oficial',
   'badge.tester': 'Testador',
-  'badge.special': 'Especial',
+  'badge.special': 'Contribuição especial',
+  "badge.desc.official": "Conta oficial, confirmada pela ilha: a equipe do RCQ ou uma fonte pela qual a ilha responde.",
+  "badge.desc.tester": "Testador. Participou do alfa e do beta do RCQ e ajudou a encontrar o que estava quebrado.",
+  "badge.desc.special": "Concedida por uma contribuição excepcional durante o alfa e o beta do RCQ.",
+  "badge.desc.unknown": "Uma marca concedida por esta ilha.",
   'common.cancel': 'Cancelar',
   'common.close': 'Fechar',
   'common.save': 'Salvar',

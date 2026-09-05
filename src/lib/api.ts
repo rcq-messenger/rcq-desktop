@@ -789,6 +789,12 @@ export const Api = {
     return request<RCQGroup>(id, 'POST', `/groups/${groupId}/join`)
   },
 
+  /// Open rooms the caller is not in, biggest first: what an empty contact
+  /// list shows instead of nothing (founder, 05.09).
+  discoverGroups(id: WebIdentity, limit = 12): Promise<GroupPreview[]> {
+    return request<GroupPreview[]>(id, 'GET', `/groups/discover?limit=${limit}`)
+  },
+
   /// Per-member fan-out send. The `payloads` list pairs each member
   /// with the ciphertext encrypted to their own identity key —
   /// server has no plaintext access (same envelope format as 1:1).

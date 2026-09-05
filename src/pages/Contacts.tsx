@@ -40,6 +40,7 @@ import { RequestsModal } from '../components/RequestsModal'
 import { AddContactModal } from '../components/AddContactModal'
 import { NewsButton } from '../components/NewsPopover'
 import { BadgeMark } from '../components/BadgeMark'
+import { DiscoverGroupsStrip } from '../components/DiscoverGroupsStrip'
 import { PersonAvatar } from '../components/PersonAvatar'
 import { StatusPickerButton } from '../components/StatusPicker'
 import {
@@ -1040,6 +1041,13 @@ export function Contacts() {
             61% never came back after day one. Somebody who arrives with nobody
             to talk to has exactly two useful moves, and both are now here:
             add a number they already know, or bring one person with them. */}
+        {/* Rooms to walk into, before anything about contacts: nobody arrives
+            with friends already here. Only for an account with no groups
+            either, so a person who already joined something keeps a quiet
+            list (founder, 05.09). */}
+        {!loading && contacts.length === 0 && groups.length === 0 && !error && (
+          <DiscoverGroupsStrip />
+        )}
         {!loading && contacts.length === 0 && !error && (
           <div className="text-center text-sm text-fg-secondary py-12 space-y-2">
             <div>{t('contacts.empty')}</div>

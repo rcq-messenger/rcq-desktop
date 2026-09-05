@@ -110,6 +110,8 @@ export const tr: Record<string, string> = {
   'auth.error.register_failed': 'Hesap oluşturulamadı: {detail}',
   // Contacts
   'contacts.title': 'Kişiler',
+  'contacts.discover.title': 'Açık gruplar',
+  'contacts.discover.join': 'Katıl',
   'contacts.empty': 'Burada henüz kimse yok.',
   'contacts.empty.hint': 'Bildiğin bir numarayı ekle ya da bağlantını birine gönder de seni eklesin.',
   'contacts.invite': 'Birini davet et',

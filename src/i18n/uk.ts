@@ -110,6 +110,8 @@ export const uk: Record<string, string> = {
   'auth.error.register_failed': 'Не вдалося створити акаунт: {detail}',
   // Contacts
   'contacts.title': 'Контакти',
+  'contacts.discover.title': 'Відкриті групи',
+  'contacts.discover.join': 'Приєднатися',
   'contacts.empty': 'Поки нікого.',
   'contacts.empty.hint': 'Додайте людину за номером або надішліть комусь своє посилання, щоб вас додали.',
   'contacts.invite': 'Покликати друга',

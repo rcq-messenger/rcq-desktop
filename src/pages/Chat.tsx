@@ -3659,6 +3659,7 @@ export function Chat() {
                     downloadPct={downloadingRowId === m.id ? downloadPct : null}
                     downloadSaved={savedRowId === m.id}
                     senderName={senderName}
+                    senderBadge={senderMember?.badge ?? null}
                     senderAvatarId={senderMember?.avatar_media_id}
                     senderAvatarKey={senderMember?.avatar_media_key}
                     replyAuthor={replyAuthor}
@@ -4464,6 +4465,7 @@ interface IncomingRowProps extends CommonRowProps {
   canPin: boolean
   canModerate: boolean
   senderName: string | null
+  senderBadge?: string | null
   senderAvatarId: string | null | undefined
   senderAvatarKey: string | null | undefined
   replyAuthor: string
@@ -4643,6 +4645,7 @@ const IncomingMessageRow = memo(function IncomingMessageRow({
   canPin,
   canModerate,
   senderName,
+  senderBadge = null,
   senderAvatarId,
   senderAvatarKey,
   replyAuthor,
@@ -4687,6 +4690,9 @@ const IncomingMessageRow = memo(function IncomingMessageRow({
                 when there is a picture. */}
             <SenderAvatar mediaId={senderAvatarId} mediaKey={senderAvatarKey} size={16} />
             {senderName}
+            {/* The island's badge, to the right of the name, the same mark as
+                the roster and the header (founder, 05.09). */}
+            <BadgeMark kind={senderBadge} className="h-3 w-3" />
           </Link>
         )}
         {m.replyTo && (

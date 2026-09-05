@@ -1453,7 +1453,9 @@ function SectionLockedBody({ canVerify, onUnlock }: { canVerify: boolean; onUnlo
 function ContactRow({
   contact,
   muted,
-  favorite,
+  // Kept for the callers; the row no longer draws a star (founder, 06.09:
+  // the section already says it, and the glyph fought the badge).
+  favorite: _favorite,
   archived,
   inUserSection,
   onChanged,
@@ -1512,7 +1514,6 @@ function ContactRow({
               </span>
               <BadgeMark kind={contact.badge} />
               <GenderIcon gender={contact.gender} />
-              {favorite && <span className="text-yellow-500 text-xs flex-none">★</span>}
               {muted && <MuteGlyph />}
               {contact.blocked && <BlockedIcon />}
             </div>

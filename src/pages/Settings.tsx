@@ -751,7 +751,9 @@ export function Settings() {
           <button
             type="button"
             onClick={() => {
-              void navigator.clipboard?.writeText(String(identity.uin)).then(() => toast(t('settings.uin.copied')))
+              // A denied clipboard (WebView2, plain-http island) says so instead
+              // of a tile that promises "copy" and does nothing.
+              void navigator.clipboard?.writeText(String(identity.uin)).then(() => toast(t('settings.uin.copied'))).catch(() => toast(t('contacts.error'), 'error'))
             }}
             className="group text-left bg-surface rounded-lg p-4 hover:bg-field transition-colors"
           >
@@ -1557,18 +1559,19 @@ export function Settings() {
           <p className="text-xs text-fg-secondary leading-relaxed">
             {t(platform ? `settings.about.body_${platform}` : 'settings.about.body')}
           </p>
+          {/* The two documents a store wants reachable from inside the app,
+              and the two a person should find without a search engine
+              (founder, 05.09). Both builds: the browser accepted them at
+              sign-up too. */}
+          <div className="flex items-center gap-4 text-xs pt-1">
+            <a href="https://rcq.app/privacy" target="_blank" rel="noreferrer" className="text-accent hover:underline underline-offset-2">{t('settings.about.privacy')}</a>
+            <a href="https://rcq.app/terms" target="_blank" rel="noreferrer" className="text-accent hover:underline underline-offset-2">{t('settings.about.terms')}</a>
+          </div>
           {isTauri() && (
             <>
               <div className="flex items-center justify-between text-xs pt-1">
                 <span className="text-fg-secondary">{t('settings.about.version')}</span>
                 <span className="text-fg-secondary">{desktopVersion ?? '…'}</span>
-              </div>
-              {/* The two documents a store wants reachable from inside the app,
-                  and the two a person should find without a search engine
-                  (founder, 05.09). */}
-              <div className="flex items-center gap-4 text-xs pt-1">
-                <a href="https://rcq.app/privacy" target="_blank" rel="noreferrer" className="text-accent hover:underline underline-offset-2">{t('settings.about.privacy')}</a>
-                <a href="https://rcq.app/terms" target="_blank" rel="noreferrer" className="text-accent hover:underline underline-offset-2">{t('settings.about.terms')}</a>
               </div>
               <button
                 onClick={() => void runUpdateCheck()}

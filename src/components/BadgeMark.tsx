@@ -57,6 +57,7 @@ export function BadgeMark({ kind, className = 'h-3.5 w-3.5' }: { kind?: string |
       {open && createPortal(
         <div
           className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 backdrop-blur-md p-4"
+          style={{ animation: 'rcq-fade-in 160ms ease-out' }}
           // The portal is a DOM escape, not a React one: a click here bubbles
           // through the React tree to whatever row the seal sits in (a chat
           // link, a Join button, an account switch). Stop it at the backdrop,
@@ -75,7 +76,12 @@ export function BadgeMark({ kind, className = 'h-3.5 w-3.5' }: { kind?: string |
           tabIndex={-1}
           ref={(el) => el?.focus()}
         >
-          <div className="w-full max-w-xs rounded-2xl bg-surface p-7 text-center space-y-4" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
+          <div
+            className="w-full max-w-xs rounded-2xl bg-surface p-7 text-center space-y-4"
+            style={{ animation: 'rcq-pop-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1)' }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="relative mx-auto h-32 w-32 flex items-center justify-center">
               <div
                 className="absolute inset-0 rounded-full blur-2xl"

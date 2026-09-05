@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Api, type GroupPreview } from '../lib/api'
+import { Api, ApiError, type GroupPreview } from '../lib/api'
+import { useToast } from '../lib/toast'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
 import { GroupAvatar } from './GroupAvatar'
@@ -12,6 +13,7 @@ import { BadgeMark } from './BadgeMark'
 /// and joining is the person's own click (founder, 05.09).
 export function DiscoverGroupsStrip() {
   const { t } = useI18n()
+  const { toast } = useToast()
   const { identity } = useIdentity()
   const navigate = useNavigate()
   const [rooms, setRooms] = useState<GroupPreview[]>([])
@@ -34,9 +36,13 @@ export function DiscoverGroupsStrip() {
     try {
       const g = await Api.joinGroup(identity, room.id)
       navigate(`/chat/g/${g.id}`)
-    } catch {
-      // Refused since (closed, blocked): the card goes, the strip stays.
-      setRooms((r) => r.filter((x) => x.id !== room.id))
+    } catch (e) {
+      // Refused (closed, gone): the card goes. Anything else is a blip: the
+      // card stays and the person hears why, instead of watching the room
+      // they picked vanish.
+      const status = e instanceof ApiError ? e.status : 0
+      if (status === 403 || status === 404 || status === 410) setRooms((r) => r.filter((x) => x.id !== room.id))
+      else toast(t('contacts.error'), 'error')
     } finally {
       setJoining(null)
     }

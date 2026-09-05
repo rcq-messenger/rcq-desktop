@@ -67,6 +67,7 @@ export function ReportButton({ targetUin, context, label, className = '', glyph 
       {open && createPortal(
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
+          style={{ animation: 'rcq-fade-in 160ms ease-out' }}
           onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation()
@@ -78,8 +79,13 @@ export function ReportButton({ targetUin, context, label, className = '', glyph 
           role="dialog"
           aria-modal="true"
         >
-          <div className="w-full max-w-sm rounded-2xl bg-surface p-5 space-y-3" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
-            <div className="text-sm font-semibold text-fg-primary">{t('report.title').replace('{name}', label)}</div>
+          <div
+            className="w-full max-w-sm rounded-2xl bg-surface p-5 space-y-3"
+            style={{ animation: 'rcq-pop-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1)' }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-sm font-semibold text-fg-primary">{t('report.title', { name: label })}</div>
             <p className="text-xs text-fg-dim">{t('report.body')}</p>
             <textarea
               autoFocus

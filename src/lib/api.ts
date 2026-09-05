@@ -45,7 +45,7 @@ async function request<T>(
   method: string,
   path: string,
   body?: unknown,
-  opts?: { headers?: Record<string, string> },
+  opts?: { headers?: Record<string, string>; onResponse?: (res: Response) => void; allow304?: boolean },
   retried = false,
 ): Promise<T> {
   const headers: Record<string, string> = {
@@ -62,6 +62,10 @@ async function request<T>(
     headers,
     body: payload,
   })
+  opts?.onResponse?.(res)
+  // A conditional read the island answered with "nothing changed": no body,
+  // and the caller keeps what it holds.
+  if (res.status === 304 && opts?.allow304) return undefined as T
   const text = await res.text()
   if (!res.ok) {
     if (res.status === 401 && !identity.guest) {
@@ -538,6 +542,25 @@ export const Api = {
 
   contacts(id: WebIdentity): Promise<Contact[]> {
     return request<Contact[]>(id, 'GET', '/contacts')
+  },
+  /// The roster with the island's validator. `etag` is what the last answer
+  /// carried; when the list has not changed the island answers 304 with no
+  /// body, `list` is null and the caller keeps what it already holds. The
+  /// contacts page re-reads the roster on every foreground and every poll,
+  /// and most of those reads change nothing.
+  async contactsIfChanged(
+    id: WebIdentity,
+    etag: string | null,
+  ): Promise<{ list: Contact[] | null; etag: string | null }> {
+    let seen: string | null = null
+    const list = await request<Contact[] | undefined>(id, 'GET', '/contacts', undefined, {
+      headers: etag ? { 'If-None-Match': etag } : {},
+      onResponse: (res) => {
+        seen = res.headers.get('ETag')
+      },
+      allow304: true,
+    })
+    return { list: list ?? null, etag: seen ?? etag }
   },
 
   pendingRequests(id: WebIdentity): Promise<PendingRequest[]> {

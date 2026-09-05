@@ -16,6 +16,7 @@
 // over and then leaving, so those two are offered as one flow.
 
 import { useEffect, useState } from 'react'
+import { ReportButton } from '../components/ReportButton'
 import { BadgeMark } from '../components/BadgeMark'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { PersonAvatar } from '../components/PersonAvatar'
@@ -690,6 +691,11 @@ export function GroupInfo() {
                     >
                       {t('common.cancel')}
                     </button>
+                    {group && !isOwner && (
+                      <div className="text-center pb-2">
+                        <ReportButton targetUin={group.owner_uin ?? 0} context={`group:${group.id}`} label={group.name} />
+                      </div>
+                    )}
                     <button
                       onClick={() => void leaveOrDelete()}
                       disabled={busy}

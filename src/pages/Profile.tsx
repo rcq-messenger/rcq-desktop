@@ -15,6 +15,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { PersonAvatar } from '../components/PersonAvatar'
 import { BadgeMark } from '../components/BadgeMark'
+import { ReportButton } from '../components/ReportButton'
 import { Api, type UserInfo } from '../lib/api'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
@@ -399,6 +400,11 @@ function ReadView({
               >
                 {t('profile.cta.send_message')}
               </button>
+            )}
+            {info && !isSelf && (
+              <div className="pt-2 text-center">
+                <ReportButton targetUin={info.uin} context="profile" label={info.nickname || `#${info.uin}`} />
+              </div>
             )}
           </div>
         )}

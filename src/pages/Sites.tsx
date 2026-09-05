@@ -21,6 +21,7 @@
 //   network go anywhere.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ReportButton } from '../components/ReportButton'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
@@ -699,6 +700,18 @@ export function Sites() {
                 >
                   <ShareGlyph size={15} />
                 </button>
+              )}
+              {/* The page being read can be reported from here (founder, 05.09).
+                  Tagged site:<name>@<host> with nobody named: the reader does
+                  not know the owner, and the operator's queue turns the tag
+                  into a freeze-by-name action. */}
+              {idleOnPage && addr && (
+                <ReportButton
+                  targetUin={0}
+                  context={`site:${addr.name}@${addr.host}`}
+                  label={addr.display}
+                  className="flex-none p-1 text-xs text-fg-dim hover:text-red-500"
+                />
               )}
               {/* Reload, and it really reloads: the bundle is served with a five
                   minute cache, which is right for reading and wrong for somebody

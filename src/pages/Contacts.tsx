@@ -162,6 +162,11 @@ export {
   lookupGroupAvatar,
 } from '../lib/contacts-cache'
 
+/// The island's validator for the roster and the rows it came with, for the
+/// life of the tab: a refresh that finds nothing changed (304) still has a
+/// list to render. Keyed by account so a switch never folds the wrong roster.
+let rosterKept: { uin: number; etag: string | null; list: Contact[] | null } = { uin: 0, etag: null, list: null }
+
 export function Contacts() {
   const { identity } = useIdentity()
   const { t } = useI18n()
@@ -332,8 +337,11 @@ export function Contacts() {
     setError(null)
     if (!background) setLoading(true)
     try {
-      const [list, pendingList, myInfo, groupList, foreignGroups] = await Promise.all([
-        Api.contacts(identity),
+      const [rosterAnswer, pendingList, myInfo, groupList, foreignGroups] = await Promise.all([
+        // Conditional: a 304 hands back the rows kept from the last full
+        // answer. Presence is in the island's hash, so a status that moved
+        // while this tab was away still arrives as a full body.
+        Api.contactsIfChanged(identity, rosterKept.uin === identity.uin ? rosterKept.etag : null),
         Api.pendingRequests(identity),
         Api.myInfo(identity),
         // Without the roster: a chat-list row wants a name, a picture and a
@@ -348,6 +356,8 @@ export function Contacts() {
         fetchForeignGroups(identity),
       ])
       const allGroups = [...groupList, ...foreignGroups]
+      const list = rosterAnswer.list ?? (rosterKept.uin === identity.uin ? rosterKept.list : null) ?? (await Api.contacts(identity))
+      if (rosterAnswer.list) rosterKept = { uin: identity.uin, etag: rosterAnswer.etag, list: rosterAnswer.list }
       setContacts(list)
       // #900: the block lives on this device, so the island still delivers a
       // blocked person's request. Declined here, quietly, before it reaches the

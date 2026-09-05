@@ -743,18 +743,24 @@ export function Settings() {
             that goes black under the cursor reads as disappearing, not as
             responding (founder, 21.08). Same fix on every card below. */}
         <div className="grid gap-4 sm:grid-cols-2 items-stretch">
-          <section className="bg-surface rounded-lg p-4 space-y-2">
-            <div className="flex items-center gap-2 text-xs font-semibold text-fg-secondary uppercase tracking-wide">
-              <SettingsSectionIcon name="account" />
-              {t('settings.section.account')}
+          {/* The one number a person gives out. No icon, no colour: a quiet
+              caption, the number itself set large in the same ink as the rest
+              of the page, and a copy affordance where the eye lands (founder,
+              05.09: the green tile with an icon read as a control, not as a
+              number). */}
+          <button
+            type="button"
+            onClick={() => {
+              void navigator.clipboard?.writeText(String(identity.uin)).then(() => toast(t('settings.uin.copied')))
+            }}
+            className="group text-left bg-surface rounded-lg p-4 hover:bg-field transition-colors"
+          >
+            <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">{t('settings.field.uin')}</div>
+            <div className="mt-1 flex items-baseline justify-between gap-3">
+              <span className="text-2xl font-semibold tabular-nums tracking-tight text-fg-primary">{identity.uin}</span>
+              <span className="text-xs text-fg-dim group-hover:text-fg-secondary transition-colors">{t('settings.uin.copy')}</span>
             </div>
-            <div className="flex flex-col gap-0.5">
-              <span className="text-xs text-fg-secondary">{t('settings.field.uin')}</span>
-              {/* It is the one number a person gives out, and it was set in
-                  body text with no class at all. */}
-              <span className="text-xl font-semibold tabular-nums tracking-tight text-accent">{identity.uin}</span>
-            </div>
-          </section>
+          </button>
 
           <Link
             to="/market"

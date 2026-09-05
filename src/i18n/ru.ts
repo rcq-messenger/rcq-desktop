@@ -378,6 +378,8 @@ export const ru: Record<string, string> = {
   'settings.accounts.forget': 'выйти',
   'settings.accounts.revoked': 'Сессия завершена, войдите заново',
   'settings.section.account': 'Аккаунт',
+  "settings.uin.copy": "Скопировать",
+  "settings.uin.copied": "UIN скопирован",
   'settings.field.uin': 'UIN',
   'settings.field.api_host': 'API-сервер',
   'how.title': 'Как это работает',

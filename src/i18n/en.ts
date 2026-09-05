@@ -381,6 +381,8 @@ export const en: Record<string, string> = {
   'settings.accounts.forget': 'sign out',
   'settings.accounts.revoked': 'Session ended, sign in again',
   'settings.section.account': 'Account',
+  "settings.uin.copy": "Copy",
+  "settings.uin.copied": "UIN copied",
   'settings.field.uin': 'UIN',
   'settings.field.api_host': 'API host',
   'how.title': 'How this works',

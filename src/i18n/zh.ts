@@ -357,6 +357,8 @@ export const zh: Record<string, string> = {
   'settings.accounts.forget': '退出',
   'settings.accounts.revoked': '会话已结束，请重新登录',
   'settings.section.account': '账号',
+  "settings.uin.copy": "复制",
+  "settings.uin.copied": "UIN 已复制",
   'settings.field.uin': 'UIN',
   'settings.field.api_host': 'API 主机',
   'how.title': '这是怎么运作的',

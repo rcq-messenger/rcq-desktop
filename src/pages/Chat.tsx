@@ -773,7 +773,12 @@ export function Chat() {
     const el = scrollRef.current
     const div = unreadDividerRef.current
     if (!el || !div) return
-    el.scrollTop += div.getBoundingClientRect().top - el.getBoundingClientRect().top
+    // ⚠ Less the pane's own top padding. The header is an OVERLAY over this
+    // box (that is why the padding exists at all), so aligning the divider
+    // with the container's border-box top slid it, and the first rows of
+    // unread under the header where nobody could read them.
+    const padTop = parseFloat(getComputedStyle(el).paddingTop) || 0
+    el.scrollTop += div.getBoundingClientRect().top - el.getBoundingClientRect().top - padTop
     // The correction below may only run on the INITIAL jump. Re-derived on
     // every ResizeObserver re-pin it fired transiently while the photos under
     // the divider were still skeletons: "we're at the bottom" for one layout
@@ -831,14 +836,24 @@ export function Chat() {
       n = parked
       unreadOnOpenRef.current = { key: persistKey, n }
     }
-    // n larger than the history we still hold means the counter outran it — a
-    // restored backup, a pruned log, a fresh install replaying a month of
-    // queue. We genuinely do not know where reading stopped there, so the
-    // newest message is the answer; guessing the very top would be this report
-    // again in the other direction. n EQUAL to the length is different and
-    // common (a group opened for the first time): everything held is unread,
-    // and the divider belongs above all of it.
-    if (n < 1 || n > incoming.length) {
+    // n at least as large as the history we still hold means the counter
+    // outran it, or that everything we hold arrived while nobody was looking:
+    // a restored backup, a pruned log, a fresh install replaying a month of
+    // queue, or a room whose whole log was just backfilled. We genuinely do
+    // not know where reading stopped there, so the newest message is the
+    // answer; guessing the very top would be this report again in the other
+    // direction.
+    //
+    // ⚠ n EQUAL to the length used to be treated as "everything held is
+    // unread, so the divider belongs above all of it", which parks the reader
+    // at scrollTop 0. In a GROUP that is the normal case rather than the rare
+    // one: drainGroupLog backfills up to 500 rows through the same counter,
+    // and the cross-device recount cannot bring it down (it compares against
+    // `sentAt`, which is only ever set beside a ttl). So every visit opened on
+    // the oldest message and the newest were a whole history away, which is
+    // #887, reported twice. The jump button still carries the backlog, so the
+    // way back to where reading stopped is one click.
+    if (n < 1 || n >= incoming.length) {
       setUnreadAnchor({ key: persistKey, id: null })
       return
     }

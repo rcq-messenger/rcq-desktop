@@ -122,6 +122,8 @@ export const en: Record<string, string> = {
 
   // Contacts
   'contacts.title': 'Contacts',
+  'contacts.discover.title': 'Open groups',
+  'contacts.discover.join': 'Join',
   'contacts.empty': 'Nobody here yet.',
   'contacts.empty.hint': 'Add a number you already know, or send someone your link so they can add you.',
   'contacts.invite': 'Invite a friend',

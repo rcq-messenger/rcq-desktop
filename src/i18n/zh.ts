@@ -110,6 +110,8 @@ export const zh: Record<string, string> = {
   'auth.error.register_failed': '无法创建账号：{detail}',
   // Contacts
   'contacts.title': '联系人',
+  'contacts.discover.title': '公开群组',
+  'contacts.discover.join': '加入',
   'contacts.empty': '这里还没有人。',
   'contacts.empty.hint': '添加一个你已经知道的号码，或者把你的链接发给别人，让对方添加你。',
   'contacts.invite': '邀请朋友',

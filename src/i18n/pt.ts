@@ -110,6 +110,8 @@ export const pt: Record<string, string> = {
   'auth.error.register_failed': 'Não foi possível criar a conta: {detail}',
   // Contacts
   'contacts.title': 'Contatos',
+  'contacts.discover.title': 'Grupos abertos',
+  'contacts.discover.join': 'Entrar',
   'contacts.empty': 'Ainda não tem ninguém aqui.',
   'contacts.empty.hint': 'Adicione um número que você já conhece, ou mande seu link para alguém te adicionar.',
   'contacts.invite': 'Convidar alguém',

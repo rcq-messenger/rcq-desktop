@@ -634,10 +634,10 @@ export function Sites() {
                 than in what is left between the mark and the glyphs. With the
                 chevron and the mark on one side and a single glyph on the
                 other, that leftover sat to the right, and so did the domain
-                (founder, 02.09). 26px is the chevron with its padding; 56
-                holds the gap and the 18px mark on the left, and the share
-                and reload glyphs with their gap on the right. */}
-            <div className={`flex-none flex items-center gap-2 ${idleOnPage ? 'w-[56px]' : 'w-[26px]'}`}>
+                (founder, 02.09). 26px is the chevron with its padding; 84
+                holds the gap and the 18px mark on the left, and the share,
+                report and reload glyphs with their gaps on the right. */}
+            <div className={`flex-none flex items-center gap-2 ${idleOnPage ? 'w-[84px]' : 'w-[26px]'}`}>
               <button
                 type="button"
                 onClick={() => navigate(asked ? '/sites' : '/contacts')}
@@ -686,7 +686,7 @@ export function Sites() {
                 focused ? 'text-left' : 'text-center'
               }`}
             />
-            <div className={`flex-none flex items-center justify-end gap-2 ${idleOnPage ? 'w-[56px]' : 'w-[26px]'}`}>
+            <div className={`flex-none flex items-center justify-end gap-2 ${idleOnPage ? 'w-[84px]' : 'w-[26px]'}`}>
               {/* Share: the address of the page that is up, into a chat or
                   onto the clipboard (#852). Next to reload, where a browser
                   keeps it. */}
@@ -707,6 +707,7 @@ export function Sites() {
                   into a freeze-by-name action. */}
               {idleOnPage && addr && (
                 <ReportButton
+                  glyph
                   targetUin={0}
                   context={`site:${addr.name}@${addr.host}`}
                   label={addr.display}

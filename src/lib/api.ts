@@ -893,7 +893,7 @@ export const Api = {
   /// `context` is the surface the report came from, as the operator's queue
   /// labels it: "profile", "message", "group:<id>", "site:<name>@<host>".
   /// A site or a room with no owner to name reports target 0.
-  reportAbuse(id: WebIdentity, targetUin: number, reason: string, context = 'user'): Promise<{ id: number }> {
+  reportAbuse(id: WebIdentity, targetUin: number, reason: string, context = ''): Promise<{ id: number }> {
     return request<{ id: number }>(id, 'POST', '/reports', {
       target_uin: targetUin,
       reason,

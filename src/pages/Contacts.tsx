@@ -26,7 +26,7 @@ import { AltText } from '../components/AltText'
 import { applySealedStateAll, loadRoomKeys } from '../lib/group-state'
 import { loadProfileKeys, myProfileKey } from '../lib/profile-key'
 import { AnimatePresence } from 'framer-motion'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { BypassShield } from '../components/BypassShield'
 import { ChatPreviewModal } from '../components/ChatPreviewModal'
@@ -206,6 +206,8 @@ export function Contacts() {
   const _cachedAtMount = identity ? contactsCache.get(identity.uin) : undefined
   const [showGlobalSearch, setShowGlobalSearch] = useState(false)
   const [contacts, setContacts] = useState<Contact[]>(() => _cachedAtMount?.contacts ?? [])
+  /// Blocked uins as of the last roster fold, for handlers whose closure is older.
+  const blockedRef = useRef<Set<number>>(new Set())
   const [groups, setGroups] = useState<RCQGroup[]>(() => _cachedAtMount?.groups ?? [])
   const [pending, setPending] = useState<PendingRequest[]>(() => _cachedAtMount?.pending ?? [])
   const [me, setMe] = useState<UserInfo | null>(() => _cachedAtMount?.me ?? null)
@@ -360,14 +362,12 @@ export function Contacts() {
       if (rosterAnswer.list) rosterKept = { uin: identity.uin, etag: rosterAnswer.etag, list: rosterAnswer.list }
       setContacts(list)
       // #900: the block lives on this device, so the island still delivers a
-      // blocked person's request. Declined here, quietly, before it reaches the
-      // list: what the person would have done by hand, and the requester
-      // learns nothing new.
+      // blocked person's request. It is hidden here and NOT answered: a
+      // decline goes back over the wire as "declined", which tells the blocked
+      // person exactly what happened. Left pending, they learn nothing.
       const blockedUins = new Set(list.filter((c) => c.blocked).map((c) => c.uin))
+      blockedRef.current = blockedUins
       const keptPending = pendingList.filter((r) => !blockedUins.has(r.from_uin))
-      for (const r of pendingList) {
-        if (blockedUins.has(r.from_uin)) void Api.respondToRequest(identity, r.id, false).catch(() => {})
-      }
       setPending(keptPending)
       setMe(myInfo)
       const overlaid = await applySealedStateAll(allGroups)
@@ -430,11 +430,9 @@ export function Contacts() {
     const offRequest = ws.on('contact_request', () => {
       if (!identity) return
       Api.pendingRequests(identity).then((rows) => {
-        const blockedUins = new Set(contacts.filter((c) => c.blocked).map((c) => c.uin))
-        for (const r of rows) {
-          if (blockedUins.has(r.from_uin)) void Api.respondToRequest(identity, r.id, false).catch(() => {})
-        }
-        setPending(rows.filter((r) => !blockedUins.has(r.from_uin)))
+        // The ref, not `contacts`: this closure is from the render the effect
+        // ran in, and a block or unblock since then would be invisible to it.
+        setPending(rows.filter((r) => !blockedRef.current.has(r.from_uin)))
       }).catch(() => {})
     })
     return () => {

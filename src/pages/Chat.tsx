@@ -15,6 +15,7 @@
 import { relativeLastSeen } from '../lib/last-seen'
 import { AltText } from '../components/AltText'
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { BadgeMark } from '../components/BadgeMark'
 import { createPortal } from 'react-dom'
 import { scopedKey } from '../lib/account-scope'
 import { AnimatePresence, motion } from 'framer-motion'
@@ -2803,6 +2804,8 @@ export function Chat() {
       ? t('chat.saved.title')
       // My own name for them, when I set one (device-only, see useContactAliases).
       : peerAlias ?? peer?.nickname ?? `${peerUIN}`
+  // The island's mark beside the name in the header, same source as the row.
+  const headerBadge = isGroup ? group?.badge : isSelf ? null : peer?.badge
   // "typing…" — the phones have had it for a long time and the web has not,
   // so a conversation between a phone and a browser looked one-sided. Wire
   // format is the phones': {type:"typing", to_uin, active} out,
@@ -3254,7 +3257,10 @@ export function Chat() {
               />
             )}
             <div className="flex-1 min-w-0">
-              <div className="font-medium truncate">{headerName}</div>
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="font-medium truncate">{headerName}</span>
+                <BadgeMark kind={headerBadge} />
+              </div>
               {/* Proportional, not mono. This line is a member count, a number
                   or the word for Notes -- none of them a column that has to
                   line up with anything, and mono made the header read like a

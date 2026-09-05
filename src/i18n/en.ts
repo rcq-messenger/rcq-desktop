@@ -3,6 +3,9 @@
 
 export const en: Record<string, string> = {
   // Common
+  'badge.official': 'Official',
+  'badge.tester': 'Tester',
+  'badge.special': 'Special',
   'common.cancel': 'Cancel',
   'common.close': 'Close',
   'common.save': 'Save',

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { BadgeMark } from './BadgeMark'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { incomingSnapshots } from '../lib/incoming-store'
@@ -167,6 +168,7 @@ export function GlobalSearchOverlay({
                     />
                   )}
                   <span className="text-sm truncate">{h.title}</span>
+                  <BadgeMark kind={h.isGroup ? h.g?.badge : h.c?.badge} />
                 </button>
               ))}
             </>

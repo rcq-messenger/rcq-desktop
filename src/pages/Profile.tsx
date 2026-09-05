@@ -14,6 +14,7 @@ import { CenteredLoader } from '../components/Spinner'
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { PersonAvatar } from '../components/PersonAvatar'
+import { BadgeMark } from '../components/BadgeMark'
 import { Api, type UserInfo } from '../lib/api'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
@@ -320,7 +321,10 @@ function ReadView({
             crossIsland={!!crossIslandHost}
           />
           <div className="min-w-0">
-            <div className="text-2xl font-bold truncate">{alias || info.nickname || `${info.uin}`}</div>
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-2xl font-bold truncate">{alias || info.nickname || `${info.uin}`}</span>
+              <BadgeMark kind={info.badge} className="h-5 w-5" />
+            </div>
             {alias && selfName && alias !== selfName && (
               <div className="text-xs text-fg-secondary truncate">
                 {t('profile.their_name', { name: selfName })}

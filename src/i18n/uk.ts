@@ -6,6 +6,9 @@
 
 export const uk: Record<string, string> = {
   // Common
+  'badge.official': 'Офіційний',
+  'badge.tester': 'Тестер',
+  'badge.special': 'Особливий',
   'common.cancel': 'Скасувати',
   'common.close': 'Закрити',
   'common.save': 'Зберегти',

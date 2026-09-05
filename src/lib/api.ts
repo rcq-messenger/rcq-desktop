@@ -140,6 +140,9 @@ export type UserStatus = 'online' | 'away' | 'dnd' | 'invisible' | 'offline'
 export interface Contact {
   uin: number
   nickname: string
+  /// The island's mark: null or a kind ("official", "tester", ...). Absent
+  /// on an older island, which means none. See components/BadgeMark.
+  badge?: string | null
   status: UserStatus
   status_message?: string
   /// ISO timestamp, already gated by the peer's `last_seen_visibility` on the
@@ -179,6 +182,9 @@ export interface Contact {
 export interface UserInfo {
   uin: number
   nickname: string
+  /// The island's mark: null or a kind ("official", "tester", ...). Absent
+  /// on an older island, which means none. See components/BadgeMark.
+  badge?: string | null
   avatar_media_id?: string | null
   avatar_media_key?: string | null
   identity_key: string
@@ -231,6 +237,9 @@ export interface PendingRequest {
 export interface GroupMember {
   uin: number
   nickname: string
+  /// The island's mark: null or a kind ("official", "tester", ...). Absent
+  /// on an older island, which means none. See components/BadgeMark.
+  badge?: string | null
   role: 'owner' | 'admin' | 'member'
   status: UserStatus
   identity_key: string
@@ -256,6 +265,8 @@ export interface RCQGroup {
   // map (visited-islands.ts).
   id: number
   name: string
+  /// The island's mark on the room, null or a kind. Absent on an older island.
+  badge?: string | null
   owner_uin: number
   avatar_seed: number
   created_at: string
@@ -320,6 +331,7 @@ export interface RCQGroup {
 export interface GroupPreview {
   id: number
   name: string
+  badge?: string | null
   description?: string | null
   member_count: number
   is_closed: boolean

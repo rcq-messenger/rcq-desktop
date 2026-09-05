@@ -6,6 +6,9 @@
 
 export const tr: Record<string, string> = {
   // Common
+  'badge.official': 'Resmi',
+  'badge.tester': 'Test kullanıcısı',
+  'badge.special': 'Özel',
   'common.cancel': 'İptal',
   'common.close': 'Kapat',
   'common.save': 'Kaydet',

@@ -16,6 +16,7 @@
 // over and then leaving, so those two are offered as one flow.
 
 import { useEffect, useState } from 'react'
+import { BadgeMark } from '../components/BadgeMark'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { PersonAvatar } from '../components/PersonAvatar'
 import { AddMemberSheet } from '../components/AddMemberSheet'
@@ -388,7 +389,10 @@ export function GroupInfo() {
             <section className="bg-surface rounded-lg p-4 space-y-1 flex items-center gap-3">
               <GroupAvatar size={48} mediaId={group.avatar_media_id} mediaKey={group.avatar_media_key} />
               <div className="flex-1 min-w-0">
-                <div className="font-bold text-lg truncate">{group.name}</div>
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-bold text-lg truncate">{group.name}</span>
+                  <BadgeMark kind={group.badge} className="h-4 w-4" />
+                </div>
                 <div className="text-xs text-fg-dim">
                   {t('section.groups.members', { n: compactCount(group.members.length) })}
                 </div>

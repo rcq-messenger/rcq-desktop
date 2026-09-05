@@ -3,6 +3,9 @@
 
 export const ru: Record<string, string> = {
   // Common
+  'badge.official': 'Официальный',
+  'badge.tester': 'Тестер',
+  'badge.special': 'Особый',
   'common.cancel': 'Отмена',
   'common.close': 'Закрыть',
   'common.save': 'Сохранить',

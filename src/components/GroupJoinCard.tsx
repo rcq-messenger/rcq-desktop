@@ -15,6 +15,7 @@
 // directly on chat.rcq.app).
 
 import { useEffect, useState } from 'react'
+import { BadgeMark } from './BadgeMark'
 import { useNavigate } from 'react-router-dom'
 import { Api, ApiError, parseErrorCode, type GroupPreview } from '../lib/api'
 import { useIdentity } from '../lib/identity-context'
@@ -223,7 +224,10 @@ export function GroupJoinCard({ groupId, host, compact = false, menuSpace = fals
         >
           <GroupAvatar size={36} mediaId={avatarId} mediaKey={avatarKey} />
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-[0.8125rem] font-medium">{preview.name}</span>
+            <span className="flex items-center gap-1.5 min-w-0">
+              <span className="block truncate text-[0.8125rem] font-medium">{preview.name}</span>
+              <BadgeMark kind={preview.badge} className="h-3 w-3" />
+            </span>
             <span className="block truncate text-[0.6875rem] text-fg-dim">
               {closedToMe
                 ? t('group_join.closed_button')
@@ -243,7 +247,10 @@ export function GroupJoinCard({ groupId, host, compact = false, menuSpace = fals
       <div className="flex items-center gap-3">
         <GroupAvatar size={40} mediaId={avatarId} mediaKey={avatarKey} />
         <div className={`min-w-0 flex-1${menuSpace ? ' pr-7' : ''}`}>
-          <div className="truncate text-sm font-medium">{preview.name}</div>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="truncate text-sm font-medium">{preview.name}</span>
+            <BadgeMark kind={preview.badge} className="h-3.5 w-3.5" />
+          </div>
           <div className="truncate text-[0.6875rem] text-fg-dim">
             {t('section.groups.members', { n: compactCount(preview.member_count) })}
             {preview.owner_nickname ? ` · ${t('group_join.owner', { name: preview.owner_nickname })}` : ''}

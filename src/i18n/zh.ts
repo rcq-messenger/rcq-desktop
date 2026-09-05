@@ -6,6 +6,9 @@
 
 export const zh: Record<string, string> = {
   // Common
+  'badge.official': '官方',
+  'badge.tester': '测试者',
+  'badge.special': '特别',
   'common.cancel': '取消',
   'common.close': '关闭',
   'common.save': '保存',

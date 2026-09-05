@@ -570,7 +570,11 @@ function EditView({
             {/* Your own number. It used to be on the read-only page this
                 form replaced, and it is the one thing here you cannot edit
                 but do need to read out to people. */}
-            <div className="text-xs text-fg-dim">{draft.uin}</div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-fg-dim">{draft.uin}</span>
+              {/* The island's mark on the person editing (founder, 05.09). */}
+              <BadgeMark kind={draft.badge} className="h-3.5 w-3.5" />
+            </div>
             <label className="text-sm text-accent cursor-pointer hover:underline">
               {draft.avatar_media_id ? t('profile.picture.change') : t('profile.picture.set')}
               <input

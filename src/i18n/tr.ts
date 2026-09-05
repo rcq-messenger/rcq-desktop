@@ -8,7 +8,11 @@ export const tr: Record<string, string> = {
   // Common
   'badge.official': 'Resmi',
   'badge.tester': 'Test kullanıcısı',
-  'badge.special': 'Özel',
+  'badge.special': 'Özel katkı',
+  "badge.desc.official": "Resmi hesap, ada tarafından onaylanmış: RCQ ekibi veya adanın kefil olduğu bir kaynak.",
+  "badge.desc.tester": "Test kullanıcısı. RCQ alfa ve beta sürecine katıldı ve bozuk olanı bulmaya yardım etti.",
+  "badge.desc.special": "RCQ alfa ve beta sürecindeki olağanüstü katkı için verilir.",
+  "badge.desc.unknown": "Bu adanın verdiği bir işaret.",
   'common.cancel': 'İptal',
   'common.close': 'Kapat',
   'common.save': 'Kaydet',

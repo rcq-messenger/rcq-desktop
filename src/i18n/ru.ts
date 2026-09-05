@@ -5,7 +5,11 @@ export const ru: Record<string, string> = {
   // Common
   'badge.official': 'Официальный',
   'badge.tester': 'Тестер',
-  'badge.special': 'Особый',
+  'badge.special': 'Особый вклад',
+  "badge.desc.official": "Официальный аккаунт, подтверждён островом: команда RCQ или источник, за который остров отвечает.",
+  "badge.desc.tester": "Тестер. Участвовал в альфа- и бета-тестировании RCQ и помогал находить, что сломано.",
+  "badge.desc.special": "Выдаётся за впечатляющий вклад на этапе альфа- и бета-тестирования RCQ.",
+  "badge.desc.unknown": "Знак, выданный этим островом.",
   'common.cancel': 'Отмена',
   'common.close': 'Закрыть',
   'common.save': 'Сохранить',

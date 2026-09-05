@@ -1563,6 +1563,13 @@ export function Settings() {
                 <span className="text-fg-secondary">{t('settings.about.version')}</span>
                 <span className="text-fg-secondary">{desktopVersion ?? '…'}</span>
               </div>
+              {/* The two documents a store wants reachable from inside the app,
+                  and the two a person should find without a search engine
+                  (founder, 05.09). */}
+              <div className="flex items-center gap-4 text-xs pt-1">
+                <a href="https://rcq.app/privacy" target="_blank" rel="noreferrer" className="text-accent hover:underline underline-offset-2">{t('settings.about.privacy')}</a>
+                <a href="https://rcq.app/terms" target="_blank" rel="noreferrer" className="text-accent hover:underline underline-offset-2">{t('settings.about.terms')}</a>
+              </div>
               <button
                 onClick={() => void runUpdateCheck()}
                 disabled={updateBusy}

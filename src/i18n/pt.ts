@@ -578,6 +578,8 @@ export const pt: Record<string, string> = {
   // every Mac that saw it: the released builds simply had the feature off.
   'settings.bypass.unsupported': 'Esta build foi compilada sem suporte aos relays do RCQ.',
   // Desktop build only: the browser has nothing to update.
+  "settings.about.privacy": "Política de privacidade",
+  "settings.about.terms": "Termos de uso",
   'settings.about.version': 'Versão',
   'settings.about.update_check': 'Procurar atualizações',
   'settings.about.update_checking': 'Procurando…',

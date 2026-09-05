@@ -867,11 +867,14 @@ export const Api = {
   /// Report somebody else's message/behaviour to the island's operators —
   /// the abuse half of `/reports` (the same shape Android files, empty
   /// context). Rate-limited server-side to 5/hr per uin.
-  reportAbuse(id: WebIdentity, targetUin: number, reason: string): Promise<{ id: number }> {
+  /// `context` is the surface the report came from, as the operator's queue
+  /// labels it: "profile", "message", "group:<id>", "site:<name>@<host>".
+  /// A site or a room with no owner to name reports target 0.
+  reportAbuse(id: WebIdentity, targetUin: number, reason: string, context = 'user'): Promise<{ id: number }> {
     return request<{ id: number }>(id, 'POST', '/reports', {
       target_uin: targetUin,
       reason,
-      context: '',
+      context,
     })
   },
 

@@ -399,6 +399,7 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
   // After registration we hold the new identity + its phrase and show a
   // mandatory backup card BEFORE entering the app — losing the phrase means
   // losing the account (and the ability to move it to a phone).
+  const [accepted, setAccepted] = useState(false)
   const [pending, setPending] = useState<{ id: WebIdentity; words: string[] } | null>(null)
 
   async function submit() {
@@ -476,9 +477,20 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
         </div>
       )}
 
+      {/* Agreement to the terms and the privacy policy, with both a click
+          away, before an account exists (founder, 05.09). */}
+      <label className="flex items-start gap-2 text-sm text-fg-secondary cursor-pointer select-none">
+        <input type="checkbox" className="mt-1 accent-accent" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} />
+        <span>
+          {t('login.terms.accept')}{' '}
+          <a href="https://rcq.app/terms" target="_blank" rel="noreferrer" className="text-accent underline underline-offset-2">{t('login.terms.terms')}</a>
+          {' '}{t('login.terms.and')}{' '}
+          <a href="https://rcq.app/privacy" target="_blank" rel="noreferrer" className="text-accent underline underline-offset-2">{t('login.terms.privacy')}</a>
+        </span>
+      </label>
       <button
         onClick={submit}
-        disabled={busy || !nickname.trim()}
+        disabled={busy || !nickname.trim() || !accepted}
         className="w-full h-11 rounded-md bg-accent hover:bg-accent-dim text-white font-semibold disabled:opacity-60 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
       >
         {busy && <Spinner />}

@@ -92,6 +92,10 @@ export const ru: Record<string, string> = {
   'island.trust.not_fingerprint': 'Это не отпечаток: после # идёт SHA-256-отпечаток острова, 64 шестнадцатеричных символа.',
   'island.trust.ca_only': 'Флагман RCQ доверяется через удостоверяющий центр, отпечаток ему не нужен.',
   'login.create.nickname_hint': 'Можно поменять позже в настройках.',
+  "login.terms.accept": "Принимаю",
+  "login.terms.terms": "Условия использования",
+  "login.terms.and": "и",
+  "login.terms.privacy": "Политику конфиденциальности",
   'login.create.cta': 'Создать аккаунт',
   'login.create.busy': 'Создаём…',
   'login.create.note':

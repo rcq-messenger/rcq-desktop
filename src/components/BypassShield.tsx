@@ -20,6 +20,8 @@
 // right there. Renders nothing in the browser, where there is no bypass at all.
 
 import { useEffect, useRef, useState } from 'react'
+import { MenuPanel } from './MenuPanel'
+import { AnimatePresence } from 'framer-motion'
 import { Link } from 'react-router-dom'
 import {
   bypassStatus,
@@ -43,6 +45,9 @@ export function BypassShield({ className = '' }: { className?: string }) {
   const [verified, setVerified] = useState(false)
   const [open, setOpen] = useState(false)
   const boxRef = useRef<HTMLDivElement>(null)
+  // The panel is portalled to the body (see MenuPanel), so a click inside it
+  // is outside the box: both refs count as inside.
+  const panelRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     if (!identity) return
@@ -72,7 +77,8 @@ export function BypassShield({ className = '' }: { className?: string }) {
   useEffect(() => {
     if (!open) return
     function onDown(e: MouseEvent) {
-      if (!boxRef.current?.contains(e.target as Node)) setOpen(false)
+      const t = e.target as Node
+      if (!boxRef.current?.contains(t) && !panelRef.current?.contains(t)) setOpen(false)
     }
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') setOpen(false)
@@ -121,8 +127,12 @@ export function BypassShield({ className = '' }: { className?: string }) {
         </svg>
       </button>
 
-      {open && (
-        <div className="absolute top-full left-0 mt-1 w-64 bg-surface rounded-lg shadow-lg p-3 space-y-2 z-30">
+      {/* The same panel as the status menu beside it: translucent, blurred,
+          and it fades in and out instead of popping (founder, 05.09). */}
+      <AnimatePresence>
+        {open && (
+
+        <MenuPanel className="left-0 w-64 p-3 space-y-2" panelRef={panelRef}>
           <label
             className={
               'flex items-center justify-between gap-3 ' +
@@ -211,8 +221,9 @@ export function BypassShield({ className = '' }: { className?: string }) {
           >
             {t('diag.title')}
           </Link>
-        </div>
-      )}
+        </MenuPanel>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

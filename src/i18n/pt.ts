@@ -357,6 +357,8 @@ export const pt: Record<string, string> = {
   'settings.accounts.forget': 'sair',
   'settings.accounts.revoked': 'Sessão encerrada, entre de novo',
   'settings.section.account': 'Conta',
+  "settings.uin.copy": "Copiar",
+  "settings.uin.copied": "UIN copiado",
   'settings.field.uin': 'UIN',
   'settings.field.api_host': 'Host da API',
   'how.title': 'Como funciona',

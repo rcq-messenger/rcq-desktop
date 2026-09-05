@@ -357,6 +357,8 @@ export const tr: Record<string, string> = {
   'settings.accounts.forget': 'çıkış yap',
   'settings.accounts.revoked': 'Oturum bitti, tekrar giriş yap',
   'settings.section.account': 'Hesap',
+  "settings.uin.copy": "Kopyala",
+  "settings.uin.copied": "UIN kopyalandı",
   'settings.field.uin': 'UIN',
   'settings.field.api_host': 'API adresi',
   'how.title': 'Bu nasıl çalışıyor',

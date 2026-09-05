@@ -357,6 +357,8 @@ export const uk: Record<string, string> = {
   'settings.accounts.forget': 'вийти',
   'settings.accounts.revoked': 'Сеанс завершено, увійди знову',
   'settings.section.account': 'Акаунт',
+  "settings.uin.copy": "Скопіювати",
+  "settings.uin.copied": "UIN скопійовано",
   'settings.field.uin': 'UIN',
   'settings.field.api_host': 'Хост API',
   'how.title': 'Як це працює',

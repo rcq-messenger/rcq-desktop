@@ -652,8 +652,21 @@ pub fn run() {
                 // nothing draws replacements yet.
                 #[cfg(target_os = "macos")]
                 {
+                    // ⚠ Visible, not Overlay, and the difference is one call
+                    // deep in tao: Overlay sets `setTitlebarAppearsTransparent`,
+                    // which switches OFF the NSVisualEffectView material AppKit
+                    // paints the real bar with. That is the blur that went
+                    // missing on 03.09 when the bar was hidden; window
+                    // transparency was never involved. `hidden_title` stays, so
+                    // the bar comes back with its material but without a second
+                    // "RCQ" over the one the app already draws.
+                    //
+                    // ⚠⚠ Both calls must stay INSIDE this cfg block rather than
+                    // moving the cfg onto an argument: neither method exists on
+                    // the Windows or Linux builder at all, and that mistake
+                    // shipped 0.3.57 for macOS only (e288414).
                     window = window
-                        .title_bar_style(tauri::TitleBarStyle::Overlay)
+                        .title_bar_style(tauri::TitleBarStyle::Visible)
                         .hidden_title(true);
                 }
                 let main_window = window.build()?;

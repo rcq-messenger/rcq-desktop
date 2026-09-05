@@ -79,6 +79,22 @@ export type SiteError = 'address' | 'missing' | 'frozen' | 'unsigned' | 'tampere
 
 const PINS_KEY = 'rcq.web.sitePins'
 
+/// "Do not ask me again" for the warning shown before a site link takes the
+/// reader out to the ordinary web. Device-scoped like the pins and the
+/// recents: it is a habit of this install, not part of the account.
+const EXTERNAL_OK_KEY = 'rcq.web.siteExternalOk'
+
+export function externalAlwaysAllowed(): boolean {
+  try { return localStorage.getItem(EXTERNAL_OK_KEY) === '1' } catch { return false }
+}
+
+export function setExternalAlwaysAllowed(on: boolean) {
+  try {
+    if (on) localStorage.setItem(EXTERNAL_OK_KEY, '1')
+    else localStorage.removeItem(EXTERNAL_OK_KEY)
+  } catch { /* private mode */ }
+}
+
 /// Icons already fetched and checked this session, keyed by `name@host`. A
 /// catalogue redraws often and an icon is the same bytes every time.
 const iconCache = new Map<string, string | null>()

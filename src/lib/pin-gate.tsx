@@ -245,7 +245,7 @@ function UnlockReveal({ onDone }: { onDone: () => void }) {
   return (
     <div
       aria-hidden
-      className={`fixed inset-0 z-50 flex items-center justify-center bg-surface-dim transition-opacity duration-300 ${gone ? 'opacity-0' : 'opacity-100'}`}
+      className={`rcq-unlock-veil fixed inset-0 z-50 flex items-center justify-center pt-[var(--rcq-titlebar-inset)] bg-surface-dim transition-opacity duration-300 ${gone ? 'opacity-0' : 'opacity-100'}`}
     >
       <Spinner />
     </div>
@@ -394,7 +394,13 @@ export function PinGate({ children }: { children: ReactNode }) {
         // Rising, not falling: the tint sits at the BOTTOM and fades upward
         // (founder, 19.08). `to-tr` runs bottom-left → top-right, so the
         // `from-` stop is the low corner.
-        className="absolute inset-0 bg-gradient-to-tr from-accent/10 via-surface-dim to-surface-dim"
+        // ⚠ The two far stops are TRANSPARENT, not `surface-dim`. Painted in
+        // the colour they were, this layer covered the background chosen in
+        // settings with a flat slab and the lock screen looked like a
+        // different app than the one behind it (founder, 05.09). The rising
+        // accent tint survives; what it rises out of is now whatever the
+        // window is actually painted with.
+        className="absolute inset-0 bg-gradient-to-tr from-accent/10 via-transparent to-transparent"
       />
       <div className="relative h-full flex flex-col items-center justify-center px-6">
       {forgot ? (

@@ -28,13 +28,14 @@ import { useToast } from '../lib/toast'
 import { isSentSoundEnabled, playSound } from '../lib/sounds'
 import {
   displayAddress, fetchCatalogue, fetchSiteIcon, fetchSitePage, forgetRecent, noteRecent, parseRcqAddress,
-  readRecents, recentKey, repin, siteLinkOf,
+  externalAlwaysAllowed, readRecents, recentKey, repin, setExternalAlwaysAllowed, siteLinkOf,
   type CatalogueEntry, type RcqAddress, type SitePage, type SiteRecent,
 } from '../lib/sites'
 import { SendTextError, sendTextTo, type ForwardTarget } from '../lib/send-text'
 import { ForwardModal } from '../components/ForwardModal'
 import { AddContactModal } from '../components/AddContactModal'
 import { lookupContactName } from '../lib/contacts-cache'
+import { openExternal } from '../lib/desktop'
 import { MySitePanel } from '../components/MySitePanel'
 
 const ERRORS = ['address', 'missing', 'frozen', 'unsigned', 'tampered', 'offline'] as const
@@ -182,6 +183,9 @@ export function Sites() {
   const [typed, setTyped] = useState('')
   const [addr, setAddr] = useState<RcqAddress | null>(null)
   const [page, setPage] = useState<SitePage | null>(null)
+  /// A link out of the network, waiting for the reader to say yes.
+  const [external, setExternal] = useState<string | null>(null)
+  const [externalRemember, setExternalRemember] = useState(false)
   const [error, setError] = useState<ErrorKind | null>(null)
   const [loading, setLoading] = useState(false)
   const [catalogue, setCatalogue] = useState<CatalogueEntry[]>([])
@@ -386,12 +390,21 @@ export function Sites() {
   /// Where a click inside the page goes. Kept in a ref because the listener
   /// is attached to a document that is rewritten on every page, while the
   /// address and `open` it needs belong to whichever render is current.
-  const route = useRef<(a: HTMLAnchorElement) => void>(() => {})
-  route.current = (a) => {
+  /// Out to the ordinary web. The desktop hands the address to the system
+  /// browser (the webview opens nothing itself); the browser build opens a tab.
+  /// Either way it leaves this app, which is the part worth a confirmation.
+  function leaveForTheWeb(url: string) {
+    void openExternal(url).then((took) => {
+      if (!took) window.open(url, '_blank', 'noopener,noreferrer')
+    })
+  }
+
+  const route = useRef<(pageMark: string | null, externalMark: string | null) => void>(() => {})
+  route.current = (pageMark, externalMark) => {
     // A page of the same bundle: the sanitiser marked it (lib/sites), so
     // this is a file the manifest signs, never something the author typed
     // into the attribute.
-    const inner = a.getAttribute('data-rcq-page')
+    const inner = pageMark
     if (inner) {
       // A page, not any file the manifest happens to sign. The sanitiser
       // marks every in-bundle link, and a 2000s page links its full-size
@@ -408,8 +421,18 @@ export function Sites() {
     // Resolved against the reader's island instead, an author on the flagship
     // writing `e2ee.rcq` sent every reader on another island to whoever
     // happens to hold that name over there.
-    const link = siteLinkOf(a.getAttribute('data-rcq-external') ?? '')
-    if (!link) return
+    const raw = externalMark ?? ''
+    const link = siteLinkOf(raw)
+    if (!link) {
+      // Not an address in this network. If it is an ordinary web link, it is
+      // allowed to be one: the reader is told they are leaving and decides.
+      // Anything else stays what it always was, which is text.
+      if (/^https?:\/\//i.test(raw)) {
+        if (externalAlwaysAllowed()) leaveForTheWeb(raw)
+        else setExternal(raw)
+      }
+      return
+    }
     const bare = parseRcqAddress(link.address, addr ? addr.host : ownHost)
     const address = addr && bare && bare.host === (addr ? addr.host : ownHost)
       ? displayAddress(bare.name, addr.host, ownHost)
@@ -443,11 +466,31 @@ export function Sites() {
     // Links that go somewhere inside the network get a pointer, so a reader
     // can tell them from the ones that are text. Marked here, in our chrome,
     // after the sanitiser has had the last word on what the page contains.
+    //
+    // ⚠⚠ AND EACH ONE GETS A REAL `href`, pointing at a fragment of the frame
+    // itself. The listener below is the fast path and it works in Chromium,
+    // but in WebKit a listener the parent attaches to the frame's document
+    // never fires, so on the packaged desktop app every link inside a page was
+    // dead (founder, 05.09: the language links on home.rcq do nothing). A
+    // fragment href needs no listener and no script inside the frame: the
+    // click moves the frame's own location, and the poll further down reads
+    // it back. The value is still ours, written here, after the sanitiser
+    // stripped whatever the author wrote.
     for (const a of Array.from(doc.querySelectorAll('a[data-rcq-external]'))) {
-      if (siteLinkOf(a.getAttribute('data-rcq-external') ?? '')) a.setAttribute('data-rcq-site', '')
+      const raw = a.getAttribute('data-rcq-external') ?? ''
+      if (siteLinkOf(raw)) {
+        a.setAttribute('data-rcq-site', '')
+        a.setAttribute('href', '#rcq-site:' + encodeURIComponent(raw))
+      } else if (/^https?:\/\//i.test(raw)) {
+        a.setAttribute('data-rcq-web', '')
+        a.setAttribute('href', '#rcq-web:' + encodeURIComponent(raw))
+      }
+    }
+    for (const a of Array.from(doc.querySelectorAll('a[data-rcq-page]'))) {
+      a.setAttribute('href', '#rcq-page:' + encodeURIComponent(a.getAttribute('data-rcq-page') ?? ''))
     }
     const style = doc.createElement('style')
-    style.textContent = 'a[data-rcq-page],a[data-rcq-site]{cursor:pointer}'
+    style.textContent = 'a[data-rcq-page],a[data-rcq-site],a[data-rcq-web]{cursor:pointer}'
     doc.head?.appendChild(style)
     // ⚠ Attached AFTER the write, every time: document.open() discards every
     // listener on the document, so one attached once would be gone with the
@@ -463,7 +506,7 @@ export function Sites() {
         // says: the two kinds that go somewhere are routed by our chrome,
         // and the rest do nothing, exactly as before.
         e.preventDefault()
-        route.current(a)
+        route.current(a.getAttribute('data-rcq-page'), a.getAttribute('data-rcq-external'))
       },
       true,
     )
@@ -477,6 +520,32 @@ export function Sites() {
     const t = setTimeout(() => paint(html), 50)
     return () => clearTimeout(t)
   }, [page, paint])
+
+  // The other half of the fragment trick above: in WebKit nothing tells us the
+  // frame moved, because a `hashchange` attached from out here is gated the
+  // same way the click listener is. So the frame's own location is read on a
+  // timer while a page is open. In Chromium the click listener has already
+  // routed and cleared, and this finds nothing to do.
+  useEffect(() => {
+    if (!page) return
+    let last = ''
+    const id = setInterval(() => {
+      const w = frameRef.current?.contentWindow
+      let hash = ''
+      try { hash = w?.location?.hash ?? '' } catch { return }
+      if (hash.length < 2 || hash === last) return
+      last = hash
+      try { if (w) w.location.hash = '' } catch { /* keep `last` as the guard */ }
+      const mark = hash.slice(1)
+      const sep = mark.indexOf(':')
+      if (sep < 0) return
+      const kind = mark.slice(0, sep)
+      const value = decodeURIComponent(mark.slice(sep + 1))
+      if (kind === 'rcq-page') route.current(value, null)
+      else if (kind === 'rcq-site' || kind === 'rcq-web') route.current(null, value)
+    }, 200)
+    return () => clearInterval(id)
+  }, [page])
 
   /// The share picked a chat: the address goes there as an ordinary text
   /// message (#852), by the same path a forward takes.
@@ -723,6 +792,17 @@ export function Sites() {
                 <div className="text-xs uppercase tracking-wide text-fg-dim">{t('sites.recents')}</div>
                 {recentRows.map((r) => {
                   const address = displayAddress(r.name, r.host, ownHost)
+                  // Who a site belongs to is not in the bundle: the signed
+                  // manifest carries no owner, only this island's catalogue
+                  // does, and only when the author asked to be named. A recent
+                  // is stored as name/host/title, so the byline is joined back
+                  // on here from the catalogue already in state. A recent on
+                  // somebody else's island stays bare on purpose: the start
+                  // screen does not ask foreign islands anything.
+                  const owner =
+                    r.host === ownHost
+                      ? catalogue.find((c) => c.name === r.name)?.owner_uin ?? null
+                      : null
                   return (
                     <SiteRow
                       key={recentKey(r)}
@@ -733,6 +813,8 @@ export function Sites() {
                       onOpen={() => go(address)}
                       onShare={() => setSharing(address)}
                       onRemove={() => setRecents(forgetRecent(recentKey(r)))}
+                      ownerUin={owner}
+                      onOwner={openOwner}
                       t={t}
                     />
                   )
@@ -815,6 +897,49 @@ export function Sites() {
           forward uses, with the clipboard as the one row that is not a chat. */}
       {addOwner != null && (
         <AddContactModal initialQuery={`#${addOwner}`} onClose={() => setAddOwner(null)} />
+      )}
+      {/* Leaving the network. A site may link into the ordinary web, but not
+          quietly: the address is shown in full, because the text of a link and
+          where it goes are two different things and only one of them is
+          checkable. */}
+      {external && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-md sm:items-center p-0 sm:p-4">
+          <div className="w-full sm:max-w-sm rounded-t-2xl sm:rounded-2xl bg-surface p-5 space-y-4">
+            <div className="space-y-2">
+              <h2 className="text-base font-semibold">{t('sites.external.title')}</h2>
+              <p className="text-sm text-fg-secondary">{t('sites.external.body')}</p>
+              <p className="break-all rounded-xl bg-field px-3 py-2 font-mono text-xs text-fg-primary">{external}</p>
+            </div>
+            <label className="flex items-center gap-2 text-sm text-fg-secondary">
+              <input
+                type="checkbox"
+                checked={externalRemember}
+                onChange={(e) => setExternalRemember(e.target.checked)}
+                className="h-4 w-4 accent-accent"
+              />
+              {t('sites.external.remember')}
+            </label>
+            <div className="flex gap-2">
+              <button
+                onClick={() => { setExternal(null); setExternalRemember(false) }}
+                className="flex-1 h-11 rounded-xl bg-field text-sm font-medium text-fg-secondary hover:bg-fg-primary/[0.09] transition"
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                onClick={() => {
+                  if (externalRemember) setExternalAlwaysAllowed(true)
+                  leaveForTheWeb(external)
+                  setExternal(null)
+                  setExternalRemember(false)
+                }}
+                className="flex-1 h-11 rounded-xl bg-accent text-sm font-semibold text-white hover:bg-accent-dim transition"
+              >
+                {t('sites.external.open')}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       <ForwardModal
         visible={sharing != null}

@@ -223,6 +223,18 @@ html.rcq-custom-theme .h-screen.bg-surface-dim {
   background-color: transparent;
 }
 
+/* The unlock veil is `position: fixed`, so it matches neither selector above
+   and kept its flat fill while the chosen background showed everywhere else.
+   It cannot simply go transparent: it exists to cover the app assembling
+   itself behind it. So it wears the same gradient instead, and the moment the
+   lock screen hands over is no longer a change of colour. */
+html.rcq-custom-theme .rcq-unlock-veil {
+  background-color: transparent;
+  background-image: var(--rcq-gradient);
+  background-attachment: fixed;
+  background-size: cover;
+}
+
 input, textarea, button {
   font-family: inherit;
 }
@@ -508,44 +520,22 @@ html.desktop *::-webkit-scrollbar {
   height: 0;
 }
 
-/* ── the hidden title bar, macOS only ────────────────────────────────────
+/* ── the system title bar, macOS ────────────────────────────────────────
  *
- * Founder, 2026-09-03: "можно ли у десктопа убрать системную шапку? а то у нас
- * своя шапка есть". On macOS the system bar is hidden (TitleBarStyle::Overlay)
- * and the traffic lights are left floating over the window's top-left corner.
+ * The bar was hidden on 2026-09-03 ("можно ли у десктопа убрать системную
+ * шапку? а то у нас своя шапка есть") and brought back on 09-05, because
+ * hiding it cost the blur: AppKit paints the real bar with an
+ * NSVisualEffectView, and there is no way to keep the material without the
+ * bar. See the note in src-tauri/src/lib.rs.
  *
- * Two things have to follow, or the window becomes unusable rather than
- * tidier:
- *
- * ⚠ THE WINDOW MUST STILL BE DRAGGABLE. Without the bar there is nothing to
- * grab, so a strip across the top carries `data-tauri-drag-region`. It is 28px
- * tall, sits under everything interactive (`z-index: 0`) and takes pointer
- * events only where nothing else claims them, so a header button on top of it
- * still receives its click.
- *
- * ⚠ AND THE CORNER MUST STAY CLEAR. The traffic lights are drawn by the OS on
- * top of our pixels; a back arrow underneath them is a button nobody can hit.
- * The app's first row gets padding on macOS to give them room.
+ * ⚠ NOTHING IS RESERVED FOR IT, on purpose. The window keeps
+ * `fullsize_content_view`, so the page runs the full height of the window and
+ * the top of it passes UNDER the bar, which is the whole point: a bar with a
+ * material over a flat background is a grey strip, and over moving content it
+ * is the frosted bar the founder asked for. That is also why
+ * `--rcq-titlebar-inset` is back to its `:root` value of 0px rather than 28px:
+ * every full-height shell subtracts it from `100dvh`, and reserving space
+ * again would push the document taller than the window (the gap and the stray
+ * scrollbar reported on 0.3.58).
  */
-html.desktop.mac {
-  --rcq-titlebar-inset: 28px;
-}
-/* ⚠⚠ The padding alone was the bug. Every full-height screen is `height:
-   100dvh`, so pushing it down by 28px made the document 28px taller than the
-   window: a gap above the header, a scrollbar in a window that should never
-   have one, and the gap scrolled away if you put the cursor on the header and
-   scrolled up. Reported on 0.3.58 the moment the system bar came off, on the
-   contact list and in chats alike. Whatever reserves this space has to be
-   subtracted from those heights too, which is what the variable is for. */
-html.desktop.mac body {
-  padding-top: var(--rcq-titlebar-inset);
-}
-html.desktop.mac .rcq-drag {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 28px;
-  z-index: 0;
-  -webkit-app-region: drag;
-}
+

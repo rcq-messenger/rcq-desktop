@@ -3150,7 +3150,7 @@ export function Chat() {
     // all the way back up to find the way out. `h-screen` is the floor that
     // survives, `dvh` wins wherever it is understood.
     <div
-      className="h-screen [height:calc(100dvh-var(--rcq-titlebar-inset))] pt-[var(--rcq-top-inset)] flex flex-col bg-surface-dim overflow-hidden relative"
+      className="h-screen [height:100dvh] pt-[var(--rcq-top-inset)] flex flex-col bg-surface-dim overflow-hidden relative"
       // Drop a file anywhere on the conversation to send it. The upload paths
       // already existed; the only way to reach them was the paperclip and a
       // system dialog, which on a desktop is the long way round for a file

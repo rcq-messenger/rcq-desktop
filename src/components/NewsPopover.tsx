@@ -362,7 +362,7 @@ export function NewsButton({ className }: { className?: string }) {
           <div
             ref={panelRef}
             style={{ position: 'fixed', top: anchor.top, right: anchor.right }}
-            className="w-[min(22rem,calc(100vw-2rem))] max-h-[min(26rem,calc(100vh-8rem))] overflow-y-auto overscroll-contain rounded-lg bg-surface/80 backdrop-blur-xl shadow-xl z-50 p-3 space-y-3"
+            className="w-[min(22rem,calc(100vw-2rem))] max-h-[min(26rem,calc(100vh-8rem))] overflow-y-auto overscroll-contain rounded-lg bg-surface/85 backdrop-blur-lg shadow-xl z-50 p-3 space-y-3"
           >
             {body}
           </div>,

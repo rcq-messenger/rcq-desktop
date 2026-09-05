@@ -28,7 +28,7 @@ export function EmoticonPicker({ uin, onPick }: Props) {
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 8, scale: 0.97 }}
         transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-        className="rounded-2xl overflow-hidden bg-surface shadow-lg"
+        className="rounded-2xl overflow-hidden bg-surface/90 backdrop-blur-xl shadow-lg"
       >
         {panel.length === 0 ? (
           <div className="flex flex-col items-center gap-2 px-4 py-6 text-center">

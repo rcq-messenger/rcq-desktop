@@ -93,6 +93,10 @@ export const en: Record<string, string> = {
   'island.trust.not_fingerprint': "That is not a fingerprint: after # comes the island's SHA-256 fingerprint, 64 hex characters.",
   'island.trust.ca_only': 'The RCQ flagship is trusted through a certificate authority and takes no fingerprint.',
   'login.create.nickname_hint': 'You can change it later in Settings.',
+  "login.terms.accept": "I accept the",
+  "login.terms.terms": "Terms of Service",
+  "login.terms.and": "and",
+  "login.terms.privacy": "Privacy Policy",
   'login.create.cta': 'Create account',
   'login.create.busy': 'Creating…',
   'login.create.note':

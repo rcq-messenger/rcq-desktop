@@ -724,40 +724,52 @@ export function Settings() {
           </ul>
         </section>
 
-        <section className="bg-surface rounded-lg p-4 space-y-2">
-          <div className="flex items-center gap-2 text-xs font-semibold text-fg-secondary uppercase tracking-wide">
-            <SettingsSectionIcon name="account" />
-            {t('settings.section.account')}
-          </div>
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-fg-secondary">{t('settings.field.uin')}</span>
-            <span className="">{identity.uin}</span>
-          </div>
-        </section>
+        {/* The number and the place numbers come from, side by side. They are
+            one subject and they were a column apart, with the recovery phrase
+            and the backup wedged between them.
 
-        <RecoveryPhraseSection />
+            ⚠ `sm:grid-cols-2`, not a bare two-column grid: `main` is
+            `max-w-2xl px-4`, and at phone width two of these squeeze the
+            number and truncate the market's subtitle.
 
-        <BackupSection />
-
-        {/* These link-cards hover to `field`, not to `surface-dim`: in the
+            These link-cards hover to `field`, not to `surface-dim`: in the
             true-black dark theme surface-dim IS the page, so the old hover
             sank the card into the background instead of lifting it — a block
             that goes black under the cursor reads as disappearing, not as
             responding (founder, 21.08). Same fix on every card below. */}
-        <Link
-          to="/market"
-          className="block bg-surface rounded-lg p-4 hover:bg-field transition-colors"
-        >
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
-                {t('uin_market.title')}
-              </div>
-              <div className="text-xs text-fg-dim mt-0.5 truncate">{t('uin_market.settings.row')}</div>
+        <div className="grid gap-4 sm:grid-cols-2 items-stretch">
+          <section className="bg-surface rounded-lg p-4 space-y-2">
+            <div className="flex items-center gap-2 text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+              <SettingsSectionIcon name="account" />
+              {t('settings.section.account')}
             </div>
-            <span className="text-fg-dim">→</span>
-          </div>
-        </Link>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-xs text-fg-secondary">{t('settings.field.uin')}</span>
+              {/* It is the one number a person gives out, and it was set in
+                  body text with no class at all. */}
+              <span className="text-xl font-semibold tabular-nums tracking-tight text-accent">{identity.uin}</span>
+            </div>
+          </section>
+
+          <Link
+            to="/market"
+            className="block h-full bg-surface rounded-lg p-4 hover:bg-field transition-colors"
+          >
+            <div className="flex h-full items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+                  {t('uin_market.title')}
+                </div>
+                <div className="text-xs text-fg-dim mt-0.5 truncate">{t('uin_market.settings.row')}</div>
+              </div>
+              <span className="text-fg-dim">→</span>
+            </div>
+          </Link>
+        </div>
+
+        <RecoveryPhraseSection />
+
+        <BackupSection />
 
         <section className="bg-surface rounded-lg p-4 space-y-3">
           <div className="flex items-center gap-2 text-xs font-semibold text-fg-secondary uppercase tracking-wide">
@@ -1541,7 +1553,19 @@ export function Settings() {
               >
                 {updateBusy ? t('settings.about.update_checking') : t('settings.about.update_check')}
               </button>
-              {updateNote && <p className="text-xs text-fg-dim">{updateNote}</p>}
+              {/* ⚠ The slot is ALWAYS here, one line tall and clipped to it.
+                  Rendered only when there is something to say, the answer
+                  appeared out of nowhere under the button and pushed the whole
+                  card taller, and a failure reason long enough to wrap pushed
+                  it further (founder, 05.09). Reserved, nothing moves; the
+                  full text is on the title for a reason that got truncated. */}
+              <p
+                className="h-4 truncate text-xs text-fg-dim"
+                title={updateNote ?? undefined}
+                aria-live="polite"
+              >
+                {updateNote}
+              </p>
             </>
           )}
           <a

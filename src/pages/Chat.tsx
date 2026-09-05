@@ -14,7 +14,7 @@
 
 import { relativeLastSeen } from '../lib/last-seen'
 import { AltText } from '../components/AltText'
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { scopedKey } from '../lib/account-scope'
 import { AnimatePresence, motion } from 'framer-motion'
@@ -689,7 +689,12 @@ export function Chat() {
   // actually changes height, which is the only thing this effect reacts to.
   // Both elements are unconditional in the tree, so there is nothing to
   // re-subscribe to except a change of thread.
-  useEffect(() => {
+  // ⚠ useLayoutEffect, not useEffect: this publishes the padding the list is
+  // laid out against, and as a passive effect it ran after the first paint —
+  // one frame with the wrong top padding, then a visible correction. Layout
+  // effects also all run before any passive effect, which keeps this ahead of
+  // the scroll effects below, the order they already required.
+  useLayoutEffect(() => {
     const bar = composerRef.current
     const top = topBarsRef.current
     if (!bar || !top) return
@@ -719,6 +724,7 @@ export function Chat() {
       // this bar. A variable set on the composer's parent is invisible from
       // there; one on the root is visible everywhere.
       document.documentElement.style.setProperty('--rcq-composer-h', `${barH}px`)
+      document.documentElement.style.setProperty('--rcq-topbars-h', `${topH}px`)
       // A bar that GROWS (a wrapped line, the reply strip, the emoji panel)
       // adds padding under the last message without moving the scroll — so
       // the message the reader was looking at slides under the bar. If they

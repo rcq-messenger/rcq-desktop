@@ -5,6 +5,7 @@
 // backend's job.
 
 import { useEffect, useMemo, useState } from 'react'
+import { BadgeMark } from '../components/BadgeMark'
 import { Link, useNavigate } from 'react-router-dom'
 import { Api, ApiError, type UserInfo } from '../lib/api'
 import { useI18n } from '../lib/i18n-context'
@@ -248,7 +249,10 @@ export function AddContact({
                     where the name would be. A dash glyph reads as a value the
                     person chose, and it was the one em-dash left in the app. */}
                 {u.nickname && (
-                  <div className="text-xs text-fg-secondary truncate">{u.nickname}</div>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="text-xs text-fg-secondary truncate">{u.nickname}</span>
+                    <BadgeMark kind={u.badge} className="h-3 w-3" />
+                  </div>
                 )}
                 {u.city && (
                   <div className="text-xs text-fg-dim truncate">{u.city}{u.country ? `, ${u.country}` : ''}</div>

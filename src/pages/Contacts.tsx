@@ -39,6 +39,7 @@ import { UpdateBadge } from '../components/UpdateBadge'
 import { RequestsModal } from '../components/RequestsModal'
 import { AddContactModal } from '../components/AddContactModal'
 import { NewsButton } from '../components/NewsPopover'
+import { BadgeMark } from '../components/BadgeMark'
 import { PersonAvatar } from '../components/PersonAvatar'
 import { StatusPickerButton } from '../components/StatusPicker'
 import {
@@ -1478,6 +1479,7 @@ function ContactRow({
               <span className={'truncate ' + (unread > 0 ? 'font-bold' : 'font-medium')}>
                 {alias || contact.nickname || `${contact.uin}`}
               </span>
+              <BadgeMark kind={contact.badge} />
               <GenderIcon gender={contact.gender} />
               {favorite && <span className="text-yellow-500 text-xs flex-none">★</span>}
               {muted && <MuteGlyph />}
@@ -1661,6 +1663,7 @@ function GroupRow({
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5">
               <span className={'truncate ' + (unread > 0 ? 'font-bold' : 'font-medium')}>{group.name}</span>
+              <BadgeMark kind={group.badge} />
               {isFav && <span className="text-yellow-500 text-xs flex-none">★</span>}
               {isMuted && <MuteGlyph />}
             </div>

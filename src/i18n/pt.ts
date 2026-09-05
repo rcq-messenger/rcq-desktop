@@ -6,6 +6,9 @@
 
 export const pt: Record<string, string> = {
   // Common
+  'badge.official': 'Oficial',
+  'badge.tester': 'Testador',
+  'badge.special': 'Especial',
   'common.cancel': 'Cancelar',
   'common.close': 'Fechar',
   'common.save': 'Salvar',

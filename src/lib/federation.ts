@@ -197,33 +197,50 @@ export function buildContactLink(
   a: RcqAddress,
   keys?: { sk?: string; ik?: string },
   base = 'https://rcq.app',
+  card?: string | null,
 ): string {
   const params = new URLSearchParams()
   if (!isFlagship(a.host)) params.set('h', a.host)
   if (keys?.sk) params.set('k', b64ToUrl(keys.sk))
   if (keys?.ik) params.set('i', b64ToUrl(keys.ik))
   const q = params.toString()
-  return `${base}/u/${a.uin}${q ? `?${q}` : ''}`
+  // ⚠⚠ THE GUEST CARD GOES AFTER THE HASH, and that is the whole reason this
+  // parameter exists separately from the three above. A fragment is never sent
+  // to a server: not to rcq.app, not to whatever CDN is in front of it, not in
+  // a Referer when the page navigates on. The card is a live credential with
+  // no expiry, and everything else in this link is a PUBLIC key card, so the
+  // two cannot share a home. Put it in the query and the credential lands in
+  // an access log, which is how session tokens reached journald until 22.08.
+  const frag = card ? `#c=${encodeURIComponent(card)}` : ''
+  return `${base}/u/${a.uin}${q ? `?${q}` : ''}${frag}`
 }
 
 export interface ParsedContactLink {
   address: RcqAddress
   sk?: string // anchored Ed25519 signing_key, base64
   ik?: string // anchored identity key, base64
+  /// A guest card the sharer put in the fragment, if any: what lets us reach
+  /// them on a closed island. Never present on a link that came off a server.
+  card?: string
 }
 
 /// Parse a scanned contact link. `uin` is the path segment; `search` is the raw
 /// query string (with or without leading '?'). A link with no `h` is flagship.
-export function parseContactLink(uin: string, search: string): ParsedContactLink {
+export function parseContactLink(uin: string, search: string, hash = ''): ParsedContactLink {
   if (!UIN_RE.test(uin)) throw new Error('invalid contact link: bad uin')
   const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search)
   const host = params.get('h') || FLAGSHIP_HOST
   const address = parseAddress(`${uin}@${host}`)
   const k = params.get('k')
   const i = params.get('i')
+  // The fragment, when the caller passed one. Bounded, because it arrives from
+  // a scanned QR or a pasted string and ends up in a request header.
+  const frag = new URLSearchParams(hash.startsWith('#') ? hash.slice(1) : hash)
+  const c = (frag.get('c') || '').trim()
   return {
     address,
     sk: k ? urlToB64(k) : undefined,
     ik: i ? urlToB64(i) : undefined,
+    card: c && c.length <= 128 ? c : undefined,
   }
 }

@@ -197,8 +197,64 @@ export function mergeCrossIsland(
   return out
 }
 
+/// ⚠⚠ THE SHAPE IS A CONTRACT BETWEEN CLIENTS, not a private encoding.
+///
+/// Three clients write this slot and each has its own serialiser. Android's
+/// gson omits null fields and always emits `profileTs` (it is a primitive
+/// `Long` there, so an absent one is 0, not missing); a plain
+/// `JSON.stringify` of our row writes `gender: null` and omits `profileTs`
+/// when it is undefined, and orders keys by insertion. Every one of those
+/// differences reads as "the island disagrees with me" to the OTHER client,
+/// which rewrites, which makes this one disagree, and the two devices burn
+/// the account's 240-writes-an-hour budget rewriting the same contacts at
+/// each other forever.
+///
+/// So: one canonical row — required fields always, optional fields only when
+/// they have a value, `profileTs` always a number — and a canonical JSON with
+/// sorted keys for the compare. Encode through this, compare through this.
+function canonRow(r: CrossIslandContact): Record<string, unknown> {
+  const o: Record<string, unknown> = {
+    uin: r.uin,
+    host: r.host,
+    nickname: r.nickname,
+    identityKey: r.identityKey,
+    signingKey: r.signingKey,
+    addedAt: r.addedAt,
+    profileTs: r.profileTs ?? 0,
+  }
+  if (r.signalIdentityKey) o.signalIdentityKey = r.signalIdentityKey
+  if (r.gender) o.gender = r.gender
+  if (r.statusMessage) o.statusMessage = r.statusMessage
+  if (r.avatarMediaId && r.avatarMediaKey) {
+    o.avatarMediaId = r.avatarMediaId
+    o.avatarMediaKey = r.avatarMediaKey
+  }
+  return o
+}
+
+export function canonState(s: VaultCrossIsland): Record<string, unknown> {
+  const c: Record<string, unknown> = {}
+  for (const k of Object.keys(s.c).sort()) c[k] = canonRow(s.c[k])
+  const g: Record<string, number> = {}
+  for (const k of Object.keys(s.g).sort()) g[k] = s.g[k]
+  return { v: 1, c, g }
+}
+
+/// Key-sorted stringify, so two clients that agree on the contacts agree on
+/// the string as well.
+function canonJson(v: unknown): string {
+  return JSON.stringify(v, (_k, val) => {
+    if (val && typeof val === 'object' && !Array.isArray(val)) {
+      const out: Record<string, unknown> = {}
+      for (const k of Object.keys(val as Record<string, unknown>).sort()) out[k] = (val as Record<string, unknown>)[k]
+      return out
+    }
+    return val
+  })
+}
+
 function sameContent(a: VaultCrossIsland, b: VaultCrossIsland): boolean {
-  return JSON.stringify(a) === JSON.stringify(b)
+  return canonJson(canonState(a)) === canonJson(canonState(b))
 }
 
 function localState(): VaultCrossIsland {
@@ -293,7 +349,7 @@ async function push(identity: WebIdentity, slot: string, now: number): Promise<v
         if (remote === null) return null
         const next = mergeCrossIsland(localState(), remote, now)
         if (sameContent(next, remote)) return null
-        return jsonBytes(next)
+        return jsonBytes(canonState(next))
       },
       lastSeenVersion(slot),
     )

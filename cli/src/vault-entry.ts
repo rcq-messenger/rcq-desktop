@@ -8,7 +8,7 @@ export { slotId, seal, open, readSlot, writeSlot, deleteSlot, listSlots, jsonByt
 export { foldServerList } from '../../src/lib/contacts-vault'
 // Cross-island contacts (federation Layer B). The merge is the only copy of
 // these rows in existence, so it is pure and tested here: cli/test/crossisland.mjs.
-export { mergeCrossIsland } from '../../src/lib/crossisland-vault'
+export { mergeCrossIsland, canonState } from '../../src/lib/crossisland-vault'
 // The sections slot (founder item 1, 23.08). Pure by construction, so the
 // merge is tested here rather than in a browser: cli/test/sections.mjs.
 export {

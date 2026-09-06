@@ -49,6 +49,8 @@ ASSETS = {
 # architectures. Through 0.2.3 this was arm64 only, which meant an Intel Mac
 # had nothing to download and nothing to update to — not a worse build, no
 # build.
+GH_REPO = "rcq-messenger/rcq-desktop"
+
 MACOS_ARCHIVE = REPO / "src-tauri/target/universal-apple-darwin/release/bundle/macos/RCQ.app.tar.gz"
 # The macOS .dmg is what the SITE links to. It carries no updater signature and
 # appears in no manifest, so nothing here would have complained about it — and
@@ -81,14 +83,63 @@ def die(msg):
     sys.exit(f"error: {msg}")
 
 
-def collect(assets_dir, macos_archive, work):
-    """Copy the CI assets and the local macOS build to their hosted names."""
+def _github_asset_sizes(version: str) -> dict[str, int]:
+    """{asset name: size} for the release, straight from GitHub.
+
+    The point is that this number comes from somewhere other than the disk we
+    are about to read, so a truncated local copy cannot agree with it. A tag
+    GitHub does not know is fatal: publishing artefacts nobody can trace back
+    to a release is how the bad build got out in the first place.
+    """
+    tag = f"v{version}"
+    try:
+        out = subprocess.run(
+            ["gh", "release", "view", tag, "--repo", GH_REPO, "--json", "assets"],
+            capture_output=True, text=True, check=True, timeout=120,
+        ).stdout
+    except FileNotFoundError:
+        die("gh is not installed — it is how the artefact sizes are verified")
+    except subprocess.CalledProcessError as exc:
+        die(f"gh could not read release {tag}: {(exc.stderr or '').strip()}")
+    except subprocess.TimeoutExpired:
+        die(f"gh timed out reading release {tag}")
+    sizes = {a["name"]: int(a["size"]) for a in json.loads(out).get("assets", [])}
+    if not sizes:
+        die(f"release {tag} lists no assets")
+    return sizes
+
+
+def collect(assets_dir, macos_archive, work, version):
+    """Copy the CI assets and the local macOS build to their hosted names.
+
+    ⚠⚠ Every file is checked against the size GitHub reports for that release
+    asset before it is copied. On 2026-09-06 a `gh release download` ran with a
+    nearly full disk, finished "successfully" with four of eight files cut
+    short, and this script cheerfully signed the truncated bytes: `sign()`
+    signs whatever it is given, `manifest()` verifies the signature it just
+    made, and `verify_live()` only compares bytes-received to Content-Length,
+    which a short file satisfies perfectly. Windows and Linux users got "NSIS
+    Error: Installer integrity check has failed" on update and on a fresh
+    install for eleven hours (reports #904, #906, #912). Nothing downstream can
+    catch this, because everything downstream is computed FROM the bad bytes.
+    The only place to catch it is here, against a number this machine did not
+    produce.
+    """
+    expected = _github_asset_sizes(version)
     for name, pattern in ASSETS.items():
         found = sorted(assets_dir.glob(pattern))
         if len(found) != 1:
             die(f"{pattern!r} matched {len(found)} files in {assets_dir}, expected 1")
-        shutil.copy2(found[0], work / name)
-        print(f"  {found[0].name} -> {name}")
+        src = found[0]
+        want = expected.get(src.name)
+        got = src.stat().st_size
+        if want is None:
+            print(f"  ⚠ {src.name}: GitHub lists no such asset, size unchecked")
+        elif want != got:
+            die(f"{src.name} is {got} bytes, GitHub says {want} — the download is "
+                f"incomplete. Re-download the release and run again.")
+        shutil.copy2(src, work / name)
+        print(f"  {src.name} -> {name}" + (f"  ({got} bytes, matches GitHub)" if want else ""))
 
     if not macos_archive.exists():
         die(f"no macOS archive at {macos_archive} — run npm run desktop:build first")
@@ -313,7 +364,7 @@ def _run(args, work: Path) -> None:
     )
 
     print("collecting assets")
-    collect(args.assets, args.macos_archive, work)
+    collect(args.assets, args.macos_archive, work, args.version)
     print("packing the AppImage")
     pack_appimage(work)
     print("signing")

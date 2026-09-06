@@ -4,7 +4,7 @@
 // feed the incoming-store, deduped by envelope id. Renders nothing.
 
 import { useEffect } from 'react'
-import { theirCard } from './guest-card'
+import { rememberTheirCard, theirCard } from './guest-card'
 import { useIdentity } from './identity-context'
 import { useWS } from './ws'
 import { currentDeviceId, decryptIncoming, getDevice, myDeviceId, noteInboundFrom, resetSilenceProbes, sendV2 } from './signal-device'
@@ -169,6 +169,22 @@ function route(
   senderSigningKey?: string,
   identity?: WebIdentity,
 ): void {
+  // ⚠⚠ A GUEST CARD the sender handed us, on a closed island. Read FIRST, and
+  // before any decision about whether we want this message: it is what makes
+  // "they wrote to me" into "I can answer them", and the answer path (the
+  // delivered receipt) fires within the same tick. Held even for a message we
+  // go on to quarantine as a stranger's, because the card costs nothing to
+  // keep and the alternative is a person who accepted a request an hour later
+  // and then cannot reply.
+  //
+  // Never from a carbon: a carbon is our own message coming back from another
+  // of our devices, and its `card` is OURS.
+  if (envelope.kind !== 'carbon' && senderUIN !== myUin) {
+    const card = (envelope as { card?: unknown }).card
+    if (typeof card === 'string' && card) {
+      rememberTheirCard(senderUIN, senderHost && senderHost !== ownHost ? senderHost : null, card)
+    }
+  }
   if (envelope.kind === 'carbon') {
     if (senderUIN === myUin) {
       // Control carbons first: an edit/delete made on another of our devices

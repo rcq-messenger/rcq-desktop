@@ -89,6 +89,16 @@ export interface TextEnvelope {
   ts?: number
   fwdName?: string
   reply?: ReplyContext
+  /// A GUEST CARD the sender is handing us, on a closed island (see
+  /// lib/guest-card.ts). This is the whole of "I wrote to you first, so you
+  /// may write back": it needs no server state, no screen and no round trip,
+  /// because it rides INSIDE the sealed envelope where only the recipient can
+  /// read it. The island sees an opaque blob, exactly as before.
+  ///
+  /// Additive: a decoder that does not know the field ignores it, and a sender
+  /// on an open island never sets it — a card is a live credential and has no
+  /// business travelling to a door that is not locked.
+  card?: string
 }
 
 /// Reaction envelope. Sent from either side of a chat to set or clear
@@ -435,6 +445,11 @@ export interface ContactReqEnvelope {
   act: 'request' | 'accept' | 'decline'
   nickname: string
   note?: string | null
+  /// A guest card, on a closed island. The §5f handshake is the other place a
+  /// first contact happens, and an ACCEPT is the exact moment consent becomes
+  /// mutual, so it is the natural place to hand the other side the thing that
+  /// lets them reach us. Same rules as `TextEnvelope.card`.
+  card?: string
 }
 
 /// Cross-island profile refresh (kind "profile", spec §5e). A cross-island

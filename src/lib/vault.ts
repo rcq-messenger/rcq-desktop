@@ -58,6 +58,10 @@ export const VAULT_CONTACTS = 'contacts'
 /// different name, and therefore a slot id the island cannot tell apart from
 /// any other. See sections.ts for what is inside.
 export const VAULT_SECTIONS = 'sections'
+/// Contacts on OTHER islands. Not a mirror of anything: there is no
+/// server-side row for a cross-island peer, so this slot is the only copy that
+/// outlives the device. See crossisland-vault.ts.
+export const VAULT_CROSSISLAND = 'crossisland'
 
 export function slotId(identity: WebIdentity, name: string): string {
   const id = hkdf(sha256, identity.identityPriv, SALT, enc.encode('rcq.vault.slot.v1|' + name), 16)

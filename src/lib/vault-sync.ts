@@ -28,9 +28,18 @@ import {
   listSlots,
   slotId,
   VAULT_CONTACTS,
+  VAULT_CROSSISLAND,
   VAULT_SECTIONS,
   type VaultChangedFrame,
 } from './vault'
+import {
+  buryCrossIsland,
+  lastSeenCrossIslandVersion,
+  retireCrossIslandSync,
+  scheduleCrossIslandPush,
+  syncCrossIsland,
+} from './crossisland-vault'
+import { setCrossIslandListener } from './crossisland-store'
 import {
   invalidateContactsMirror,
   lastSeenContactsVersion,
@@ -63,6 +72,11 @@ export async function handleVaultChanged(identity: WebIdentity, frame: VaultChan
   if (frame.slot === slotId(identity, VAULT_CONTACTS)) {
     if (version > 0 && version <= lastSeenContactsVersion(identity)) return
     await refreshContactsSlot(identity)
+    return
+  }
+  if (frame.slot === slotId(identity, VAULT_CROSSISLAND)) {
+    if (version > 0 && version <= lastSeenCrossIslandVersion(identity)) return
+    await syncCrossIsland(identity)
   }
 }
 
@@ -89,13 +103,20 @@ export async function handleVaultChanged(identity: WebIdentity, frame: VaultChan
 export function handleVaultReset(identity: WebIdentity): void {
   forgetVersion(slotId(identity, VAULT_SECTIONS))
   forgetVersion(slotId(identity, VAULT_CONTACTS))
+  forgetVersion(slotId(identity, VAULT_CROSSISLAND))
   retireSectionsSync(identity.uin)
   retireContactsMirror(identity.uin)
+  retireCrossIslandSync(identity.uin)
   console.warn('[vault] the account rotated its identity elsewhere; this derivation is retired')
 }
 
 /// Boot and every reconnect. `force` skips the floor (the boot call).
 export async function sweepVaultSlots(identity: WebIdentity, force = false): Promise<void> {
+  // The sweep is the one thing that runs at boot and on every reconnect with a
+  // live identity in hand, so it is where the cross-island store's listener is
+  // (re)armed. Registering it anywhere a page can unmount would leave local
+  // adds unmirrored for the rest of the session.
+  armCrossIslandMirror(identity)
   const now = Date.now()
   if (!force && now - lastSweep < SWEEP_FLOOR_MS) return
   lastSweep = now
@@ -119,6 +140,12 @@ export async function sweepVaultSlots(identity: WebIdentity, force = false): Pro
   }
   const contacts = slots.get(slotId(identity, VAULT_CONTACTS)) ?? 0
   if (contacts > lastSeenContactsVersion(identity)) await refreshContactsSlot(identity)
+  // ⚠ Unconditionally, unlike the two above. This slot is not a mirror of
+  // anything the island can be asked for again: an unchanged version means the
+  // island has not moved, NOT that it holds what this device holds, and a
+  // device whose write failed (offline, 429, 5xx) is exactly the one carrying
+  // rows nothing else has. The sync itself is a no-op when both sides agree.
+  await syncCrossIsland(identity)
   // Room state keys (stage 6 phase 2): same sweep, same quietness. The sync
   // itself decides whether either side is missing anything.
   await syncRoomKeysWithVault(identity)
@@ -131,6 +158,18 @@ export async function sweepVaultSlots(identity: WebIdentity, force = false): Pro
 /// 409, and drop the "already folded this list" fingerprint so the next
 /// `/contacts` refresh folds against the fresh copy instead of assuming its
 /// own is current.
+/// Point the cross-island store at this account's slot. Idempotent: the same
+/// identity re-registers the same closure, and a different one replaces it.
+let armedFor: number | null = null
+function armCrossIslandMirror(identity: WebIdentity): void {
+  if (armedFor === identity.uin) return
+  armedFor = identity.uin
+  setCrossIslandListener((e) => {
+    if (e.kind === 'removed') buryCrossIsland(e.uin, e.host, Date.now())
+    scheduleCrossIslandPush(identity)
+  })
+}
+
 async function refreshContactsSlot(identity: WebIdentity): Promise<void> {
   await readContactsFromVault(identity)
   invalidateContactsMirror()

@@ -510,7 +510,12 @@ async function cmdIsland(pos: string[], opts: Map<string, string>, flags: Set<st
 async function cmdRegister(opts: Map<string, string>, island: string): Promise<void> {
   if (loadStoredIdentity()) die(tr('err.accountExists'))
   const nick = opts.get('--nick') ?? suggestNickname()
-  const identity = await createNewAccount(nick, island)
+  // ⚠ `--invite <code>` is how you get into a club. An island whose policy is
+  // "invite" refuses without it, and `parseArgs` would otherwise swallow the
+  // flag silently: unknown `--flag value` pairs land in `opts` and are never
+  // read, so the code was accepted, dropped, and the refusal blamed nothing.
+  const invite = opts.get('--invite')
+  const identity = await createNewAccount(nick, island, invite)
   initDirectory(identity.uin)
   printPhraseBlock(identity.uin)
 }

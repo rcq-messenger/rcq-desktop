@@ -300,7 +300,11 @@ export function sessionDeviceId(id: WebIdentity): string {
 /// Mint a fresh account: generate keypairs, POST /auth/register,
 /// adopt the returned UIN+JWT into a `WebIdentity`. Throws on
 /// validation or network failure; caller surfaces via `auth.error.*`.
-export async function createNewAccount(nickname: string, apiBase: string = DEFAULT_API_BASE): Promise<WebIdentity> {
+export async function createNewAccount(
+  nickname: string,
+  apiBase: string = DEFAULT_API_BASE,
+  invite?: string,
+): Promise<WebIdentity> {
   const trimmedNick = nickname.trim()
   if (!trimmedNick) throw new Error('Nickname is required.')
 
@@ -337,6 +341,12 @@ export async function createNewAccount(nickname: string, apiBase: string = DEFAU
       identity_key: bytesToB64(k.identityPub),
       signing_key: signingKeyB64,
       device_id: installId(),
+      // ⚠ An island whose `registration_policy` is "invite" refuses without
+      // this (403 invite_required, auth.py). Android and iOS have always sent
+      // it; this function never had the parameter, so the web, the desktop app
+      // and the CLI could not join a closed island at all — which is every
+      // island in the club direction.
+      ...(invite && invite.trim() ? { invite: invite.trim() } : {}),
       ...(challenge
         ? {
             challenge,

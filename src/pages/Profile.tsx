@@ -11,6 +11,7 @@
 // own row in a group) means "let me change this".
 
 import type { WebIdentity } from '../lib/crypto'
+import { theirCard } from '../lib/guest-card'
 import { guestIdentityFor } from '../lib/visited-islands'
 import { CenteredLoader } from '../components/Spinner'
 import { useEffect, useState } from 'react'
@@ -117,7 +118,7 @@ export function Profile() {
     }
     void (async () => {
       try {
-        const data = await Api.userInfo(identity, targetUIN)
+        const data = await Api.userInfo(identity, targetUIN, theirCard(targetUIN))
         setInfo(data)
       } catch (e) {
         // Not a contact: the island will not hand out their card, and that used

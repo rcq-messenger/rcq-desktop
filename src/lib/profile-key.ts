@@ -16,6 +16,7 @@
 /// `pkey`. Own devices read the key from the vault slot, same as room keys.
 
 import { Api, peerBundleFrom } from './api'
+import { theirCard } from './guest-card'
 import { encryptV1, bytesToB64, b64ToBytes, type Envelope, type WebIdentity } from './crypto'
 import { readSlot, writeSlot, VaultError } from './vault'
 
@@ -197,7 +198,7 @@ export async function handleProfileKeyEnvelope(
     }
     if (!k) return true
     try {
-      const info = await Api.userInfo(identity, from)
+      const info = await Api.userInfo(identity, from, theirCard(from))
       if (info?.identity_key) {
         await sendMyProfileKeyTo(
           identity,

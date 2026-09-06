@@ -61,6 +61,11 @@ export interface ServerCapabilities {
   uin_shop: boolean
   hall_of_fame: boolean
   registration_policy: string
+  /// The island withholds the key that seals an envelope to its residents, so
+  /// a number alone no longer reaches somebody. Clients say so BEFORE the
+  /// refusal, because the refusal deliberately cannot: it is byte-identical to
+  /// "no such number".
+  closed_island: boolean
   nearby: boolean
   random_chat: boolean
   reports: boolean
@@ -115,6 +120,7 @@ export const DEFAULT_CAPABILITIES: ServerCapabilities = {
   uin_shop: false,
   hall_of_fame: false,
   registration_policy: 'open',
+  closed_island: false,
   nearby: true,
   random_chat: true,
   reports: true,
@@ -138,6 +144,7 @@ const cache = new Map<string, Promise<ServerInfo | null>>()
 /// account cap. Spelled out so the fallback below is typed as a boolean.
 type BoolCapability =
   | 'uin_shop'
+  | 'closed_island'
   | 'hall_of_fame'
   | 'nearby'
   | 'random_chat'
@@ -187,6 +194,7 @@ function normalize(raw: unknown): ServerInfo | null {
         typeof caps.registration_policy === 'string'
           ? caps.registration_policy
           : DEFAULT_CAPABILITIES.registration_policy,
+      closed_island: bool('closed_island'),
       nearby: bool('nearby'),
       random_chat: bool('random_chat'),
       reports: bool('reports'),

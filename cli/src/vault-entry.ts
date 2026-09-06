@@ -50,3 +50,5 @@ export { hashCard, newCard } from '../../src/lib/guest-card'
 // The contact link, so the guest-card test can prove the card lands in the
 // fragment and never in the query. Same bundle as hashCard, so one import.
 export { buildContactLink, parseContactLink } from '../../src/lib/federation'
+
+export { mergeCards } from '../../src/lib/guestcard-vault'

@@ -12,7 +12,7 @@
 
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { hashCard, newCard, buildContactLink, parseContactLink } from '../dist/vault.mjs'
+import { hashCard, newCard, buildContactLink, parseContactLink, mergeCards } from '../dist/vault.mjs'
 
 let n = 0
 const check = (label, fn) => { fn(); n++; console.log('  ok  ' + label) }
@@ -101,6 +101,38 @@ check('an old link, parsed by a new client, simply has no card', () => {
 check('an absurdly long fragment is refused rather than sent as a header', () => {
   const parsed = parseContactLink('911', '', '#c=' + 'A'.repeat(500))
   assert.equal(parsed.card, undefined)
+})
+
+// ── surviving a reinstall ──────────────────────────────────────────────────
+//
+// Cards other people gave us are the ONLY way to reach them on a closed
+// island, and losing them looks exactly like the island working correctly:
+// "no such number" is what a closed island tells a caller with no card. So the
+// merge has one job, never to lose one.
+
+check('the union keeps what each device holds alone', () => {
+  const out = mergeCards({ '1@a': 'x' }, { '2@b': 'y' })
+  assert.deepEqual(out, { '1@a': 'x', '2@b': 'y' })
+})
+
+check('a card this device just received wins over the stored one', () => {
+  // Somebody revoked and re-shared; the device holding the new one is right.
+  assert.deepEqual(mergeCards({ '1@a': 'new' }, { '1@a': 'old' }), { '1@a': 'new' })
+})
+
+check('an empty slot never erases the device', () => {
+  assert.deepEqual(mergeCards({ '1@a': 'x' }, {}), { '1@a': 'x' })
+})
+
+check('an empty device is filled from the slot: this is the reinstall', () => {
+  assert.deepEqual(mergeCards({}, { '1@a': 'x', '2@b': 'y' }), { '1@a': 'x', '2@b': 'y' })
+})
+
+check('commutative in what it keeps, and stable in byte order', () => {
+  const a = mergeCards({ '2@b': 'y' }, { '1@a': 'x' })
+  const b = mergeCards({ '1@a': 'x' }, { '2@b': 'y' })
+  assert.equal(JSON.stringify(a), JSON.stringify(b), 'or two devices rewrite the slot at each other')
+  assert.deepEqual(Object.keys(a), ['1@a', '2@b'], 'sorted')
 })
 
 console.log(`guest card: ${n}/${n} ok`)

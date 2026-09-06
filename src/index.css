@@ -518,20 +518,19 @@ html.desktop .rcq-selectable * {
  * surface in it is a list you flick through, and the track is a grey strip
  * down the edge of a black interface.
  *
- * ⚠ DESKTOP ONLY, and that is deliberate. In a browser at chat.rcq.app the
- * scrollbar is the page's only affordance for "there is more, and you are
- * here" — a visitor who has never used RCQ reads it, and some people navigate
- * by dragging it. The desktop app has its own frame, its own trackpad
- * conventions, and a person who installed it already knows the lists scroll.
+ * ⚠ EVERYWHERE now (founder, 2026-09-06: "в вебе надо также убрать везде
+ * скроллбар"). It was desktop-only on the argument that a first-time visitor
+ * at chat.rcq.app reads the bar as "there is more"; the founder weighed that
+ * against a grey strip down the edge of every list and chose the strip going.
  *
  * ⚠ Scrolling itself is untouched: this hides the bar, it does not disable
  * overflow. Keyboard, wheel and trackpad all behave exactly as before.
  */
-html.desktop * {
+* {
   scrollbar-width: none;          /* Firefox, and Chromium 121+ */
   -ms-overflow-style: none;
 }
-html.desktop *::-webkit-scrollbar {
+*::-webkit-scrollbar {
   width: 0;
   height: 0;
 }

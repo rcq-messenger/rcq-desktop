@@ -712,6 +712,27 @@ RCQ_VERBOSE=1 显示协议细节; NO_COLOR 去掉颜色。
     uk: "тут немає акаунта, спершу 'rcq register' або 'rcq restore'",
     'zh-Hans': "这里没有账号, 先运行 'rcq register' 或 'rcq restore'",
   },
+  // What the island says at the door, in words. A club answers
+  // `invite_required` to a plain registration, and the raw JSON told a person
+  // nothing about what to do next.
+  'refusal.invite_required': {
+    en: 'this island is a club: registration needs a code. Try: rcq register --invite <code>',
+    ru: 'этот остров — клуб: для регистрации нужен код. Попробуйте: rcq register --invite <код>',
+    es: 'esta isla es un club: el registro necesita un código. Probá: rcq register --invite <código>',
+    pt: 'esta ilha é um clube: o registro precisa de um código. Tente: rcq register --invite <código>',
+    tr: 'bu ada bir kulüp: kayıt için bir kod gerekiyor. Deneyin: rcq register --invite <kod>',
+    uk: 'цей острів — клуб: для реєстрації потрібен код. Спробуйте: rcq register --invite <код>',
+    'zh-Hans': '这个岛屿是一个俱乐部：注册需要邀请码。试试：rcq register --invite <代码>',
+  },
+  'refusal.invite_invalid': {
+    en: 'that code was not accepted: it may be used up, expired, or for another island',
+    ru: 'код не принят: возможно, он уже использован, истёк или выдан для другого острова',
+    es: 'ese código no fue aceptado: puede estar usado, vencido o ser de otra isla',
+    pt: 'esse código não foi aceito: pode estar usado, expirado ou ser de outra ilha',
+    tr: 'bu kod kabul edilmedi: kullanılmış, süresi dolmuş veya başka bir adaya ait olabilir',
+    uk: 'код не прийнято: можливо, він уже використаний, минув або виданий для іншого острова',
+    'zh-Hans': '该邀请码未被接受：可能已被使用、已过期，或属于另一个岛屿。',
+  },
   'err.accountExists': {
     en: "an account already lives here - 'rcq whoami'. Use RCQ_CLI_HOME for a second one",
     ru: "аккаунт здесь уже есть, см. 'rcq whoami'. Второй заводится через RCQ_CLI_HOME",

@@ -40,5 +40,33 @@ export function humanError(e: unknown): string {
     if (code && NOT_FOUND.has(code)) return tr('net.noHost')
     return tr('net.unreachable')
   }
+  // An island's own refusal arrives as the raw JSON body, because a real
+  // refusal keeps its own words (see the note at the top). That is right for
+  // most of them and wrong for the door: `{"detail":{"code":"invite_required"}}`
+  // tells a person nothing about what to do, and on a club island it is the
+  // first thing they will ever see.
+  const refusal = e instanceof Error ? describeRefusal(e.message) : null
+  if (refusal) return refusal
   return e instanceof Error ? e.message : String(e)
+}
+
+/// Turn `{"detail":{"code":"..."}}` into a sentence, or null if it is not one.
+export function describeRefusal(body: string): string | null {
+  const text = (body || '').trim()
+  if (!text.startsWith('{')) return null
+  let code: string | undefined
+  try {
+    const parsed = JSON.parse(text) as { detail?: unknown }
+    const d = parsed.detail
+    if (typeof d === 'string') code = d
+    else if (d && typeof d === 'object' && 'code' in d) code = String((d as { code: unknown }).code)
+  } catch {
+    return null
+  }
+  // An explicit map, not a computed key: `tr` takes a literal union, and a
+  // dynamic lookup would also let any code the island invents reach for a
+  // string that does not exist.
+  if (code === 'invite_required') return tr('refusal.invite_required')
+  if (code === 'invite_invalid') return tr('refusal.invite_invalid')
+  return null
 }

@@ -16,6 +16,7 @@
 // a message, and nothing retries.
 
 import { scopedKey } from './account-scope'
+import { theirCard } from './guest-card'
 import { Api, peerBundleFrom } from './api'
 import { encryptV1, type Envelope, type WebIdentity } from './crypto'
 import { sendV2 } from './signal-device'
@@ -121,7 +122,7 @@ async function sendReadReceipt(identity: WebIdentity, peerUin: number, targetIDs
   try {
     const reached = await sendV2(identity, peerUin, env, 'read').catch(() => 0)
     if (reached === 0) {
-      const info = await Api.userInfo(identity, peerUin).catch(() => null)
+      const info = await Api.userInfo(identity, peerUin, theirCard(peerUin)).catch(() => null)
       if (!info?.identity_key || !info.signing_key) return
       const bundle = peerBundleFrom({
         uin: peerUin,

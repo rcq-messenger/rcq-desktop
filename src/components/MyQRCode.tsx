@@ -14,6 +14,8 @@ import { buildContactLink } from '../lib/federation'
 import { PersonAvatar } from './PersonAvatar'
 import type { UserStatus } from '../lib/api'
 import { myProfileKey } from '../lib/profile-key'
+import { shareableCard } from '../lib/guest-card'
+import { fetchServerInfo } from '../lib/server-info'
 
 /// [me] is the caller's own card, used only to put their face in the middle of
 /// the code (iOS/Android parity). Optional: with nothing passed, or with no
@@ -51,7 +53,22 @@ export function MyQRCode({
       } catch {
         /* keep flagship default */
       }
-      const link = buildContactLink({ uin: identity.uin, host }, sk && ik ? { sk, ik } : undefined)
+      // ⚠ Only on a CLOSED island, and this is not an optimisation. A guest
+      // card is a live credential: minting one on an open island would put a
+      // credential into every QR anybody has ever shown on a screen, for a
+      // door that is not locked. It is also the moment the card is created, so
+      // an open island never registers one at all.
+      let card: string | null = null
+      try {
+        const info = await fetchServerInfo(identity.apiBase)
+        if (info?.capabilities.closed_island) card = await shareableCard(identity)
+      } catch {
+        /* no card: on a closed island the link still adds, it just cannot be
+           written to until they share one that carries it */
+      }
+      const link = buildContactLink(
+        { uin: identity.uin, host }, sk && ik ? { sk, ik } : undefined, 'https://rcq.app', card,
+      )
       try {
         const url = await QRCode.toDataURL(link, { width: 320, margin: 1, errorCorrectionLevel: 'M' })
         if (alive) setDataUrl(url)

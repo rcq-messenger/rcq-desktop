@@ -530,13 +530,19 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
 
       {/* Agreement to the terms and the privacy policy, with both a click
           away, before an account exists (founder, 05.09). */}
-      <label className="flex items-start gap-2 text-sm text-fg-secondary cursor-pointer select-none">
-        <input type="checkbox" className="mt-1 accent-accent" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} />
+      {/* Small print, and it should LOOK like small print: it sat at body size
+          in secondary text, which made the loudest thing under the form the
+          one line nobody reads. Down to the size the field hints already use,
+          and the links carry colour instead of an underline (founder, 07.09).
+          The checkbox shrinks with it, or a 16px box next to 12px text reads
+          as the subject of the sentence. */}
+      <label className="flex items-start gap-2 text-xs text-fg-dim cursor-pointer select-none">
+        <input type="checkbox" className="mt-0.5 h-3 w-3 accent-accent" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} />
         <span>
           {t('login.terms.accept')}{' '}
-          <a href="https://rcq.app/terms" target="_blank" rel="noreferrer" className="text-accent underline underline-offset-2">{t('login.terms.terms')}</a>
+          <a href="https://rcq.app/terms" target="_blank" rel="noreferrer" className="text-accent no-underline hover:underline underline-offset-2">{t('login.terms.terms')}</a>
           {' '}{t('login.terms.and')}{' '}
-          <a href="https://rcq.app/privacy" target="_blank" rel="noreferrer" className="text-accent underline underline-offset-2">{t('login.terms.privacy')}</a>
+          <a href="https://rcq.app/privacy" target="_blank" rel="noreferrer" className="text-accent no-underline hover:underline underline-offset-2">{t('login.terms.privacy')}</a>
         </span>
       </label>
       <button

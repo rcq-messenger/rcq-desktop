@@ -41,3 +41,8 @@ export {
   MAX_SECTIONS,
 } from '../../src/lib/sections'
 export { ApiError } from '../../src/lib/api'
+
+// Guest cards (closed islands). The digest here MUST equal the island's
+// `models/guest_card.hash_card`, or a card registered by a client opens
+// nothing. cli/test/guest-card.mjs pins it against the Python.
+export { hashCard, newCard } from '../../src/lib/guest-card'

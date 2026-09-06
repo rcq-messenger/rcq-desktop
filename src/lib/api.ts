@@ -525,8 +525,33 @@ export const Api = {
     return request<UserInfo>(id, 'GET', `/users/${id.uin}/info`)
   },
 
-  userInfo(id: WebIdentity, uin: number): Promise<UserInfo> {
-    return request<UserInfo>(id, 'GET', `/users/${uin}/info`)
+  /// ⚠ `card` is a GUEST CARD, and it goes in a header rather than the path
+  /// or a query string. On a closed island this is what turns a 404 into an
+  /// answer; it is a credential with no expiry, and a query string is an
+  /// access log. See lib/guest-card.ts.
+  userInfo(id: WebIdentity, uin: number, card?: string | null): Promise<UserInfo> {
+    return request<UserInfo>(id, 'GET', `/users/${uin}/info`, undefined,
+      card ? { headers: { 'X-RCQ-Guest-Card': card } } : undefined)
+  },
+
+  // Guest cards (closed islands) ----------------------------
+  //
+  // The island is only ever told a DIGEST. The raw card stays on this device
+  // and travels to people, never to a server.
+
+  addGuestCard(id: WebIdentity, cardHash: string, label?: string): Promise<unknown> {
+    return request<unknown>(id, 'POST', '/guest-cards', { card_hash: cardHash, label: label ?? null })
+  },
+
+  listGuestCards(id: WebIdentity): Promise<Array<{
+    card_hash: string; label: string | null; created_at: string
+    last_used_on: string | null; revoked: boolean
+  }>> {
+    return request(id, 'GET', '/guest-cards')
+  },
+
+  revokeGuestCard(id: WebIdentity, cardHash: string): Promise<unknown> {
+    return request<unknown>(id, 'DELETE', `/guest-cards/${cardHash}`)
   },
 
   updateProfile(id: WebIdentity, patch: ProfileUpdate): Promise<UserInfo> {

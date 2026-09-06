@@ -229,7 +229,14 @@ function canonRow(r: CrossIslandContact): Record<string, unknown> {
     o.avatarMediaId = r.avatarMediaId
     o.avatarMediaKey = r.avatarMediaKey
   }
-  return o
+  // ⚠ Sorted, so the BYTES this client writes are the bytes Android writes.
+  // Comparing canonically would have been enough to stop the rewrite war on
+  // its own, but then the same contacts would sit in the slot in two different
+  // orders depending on which device last touched them, and every parity test
+  // between the clients would have to compare structures instead of strings.
+  const sorted: Record<string, unknown> = {}
+  for (const k of Object.keys(o).sort()) sorted[k] = o[k]
+  return sorted
 }
 
 export function canonState(s: VaultCrossIsland): Record<string, unknown> {

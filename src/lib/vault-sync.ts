@@ -29,6 +29,7 @@ import {
   slotId,
   VAULT_CONTACTS,
   VAULT_CROSSISLAND,
+  VAULT_GUESTCARDS,
   VAULT_SECTIONS,
   type VaultChangedFrame,
 } from './vault'
@@ -40,6 +41,11 @@ import {
   syncCrossIsland,
 } from './crossisland-vault'
 import { setCrossIslandListener } from './crossisland-store'
+import {
+  lastSeenGuestCardVersion,
+  retireGuestCardSync,
+  syncGuestCards,
+} from './guestcard-vault'
 import {
   invalidateContactsMirror,
   lastSeenContactsVersion,
@@ -77,6 +83,11 @@ export async function handleVaultChanged(identity: WebIdentity, frame: VaultChan
   if (frame.slot === slotId(identity, VAULT_CROSSISLAND)) {
     if (version > 0 && version <= lastSeenCrossIslandVersion(identity)) return
     await syncCrossIsland(identity)
+    return
+  }
+  if (frame.slot === slotId(identity, VAULT_GUESTCARDS)) {
+    if (version > 0 && version <= lastSeenGuestCardVersion(identity)) return
+    await syncGuestCards(identity)
   }
 }
 
@@ -104,9 +115,11 @@ export function handleVaultReset(identity: WebIdentity): void {
   forgetVersion(slotId(identity, VAULT_SECTIONS))
   forgetVersion(slotId(identity, VAULT_CONTACTS))
   forgetVersion(slotId(identity, VAULT_CROSSISLAND))
+  forgetVersion(slotId(identity, VAULT_GUESTCARDS))
   retireSectionsSync(identity.uin)
   retireContactsMirror(identity.uin)
   retireCrossIslandSync(identity.uin)
+  retireGuestCardSync(identity.uin)
   console.warn('[vault] the account rotated its identity elsewhere; this derivation is retired')
 }
 
@@ -146,6 +159,11 @@ export async function sweepVaultSlots(identity: WebIdentity, force = false): Pro
   // device whose write failed (offline, 429, 5xx) is exactly the one carrying
   // rows nothing else has. The sync itself is a no-op when both sides agree.
   await syncCrossIsland(identity)
+  // ⚠ Unconditional for the same reason as the slot above: an unchanged
+  // version means the island has not moved, not that it holds what this device
+  // holds. And a device that received a card five minutes ago is the only
+  // thing in the world that has it.
+  await syncGuestCards(identity)
   // Room state keys (stage 6 phase 2): same sweep, same quietness. The sync
   // itself decides whether either side is missing anything.
   await syncRoomKeysWithVault(identity)

@@ -62,6 +62,11 @@ export const VAULT_SECTIONS = 'sections'
 /// server-side row for a cross-island peer, so this slot is the only copy that
 /// outlives the device. See crossisland-vault.ts.
 export const VAULT_CROSSISLAND = 'crossisland'
+/// Guest cards other people gave us, on a closed island. The only way to reach
+/// them; losing them looks exactly like the island working correctly, because
+/// a closed island answers a caller with no card by saying "no such number".
+/// See guestcard-vault.ts.
+export const VAULT_GUESTCARDS = 'guestcards'
 
 export function slotId(identity: WebIdentity, name: string): string {
   const id = hkdf(sha256, identity.identityPriv, SALT, enc.encode('rcq.vault.slot.v1|' + name), 16)

@@ -28,6 +28,8 @@ import { defaultHome } from '../lib/routing'
 import { clientLabel } from '../lib/client-name'
 import { bytesToB64, newLinkEphemeral, openLinkSeal, type WebIdentity } from '../lib/crypto'
 import { IslandPickerModal } from '../components/IslandPickerModal'
+import { ApiError, parseErrorCode } from '../lib/api'
+import { useServerCapabilities } from '../lib/use-server-info'
 import { islandLabel, rememberIsland, rememberedIsland, type IslandAddress } from '../lib/island-choice'
 import { engageIslandEagerly, prePinIsland } from '../lib/island-trust'
 import { IslandAvatar } from '../components/IslandAvatar'
@@ -401,18 +403,43 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
   // losing the account (and the ability to move it to a phone).
   const [accepted, setAccepted] = useState(false)
   const [pending, setPending] = useState<{ id: WebIdentity; words: string[] } | null>(null)
+  // ⚠ THE CODE FIELD EXISTED NOWHERE ON THIS SCREEN. `createNewAccount` has
+  // taken an invite since the CLI learned to join a closed island, and the web
+  // had the plumbing and no way for a person to use it: somebody handed a code
+  // in words hit a raw "403" and had nowhere to type it. The CLI, which nobody
+  // outside a terminal runs, was the only client that could join a club.
+  //
+  // Shown when the island says it is invite-only, and revealed by a refusal
+  // when it does not (a cached or unreachable /server/info, or an island that
+  // closed while this tab was open).
+  const caps = useServerCapabilities(rememberedIsland())
+  const [invite, setInvite] = useState('')
+  const [needsInvite, setNeedsInvite] = useState(false)
+  const askCode = needsInvite || caps.registration_policy === 'invite'
 
   async function submit() {
     setError(null)
     setBusy(true)
     try {
-      const id = await createNewAccount(nickname, rememberedIsland())
+      const id = await createNewAccount(nickname, rememberedIsland(), invite)
       const words = currentRecoveryPhrase()
       if (words) setPending({ id, words })
       else onDone(id) // shouldn't happen for a fresh account; fail open
     } catch (e) {
-      const detail = e instanceof Error ? e.message : 'unknown'
-      setError(t('auth.error.register_failed', { detail }))
+      // The island's own words for the door, not a status code. `invite_required`
+      // also OPENS the field: an island can close while this tab is open, and
+      // the person is then one paste away rather than stuck.
+      const code = e instanceof ApiError ? parseErrorCode(e.body) : null
+      if (code === 'invite_required') {
+        setNeedsInvite(true)
+        setError(t('auth.error.invite_required'))
+      } else if (code === 'invite_invalid') {
+        setNeedsInvite(true)
+        setError(t('auth.error.invite_invalid'))
+      } else {
+        const detail = e instanceof Error ? e.message : 'unknown'
+        setError(t('auth.error.register_failed', { detail }))
+      }
     } finally {
       setBusy(false)
     }
@@ -471,6 +498,30 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
 
       <IslandField />
 
+      {/* The club door. Shown when the island says it is invite-only, and
+          revealed by a refusal when it does not: an island can close while
+          this tab is open, and an operator can hand a code out for a member
+          they let in for free, not only for one who paid. */}
+      {askCode && (
+        <div className="space-y-1">
+          <label className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+            {t('login.create.invite')}
+          </label>
+          <input
+            type="text"
+            value={invite}
+            onChange={(e) => setInvite(e.target.value)}
+            maxLength={128}
+            placeholder={t('login.create.invite_placeholder')}
+            className="w-full h-10 px-3 rounded-md bg-field outline-none focus:ring-1 focus:ring-accent text-sm font-mono"
+            spellCheck={false}
+            autoCorrect="off"
+            autoCapitalize="off"
+          />
+          <p className="text-xs text-fg-dim">{t('login.create.invite_hint')}</p>
+        </div>
+      )}
+
       {error && (
         <div className="text-sm text-red-600 bg-red-500/10 rounded-md p-2">
           {error}
@@ -490,7 +541,7 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
       </label>
       <button
         onClick={submit}
-        disabled={busy || !nickname.trim() || !accepted}
+        disabled={busy || !nickname.trim() || !accepted || (askCode && !invite.trim())}
         className="w-full h-11 rounded-md bg-accent hover:bg-accent-dim text-white font-semibold disabled:opacity-60 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
       >
         {busy && <Spinner />}

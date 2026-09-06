@@ -45,6 +45,31 @@ export interface CrossIslandContact {
 // `account-scope.ts` describes, in the one store that was missed.
 const KEY = () => scopedKey('crossisland.v1')
 
+/// A local change, for the vault mirror. The store does NOT import the vault
+/// module (that would be a cycle, and this file is imported by the
+/// notification path where no vault exists); the mirror registers itself.
+///
+/// `kind: 'removed'` is separate because a removal has to leave a tombstone:
+/// without one the next sync fetches the row straight back off the island and
+/// deleting a cross-island contact undoes itself on the following boot.
+export type CrossIslandEvent =
+  | { kind: 'changed' }
+  | { kind: 'removed'; uin: number; host: string }
+
+let listener: ((e: CrossIslandEvent) => void) | null = null
+
+export function setCrossIslandListener(fn: ((e: CrossIslandEvent) => void) | null): void {
+  listener = fn
+}
+
+function notify(e: CrossIslandEvent): void {
+  try {
+    listener?.(e)
+  } catch {
+    /* a mirror that throws must never break the store write that just landed */
+  }
+}
+
 export function ciKey(uin: number, host: string): string {
   return `${uin}@${host.toLowerCase()}`
 }
@@ -68,6 +93,15 @@ export function getCrossIsland(uin: number, host: string): CrossIslandContact | 
 export function saveCrossIsland(c: CrossIslandContact): void {
   const map = loadAll()
   map[ciKey(c.uin, c.host)] = c
+  saveAll(map)
+  notify({ kind: 'changed' })
+}
+
+/// The vault sync writing the merged set back. Deliberately silent: it is the
+/// listener's own result coming home, and announcing it would loop.
+export function replaceAllCrossIsland(rows: CrossIslandContact[]): void {
+  const map: Record<string, CrossIslandContact> = {}
+  for (const r of rows) map[ciKey(r.uin, r.host)] = r
   saveAll(map)
 }
 
@@ -127,6 +161,7 @@ export function applyCrossIslandProfile(
     profileTs: ts,
   }
   saveAll(map)
+  notify({ kind: 'changed' })
   return true
 }
 
@@ -134,4 +169,5 @@ export function removeCrossIsland(uin: number, host: string): void {
   const map = loadAll()
   delete map[ciKey(uin, host)]
   saveAll(map)
+  notify({ kind: 'removed', uin, host })
 }

@@ -1,6 +1,8 @@
 import { useState, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { useI18n } from '../lib/i18n-context'
+import { islandCard } from '../lib/island-card'
+import { useIdentity } from '../lib/identity-context'
 
 /// The island's mark beside a name: a small seal whose colour says which
 /// kind of mark it is. The kinds are strings the island chooses; the ones
@@ -37,13 +39,32 @@ function Seal({ className }: { className: string }) {
 
 export function BadgeMark({ kind, className = 'h-3.5 w-3.5' }: { kind?: string | null; className?: string }) {
   const { t } = useI18n()
+  const { identity } = useIdentity()
   const [open, setOpen] = useState(false)
   if (!kind) return null
-  const colour = COLOUR[kind] ?? 'text-fg-dim'
-  const label = t(`badge.${kind}`, {}) || kind
+  // ⚠ THE ISLAND'S OWN WORDS FIRST, this client's strings only as a fallback.
+  // The built-in text is the flagship's: `badge.desc.official` named the RCQ
+  // team as the thing being vouched for, on islands the RCQ team does not run,
+  // and a kind an operator invented had no name at all beyond its raw slug.
+  // Read straight out of the island card, which is localStorage, because this
+  // draws in list rows that cannot wait on a fetch.
+  //
+  // A blank field means "I have not renamed this one", not "call it nothing",
+  // so label, description and colour each fall back on their own.
+  const own = islandCard(identity?.apiBase)?.badges?.[kind]
+  // An island can colour a kind this client has never heard of. Anything that
+  // is not #RRGGBB is ignored rather than handed to the browser as a style.
+  const ownColour = /^#[0-9a-fA-F]{6}$/.test(own?.color ?? '') ? own!.color! : null
+  // ⚠ Keyed on the PARSED colour, not on whether the island sent one. Keyed on
+  // the raw field, an island that sent something malformed dropped the class
+  // AND got no inline style, so the seal inherited the row's colour and the
+  // mark stopped being a mark.
+  const colour = ownColour ? '' : (COLOUR[kind] ?? 'text-fg-dim')
+  const label = own?.label || t(`badge.${kind}`, {}) || kind
   const known = t(`badge.desc.${kind}`, {})
-  const description = known && known !== `badge.desc.${kind}` ? known : t('badge.desc.unknown')
-  const glow = GLOW[kind] ?? 'rgba(148,163,184,0.4)'
+  const description =
+    own?.description || (known && known !== `badge.desc.${kind}` ? known : t('badge.desc.unknown'))
+  const glow = ownColour ? `${ownColour}73` : (GLOW[kind] ?? 'rgba(148,163,184,0.4)')
   const onClick = (e: MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
@@ -51,7 +72,14 @@ export function BadgeMark({ kind, className = 'h-3.5 w-3.5' }: { kind?: string |
   }
   return (
     <>
-      <button type="button" onClick={onClick} className={`flex-none inline-flex ${colour} ${className}`} aria-label={label} title={label}>
+      <button
+        type="button"
+        onClick={onClick}
+        className={`flex-none inline-flex ${colour} ${className}`}
+        style={ownColour ? { color: ownColour } : undefined}
+        aria-label={label}
+        title={label}
+      >
         <Seal className="h-full w-full" />
       </button>
       {open && createPortal(

@@ -16,7 +16,7 @@
 // capabilities too, and that module is bundled into the CLI, which must not
 // drag React along. The hooks live in use-server-info.ts.
 
-import { rememberIslandCard } from './island-card'
+import { rememberIslandCard, type BadgeText } from './island-card'
 
 /// Optional surfaces an island may switch off. Defaults are PERMISSIVE, on
 /// purpose and in two directions: an older island that predates a flag keeps
@@ -93,6 +93,10 @@ export interface ServerInfo {
   /// WHETHER it has a logo and WHICH one.
   logoVersion: string
   capabilities: ServerCapabilities
+  /// What this island calls its badges, keyed by kind. `{}` on an island that
+  /// renames nothing, and on one older than the field: both mean "use the
+  /// client's own translated strings".
+  badges: Record<string, BadgeText>
 }
 
 /// Where an island's logo actually lives. Built here so no caller can invent a
@@ -144,6 +148,25 @@ type BoolCapability =
   | 'group_log'
   | 'vault'
 
+/// Bounded before it is believed. This text is drawn beside a contact's name,
+/// and it comes from an island we may only be PROBING, so an operator must not
+/// be able to push a paragraph into a roster row.
+function normalizeBadges(raw: unknown): Record<string, BadgeText> {
+  if (!raw || typeof raw !== 'object') return {}
+  const out: Record<string, BadgeText> = {}
+  const str = (v: unknown, max: number): string | undefined => {
+    if (typeof v !== 'string') return undefined
+    const t = v.trim().slice(0, max)
+    return t || undefined
+  }
+  for (const [kind, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!kind || typeof v !== 'object' || !v) continue
+    const o = v as Record<string, unknown>
+    out[kind] = { label: str(o.label, 32), description: str(o.description, 200), color: str(o.color, 16) }
+  }
+  return out
+}
+
 function normalize(raw: unknown): ServerInfo | null {
   if (!raw || typeof raw !== 'object') return null
   const o = raw as Record<string, unknown>
@@ -156,6 +179,7 @@ function normalize(raw: unknown): ServerInfo | null {
     // An island older than the logo omits the field, which reads as '' and
     // draws the tile: the same permissive default the capability flags take.
     logoVersion: typeof o.logo_version === 'string' ? o.logo_version : '',
+    badges: normalizeBadges(o.badges),
     capabilities: {
       uin_shop: bool('uin_shop'),
       hall_of_fame: bool('hall_of_fame'),
@@ -194,7 +218,13 @@ export async function loadServerInfo(apiBase: string, init?: RequestInit): Promi
     // has to remember to keep its own copy and no two copies can disagree.
     // What it buys is a login screen and an account list that are complete on
     // their first frame instead of after a round trip.
-    if (info) rememberIslandCard(apiBase, { name: info.name, logoVersion: info.logoVersion })
+    if (info) {
+      rememberIslandCard(apiBase, {
+        name: info.name,
+        logoVersion: info.logoVersion,
+        badges: info.badges,
+      })
+    }
     return info
   } catch {
     return null

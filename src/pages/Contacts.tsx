@@ -358,9 +358,16 @@ export function Contacts() {
         fetchForeignGroups(identity),
       ])
       const allGroups = [...groupList, ...foreignGroups]
-      const list = rosterAnswer.list ?? (rosterKept.uin === identity.uin ? rosterKept.list : null) ?? (await Api.contacts(identity))
-      if (rosterAnswer.list) rosterKept = { uin: identity.uin, etag: rosterAnswer.etag, list: rosterAnswer.list }
-      setContacts(list)
+      // ⚠⚠ 304 means "nothing changed on the island". Re-applying the rows
+      // kept from the last full answer looked equivalent and is not: presence
+      // arrives over the websocket and is written into `contacts` directly, so
+      // folding the stored snapshot repaints a contact who just came online as
+      // offline (Android hit exactly this as report #909 on 0.173). On 304 the
+      // list is left alone; everything else in this refresh still runs.
+      const served = rosterAnswer.list
+      if (served) rosterKept = { uin: identity.uin, etag: rosterAnswer.etag, list: served }
+      const list = served ?? (rosterKept.uin === identity.uin ? rosterKept.list : null) ?? (await Api.contacts(identity))
+      if (served) setContacts(list)
       // #900: the block lives on this device, so the island still delivers a
       // blocked person's request. It is hidden here and NOT answered: a
       // decline goes back over the wire as "declined", which tells the blocked
@@ -1677,12 +1684,10 @@ function GroupRow({
   // one of them addressed to you is not, and only the @ tells them apart.
   const mentioned = useHasMention(group.id)
   const muted = useMutedGroups()
-  const favorites = useFavoriteGroups()
   const archive = useArchiveGroups()
   const [menuOpen, setMenuOpen] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(false)
   const isMuted = muted.has(group.id)
-  const isFav = favorites.has(group.id)
   const isArchived = archive.has(group.id)
   // The card opens the chat; the ⋮ opens an actions MENU (not a page
   // navigation — the founder read navigating to the group page as "the group
@@ -1696,7 +1701,6 @@ function GroupRow({
             <div className="flex items-center gap-1.5">
               <span className={'truncate ' + (unread > 0 ? 'font-bold' : 'font-medium')}>{group.name}</span>
               <BadgeMark kind={group.badge} />
-              {isFav && <span className="text-yellow-500 text-xs flex-none">★</span>}
               {isMuted && <MuteGlyph />}
             </div>
             <div className="text-xs text-fg-dim">

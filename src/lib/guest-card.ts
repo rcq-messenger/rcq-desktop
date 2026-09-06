@@ -27,6 +27,7 @@
 // closed island any more.
 
 import { Api } from './api'
+import { fetchServerInfo } from './server-info'
 import { scopedKey } from './account-scope'
 import { sha256 } from '@noble/hashes/sha256'
 import type { WebIdentity } from './crypto'
@@ -182,5 +183,34 @@ export function replaceTheirCards(map: Record<string, string>): void {
     localStorage.setItem(THEIRS_KEY(), JSON.stringify(map))
   } catch {
     /* no storage */
+  }
+}
+
+/// The card to attach to an outgoing 1:1 envelope, or nothing.
+///
+/// ⚠ ONE function, called from BOTH send paths, because the first version of
+/// this shipped in `send-text.ts` only — which is the FORWARD path — while the
+/// composer built its own envelope a few files away and attached nothing. The
+/// feature therefore worked for a forwarded message and not for anything a
+/// person typed, which is the opposite of useful and looked complete from the
+/// outside.
+///
+/// 1:1 only: in a group the envelope goes to every member, and a card handed
+/// to a room is a card handed to whoever is in that room later. Never on an
+/// open island: a card is a live credential with no business travelling to a
+/// door that is not locked.
+export async function cardForEnvelope(
+  identity: WebIdentity,
+  isPeer: boolean,
+): Promise<{ card?: string }> {
+  if (!isPeer) return {}
+  try {
+    const info = await fetchServerInfo(identity.apiBase)
+    if (!info?.capabilities.closed_island) return {}
+    return { card: await shareableCard(identity) }
+  } catch {
+    // The message still sends; they simply cannot answer until we manage to
+    // hand them one.
+    return {}
   }
 }

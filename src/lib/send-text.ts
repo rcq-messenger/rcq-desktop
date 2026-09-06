@@ -11,8 +11,7 @@
 // send an address.
 
 import { Api, peerBundleFrom, type Contact, type RCQGroup } from './api'
-import { shareableCard } from './guest-card'
-import { fetchServerInfo } from './server-info'
+import { cardForEnvelope } from './guest-card'
 import {
   bytesToB64,
   encryptV1,
@@ -116,16 +115,7 @@ export async function sendTextTo(
   //
   // Never on an open island: a card is a live credential and has no business
   // travelling to a door that is not locked.
-  const doorKey: { card?: string } = {}
-  if (target.kind === 'peer') {
-    try {
-      const info = await fetchServerInfo(identity.apiBase)
-      if (info?.capabilities.closed_island) doorKey.card = await shareableCard(identity)
-    } catch {
-      /* the message still sends; they simply cannot answer until we manage to
-         hand them one */
-    }
-  }
+  const doorKey = await cardForEnvelope(identity, target.kind === 'peer')
   const env: TextEnvelope = {
     kind: 'text', id, text,
     ...(fwdName ? { fwdName } : {}), ...stamp, ...dying, ...doorKey,

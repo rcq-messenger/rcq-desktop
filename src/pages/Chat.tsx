@@ -13,6 +13,7 @@
 // so the forwarded message shows up there when the user navigates.
 
 import { relativeLastSeen } from '../lib/last-seen'
+import { cardForEnvelope } from '../lib/guest-card'
 import { AltText } from '../components/AltText'
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { BadgeMark } from '../components/BadgeMark'
@@ -1543,6 +1544,12 @@ export function Chat() {
         ...dying,
         ...(row.replyTo ? { reply: row.replyTo } : {}),
         ...(row.fwdName ? { fwdName: row.fwdName } : {}),
+        // ⚠ THE COMPOSER, which is where this belonged all along. The card
+        // shipped in the forward path first and nowhere else, so "I wrote to
+        // you first, so you may write back" worked for a forwarded message and
+        // not for anything a person typed. Same helper as send-text.ts, so the
+        // two paths cannot drift again.
+        ...(identity ? await cardForEnvelope(identity, !isGroup) : {}),
       }
     }
     const res = await shipEnvelopeToCurrentThread(env)

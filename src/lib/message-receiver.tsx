@@ -404,7 +404,14 @@ function route(
   // Vouching for arrival while the plaintext's only copy is a scheduled write
   // is how a fan-out copy vanished for good on 2026-08-20. A failed write keeps
   // the tick back — the sender retries nothing, but nothing was promised.
-  if (identity && senderUIN !== myUin && groupId == null && 'id' in envelope && envelope.id) {
+  //
+  // ⚠⚠ SAME ISLAND ONLY. `sendDeliveredReceipt` seals with a key from OUR
+  // island's /users/{uin}/info, so for a sender on another island it addresses
+  // whoever happens to hold that number HERE: a stranger gets a receipt for a
+  // message they never sent, and the real sender gets no tick. The number is
+  // per-island, and this path never checked which island the number was from.
+  const sameIsland = !senderHost || senderHost === ownHost
+  if (identity && senderUIN !== myUin && groupId == null && sameIsland && 'id' in envelope && envelope.id) {
     const targetID = envelope.id
     void flushHistory()
       .then(() => sendDeliveredReceipt(identity, senderUIN, targetID))

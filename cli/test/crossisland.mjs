@@ -21,7 +21,7 @@
 // Run: npm run cli:test   (builds first; this imports the BUILT bundle)
 
 import assert from 'node:assert/strict'
-import { mergeCrossIsland } from '../dist/vault.mjs'
+import { mergeCrossIsland, canonState } from '../dist/vault.mjs'
 
 const NOW = 1_757_000_000_000 // fixed: the merge takes `now`, so no clock here
 const DAY = 24 * 3600 * 1000
@@ -132,6 +132,45 @@ check('the same peer on two islands is two contacts', () => {
 check('an empty slot never erases the device', () => {
   const mine = state([row(41, 'x.example'), row(42, 'y.example')])
   assert.deepEqual(keys(mergeCrossIsland(mine, state([]), NOW)), ['41@x.example', '42@y.example'])
+})
+
+// ── the shape three clients have to agree on ────────────────────────────────
+
+check('the canonical row omits empty optionals and always carries profileTs', () => {
+  const c = canonState(state([row(51, 'x.example', { gender: null, statusMessage: '', avatarMediaId: 'b', avatarMediaKey: null })]))
+  const r = c.c['51@x.example']
+  assert.equal('gender' in r, false, "gson omits nulls; writing them would look like a difference to Android")
+  assert.equal('statusMessage' in r, false)
+  assert.equal('avatarMediaId' in r, false, 'half a pair is not written at all')
+  assert.equal(r.profileTs, 0, 'Android has a primitive Long here and always writes it')
+})
+
+check('key order and absent-vs-null do not read as a difference', () => {
+  // What an Android write looks like coming back: no null fields, keys in
+  // gson's declaration order rather than ours.
+  const androidish = {
+    v: 1,
+    g: {},
+    c: {
+      '52@x.example': {
+        signingKey: 'sign-52', identityKey: 'ident-52', host: 'x.example', uin: 52,
+        profileTs: 0, addedAt: NOW - DAY, nickname: 'peer52',
+      },
+    },
+  }
+  const mine = state([row(52, 'x.example')])
+  assert.equal(
+    JSON.stringify(canonState(mine)),
+    JSON.stringify(canonState(androidish)),
+    'the two clients would rewrite the slot at each other forever',
+  )
+})
+
+check('the canonical form is stable under merge', () => {
+  const a = state([row(61, 'x.example'), row(62, 'y.example')])
+  const once = canonState(mergeCrossIsland(a, state([]), NOW))
+  const twice = canonState(mergeCrossIsland(mergeCrossIsland(a, state([]), NOW), state([]), NOW))
+  assert.equal(JSON.stringify(once), JSON.stringify(twice))
 })
 
 console.log(`crossisland: ${n}/${n} ok`)

@@ -92,6 +92,8 @@ export const tr: Record<string, string> = {
   'island.trust.ca_only': 'RCQ ana adasına sertifika otoritesi üzerinden güvenilir; parmak izi almaz.',
   'login.create.nickname_hint': 'Sonradan ayarlardan değiştirebilirsin.',
   'login.create.invite': 'Erişim kodu',
+  'add.ci.closed_island': 'Bu ada kapalı. Oradaki birine yazmak için kişinin kendisinden bir bağlantı gerekir: kişiyi paylaşması ya da size önce yazması.',
+  'add.ci.no_user': '{host} üzerinde {uin} numarası yok.',
   'login.create.invite_placeholder': 'adadan gelen kod',
   'login.create.invite_hint': 'Bu ada kapalı. Kodu adanın işletmecisi verir: davetle, yerleşimle birlikte veya kendi bildiği gibi.',
   'auth.error.invite_required': 'Ada kapalı: girmek için işletmecisinden bir kod gerekiyor. Yukarıya yapıştırın.',

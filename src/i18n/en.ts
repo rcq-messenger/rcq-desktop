@@ -98,6 +98,8 @@ export const en: Record<string, string> = {
   'island.trust.ca_only': 'The RCQ flagship is trusted through a certificate authority and takes no fingerprint.',
   'login.create.nickname_hint': 'You can change it later in Settings.',
   'login.create.invite': 'Access code',
+  'add.ci.closed_island': 'This island is closed. To write to somebody there you need a link from them: a shared contact, or a message they sent you first.',
+  'add.ci.no_user': 'No account {uin} on {host}.',
   'login.create.invite_placeholder': 'the code from the island',
   'login.create.invite_hint': 'This island is closed. Its operator gives out the code: with an invitation, with residency, or however they choose.',
   'auth.error.invite_required': 'This island is closed: joining needs a code from its operator. Paste it above.',

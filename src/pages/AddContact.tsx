@@ -9,6 +9,7 @@ import { BadgeMark } from '../components/BadgeMark'
 import { Link, useNavigate } from 'react-router-dom'
 import { Api, ApiError, type UserInfo } from '../lib/api'
 import { useI18n } from '../lib/i18n-context'
+import { fetchServerInfo } from '../lib/server-info'
 import { useIdentity } from '../lib/identity-context'
 import { parseAddress } from '../lib/federation'
 import { resolvePeerHomes } from '../lib/federation-resolve'
@@ -73,7 +74,20 @@ export function AddContact({
     setError(null)
     try {
       const card = await fetchPeerKeyCard(crossIsland.host, crossIsland.uin)
-      if (!card) throw new Error(`No user ${crossIsland.uin} on ${crossIsland.host}`)
+      if (!card) {
+        // ⚠ A CLOSED island answers a stranger with the SAME "no such number"
+        // it gives for a number that never existed — that is deliberate, or it
+        // would be a directory for guessing which numbers exist. So the island
+        // cannot tell the truth here and the client is the only thing that
+        // can. Ask it whether it is closed and say the useful sentence
+        // instead of an untranslated `No user 1234 on is2.rcq.app`.
+        const info = await fetchServerInfo(`https://${crossIsland.host}`).catch(() => null)
+        throw new Error(
+          info?.capabilities.closed_island
+            ? t('add.ci.closed_island')
+            : t('add.ci.no_user', { uin: String(crossIsland.uin), host: crossIsland.host }),
+        )
+      }
       // Best-effort: confirm their island routing record verifies (not fatal).
       const resolved = await resolvePeerHomes(crossIsland.host, crossIsland.uin)
       saveCrossIsland({

@@ -92,6 +92,8 @@ export const es: Record<string, string> = {
   'island.trust.ca_only': 'La isla principal de RCQ se verifica por una autoridad de certificación y no lleva huella.',
   'login.create.nickname_hint': 'Puedes cambiarlo luego en Ajustes.',
   'login.create.invite': 'Código de acceso',
+  'add.ci.closed_island': 'Esta isla es cerrada. Para escribirle a alguien de ahí hace falta un enlace suyo: que comparta su contacto, o que te escriba primero.',
+  'add.ci.no_user': 'No hay cuenta {uin} en {host}.',
   'login.create.invite_placeholder': 'el código de la isla',
   'login.create.invite_hint': 'Esta isla es cerrada. Su operador reparte el código: por invitación, junto con la residencia, o como prefiera.',
   'auth.error.invite_required': 'La isla es cerrada: para entrar hace falta un código de su operador. Pegalo arriba.',

@@ -12,7 +12,7 @@
 
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { hashCard, newCard } from '../dist/vault.mjs'
+import { hashCard, newCard, buildContactLink, parseContactLink } from '../dist/vault.mjs'
 
 let n = 0
 const check = (label, fn) => { fn(); n++; console.log('  ok  ' + label) }
@@ -60,6 +60,47 @@ check('a non-ascii card would still agree (utf-8 on both sides)', () => {
 
 check('the digest is lowercase hex of the right length', () => {
   assert.match(hashCard(newCard()), /^[0-9a-f]{64}$/)
+})
+
+// ── the link: a credential that must not reach a server ────────────────────
+
+check('the card rides in the FRAGMENT, never the query', () => {
+  const card = newCard()
+  const link = buildContactLink({ uin: 911, host: 'is2.rcq.app' }, { sk: 'AAAA', ik: 'BBBB' }, 'https://rcq.app', card)
+  const [before, frag] = link.split('#')
+  assert.ok(frag, 'there must be a fragment at all')
+  assert.equal(before.includes(card), false, 'the card must not be in the path or the query')
+  assert.match(frag, /^c=/)
+  // The public key card still travels where it always did.
+  assert.match(before, /[?&]h=is2\.rcq\.app/)
+  assert.match(before, /[?&]k=AAAA/)
+})
+
+check('a link with no card is byte for byte what it always was', () => {
+  const a = buildContactLink({ uin: 911, host: 'api.rcq.app' }, { sk: 'AAAA' })
+  const b = buildContactLink({ uin: 911, host: 'api.rcq.app' }, { sk: 'AAAA' }, 'https://rcq.app', null)
+  assert.equal(a, b)
+  assert.equal(a.includes('#'), false)
+})
+
+check('the fragment survives a round trip, keys and all', () => {
+  const card = newCard()
+  const link = buildContactLink({ uin: 4242, host: 'is2.rcq.app' }, { sk: 'QUJD', ik: 'WFla' }, 'https://rcq.app', card)
+  const u = new URL(link)
+  const parsed = parseContactLink(u.pathname.split('/').pop(), u.search, u.hash)
+  assert.equal(parsed.card, card)
+  assert.equal(parsed.address.uin, 4242)
+  assert.equal(parsed.address.host, 'is2.rcq.app')
+})
+
+check('an old link, parsed by a new client, simply has no card', () => {
+  const parsed = parseContactLink('911', '?h=is2.rcq.app', '')
+  assert.equal(parsed.card, undefined)
+})
+
+check('an absurdly long fragment is refused rather than sent as a header', () => {
+  const parsed = parseContactLink('911', '', '#c=' + 'A'.repeat(500))
+  assert.equal(parsed.card, undefined)
 })
 
 console.log(`guest card: ${n}/${n} ok`)

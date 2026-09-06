@@ -93,9 +93,18 @@ export async function sendTextTo(
   const sentAt = Date.now()
   const targetTtl = threadTtl(ttlThreadKey(target.kind === 'group', target.kind === 'group' ? target.id : target.uin))
   const expiresAt = ownExpiry(targetTtl, sentAt)
-  const dying: { ttl?: number; ts?: number } =
-    targetTtl != null && expiresAt != null ? { ttl: targetTtl, ts: Math.floor(sentAt / 1000) } : {}
-  const env: TextEnvelope = { kind: 'text', id, text, ...(fwdName ? { fwdName } : {}), ...dying }
+  // ⚠⚠ `ts` goes on EVERY envelope, not just a disappearing one. It used to
+  // ride along with `ttl`, so an ordinary message from this client carried no
+  // send time at all, and the receiving client fell back to the moment it
+  // arrived (`incoming-store`: `sentAt ?? at`). On a device that had been
+  // offline for a few minutes that put the message below replies to it, under
+  // the wrong clock: the founder saw one conversation in two different orders
+  // on his phone and his desktop, 2026-09-06. iOS and Android have always
+  // stamped every send; this client was the odd one out.
+  const stamp = { ts: Math.floor(sentAt / 1000) }
+  const dying: { ttl?: number } =
+    targetTtl != null && expiresAt != null ? { ttl: targetTtl } : {}
+  const env: TextEnvelope = { kind: 'text', id, text, ...(fwdName ? { fwdName } : {}), ...stamp, ...dying }
 
   let carbonGid: number | null = null
   if (target.kind === 'group') {

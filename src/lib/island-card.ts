@@ -30,6 +30,22 @@ export interface IslandCard {
   /// Digest of its logo, '' for "no logo" (draw the lettered tile). Rides on
   /// the picture's URL as `?v=`, so a changed logo is a changed URL.
   logoVersion: string
+  /// What this island calls its badges, keyed by kind.
+  ///
+  /// ⚠ Here rather than in a React context for the same reason the name is: a
+  /// badge is drawn beside a contact's nickname in list rows that have to be
+  /// right on the FIRST frame, and this is public text `/server/info` hands to
+  /// any anonymous caller. Absent on an island that renames nothing, and every
+  /// field of an entry may be empty, which means "use your own".
+  badges?: Record<string, BadgeText>
+}
+
+export interface BadgeText {
+  label?: string
+  description?: string
+  /// A hex colour, so an island can mint a kind the clients have never seen
+  /// and still have it look like something.
+  color?: string
 }
 
 const PREFIX = 'rcq.island.'
@@ -68,6 +84,14 @@ export function rememberIslandCard(apiBase: string, card: IslandCard): void {
     if (!merged.name) {
       const existing = islandCard(apiBase)
       if (existing?.name) merged.name = existing.name
+    }
+    // ⚠ `undefined` is "the caller did not ask about badges" and keeps what we
+    // hold; an EMPTY OBJECT is the island saying it has renamed nothing, and
+    // that has to take effect or an operator could never undo a rename. Same
+    // split the name and the logo already make, one line up.
+    if (merged.badges === undefined) {
+      const existing = islandCard(apiBase)
+      if (existing?.badges) merged.badges = existing.badges
     }
     localStorage.setItem(key(apiBase), JSON.stringify(merged))
   } catch {

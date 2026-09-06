@@ -1483,10 +1483,13 @@ export function Chat() {
     // timer, so a RETRY of a message sent ten minutes ago tells the recipient
     // what is actually left of it instead of restarting the clock, and so a
     // row written before the timer was changed keeps the terms it was sent on.
+    // `ts` is the send time of the ORIGINAL row and rides on every retry,
+    // disappearing or not: it is what the other side orders the thread by.
     const dying = ((): { ttl?: number; ts?: number } => {
-      if (row.expiresAt == null) return {}
+      const ts = Math.floor(row.sentAt / 1000)
+      if (row.expiresAt == null) return { ts }
       const secs = Math.max(1, Math.round((row.expiresAt - row.sentAt) / 1000))
-      return { ttl: secs, ts: Math.floor(row.sentAt / 1000) }
+      return { ttl: secs, ts }
     })()
     if (row.kind === 'photo' && row.mediaId && row.mediaKey) {
       env = {

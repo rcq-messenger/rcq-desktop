@@ -16,6 +16,7 @@ import { publishHomeIslandRecord } from './federation-publish'
 import { answerKeyAsk, loadRoomKeys, putRoomKey } from './group-state'
 import { handleProfileKeyEnvelope, loadProfileKeys } from './profile-key'
 import { snapshotFor } from './contacts-cache'
+import { isRandomTraffic, randomEnded, randomMatched } from './random-peers'
 import { adoptHomesFromOwnRecord, applyPushedRecord, drainBackupQueues, listBackupHomes, scrubFrontAliasHomes } from './multihome'
 import { aliasFor, drainVisitedQueues, listVisitedIslands } from './visited-islands'
 import { getCrossIsland } from './crossisland-store'
@@ -169,6 +170,21 @@ function route(
   senderSigningKey?: string,
   identity?: WebIdentity,
 ): void {
+  // ⚠⚠ RANDOM-CHAT TRAFFIC IS NOT OURS TO FILE, and this device has no random
+  // chat at all. Undelivered queue rows go to EVERY device of the account, so a
+  // phone in a random chat had its anonymous conversation written into a
+  // permanent thread here, with the stranger's number in the roster and their
+  // nickname fetched a moment later. Not after the session ended, as on the
+  // phones: from the FIRST message, while it was still running. Whoever had
+  // this open had no anonymity in random chat whatsoever (07.09).
+  //
+  // The island tells every device when a pair starts and ends, which is how
+  // this device knows whom to ignore without being able to join in.
+  //
+  // Before the guest card below on purpose: a card from somebody whose traffic
+  // we are about to drop is a card we have no use for.
+  if (isRandomTraffic(senderUIN, isContact(myUin, senderUIN))) return
+
   // ⚠⚠ A GUEST CARD the sender handed us, on a closed island. Read FIRST, and
   // before any decision about whether we want this message: it is what makes
   // "they wrote to me" into "I can answer them", and the answer path (the
@@ -939,6 +955,24 @@ export function MessageReceiver() {
     const SEALED_WS_TYPES = ['message', 'reaction', 'delete', 'edit', 'read', 'system', 'secscreen', 'visit', 'bounce', 'carbon', 'homerec', 'skdm', 'sknack', 'call']
     const offs = SEALED_WS_TYPES.map((tp) => on(tp, handle))
     return () => offs.forEach((off) => off())
+  }, [identity, on])
+
+  // ⚠⚠ The account's random-chat state, watched by a device that HAS no random
+  // chat. The island fans these two frames out to every session, and without
+  // them this browser cannot tell a stranger's anonymous message from an
+  // ordinary one — nothing on the wire says which it is. See `random-peers`.
+  useEffect(() => {
+    if (!identity) return
+    const offMatch = on('random_match', (ev) => {
+      const peer = (ev as { peer?: { uin?: unknown } }).peer
+      const uin = peer?.uin
+      if (typeof uin === 'number') randomMatched(uin)
+    })
+    const offEnd = on('random_end', () => randomEnded())
+    return () => {
+      offMatch()
+      offEnd()
+    }
   }, [identity, on])
 
   // Live sender-keys broadcasts pushed over the socket (server pkt type "gmsg").

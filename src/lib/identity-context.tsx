@@ -27,6 +27,7 @@ import { showTransitionVeil } from './transition-veil'
 import { flushVaultWriter } from './pin-gate'
 import { defaultHome } from './routing'
 import { Api, setTokenRefresher, setUnauthorizedHandler , clearGroupPreviewCache } from './api'
+import { clearRandomPeers } from './random-peers'
 import { idbClearAll } from './signal-persist'
 
 interface IdentityCtx {
@@ -304,6 +305,7 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
         // on the login screen with the others still here, so "add" cannot
         // become "sign out of everything" by accident.
         clearGroupPreviewCache()
+        clearRandomPeers()
         clearIdentity()
         showTransitionVeil()
         void flushVaultWriter().finally(() => window.location.assign('/'))

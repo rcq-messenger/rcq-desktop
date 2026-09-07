@@ -17,6 +17,7 @@ import { LanguagePicker } from '../components/LanguagePicker'
 import { Logo } from '../components/Logo'
 import { IslandAvatar } from '../components/IslandAvatar'
 import { IslandTrustRow } from '../components/IslandTrust'
+import { ResidentInvites } from '../components/ResidentInvites'
 import { hostnameOf, normaliseIsland } from '../lib/island-choice'
 import { isCaOnlyHost, prePinIsland } from '../lib/island-trust'
 import { useIslandCard } from '../lib/use-server-info'
@@ -830,6 +831,7 @@ export function Settings() {
               05.09). Placed on the section, not inside the row, because the
               row itself is conditional on the desktop. */}
           <p className="text-xs text-fg-dim leading-relaxed">{t('island.trust.settings.footer')}</p>
+          <ResidentInvites identity={identity} />
           {islandRules && (
             <>
               <button

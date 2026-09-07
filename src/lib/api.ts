@@ -845,6 +845,26 @@ export const Api = {
 
   /// Non-member preview for a group-invite link — name, member count,
   /// owner, open/closed. Used by the in-chat join card + `/g/:id` page.
+  /// The invites this account may hand out. 404 from an island that predates
+  /// the feature, which the caller treats as "draw nothing".
+  myInvites(id: WebIdentity): Promise<{
+    enabled: boolean
+    eligible: boolean
+    total: number
+    granted: number
+    used: number
+    remaining: number
+    next_at: string | null
+  }> {
+    return request(id, 'GET', '/invites')
+  },
+
+  /// ⚠ The raw code comes back ONCE. The island keeps the hash, so a caller
+  /// that drops this response has spent one of a finite allowance on nothing.
+  mintInvite(id: WebIdentity): Promise<{ code: string; link: string; expires_at: string | null }> {
+    return request(id, 'POST', '/invites')
+  },
+
   groupPreview(id: WebIdentity, groupId: number): Promise<GroupPreview> {
     // ⚠⚠ Memoised for the life of the page, and it has to be. A pinned message
     // can carry many links and the sheet mounts a card per link, each firing

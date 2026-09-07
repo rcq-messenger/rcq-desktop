@@ -864,6 +864,8 @@ export const en: Record<string, string> = {
     '"Contacts only" lets only your contacts add you to groups; "Nobody" blocks all invites.',
   'settings.privacy.relay_calls': 'Always relay calls',
   'settings.privacy.relay_calls_desc': 'Send call audio and video through our relay so the other side never learns your IP address. Turning this off can improve call quality and shows them your address.',
+  'settings.privacy.badge_pick': 'Which mark to wear',
+  'settings.privacy.badge_pick_desc': 'You hold more than one. Only the one you pick shows beside your name.',
   'settings.privacy.badge': 'Wear my mark',
   'settings.privacy.badge_desc': "The island's mark beside your name. Turning this off hides it from everyone else; you still see it yourself.",
   'settings.privacy.strangers': 'Strangers go to requests',

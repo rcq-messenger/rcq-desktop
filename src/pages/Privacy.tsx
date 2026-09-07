@@ -183,6 +183,34 @@ export function Privacy() {
                 a switch for hiding something you were never given is noise.
                 The mark on your OWN row is never blanked by the setting, so
                 this row cannot make itself disappear. */}
+            {/* More than one mark held: which to wear. Above the on/off switch
+                because the order of the questions is "which one" and then
+                "show it at all"; reversed, the picker looks like it belongs to
+                a setting that may be off. */}
+            {(info.badges_earned?.length ?? 0) > 1 && (
+              <div className="pt-3 space-y-1.5">
+                <label className="text-sm">{t('settings.privacy.badge_pick')}</label>
+                <div className="flex flex-wrap gap-2">
+                  {info.badges_earned!.map((kind) => (
+                    <button
+                      key={kind}
+                      type="button"
+                      onClick={() => {
+                        setInfo((cur) => (cur ? { ...cur, badge: kind } : cur))
+                        void Api.updateProfile(identity!, { badge: kind }).catch(() => {})
+                      }}
+                      className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs transition-colors ${
+                        info.badge === kind ? 'bg-accent text-white' : 'bg-field text-fg-secondary hover:text-fg-primary'
+                      }`}
+                    >
+                      <BadgeMark kind={kind} className="h-3.5 w-3.5" />
+                      {t(`badge.${kind}`, {}) || kind}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-fg-dim leading-relaxed">{t('settings.privacy.badge_pick_desc')}</p>
+              </div>
+            )}
             {info.badge && (
               <div className="pt-3 space-y-1.5">
                 <div className="flex items-center justify-between gap-3">

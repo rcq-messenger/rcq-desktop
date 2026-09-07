@@ -777,6 +777,8 @@ export const zh: Record<string, string> = {
   'settings.devices.split': '为此会话分配独立槽位',
   'settings.devices.split.confirm': '确认分配？页面将重新加载',
   'settings.devices.split.hint': '此会话目前与手机共用密钥槽位。拥有独立槽位后，它将持有自己的密钥，可单独撤销。',
+  'settings.privacy.badge_pick': '佩戴哪个标记',
+  'settings.privacy.badge_pick_desc': '您拥有多个。名字旁边只显示您选择的那一个。',
   'settings.privacy.badge': '显示我的标记',
   'settings.privacy.badge_desc': '您名字旁边的岛屿标记。关闭后其他人都看不到，您自己仍然可见。',
   'settings.privacy.strangers': '陌生人进入请求',

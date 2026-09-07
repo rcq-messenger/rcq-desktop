@@ -193,6 +193,9 @@ export interface UserInfo {
   /// screens. Null from an island that predates the setting, and null on
   /// anyone but yourself — a peer's choice is not a thing you can read.
   badge_hidden?: boolean | null
+  /// Owner-only: every mark this account HOLDS. Empty for a peer, and for
+  /// somebody with nothing. The one they WEAR is `badge` above.
+  badges_earned?: string[]
   avatar_media_id?: string | null
   avatar_media_key?: string | null
   identity_key: string
@@ -353,6 +356,9 @@ export interface ProfileUpdate {
   /// "Wear my mark where others can see it", inverted. The mark itself is the
   /// island's to grant; only this is the account holder's.
   badge_hidden?: boolean
+  /// WHICH held mark to wear. The island checks it against what this account
+  /// actually holds, so this cannot award anything.
+  badge?: string
   nickname?: string
   first_name?: string | null
   last_name?: string | null

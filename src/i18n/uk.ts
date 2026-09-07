@@ -779,6 +779,8 @@ export const uk: Record<string, string> = {
   'settings.devices.split': 'Виділити цій сесії власний слот',
   'settings.devices.split.confirm': 'Виділити? Сторінка перезавантажиться',
   'settings.devices.split.hint': 'Ця сесія поки ділить слот ключів із телефоном. З власним слотом вона матиме власні ключі, і її можна буде відкликати окремо.',
+  'settings.privacy.badge_pick': 'Яку позначку носити',
+  'settings.privacy.badge_pick_desc': 'У вас їх кілька. Поруч з іменем показується лише вибрана.',
   'settings.privacy.badge': 'Показувати мою позначку',
   'settings.privacy.badge_desc': "Позначка острова поруч з вашим ім'ям. Якщо вимкнути, її не побачить ніхто, крім вас.",
   'settings.privacy.strangers': 'Незнайомці в запити',

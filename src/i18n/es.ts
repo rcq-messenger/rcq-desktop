@@ -779,6 +779,8 @@ export const es: Record<string, string> = {
   'settings.devices.split': 'Dar a esta sesión su propia ranura',
   'settings.devices.split.confirm': '¿Separar ahora? La página se recargará',
   'settings.devices.split.hint': 'Esta sesión aún comparte la ranura de claves del teléfono. Con su propia ranura tendrá sus propias claves y podrá revocarse por separado.',
+  'settings.privacy.badge_pick': 'Qué marca llevar',
+  'settings.privacy.badge_pick_desc': 'Tienes más de una. Solo la elegida aparece junto a tu nombre.',
   'settings.privacy.badge': 'Llevar mi marca',
   'settings.privacy.badge_desc': 'La marca de la isla junto a tu nombre. Si lo desactivas, nadie más la ve; tú sigues viéndola.',
   'settings.privacy.strangers': 'Desconocidos a solicitudes',

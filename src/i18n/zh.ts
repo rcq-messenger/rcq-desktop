@@ -768,6 +768,8 @@ export const zh: Record<string, string> = {
   'settings.devices.split': '为此会话分配独立槽位',
   'settings.devices.split.confirm': '确认分配？页面将重新加载',
   'settings.devices.split.hint': '此会话目前与手机共用密钥槽位。拥有独立槽位后，它将持有自己的密钥，可单独撤销。',
+  'settings.privacy.badge': '显示我的标记',
+  'settings.privacy.badge_desc': '您名字旁边的岛屿标记。关闭后其他人都看不到，您自己仍然可见。',
   'settings.privacy.strangers': '陌生人进入请求',
   'settings.privacy.strangers_desc': '联系人以外的消息会先进入请求列表，等待你接受。若是你先给对方写信，对方的回复会照常送达。',
   'settings.privacy.trade_offers': '交易请求来自',

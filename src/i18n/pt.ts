@@ -770,6 +770,8 @@ export const pt: Record<string, string> = {
   'settings.devices.split': 'Dar a esta sessão um slot próprio',
   'settings.devices.split.confirm': 'Separar agora? A página será recarregada',
   'settings.devices.split.hint': 'Esta sessão ainda compartilha o slot de chaves do telefone. Com um slot próprio ela terá as próprias chaves e poderá ser revogada separadamente.',
+  'settings.privacy.badge': 'Exibir minha marca',
+  'settings.privacy.badge_desc': 'A marca da ilha ao lado do seu nome. Se desativar, mais ninguém a vê; você continua vendo.',
   'settings.privacy.strangers': 'Desconhecidos vão para solicitações',
   'settings.privacy.strangers_desc': 'Mensagens de pessoas fora dos seus contatos esperam em Solicitações até você aceitá-las. Se você escreveu primeiro, a resposta chega normalmente.',
   'settings.privacy.trade_offers': 'Ofertas de troca de',

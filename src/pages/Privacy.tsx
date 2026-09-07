@@ -13,6 +13,7 @@
 // so shipped iOS and Android builds keep saving their profiles.
 
 import { CenteredLoader } from '../components/Spinner'
+import { BadgeMark } from '../components/BadgeMark'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Api, type UserInfo } from '../lib/api'
@@ -178,6 +179,33 @@ export function Privacy() {
                 t={t}
               />
             </div>
+            {/* Only for people who have a mark: an island's mark is rare, and
+                a switch for hiding something you were never given is noise.
+                The mark on your OWN row is never blanked by the setting, so
+                this row cannot make itself disappear. */}
+            {info.badge && (
+              <div className="pt-3 space-y-1.5">
+                <div className="flex items-center justify-between gap-3">
+                  <label className="text-sm flex-1 min-w-0 flex items-center gap-1.5">
+                    {t('settings.privacy.badge')}
+                    <BadgeMark kind={info.badge} className="h-3.5 w-3.5" />
+                  </label>
+                  <input
+                    type="checkbox"
+                    className="accent-accent w-5 h-5 flex-none"
+                    checked={!info.badge_hidden}
+                    onChange={(e) => {
+                      const hidden = !e.target.checked
+                      setInfo((cur) => (cur ? { ...cur, badge_hidden: hidden } : cur))
+                      // Not through `patch`: that one is typed for the
+                      // tri-state scopes and this is a bool.
+                      void Api.updateProfile(identity!, { badge_hidden: hidden }).catch(() => {})
+                    }}
+                  />
+                </div>
+                <p className="text-xs text-fg-dim">{t('settings.privacy.badge_desc')}</p>
+              </div>
+            )}
             {/* Device-local, not a server policy: it decides what THIS machine
                 puts in its own ICE candidates, which is why it sits under a
                 divider rather than among the scopes the island enforces. */}

@@ -189,6 +189,10 @@ export interface UserInfo {
   /// The island's mark: null or a kind ("official", "tester", ...). Absent
   /// on an older island, which means none. See components/BadgeMark.
   badge?: string | null
+  /// Owner-only: whether this account keeps its mark off other people's
+  /// screens. Null from an island that predates the setting, and null on
+  /// anyone but yourself — a peer's choice is not a thing you can read.
+  badge_hidden?: boolean | null
   avatar_media_id?: string | null
   avatar_media_key?: string | null
   identity_key: string
@@ -346,6 +350,9 @@ export interface GroupPreview {
 }
 
 export interface ProfileUpdate {
+  /// "Wear my mark where others can see it", inverted. The mark itself is the
+  /// island's to grant; only this is the account holder's.
+  badge_hidden?: boolean
   nickname?: string
   first_name?: string | null
   last_name?: string | null

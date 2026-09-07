@@ -942,13 +942,16 @@ export function Contacts() {
                 to="/profile"
                 className="flex flex-col leading-tight min-w-0 hover:opacity-80 transition-opacity"
               >
-                <span className="font-semibold text-sm truncate">
+                <span className="font-semibold text-sm truncate flex items-center gap-1">
                   {me.nickname || `${me.uin}`}
+                  {/* Your own mark, where you can see it. It stays here even
+                      when you have chosen not to wear it in public: the island
+                      still gave it to you, and the setting is about everyone
+                      else. `badge` on your own row is never blanked. */}
+                  <BadgeMark kind={me.badge} className="h-3 w-3" />
                 </span>
                 <span className="text-[0.625rem] text-fg-dim">{me.uin}</span>
               </Link>
-              {/* Desktop only, and only while a relay is actually carrying us. */}
-              <BypassShield />
             </>
           )}
           <div className="ml-auto flex items-center gap-0.5">
@@ -957,6 +960,12 @@ export function Contacts() {
                 first so that the icons keep their places when it appears —
                 inserted mid-row it used to shove half of them sideways. */}
             <UpdateBadge className="mr-1" />
+            {/* Desktop only, and only while a relay is actually carrying us.
+                It used to sit between the nickname and the icons, which put a
+                state indicator in the middle of the identity block; it reads
+                as one of the header's controls, so it lives with them
+                (founder, 06.09). */}
+            <BypassShield />
             {/* Windows, not detours. Both of these used to be full-page routes
                 that took the whole desktop window away from the list you were
                 reading and had to be navigated back out of. The routes stay

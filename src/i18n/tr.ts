@@ -770,6 +770,8 @@ export const tr: Record<string, string> = {
   'settings.devices.split': 'Bu oturuma kendi yuvasını ver',
   'settings.devices.split.confirm': 'Ayrılsın mı? Sayfa yenilenecek',
   'settings.devices.split.hint': 'Bu oturum hâlâ telefonun anahtar yuvasını paylaşıyor. Kendi yuvasıyla kendi anahtarlarına sahip olur ve ayrıca iptal edilebilir.',
+  'settings.privacy.badge': 'İşaretimi göster',
+  'settings.privacy.badge_desc': 'Adınızın yanındaki ada işareti. Kapatırsanız başka kimse göremez; siz görmeye devam edersiniz.',
   'settings.privacy.strangers': 'Yabancılar isteklere düşsün',
   'settings.privacy.strangers_desc': 'Kişilerinizde olmayanların mesajları siz kabul edene kadar İstekler bölümünde bekler. Önce siz yazdıysanız yanıtı doğrudan gelir.',
   'settings.privacy.trade_offers': 'Takas teklifleri',

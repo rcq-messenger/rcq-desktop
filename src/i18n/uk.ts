@@ -69,6 +69,7 @@ export const uk: Record<string, string> = {
   'island.picker.manual': 'Ввести адресу вручну',
   'island.entry.price': 'Вхід: {price}',
   'island.entry.closed': 'Закритий клуб',
+  'island.entry.buy': 'купити',
   'island.picker.offline': 'Каталог зараз недоступний. Введіть адресу вручну.',
   'island.flagship.desc': 'Основний острів команди RCQ',
   'login.island.hint': 'Сервер, на якому житиме твій акаунт. Наш за замовчуванням. Можна вказати будь-який інший острів, чужий або власний.',

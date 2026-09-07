@@ -69,6 +69,7 @@ export const tr: Record<string, string> = {
   'island.picker.manual': 'Adresi elle gir',
   'island.entry.price': 'Giriş: {price}',
   'island.entry.closed': 'Kapalı kulüp',
+  'island.entry.buy': 'satın al',
   'island.picker.offline': 'Katalog şu an erişilemiyor. Adresi elle girin.',
   'island.flagship.desc': 'RCQ ekibinin ana adası',
   'login.island.hint': 'Hesabının yaşayacağı sunucu. Varsayılan olarak bizimki. İstersen başka bir adayı göster: başkasınınkini ya da kendininkini.',

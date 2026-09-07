@@ -69,6 +69,7 @@ export const zh: Record<string, string> = {
   'island.picker.manual': '手动输入地址',
   'island.entry.price': '入场：{price}',
   'island.entry.closed': '封闭俱乐部',
+  'island.entry.buy': '购买',
   'island.picker.offline': '目录暂时不可用。请手动输入地址。',
   'island.flagship.desc': 'RCQ 团队的主岛',
   'login.island.hint': '你的账号将要存放的服务器。默认是我们的岛。也可以指向任何别的岛，别人的或你自己的。',

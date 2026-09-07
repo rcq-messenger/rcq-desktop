@@ -198,12 +198,30 @@ function IslandEntryLine({ apiBase }: { apiBase: string }) {
   const caps = useServerCapabilities(apiBase)
   if (!caps.closed_island) return null
   const cents = caps.entry_price_cents ?? 0
+  // Where the island sells entry, in its own words. `entry_url` is the
+  // operator's setting, so a self-hoster sends people to their own shop and we
+  // send people to ours; an island that set a price and no address gets the
+  // line without a link rather than a link to somewhere we made up.
+  const url = (caps.entry_url || '').trim()
+  const line = cents > 0
+    ? t('island.entry.price', { price: formatUsd(cents) })
+    : t('island.entry.closed')
+  if (!url || !/^https:\/\//i.test(url)) {
+    return <span className="block text-[0.6875rem] text-accent truncate">{line}</span>
+  }
   return (
-    <span className="block text-[0.6875rem] text-accent truncate">
-      {cents > 0
-        ? t('island.entry.price', { price: formatUsd(cents) })
-        : t('island.entry.closed')}
-    </span>
+    <a
+      href={url}
+      target="_blank"
+      rel="noreferrer noopener"
+      // ⚠ Stops here. This line sits inside the row that PICKS the island, and
+      // a click that both opened a shop and chose an island would be two
+      // answers to a question the person asked once.
+      onClick={(e) => e.stopPropagation()}
+      className="block text-[0.6875rem] text-accent truncate hover:underline"
+    >
+      {line} · {t('island.entry.buy')}
+    </a>
   )
 }
 

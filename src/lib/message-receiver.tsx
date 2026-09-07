@@ -8,7 +8,7 @@ import { rememberTheirCard, theirCard } from './guest-card'
 import { useIdentity } from './identity-context'
 import { useWS } from './ws'
 import { currentDeviceId, decryptIncoming, getDevice, myDeviceId, noteInboundFrom, resetSilenceProbes, sendV2 } from './signal-device'
-import { addIncoming, addGroupIncoming, hydrateIncoming, beginCatchUp, endCatchUp, flushHistory, markDeleted,
+import { addIncoming, addGroupIncoming, serverStampMs, hydrateIncoming, beginCatchUp, endCatchUp, flushHistory, markDeleted,
   applyRemoteRead,
 } from './incoming-store'
 import { applyEditToOutgoing, carbonThreadKey, fileOutgoingCarbon } from './outgoing-store'
@@ -169,6 +169,11 @@ function route(
   ownHost: string,
   senderSigningKey?: string,
   identity?: WebIdentity,
+  /// The island's deposit stamp for this row, when the path that fetched it
+  /// has one. See `IncomingRow.srvAt`: without it a queue drain files a day
+  /// of backlog as if it had all arrived just now, and the read marker from
+  /// another device can never clear any of it.
+  srvAt?: number,
 ): void {
   // ⚠⚠ RANDOM-CHAT TRAFFIC IS NOT OURS TO FILE, and this device has no random
   // chat at all. Undelivered queue rows go to EVERY device of the account, so a
@@ -377,7 +382,7 @@ function route(
     return
   }
   if (typeof groupId === 'number') {
-    addGroupIncoming(groupId, senderUIN, envelope) // groups are single-island
+    addGroupIncoming(groupId, senderUIN, envelope, srvAt) // groups are single-island
     return
   }
   // Variant A consent: a message from an un-accepted CROSS-ISLAND sender is
@@ -401,7 +406,7 @@ function route(
       return
     }
   }
-  addIncoming(senderUIN, envelope)
+  addIncoming(senderUIN, envelope, srvAt)
   // Tell the sender it ARRIVED.
   //
   // ⚠ Asymmetric on purpose: this browser has no second tick of its own (its
@@ -570,8 +575,18 @@ function drainPrimaryQueue(identity: WebIdentity, catchUp: boolean): Promise<voi
 async function ingestPrimaryRow(
   identity: WebIdentity,
   myDev: number,
-  r: { envelope_type: string; payload: string; group_id: number | null; to_device_id?: number | null },
+  r: {
+    envelope_type: string
+    payload: string
+    group_id: number | null
+    to_device_id?: number | null
+    /// The island's own stamp, an ISO string with an offset. Absent on the
+    /// paths that do not carry one, and refused rather than guessed when it
+    /// has no offset (see `serverStampMs`).
+    received_at?: string
+  },
 ): Promise<void> {
+  const srvAt = serverStampMs(r.received_at)
   if (typeof r.to_device_id === 'number' && r.to_device_id !== myDev) {
     // A fan-out copy for a sibling device of this account: it was
     // encrypted against a ratchet that lives there, so no decrypt is
@@ -580,14 +595,14 @@ async function ingestPrimaryRow(
   } else if (r.envelope_type === 'gmsg' && typeof r.group_id === 'number') {
     // Sender-keys broadcast: not a sealed envelope, decoded via the chain.
     const got = await handleGmsg(identity, r.payload, r.group_id)
-    if (got) route(got.senderUIN, undefined, got.envelope, r.group_id, identity.uin, hostOf(identity.apiBase), undefined, identity)
+    if (got) route(got.senderUIN, undefined, got.envelope, r.group_id, identity.uin, hostOf(identity.apiBase), undefined, identity, srvAt)
   } else {
     const got = await decryptIncoming(identity, r.payload)
     if (got) {
       // A decrypted envelope proves the sending DEVICE can talk to us:
       // its silence probe stands down (device-scoped; v=1 names none).
       if (got.senderUIN !== identity.uin) noteInboundFrom(got.senderUIN, got.senderDeviceId)
-      route(got.senderUIN, got.senderHost, got.envelope, r.group_id, identity.uin, hostOf(identity.apiBase), got.senderSigningKey, identity)
+      route(got.senderUIN, got.senderHost, got.envelope, r.group_id, identity.uin, hostOf(identity.apiBase), got.senderSigningKey, identity, srvAt)
     }
   }
 }
@@ -675,7 +690,7 @@ async function drainRoomLog(identity: WebIdentity, myDev: number): Promise<void>
       identity.apiBase,
       identity.uin,
       logRequestFor(identity),
-      (row) => ingestPrimaryRow(identity, myDev, { envelope_type: row.envelope_type, payload: row.payload, group_id: row.gid }),
+      (row) => ingestPrimaryRow(identity, myDev, { envelope_type: row.envelope_type, payload: row.payload, group_id: row.gid, received_at: row.received_at }),
       flushHistory,
     )
   } catch {
@@ -806,7 +821,7 @@ export function MessageReceiver() {
     // THROW so the row stays in front of the cursor and is re-served, and
     // the strike ledger in group-log.ts acks past it only once it has failed
     // the same way on several drains.
-    const ingest = async (row: { payload: string; group_id: number | null }, host: string, swallow: boolean) => {
+    const ingest = async (row: { payload: string; group_id: number | null; received_at?: string }, host: string, swallow: boolean) => {
       if (cancelled) return
       const got = swallow
         ? await decryptIncoming(identity, row.payload).catch(() => null)
@@ -815,7 +830,7 @@ export function MessageReceiver() {
       // A group row in a BACKUP mailbox = that island also hosts a group we
       // joined (same identity, same mailbox): alias it like the visited poll.
       const gid = typeof row.group_id === 'number' ? aliasFor(host, row.group_id) : row.group_id
-      route(got.senderUIN, got.senderHost, got.envelope, gid, identity.uin, hostOf(identity.apiBase), got.senderSigningKey, identity)
+      route(got.senderUIN, got.senderHost, got.envelope, gid, identity.uin, hostOf(identity.apiBase), got.senderSigningKey, identity, serverStampMs(row.received_at))
     }
     const tick = async () => {
       // Single-flight: a tick that outlives the interval (a slow island, a
@@ -863,14 +878,14 @@ export function MessageReceiver() {
     // Same split as the backup poller: the legacy guest queue swallows (the
     // ack-less fetch), the room log throws on a transient failure so the
     // cursor stays in front of the row.
-    const ingest = async (row: { payload: string; group_id: number | null }, host: string, swallow: boolean) => {
+    const ingest = async (row: { payload: string; group_id: number | null; received_at?: string }, host: string, swallow: boolean) => {
       if (cancelled) return
       const got = swallow
         ? await decryptIncoming(identity, row.payload).catch(() => null)
         : await decryptIncoming(identity, row.payload)
       if (!got) return
       const gid = typeof row.group_id === 'number' ? aliasFor(host, row.group_id) : row.group_id
-      route(got.senderUIN, got.senderHost, got.envelope, gid, identity.uin, hostOf(identity.apiBase), got.senderSigningKey, identity)
+      route(got.senderUIN, got.senderHost, got.envelope, gid, identity.uin, hostOf(identity.apiBase), got.senderSigningKey, identity, serverStampMs(row.received_at))
     }
     const tick = async () => {
       if (cancelled || running || listVisitedIslands().length === 0) return
@@ -930,7 +945,11 @@ export function MessageReceiver() {
         if (got) {
           // Device-scoped liveness for the silence probe (v=1 names no device).
           if (got.senderUIN !== identity.uin) noteInboundFrom(got.senderUIN, got.senderDeviceId)
-          route(got.senderUIN, got.senderHost, got.envelope, ev.group_id, identity.uin, hostOf(identity.apiBase), got.senderSigningKey, identity)
+          // A live frame carries the island's own `server_time`, which is the
+          // same clock the queued copy would have been stamped with. Falling
+          // back to nothing (not to Date.now()) keeps the chain honest: no
+          // stamp means the row keeps behaving exactly as it did before.
+          route(got.senderUIN, got.senderHost, got.envelope, ev.group_id, identity.uin, hostOf(identity.apiBase), got.senderSigningKey, identity, serverStampMs(ev.server_time))
         }
       })()
         // No device to open it with yet. The same envelope is in the queue, and

@@ -30,6 +30,18 @@ export interface IncomingRow {
   /// "I thought we fixed reading on one device". The send time is the same
   /// number on every device, which is what makes the comparison mean anything.
   sentAt?: number
+  /// The ISLAND's deposit stamp for this row, in ms.
+  ///
+  /// ⚠⚠ THE ONLY CLOCK EVERY DEVICE OF THE ACCOUNT SHARES, and the reason the
+  /// cross-device read marker was broken for ordinary messages. `at` is when
+  /// THIS device ingested the row, so a web session that drains a day of queue
+  /// stamps everything with NOW, which is later than the moment the phone read
+  /// it: every message counted as "arrived after the read" and the badge never
+  /// cleared. `sentAt` was supposed to cover that, but it only exists on rows
+  /// that carry a `ts`, and every client emits `ts` solely beside a `ttl`, so
+  /// ordinary traffic never has one. Live it happened to work, because the row
+  /// is ingested before the marker arrives, which is why this survived a test.
+  srvAt?: number
   // Defaults to 'text' when absent (back-compat with rows persisted before
   // media support). 'photo'/'video'/'file' carry mediaId/mediaKey (+ poster /
   // file metadata); 'other' is a still-unsupported media kind (voice/location)
@@ -63,6 +75,29 @@ export interface IncomingRow {
 /// location) become an 'other' placeholder so they're never silently
 /// dropped. The envelope union is text/reaction/photo, but a real
 /// inbound JSON can carry any iOS kind — inspect loosely for those.
+/// The island's `received_at` / `server_time` as ms, or nothing.
+///
+/// ⚠⚠ AN OFFSET-LESS STAMP IS REFUSED, NOT GUESSED. The column is timezone
+/// aware, which Postgres honours and SQLite does not, and this project has
+/// already been bitten by that (`_as_aware` exists on the island because
+/// SQLite handed back naive datetimes). `Date.parse("2026-09-07T12:00:00")`
+/// reads a naive string as LOCAL time, so on a self-hosted island the stamp
+/// would land hours out, and the error direction is the dangerous one: too
+/// early means badges clearing for messages that arrived after the read.
+/// Android refuses the same way (`Session.parseIsoMs`).
+///
+/// ⚠ The rails are the same shape as `sendAnchorMs`: anything non-finite, in
+/// the future, or absurdly old degrades to `undefined`, i.e. to exactly what
+/// shipped before this existed.
+export function serverStampMs(iso: unknown, now: number = Date.now()): number | undefined {
+  if (typeof iso !== 'string' || !/(?:Z|[+-]\d{2}:?\d{2})$/.test(iso.trim())) return undefined
+  const ms = Date.parse(iso)
+  if (!Number.isFinite(ms) || ms <= 0) return undefined
+  if (ms > now + 60_000) return undefined
+  if (ms < now - 365 * 24 * 3600 * 1000) return undefined
+  return ms
+}
+
 function rowFromEnvelope(from: number, env: Envelope): IncomingRow | null {
   const now = Date.now()
   /// The disappearing-message deadline this envelope asks for, or nothing.
@@ -516,7 +551,11 @@ export function applyRemoteRead(peerUin: number | null, groupId: number | null, 
   // Rows this device holds that arrived after the other device's read. The
   // stored rows are the incoming ones only, which is exactly what the badge
   // counts.
-  const after = rows ? rows.filter((r) => (r.sentAt ?? r.at) > at).length : 0
+  // The island's stamp first: it is the same clock on both devices and, unlike
+  // `sentAt`, not a number the peer chose. Then the sender's, then this
+  // device's ingest time, which is what shipped before and is still the right
+  // answer for a row that predates this build.
+  const after = rows ? rows.filter((r) => (r.srvAt ?? r.sentAt ?? r.at) > at).length : 0
   const next = Math.min(current, after)
   if (next === current) return
   if (next === 0) unread.delete(key)
@@ -979,7 +1018,7 @@ function applyEditTo(map: Map<number, IncomingRow[]>, key: number, targetID: str
   emit()
 }
 
-export function addIncoming(from: number, env: Envelope): void {
+export function addIncoming(from: number, env: Envelope, srvAt?: number): void {
   // The peer's delivered/read receipt for OUR messages: second tick / read
   // tint on the outgoing rows of that thread (#636/#637). Never a row.
   if (env.kind === 'delivered' || env.kind === 'read') {
@@ -1003,6 +1042,10 @@ export function addIncoming(from: number, env: Envelope): void {
     return
   }
   const row = rowFromEnvelope(from, env)
+  // Attached here rather than inside the builder: seven return branches,
+  // one assignment. A non-finite value never reaches this point, because
+  // `serverStampMs` is the only way one is made.
+  if (row && srvAt != null && Number.isFinite(srvAt)) row.srvAt = srvAt
   if (!row) return
   if (deletedIds.has(row.id)) return
   if (refuseExpired(row)) return
@@ -1048,7 +1091,7 @@ function groupModerator(groupId: number, from: number): boolean {
 /// Ingest a decrypted GROUP envelope: routed by `groupId` (from the transport),
 /// `from` is the member who sent it (from the sealed envelope). Deduped per
 /// group+envelope-id (each member gets their own ciphertext of the same envelope).
-export function addGroupIncoming(groupId: number, from: number, env: Envelope): void {
+export function addGroupIncoming(groupId: number, from: number, env: Envelope, srvAt?: number): void {
   if (env.kind === 'reaction') {
     applyReaction(env.targetID, from, env.asset)
     return
@@ -1072,6 +1115,10 @@ export function addGroupIncoming(groupId: number, from: number, env: Envelope): 
     return
   }
   const row = rowFromEnvelope(from, env)
+  // Attached here rather than inside the builder: seven return branches,
+  // one assignment. A non-finite value never reaches this point, because
+  // `serverStampMs` is the only way one is made.
+  if (row && srvAt != null && Number.isFinite(srvAt)) row.srvAt = srvAt
   if (!row) return
   if (deletedIds.has(row.id)) return
   if (refuseExpired(row)) return

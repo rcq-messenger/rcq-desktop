@@ -6264,8 +6264,13 @@ function CallLogIcon({ missed, outgoing }: { missed: boolean; outgoing: boolean 
 
 /// The chat-header subtitle for an offline 1:1 peer (megalist B1): the number
 /// and when they were last around, taking turns. See [AltText].
+/// ⚠ SEVEN SECONDS HERE, four in the contact row, and the difference is not an
+/// oversight. iOS timed the chat header at 7s/0.2s on purpose (three seconds
+/// "flickered too fast to read"), and the founder's call on 07.09 was to make
+/// every client match iOS exactly rather than average the two. The contact row
+/// keeps AltText's 4000/500 default, which is what iOS's own contact list uses.
 function AltSubtitle({ uin, lastSeen }: { uin: number; lastSeen: string }) {
-  return <AltText a={`${uin}`} b={lastSeen} />
+  return <AltText a={`${uin}`} b={lastSeen} periodMs={7000} fadeMs={200} />
 }
 
 

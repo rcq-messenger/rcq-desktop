@@ -1528,9 +1528,7 @@ function ContactRow({
           />
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5">
-              <span className={'truncate ' + (unread > 0 ? 'font-bold' : 'font-medium')}>
-                {alias || contact.nickname || `${contact.uin}`}
-              </span>
+              <RowName name={alias || contact.nickname || `${contact.uin}`} strong={unread > 0} />
               <BadgeMark kind={contact.badge} />
               <GenderIcon gender={contact.gender} />
               {muted && <MuteGlyph />}
@@ -1569,15 +1567,16 @@ function ContactRow({
           </div>
         </Link>
         {/* ⚠⚠ A RESERVED SLOT, always present. The name beside the avatar is
-            `truncate`, so it fills whatever width is left — which means the
-            mark and the glyphs after it sit at the right edge of that space.
+            `truncate`, which is content-sized until the text actually
+            overflows — so this reservation only ever mattered to rows whose
+            name is long enough to truncate.
             When an unread counter appeared or cleared, that space changed and
             everything on the line JUMPED. Measured: 34px. That is why a mark
             drifts on rows that did nothing, while the row whose status actually
             changed — no counter appearing — stays put (founder, 07.09).
             Reserving the common width fixes the common case; a three-digit
             counter still widens, which is rare and explains itself. */}
-        <span className="flex-none inline-flex min-w-[26px] justify-center">
+        <span className="flex-none inline-flex min-w-[2.25rem] justify-center">
           {unread > 0 && <UnreadBadge n={unread} />}
         </span>
         <Link
@@ -1722,7 +1721,7 @@ function GroupRow({
           <GroupAvatar size={28} mediaId={group.avatar_media_id} mediaKey={group.avatar_media_key} />
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5">
-              <span className={'truncate ' + (unread > 0 ? 'font-bold' : 'font-medium')}>{group.name}</span>
+              <RowName name={group.name} strong={unread > 0} />
               <BadgeMark kind={group.badge} />
               {isMuted && <MuteGlyph />}
             </div>
@@ -1741,7 +1740,7 @@ function GroupRow({
             @
           </span>
         )}
-        <span className="flex-none inline-flex min-w-[26px] justify-center">
+        <span className="flex-none inline-flex min-w-[2.25rem] justify-center">
           {unread > 0 && <UnreadBadge n={unread} />}
         </span>
         <button
@@ -1881,6 +1880,40 @@ function PersonIcon() {
 }
 /// Gender glyph next to a contact's name (iOS/Android parity). Male = blue ♂,
 /// female = pink ♀; anything else renders nothing.
+/// A row's name, whose BOX does not change when the weight does.
+///
+/// ⚠⚠ THIS IS WHY THE MARK USED TO DRIFT, and the 07.09 fix missed it. The
+/// name turns bold the moment a thread has anything unread, and bold is wider:
+/// measured against this project's own Tailwind at the desktop root of 17.5px,
+/// +0.95px for "Ян", +3.03px for "Максим", +4.53px for "Константин". `truncate`
+/// is only overflow-hidden plus an ellipsis, so the span is still sized by its
+/// CONTENT until the text actually overflows, and everything after it, the mark
+/// first, slid by exactly that much every time a message arrived or was read.
+///
+/// The founder's own clue said this: the row whose STATUS changed was the one
+/// that held still. Nothing on this line depends on presence, so a row that did
+/// not gain or lose unread had nothing to move it. Reserving the unread slot
+/// helped a different set of rows entirely: those whose name is long enough to
+/// truncate, which are exactly the rows the weight flip cannot move.
+///
+/// The ghost behind the visible name is always bold and sets the width, so the
+/// weight flips inside a box that was already the wider of the two. Same single
+/// grid cell AltText uses. ⚠ A name that fits at medium but not at bold now
+/// parks the mark at the bold clamp, so it can sit up to ~8px after the text;
+/// that band is the width of the bold delta and it buys a mark that never moves.
+function RowName({ name, strong }: { name: string; strong: boolean }) {
+  return (
+    <span className="grid min-w-0">
+      <span aria-hidden className="col-start-1 row-start-1 truncate font-bold invisible">
+        {name}
+      </span>
+      <span className={'col-start-1 row-start-1 truncate ' + (strong ? 'font-bold' : 'font-medium')}>
+        {name}
+      </span>
+    </span>
+  )
+}
+
 function GenderIcon({ gender }: { gender?: string | null }) {
   const g = (gender || '').toLowerCase()
   if (g === 'm' || g === 'male') return <span className="text-xs flex-none" style={{ color: '#4A90D9' }}>♂</span>

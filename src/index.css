@@ -347,6 +347,26 @@ html.dark .rcq-wave {
   opacity: 1;
 }
 
+/* Multi-select is on for this row: the whole bubble is one checkbox now (see
+   SelectionMask in Chat.tsx), so the two per-message handles must stop lighting
+   up under the pointer and inviting a click that the mask above them eats.
+
+   ⚠⚠ `opacity`, NOT `display: none`. The ☺ is `.rcq-hover-only`, which on a
+   machine with a pointer is `display: flex` and OCCUPIES a 28px slot in the
+   row: removing it from the flow would narrow every own bubble's row the
+   instant selection turned on and widen it again on the way out, which is
+   precisely the twitch this list must not have. Hiding it in place costs
+   nothing.
+
+   ⚠ `!important` because it is competing with `.group:hover .rcq-bubble-menu`
+   above and with Tailwind's own `group-hover:opacity-100` on the ☺, both of
+   which are at least as specific as this pair of classes. */
+.rcq-selecting .rcq-bubble-menu,
+.rcq-selecting .rcq-hover-only {
+  opacity: 0 !important;
+  pointer-events: none;
+}
+
 /* An expanded pin hangs OVER the conversation rather than pushing it down, so
    it needs to be readable against whatever happens to be behind it. The bar's
    own 0.72 is right for a strip a few pixels tall with nothing but its own

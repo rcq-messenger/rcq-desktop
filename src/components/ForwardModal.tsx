@@ -7,7 +7,7 @@
 // support forwarding incoming messages because we don't render
 // them yet.
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Api, type Contact, type RCQGroup } from '../lib/api'
 import { memberCount } from '../lib/group-roster'
@@ -100,12 +100,23 @@ export function ForwardModal({
     [loading, shownContacts, shownGroups, lead],
   )
 
+  /// ⚠⚠ ONE PICK AT A TIME, AND THE GUARD IS A REF. `busyTargetKey` alone was
+  /// not enough for two reasons, and multi-select turned both into "send the
+  /// same thing to somebody twice": a second click can land before React has
+  /// committed the state, and disabling only the row that was clicked left
+  /// every OTHER row live while a batch of forwards was still going out. With
+  /// a selection behind it, one stray double-click re-sent the whole batch.
+  const picking = useRef(false)
+
   async function handlePick(target: ForwardTarget) {
+    if (picking.current) return
+    picking.current = true
     const key = target.kind === 'peer' ? `peer-${target.uin}` : `group-${target.id}`
     setBusyTargetKey(key)
     try {
       await onPick(target)
     } finally {
+      picking.current = false
       setBusyTargetKey(null)
     }
   }
@@ -151,7 +162,7 @@ export function ForwardModal({
         <div className="flex-1 overflow-y-auto">
           {lead && !q && (
             <ul>
-              <Row busy={false} onClick={lead.onPick}>
+              <Row busy={false} locked={busyTargetKey !== null} onClick={lead.onPick}>
                 <div className="w-8 h-8 rounded-full bg-field text-fg-secondary flex items-center justify-center flex-none">
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                     <rect x="9" y="9" width="13" height="13" rx="2" />
@@ -181,6 +192,7 @@ export function ForwardModal({
                   <Row
                     key={key}
                     busy={busyTargetKey === key}
+                    locked={busyTargetKey !== null}
                     onClick={() => void handlePick({ kind: 'peer', uin: c.uin, name, contact: c })}
                   >
                     {/* The picture, not a bare status dot. Picking a person out
@@ -210,6 +222,7 @@ export function ForwardModal({
                   <Row
                     key={key}
                     busy={busyTargetKey === key}
+                    locked={busyTargetKey !== null}
                     onClick={() =>
                       void handlePick({ kind: 'group', id: g.id, name: g.name, group: g })
                     }
@@ -252,10 +265,13 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function Row({
   busy,
+  locked = false,
   onClick,
   children,
 }: {
   busy: boolean
+  /// Something else in this list is already sending: this row is inert too.
+  locked?: boolean
   onClick: () => void
   children: React.ReactNode
 }) {
@@ -263,7 +279,7 @@ function Row({
     <li>
       <button
         onClick={onClick}
-        disabled={busy}
+        disabled={busy || locked}
         className="w-full px-4 py-2.5 flex items-center gap-3 hover:bg-field disabled:opacity-50 disabled:cursor-progress transition-colors"
       >
         {children}

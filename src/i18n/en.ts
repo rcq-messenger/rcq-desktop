@@ -261,6 +261,18 @@ export const en: Record<string, string> = {
   'chat.actions.download': 'download',
   'chat.actions.report': 'report',
   'chat.actions.more': 'more',
+  // ── Multi-select (pick several messages, then forward or delete them all).
+  // Keys mirror iOS `chat.selection.*` so the two clients say the same thing.
+  'chat.actions.select': 'select',
+  'chat.selection.title': '{n} selected',
+  'chat.selection.cancel': 'Cancel',
+  'chat.selection.too_many': 'Up to {n} messages at a time.',
+  'chat.selection.delete_partial': 'Deleted {n} before the island refused. The rest are still here.',
+  'chat.selection.forward': 'Forward ({n})',
+  'chat.selection.delete': 'Delete ({n})',
+  'chat.selection.delete_for_me': 'Delete for me ({n})',
+  'chat.selection.delete_notes': 'Delete on all my devices ({n})',
+  'chat.selection.delete_for_everyone': 'Delete for everyone ({n})',
   'chat.links_off.notice': 'Links are disabled in this group.',
   'chat.files_off.notice': 'Files are disabled in this group.',
   'chat.files_off.chip': 'Files are disabled in this group',

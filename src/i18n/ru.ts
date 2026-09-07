@@ -258,6 +258,18 @@ export const ru: Record<string, string> = {
   'chat.actions.download': 'скачать',
   'chat.actions.report': 'пожаловаться',
   'chat.actions.more': 'ещё',
+  // ── Выбор нескольких сообщений: переслать все или удалить все.
+  // Ключи те же, что на iOS (`chat.selection.*`).
+  'chat.actions.select': 'выбрать',
+  'chat.selection.title': 'Выбрано: {n}',
+  'chat.selection.cancel': 'Отмена',
+  'chat.selection.too_many': 'Не больше {n} сообщений за раз.',
+  'chat.selection.delete_partial': 'Удалено {n}, дальше остров отказал. Остальные на месте.',
+  'chat.selection.forward': 'Переслать ({n})',
+  'chat.selection.delete': 'Удалить ({n})',
+  'chat.selection.delete_for_me': 'Удалить у себя ({n})',
+  'chat.selection.delete_notes': 'Удалить на всех моих устройствах ({n})',
+  'chat.selection.delete_for_everyone': 'Удалить у всех ({n})',
   'chat.links_off.notice': 'Ссылки отключены в этой группе.',
   'chat.files_off.notice': 'Файлы отключены в этой группе.',
   'chat.files_off.chip': 'Файлы отключены в этой группе',

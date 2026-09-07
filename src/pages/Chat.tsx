@@ -176,6 +176,11 @@ const DELIVERY_RANK: Record<OutgoingRow['state'], number> = {
   delivered: 2,
   read: 3,
 }
+/// How many messages one selection may hold. See `toggleSelection`: a bulk
+/// action is N sealed envelopes seeded to every member of the thread, and
+/// nothing else bounds it.
+const SELECTION_MAX = 50
+
 
 export function Chat() {
   const { identity } = useIdentity()
@@ -366,6 +371,24 @@ export function Chat() {
   /// What is being forwarded: just the text and who wrote it. It used to be an
   /// OutgoingRow, which quietly limited forwarding to your own messages.
   const [forwardingRow, setForwardingRow] = useState<{ text: string; author: string } | null>(null)
+  // ── Multi-select ─────────────────────────────────────────────────────────
+  // Pick several messages, then forward them all or delete them all — what
+  // both phones already give the founder. The rules below are iOS's
+  // (ChatViewModel, "Multi-select"), on purpose: the desktop is judged against
+  // the phone in his hand, and two clients disagreeing about what "delete for
+  // everyone" means is worse than one client not offering it.
+  const [selecting, setSelecting] = useState(false)
+  /// ⚠⚠ IDS ONLY, never rows. What an id MEANS — mine or theirs, forwardable
+  /// or not, still in the thread at all — is resolved from the live timeline
+  /// (see `selection`) at the moment an action runs. A snapshot of rows taken
+  /// when a checkbox was ticked can name a message that has since been
+  /// retracted from another device or swept by the thread's timer, and a bulk
+  /// action is exactly the wrong place to be acting on a stale list.
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(() => new Set())
+  /// The delete confirmation hanging off the selection bar's trash button.
+  const [selectionDeleteOpen, setSelectionDeleteOpen] = useState(false)
+  /// The forward picker, opened for the whole selection rather than one row.
+  const [selectionForwardOpen, setSelectionForwardOpen] = useState(false)
   /// Message id whose reaction authors are on screen, or null.
   const [reactionAuthorsFor, setReactionAuthorsFor] = useState<string | null>(null)
   const [replyTo, setReplyTo] = useState<ReplyContext | null>(null)
@@ -464,6 +487,10 @@ export function Chat() {
     setReplyTo(null)
     setEditingRow(null)
     setForwardingRow(null)
+    // ⚠ Selection is per THREAD. The ids are only meaningful inside the log
+    // they came from, and carrying a tick across a thread switch would leave a
+    // trash button aimed at messages that are no longer on screen.
+    cancelSelection()
     setInput('')
     setError(null)
     setShowPicker(false)
@@ -638,6 +665,12 @@ export function Chat() {
       if (showPicker) return setShowPicker(false)
       if (reactionForRowId) return setReactionForRowId(null)
       if (actionsForRowId) return setActionsForRowId(null)
+      // Multi-select, innermost first: the delete confirmation, then the
+      // forward picker it can open, then the mode itself. Escape is the whole
+      // way out of selection on a desktop — there is no long press to undo.
+      if (selectionDeleteOpen) return setSelectionDeleteOpen(false)
+      if (selectionForwardOpen) return setSelectionForwardOpen(false)
+      if (selecting) return cancelSelection()
       if (editingRow) return cancelEdit()
       if (replyTo) return setReplyTo(null)
     }
@@ -656,6 +689,10 @@ export function Chat() {
         setAttachMenuOpen(false)
         setAttachView('main')
       }
+      // Same shape for the selection bar's delete confirmation. The panel
+      // itself is portalled and swallows its own mousedown (see MenuPanel), so
+      // only the trigger needs to be excused from "outside".
+      if (!el?.closest('[data-selection-menu]')) setSelectionDeleteOpen(false)
       // Let the bubble's own handler decide — it toggles its menu, and closing
       // here first would make the click a no-op.
       if (el?.closest('[data-chat-menu]')) return
@@ -674,7 +711,7 @@ export function Chat() {
       document.removeEventListener('keydown', onKey)
       document.removeEventListener('mousedown', onDown)
     }
-  }, [searchOpen, attachMenuOpen, attachView, showPicker, reactionForRowId, actionsForRowId, editingRow, replyTo])
+  }, [searchOpen, attachMenuOpen, attachView, showPicker, reactionForRowId, actionsForRowId, editingRow, replyTo, selecting, selectionDeleteOpen, selectionForwardOpen])
 
   // Publish the composer's height so the thread can reserve exactly that much
   // room. A ResizeObserver rather than a constant: the bar is a different
@@ -1656,14 +1693,30 @@ export function Chat() {
   /// the row locally (from state + the persisted log) and tombstone its id so a
   /// carbon / reload can't resurrect it. Recipients re-check the author rule and
   /// drop it too.
-  async function deleteForEveryone(row: OutgoingRow) {
-    if (!identity) return
+  /// Returns whether the retract actually went out, so a batch can stop at the
+  /// first refusal instead of firing the rest into a limiter that has already
+  /// said no. The single-message path ignores the answer and keeps its own
+  /// toast, which is what it has always done.
+  async function deleteForEveryone(row: OutgoingRow, quiet = false): Promise<boolean> {
+    if (!identity) return false
     setActionsForRowId(null)
-    markDeleted(row.id, { fromSelf: true }) // hide across both logs + persist tombstone
-    setOutgoing((rows) => rows.filter((r) => r.id !== row.id))
+    hideOwnRow(row)
     const env: DeleteEnvelope = { kind: 'delete', targetID: row.id }
     const res = await shipEnvelopeToCurrentThread(env)
-    if (!res.ok) toast(t('chat.error.send_failed'), 'error')
+    if (!res.ok && !quiet) toast(t('chat.error.send_failed'), 'error')
+    return res.ok
+  }
+
+  /// Drop one of MY rows from THIS device: out of the in-memory log, out of the
+  /// persisted copy, and tombstoned so a carbon or a reload cannot resurrect
+  /// it. Nothing goes on the wire.
+  ///
+  /// `deleteForEveryone` is exactly this plus the `delete` envelope, which is
+  /// the point of it being a function: the retract and the multi-select "delete
+  /// for me" can never end up disagreeing about what "gone from here" means.
+  function hideOwnRow(row: OutgoingRow) {
+    markDeleted(row.id, { fromSelf: true }) // hide across both logs + persist tombstone
+    setOutgoing((rows) => rows.filter((r) => r.id !== row.id))
   }
 
   /// The delete offered on an INCOMING row.
@@ -2411,7 +2464,21 @@ export function Chat() {
   /// so navigating there reveals it. We don't append it to the
   /// current thread's log.
   async function forwardTo(row: { text: string; author: string }, target: ForwardTarget) {
-    if (!identity) return
+    const ok = await forwardOne(row, target)
+    setForwardingRow(null)
+    setActionsForRowId(null)
+    if (!ok) return
+    if (isSentSoundEnabled()) playSound('message_sent')
+    toast(`${t('chat.forward.sent')}: ${target.name}`)
+  }
+
+  /// ONE forward, and the only place a forward is actually shipped. Both the
+  /// single-message menu and the multi-select bar come through here, so the two
+  /// cannot drift apart about what forwarding a message means or what it
+  /// credits. Returns false when it failed (already toasted) so a batch can
+  /// count what really went.
+  async function forwardOne(row: { text: string; author: string }, target: ForwardTarget): Promise<boolean> {
+    if (!identity) return false
     try {
       // Credit the ORIGINAL author, not whoever pressed forward. Sending my
       // own name on somebody else's words is the one thing a forward must not
@@ -2419,15 +2486,13 @@ export function Chat() {
       // the target's log all live in lib/send-text, the same path the browser
       // uses to hand a site's address to a chat.
       await sendTextTo(identity, target, row.text, row.author)
-      if (isSentSoundEnabled()) playSound('message_sent')
-      setForwardingRow(null)
-      setActionsForRowId(null)
-      toast(`${t('chat.forward.sent')}: ${target.name}`)
+      return true
     } catch (e) {
       toast(
         e instanceof SendTextError ? t(`chat.error.${e.code}`) : e instanceof Error ? e.message : t('chat.error.send_failed'),
         'error',
       )
+      return false
     }
   }
 
@@ -3013,6 +3078,200 @@ export function Chat() {
     return out
   }, [outgoing, incoming, deletedVersion, unreadAnchorId, islandHost])
 
+  // ── Multi-select: what is ticked, and what may be done to it ─────────────
+
+  /// One ticked message, told apart by which half of the conversation it came
+  /// from. That distinction is the whole safety property here: "mine" is not a
+  /// nickname comparison, it is which log the row lives in.
+  type SelectedMessage =
+    | { kind: 'out'; row: OutgoingRow }
+    | { kind: 'in'; msg: IncomingRow }
+
+  /// Can this row be forwarded at all? A forward ships TEXT (lib/send-text),
+  /// which is why the single-message menu offers it on a plain text bubble and
+  /// on nothing else — a photo, a file, a voice note and a legacy poll all have
+  /// no forward row in their menus. The multi-select bar asks the same
+  /// question of every ticked row and HIDES its forward button if any of them
+  /// says no, rather than quietly forwarding the subset it can manage: a
+  /// founder who ticks five messages and receives three has been lied to.
+  function selectionForwardable(it: SelectedMessage): boolean {
+    if (it.kind === 'out') {
+      // `vouchedOut` for the same reason the row's own menu uses it: a message
+      // still in flight, or one that failed, is not something to pass on.
+      //
+      // ⚠ And not a group invite. Its row draws the join card and its own menu
+      // has no forward at all, but the underlying row is plain text with an
+      // empty `kind`, so without this the batch would happily forward the one
+      // thing a single tap cannot.
+      if (linksAllowed && parseGroupInvite(it.row.text) != null) return false
+      return vouchedOut(it.row) && (!it.row.kind || it.row.kind === 'text') && it.row.text.trim() !== ''
+    }
+    return it.msg.kind === 'text' && it.msg.text.trim() !== ''
+  }
+
+  /// The ticked messages, resolved against the LIVE timeline, in the order the
+  /// conversation holds them (oldest first — `timeline` is sorted by send
+  /// time, and a forwarded batch must arrive in the order it was written).
+  ///
+  /// ⚠⚠ THE ONLY PLACE A BULK ACTION MAY LEARN WHICH ROWS IT ACTS ON. Two
+  /// things fall out of deriving it from `timeline` rather than from the tick
+  /// set: a message that has gone away while it was ticked (retracted from
+  /// another device, swept by the thread's timer, deduped against the other
+  /// half of the conversation) drops out of the selection instead of being
+  /// deleted or forwarded by a dangling id, and `kind` here is the authority
+  /// on whose message it is.
+  const selection = useMemo(() => {
+    const items: SelectedMessage[] = []
+    if (selecting && selectedIds.size > 0) {
+      for (const it of timeline) {
+        if (it.kind === 'day' || it.kind === 'unread') continue
+        if (it.kind === 'out') {
+          // A finished call is a note the conversation keeps, not a message:
+          // it never went on the wire, so there is nothing to retract or pass
+          // on. It also draws as a centred line with no bubble to tick.
+          if (it.row.kind === 'call') continue
+          if (selectedIds.has(it.row.id)) items.push({ kind: 'out', row: it.row })
+        } else if (selectedIds.has(it.msg.id)) {
+          items.push({ kind: 'in', msg: it.msg })
+        }
+      }
+    }
+    return {
+      items,
+      count: items.length,
+      /// ⚠⚠ THE GATE ON "DELETE FOR EVERYONE". Every ticked row has to live in
+      /// MY outgoing log and be vouched for by the island — the same pair of
+      /// conditions the single-row menu uses before it renders that button.
+      /// One incoming row in the set and this is false, so a retract can never
+      /// be aimed at somebody else's message id.
+      allMine: items.length > 0 && items.every((it) => it.kind === 'out' && vouchedOut(it.row)),
+      canForward: items.length > 0 && items.every(selectionForwardable),
+      /// What a bulk forward would ship, oldest first. Author names are the
+      /// SELF-CHOSEN ones — ⚠ never `contactAlias`: my own name for somebody is
+      /// device-only by contract, and a forward carries the author label to a
+      /// third party. Same rule the reply quote follows.
+      forwardBatch: items.map((it) =>
+        it.kind === 'out'
+          ? { text: it.row.text, author: myNickname }
+          : {
+              text: it.msg.text,
+              author:
+                (isGroup ? memberByUin.get(it.msg.from)?.nickname : peer?.nickname) ?? `${it.msg.from}`,
+            },
+      ),
+    }
+  }, [selecting, selectedIds, timeline, myNickname, isGroup, memberByUin, peer])
+
+  /// Start selecting FROM a message, seeded with it — never from an empty set,
+  /// which would open a mode whose only offer is to leave it again.
+  function enterSelection(id: string) {
+    setActionsForRowId(null)
+    setReactionForRowId(null)
+    // The selection bar covers the composer; a caret still blinking under it
+    // would eat the Escape that is the way out of this mode on a desktop.
+    taRef.current?.blur()
+    setSelecting(true)
+    setSelectedIds(new Set([id]))
+  }
+
+  function toggleSelection(id: string) {
+    const next = new Set(selectedIds)
+    if (next.has(id)) next.delete(id)
+    else {
+      // ⚠⚠ A CEILING, because a bulk action is N round trips and nothing else
+      // bounds it. Every "delete for everyone" is a sealed envelope seeded to
+      // each member of the thread, so fifty ticked messages in a two hundred
+      // person room is ten thousand of them, back to back, straight into the
+      // island's rate limiter. Fifty is well past any real "clear this patch
+      // of conversation" and far short of that.
+      if (next.size >= SELECTION_MAX) {
+        toast(t('chat.selection.too_many', { n: SELECTION_MAX }))
+        return
+      }
+      next.add(id)
+    }
+    setSelectedIds(next)
+    // Unticking the last one leaves the mode, exactly as on the phones: a
+    // selection bar over an empty selection is a dead end with a Cancel in it.
+    if (next.size === 0) setSelecting(false)
+  }
+
+  function cancelSelection() {
+    setSelecting(false)
+    setSelectedIds(new Set())
+    setSelectionDeleteOpen(false)
+    setSelectionForwardOpen(false)
+  }
+
+  /// Forward everything ticked to one target, oldest first.
+  async function forwardSelected(target: ForwardTarget) {
+    // ⚠ Snapshot and CLEAR before the first send. This is N sequential round
+    // trips, the picker stays alive for all of them, and a second click on a
+    // slow one would otherwise fire the whole batch a second time.
+    const batch = selection.forwardBatch
+    const canForward = selection.canForward
+    cancelSelection()
+    if (!canForward || batch.length === 0) return
+    let sent = 0
+    for (const item of batch) if (await forwardOne(item, target)) sent++
+    if (sent === 0) return
+    if (isSentSoundEnabled()) playSound('message_sent')
+    toast(`${t('chat.forward.sent')}: ${target.name}`)
+  }
+
+  /// "Delete for me" over the selection. Per row it runs the same local delete
+  /// that row's own menu runs: my own rows leave this device (`hideOwnRow`),
+  /// somebody else's are hidden here (`deleteIncoming`, which in an ordinary
+  /// thread puts nothing on the wire).
+  ///
+  /// ⚠ Saved Messages is the exception, and it is not one this function gets
+  /// to invent: there, "somebody else" is another of my own devices, and
+  /// `deleteIncoming` already retracts a note everywhere (#601). My own half
+  /// has to be retracted with it, or a bulk delete of the notes thread would
+  /// leave every second note standing on the phone.
+  async function deleteSelectedForMe() {
+    const batch = selection.items
+    cancelSelection()
+    for (const it of batch) {
+      if (it.kind === 'in') await deleteIncoming(it.msg.id)
+      // ⚠⚠ NOT A ROW THAT IS STILL ON ITS WAY OUT. `hideOwnRow` tombstones it
+      // here and nothing recalls a send already in flight, so the peer could
+      // end up holding a message its author no longer has a copy of and no way
+      // to recover. The single-message menu offers nothing on an unvouched
+      // row for the same reason; the batch must not be the loophole.
+      else if (!vouchedOut(it.row)) continue
+      else if (isSelf) await deleteForEveryone(it.row)
+      else hideOwnRow(it.row)
+    }
+  }
+
+  /// "Delete for everyone" over the selection — one `delete` envelope per row,
+  /// through the very function the single-message menu calls.
+  ///
+  /// ⚠⚠ Gated on `selection.allMine` at BOTH ends: the button only renders
+  /// when every ticked row is my own vouched message, and the loop refuses
+  /// anything that is not an outgoing row on its way past. A retract aimed at
+  /// somebody else's id is not a bug anyone gets to find later.
+  async function deleteSelectedForEveryone() {
+    const batch = selection.items
+    if (!selection.allMine) return
+    cancelSelection()
+    let done = 0
+    for (const it of batch) {
+      if (it.kind !== 'out') continue
+      // ⚠ Stop at the first refusal. Carrying on means dozens more envelopes
+      // at a limiter that has already refused one, and every row is hidden
+      // locally before its envelope goes out, so the further they get the more
+      // messages are gone here and still standing on the other side. One
+      // honest line beats fifty identical toasts.
+      if (!(await deleteForEveryone(it.row, true))) {
+        toast(t('chat.selection.delete_partial', { n: done }), 'error')
+        return
+      }
+      done++
+    }
+  }
+
   /// Ids of the messages containing the query, newest last — the same order
   /// they sit in the thread, so stepping through them walks the conversation
   /// rather than jumping about.
@@ -3118,6 +3377,8 @@ export function Chat() {
       setForwardingRow({ text, author })
       setActionsForRowId(null)
     },
+    startSelection: enterSelection,
+    toggleSelection,
     startReport,
     downloadRowFile: (rowId, mediaId, mediaKey, name, mime) =>
       void downloadRowFile(rowId, mediaId, mediaKey, name, mime),
@@ -3144,6 +3405,8 @@ export function Chat() {
       openSite: (...a) => rowLiveRef.current!.openSite(...a),
       pinMessage: (...a) => rowLiveRef.current!.pinMessage(...a),
       startForward: (...a) => rowLiveRef.current!.startForward(...a),
+      startSelection: (...a) => rowLiveRef.current!.startSelection(...a),
+      toggleSelection: (...a) => rowLiveRef.current!.toggleSelection(...a),
       startReport: (...a) => rowLiveRef.current!.startReport(...a),
       downloadRowFile: (...a) => rowLiveRef.current!.downloadRowFile(...a),
       deleteIncoming: (...a) => rowLiveRef.current!.deleteIncoming(...a),
@@ -3685,6 +3948,11 @@ export function Chat() {
                     aliasSig={aliasSig}
                     reactionsVersion={reactionsVersion}
                     pressState={pressRef}
+                    selecting={selecting}
+                    // Scalars, not the Set: the rows are memoised by prop
+                    // identity, and handing every bubble the same Set object
+                    // would tell none of them that a tick had moved.
+                    selected={selecting && selectedIds.has(rowId)}
                     t={t}
                     h={rowActions}
                   />
@@ -3716,6 +3984,8 @@ export function Chat() {
                   aliasSig={aliasSig}
                   reactionsVersion={reactionsVersion}
                   pressState={pressRef}
+                  selecting={selecting}
+                  selected={selecting && selectedIds.has(rowId)}
                   t={t}
                   h={rowActions}
                 />
@@ -3968,8 +4238,16 @@ export function Chat() {
               </div>
             )}
           </div>
+          {/* ⚠⚠ `invisible`, never unmounted, for the length of multi-select.
+              The selection bar below is a translucent capsule laid OVER this
+              one, so a composer left painted underneath showed straight through
+              it, two capsules deep. `visibility: hidden` takes the paint and
+              the tab stop away and leaves the box: `--rcq-composer-h` is
+              measured off this wrapper, and a bar that changed height on the
+              way in and out of the mode would drag the whole conversation up
+              and down behind it. */}
           {!isGroup && peer?.blocked ? (
-            <div className="flex items-center justify-center gap-3 rounded-2xl bg-surface px-4 py-3 text-sm text-fg-secondary">
+            <div className={`flex items-center justify-center gap-3 rounded-2xl bg-surface px-4 py-3 text-sm text-fg-secondary ${selecting ? 'invisible' : ''}`}>
               <span>{t('chat.blocked.notice')}</span>
               <button
                 onClick={() => void unblockPeer()}
@@ -3979,7 +4257,7 @@ export function Chat() {
               </button>
             </div>
           ) : (
-          <div className="relative">
+          <div className={`relative ${selecting ? 'invisible' : ''}`}>
           {/* ⚠ No focus ring, by decision (founder, 03.09: "убери зеленую
               обводку у композера, не надо ни при наведении ни при нажатии").
               I had put one here when the field lost its own pill; it is gone
@@ -4307,13 +4585,136 @@ export function Chat() {
           </div>
           </div>
           )}
+          {/* ── The selection bar ──────────────────────────────────────────
+              It COVERS the composer rather than replacing it, and that is the
+              whole trick. `--rcq-composer-h` is measured off this wrapper and
+              paid back to the thread as bottom padding; swapping the capsule
+              for a bar of a different height would move that seam, scroll the
+              conversation under the reader's eyes and, if the composer ever
+              unmounted, freeze the variable at its last value (the trap noted
+              where `readOnlyHere` is defined). An absolute layer over the
+              capsule costs exactly zero layout.
+              ⚠ The composer underneath still holds focus if it had it, which
+              is why `enterSelection` blurs it — otherwise the keys meant for
+              Escape would be typing into a field nobody can see. */}
+          {selecting && (
+            <div className="absolute inset-0 z-30 px-3 py-3">
+              <div className="rcq-composer-shell h-full flex items-center gap-1 rounded-3xl px-2 shadow-lg">
+                <button
+                  type="button"
+                  onClick={cancelSelection}
+                  className="rounded-full px-3 py-2 text-sm text-fg-primary hover:bg-line/60 transition-colors flex-none"
+                >
+                  {t('chat.selection.cancel')}
+                </button>
+                {/* tabular-nums for the same reason the delivery clock has it:
+                    the count changes with every tick and a proportional figure
+                    would shuffle the buttons beside it. */}
+                <span className="flex-1 min-w-0 text-center text-xs font-semibold text-fg-secondary tabular-nums truncate">
+                  {t('chat.selection.title', { n: selection.count })}
+                </span>
+                {/* HIDDEN, not disabled, when any ticked row cannot be
+                    forwarded — iOS's rule. A greyed-out button invites the
+                    question "why not"; the honest answer (this selection holds
+                    a photo, and a forward carries text) does not fit on one.
+                    And forwarding only the part that fits, silently, is the
+                    behaviour this is explicitly not allowed to have. */}
+                {selection.canForward && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectionForwardOpen(true)}
+                    aria-label={t('chat.selection.forward', { n: selection.count })}
+                    title={t('chat.selection.forward', { n: selection.count })}
+                    className="h-9 w-9 rounded-full text-accent hover:bg-line/60 transition-colors flex-none flex items-center justify-center"
+                  >
+                    <MenuForwardIcon />
+                  </button>
+                )}
+                <div className="relative flex-none" data-selection-menu>
+                  {/* ⚠⚠ The count is ON the destructive control, not only in
+                      the confirmation behind it. This button takes messages
+                      away from other people's devices; "delete" alone next to
+                      a number the eye has to go and find elsewhere is how the
+                      wrong six get taken. */}
+                  <button
+                    type="button"
+                    disabled={selection.count === 0}
+                    onClick={() => setSelectionDeleteOpen((v) => !v)}
+                    className="rounded-full px-3 py-2 text-sm font-medium text-red-500 hover:bg-red-500/15 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5"
+                  >
+                    <MenuTrashIcon />
+                    <span className="tabular-nums">{t('chat.selection.delete', { n: selection.count })}</span>
+                  </button>
+                  <AnimatePresence>
+                    {selectionDeleteOpen && selection.count > 0 && (
+                      // Portalled + window-clamped by MenuPanel, which matters
+                      // here more than anywhere: the trigger sits in the very
+                      // last row of pixels on the screen, so the panel has to
+                      // flip above it. `flipGap` clears the capsule's own
+                      // padding, the same measurement the attach menu needed.
+                      <MenuPanel flipGap={22} className="right-0 min-w-[22ch] max-w-[32ch] py-1">
+                        {(isSelf
+                          // Saved Messages: every device on both sides of this
+                          // thread is mine, so "for me" and "for everyone" are
+                          // the same sentence and offering both would be two
+                          // buttons that do one thing. See deleteSelectedForMe.
+                          // ⚠ Saved Messages is one thread across all of MY
+                          // devices, so there is no "for me" here: deleting a
+                          // note takes it off the phone too. One option, and a
+                          // label that says so rather than the bare "Delete"
+                          // it used to borrow from an ordinary chat.
+                          ? [{ key: 'chat.selection.delete_notes', run: deleteSelectedForMe }]
+                          : [
+                              { key: 'chat.selection.delete_for_me', run: deleteSelectedForMe },
+                              ...(selection.allMine
+                                ? [{ key: 'chat.selection.delete_for_everyone', run: deleteSelectedForEveryone }]
+                                : []),
+                            ]
+                        ).map((opt) => (
+                          <button
+                            key={opt.key}
+                            type="button"
+                            onClick={() => {
+                              setSelectionDeleteOpen(false)
+                              void opt.run()
+                            }}
+                            className="w-full px-3 py-2.5 text-left text-sm text-red-500 hover:bg-field transition-colors"
+                          >
+                            {t(opt.key, { n: selection.count })}
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => setSelectionDeleteOpen(false)}
+                          className="w-full px-3 py-2.5 text-left text-sm text-fg-secondary hover:bg-field transition-colors"
+                        >
+                          {t('common.cancel')}
+                        </button>
+                      </MenuPanel>
+                    )}
+                  </AnimatePresence>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
+      {/* ONE picker for both forwards. The single-message menu and the
+          selection bar put different things into it and read different things
+          out, but the list of people and rooms is the same list, and a second
+          copy of it would be a second place for a target to be resolved
+          wrongly. `selectionForwardOpen` wins the dispatch because it is only
+          ever true while the bar is up. */}
       <ForwardModal
-        visible={forwardingRow != null}
-        onClose={() => setForwardingRow(null)}
+        visible={selectionForwardOpen || forwardingRow != null}
+        title={selectionForwardOpen ? t('chat.selection.forward', { n: selection.count }) : undefined}
+        onClose={() => {
+          setForwardingRow(null)
+          setSelectionForwardOpen(false)
+        }}
         onPick={async (target) => {
+          if (selectionForwardOpen) return void (await forwardSelected(target))
           if (forwardingRow) await forwardTo(forwardingRow, target)
         }}
       />
@@ -4427,6 +4828,10 @@ interface RowActions {
   openSite: (addr: string) => void
   pinMessage: (text: string) => void
   startForward: (text: string, author: string) => void
+  /// Enter multi-select seeded with this row (the "select" row of its menu).
+  startSelection: (id: string) => void
+  /// Tick / untick this row while multi-select is already on.
+  toggleSelection: (id: string) => void
   startReport: (m: { from: number; text: string; kind?: string; fileName?: string; mediaId?: string }) => void
   downloadRowFile: (rowId: string, mediaId: string, mediaKey: string, name?: string, mime?: string) => void
   deleteIncoming: (id: string) => void
@@ -4464,6 +4869,12 @@ interface CommonRowProps {
   downloadPct: number | null
   /// It just finished and the file was saved.
   downloadSaved: boolean
+  /// Multi-select is on for this thread: the row becomes one click target and
+  /// grows a checkbox in its own margin (see SelectionMask). Every per-message
+  /// gesture the row otherwise offers is off while this is true.
+  selecting: boolean
+  /// ...and this one is ticked.
+  selected: boolean
   mention: MentionContext | undefined
   mediaBase: string | undefined
   myUin: number
@@ -4628,6 +5039,68 @@ function pressMenuAttrs(rowId: string, pressState: { current: PressState }, h: R
   }
 }
 
+/// The whole row turned into one checkbox, for the length of multi-select.
+///
+/// ⚠⚠ ABSOLUTE, and it has to stay that way. This thread is a long list of
+/// rows whose heights it re-measures constantly (the bottom pin, the reading
+/// position, the composer inset), and an affordance that took part in layout
+/// would change every row's height or width the instant the mode turned on —
+/// the whole conversation would twitch on entering and leaving selection. The
+/// tick rides in the margin the 80% bubble cap ALWAYS leaves free on the far
+/// side of the row, so it costs no space that was not already empty.
+///
+/// It also covers the row, which is the second half of its job: while it is up,
+/// a click cannot reach a link, a photo, a download chip or a menu handle
+/// underneath. In this mode a click on a message means one thing only.
+function SelectionMask({
+  side,
+  checked,
+  label,
+  onToggle,
+}: {
+  /// Which side the bubble is on: 'end' = mine (free margin on the left),
+  /// 'start' = theirs (free margin on the right).
+  side: 'start' | 'end'
+  checked: boolean
+  label: string
+  onToggle: () => void
+}) {
+  return (
+    <span
+      role="checkbox"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        onToggle()
+      }}
+      // A right-click on a bubble normally opens its action menu, and the mask
+      // is now what the pointer actually lands on. Without this the browser's
+      // OWN context menu comes up over the conversation instead — so the
+      // gesture keeps meaning the one thing this mode has: tick / untick.
+      onContextMenu={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        onToggle()
+      }}
+      className={`absolute inset-0 z-10 flex items-center cursor-pointer select-none ${
+        side === 'end' ? 'justify-start pl-1' : 'justify-end pr-1'
+      }`}
+    >
+      <span
+        className={`h-5 w-5 flex-none rounded-full flex items-center justify-center transition-colors ${
+          checked ? 'bg-accent text-white' : 'bg-surface/80 text-transparent ring-1 ring-line'
+        }`}
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <path d="M20 6 9 17l-5-5" />
+        </svg>
+      </span>
+    </span>
+  )
+}
+
 /// A row the outgoing menu may open for. 'sending'/'failed' rows have
 /// their own inline controls (retry/dismiss) and render no menu — letting
 /// a press open one would only dim the thread over nothing.
@@ -4657,6 +5130,8 @@ const IncomingMessageRow = memo(function IncomingMessageRow({
   mediaBase,
   myUin,
   pressState,
+  selecting,
+  selected,
   isSelf,
   canPin,
   canModerate,
@@ -4674,7 +5149,10 @@ const IncomingMessageRow = memo(function IncomingMessageRow({
     m.kind !== 'other' &&
     m.kind !== 'poll' &&
     invite == null
-  const press = () => pressMenuAttrs(m.id, pressState, h)
+  // ⚠ No long-press-to-menu while multi-select is on: the mask above the
+  // bubble eats the CLICK, but a touch that starts on it still bubbles up to
+  // whoever is listening, so the gesture has to be withheld here as well.
+  const press = () => (selecting ? {} : pressMenuAttrs(m.id, pressState, h))
   /// What a reply to this message may quote.
   ///
   /// ⚠ A quote is permanent, the message it quotes may not be. The timer is
@@ -4688,7 +5166,16 @@ const IncomingMessageRow = memo(function IncomingMessageRow({
   const replyQuote =
     m.expiresAt != null ? t('chat.ttl.quoted') : m.text || m.fileName || t('chat.pin.attachment')
   return (
-    <li id={`msg-${m.id}`} className={`group flex justify-start rounded-lg transition-colors duration-500 ${cont ? '-mt-1' : ''} ${highlighted ? 'bg-accent/15' : ''} ${showActions || showReactionPicker ? 'relative z-[20]' : ''}`} {...swipeReplyAttrs(() => h.startReplyTo(m.id, replyQuote, replyAuthor))}>
+    // ⚠ `relative` unconditionally now (it used to arrive with the open menu):
+    // the selection mask is absolutely positioned inside this row and has to
+    // have this row as its containing block. `relative` on its own changes no
+    // layout, so nothing moves for rows that are not selecting.
+    // ⚠ And the swipe-to-reply gesture is withheld while selecting, for the
+    // same reason as the long press above — the mask stops clicks, not touches.
+    <li id={`msg-${m.id}`} className={`group relative flex justify-start rounded-lg transition-colors duration-500 ${cont ? '-mt-1' : ''} ${highlighted ? 'bg-accent/15' : selected ? 'bg-accent/10' : ''} ${selecting ? 'rcq-selecting' : ''} ${showActions || showReactionPicker ? 'z-[20]' : ''}`} {...(selecting ? {} : swipeReplyAttrs(() => h.startReplyTo(m.id, replyQuote, replyAuthor)))}>
+      {selecting && (
+        <SelectionMask side="start" checked={selected} label={t('chat.actions.select')} onToggle={() => h.toggleSelection(m.id)} />
+      )}
       <div className="relative max-w-[80%] flex flex-col items-start gap-1">
         {senderName && !cont && (
           <Link
@@ -4900,6 +5387,19 @@ const IncomingMessageRow = memo(function IncomingMessageRow({
                 icon={<MenuForwardIcon />}
               />
             )}
+            {/* The way INTO multi-select, and it is here rather than on a
+                gesture on purpose: the phones open it with a long press, which
+                is not something a mouse does. This menu is already the one
+                place every per-message verb lives, it opens from a left-click,
+                a right-click and a long press on every kind of bubble, and it
+                is where somebody looking for "do something to this message"
+                already goes. From there the mode is driven by the checkboxes
+                in the margin and left by Escape or Cancel. */}
+            <ActionButton
+              onClick={() => h.startSelection(m.id)}
+              label={t('chat.actions.select')}
+              icon={<MenuSelectIcon />}
+            />
             {/* Reporting somebody's message to the island's
                 operators — reachable on EVERY kind now, which
                 was the founder's point: a video or file offered
@@ -4995,18 +5495,24 @@ const OutgoingMessageRow = memo(function OutgoingMessageRow({
   mediaBase,
   myUin,
   pressState,
+  selecting,
+  selected,
   canPin,
   myNickname,
 }: OutgoingRowProps) {
   /// Right-click/long-press attrs for MY media rows — only once the row has
   /// a menu to show (see vouchedOut).
+  /// ⚠ Withheld entirely while multi-select is on. The mask over the row eats
+  /// the CLICK, but a touch that starts on it still bubbles up to these
+  /// handlers, and a long press would open a per-message menu in a mode where
+  /// the only thing a press means is "tick this".
   const pressAttrs = () =>
-    vouchedOut(row) ? { 'data-chat-menu': true, ...pressMenuAttrs(row.id, pressState, h) } : {}
+    vouchedOut(row) && !selecting ? { 'data-chat-menu': true, ...pressMenuAttrs(row.id, pressState, h) } : {}
   /// The visible half of the same thing. Same gate: a row still in flight has
   /// no menu to open, so it gets no handle to open one with either. The parent
   /// has to be `relative` (the handle pins itself to its corner).
   const menuButton = (tone: 'over' | 'chrome') =>
-    vouchedOut(row) ? (
+    vouchedOut(row) && !selecting ? (
       <BubbleMenuButton
         tone={tone}
         label={t('chat.actions.more')}
@@ -5042,6 +5548,10 @@ const OutgoingMessageRow = memo(function OutgoingMessageRow({
               icon={<MenuReactIcon />}
             />
             <ActionButton onClick={() => h.startReply(row)} label={t('chat.actions.reply')} icon={<MenuReplyIcon />} />
+            {/* Media rows join the selection too — the bulk delete is the one
+                thing that works on them, and leaving them out would mean a
+                thread of photos could not be cleared. */}
+            <ActionButton onClick={() => h.startSelection(row.id)} label={t('chat.actions.select')} icon={<MenuSelectIcon />} />
             <ActionButton onClick={() => h.deleteForEveryone(row)} label={t('chat.actions.delete')} icon={<MenuTrashIcon />} danger />
           </ActionMenu>
         )}
@@ -5128,7 +5638,17 @@ const OutgoingMessageRow = memo(function OutgoingMessageRow({
       )}
     </div>
   )
-  const liClass = `group flex justify-end rounded-lg transition-colors duration-500 ${cont ? '-mt-1' : ''} ${highlighted ? 'bg-accent/15' : ''} ${showActions || showReactionPicker ? 'relative z-[20]' : ''}`
+  // ⚠ `relative` unconditionally now (it used to arrive with the open menu):
+  // `selectMask` is absolutely positioned inside the row and needs the row as
+  // its containing block. `relative` alone changes no layout, so no row moves.
+  const liClass = `group relative flex justify-end rounded-lg transition-colors duration-500 ${cont ? '-mt-1' : ''} ${highlighted ? 'bg-accent/15' : selected ? 'bg-accent/10' : ''} ${selecting ? 'rcq-selecting' : ''} ${showActions || showReactionPicker ? 'z-[20]' : ''}`
+  /// The tick, for every shape an own row can take. Written once and dropped
+  /// into all eight branches below rather than into the one that happened to
+  /// be tested: a bubble that quietly refuses to be ticked is how a bulk
+  /// delete ends up taking the wrong set.
+  const selectMask = selecting ? (
+    <SelectionMask side="end" checked={selected} label={t('chat.actions.select')} onToggle={() => h.toggleSelection(row.id)} />
+  ) : null
 
   // Links-off rooms render the raw text bubble instead (same rule
   // as the incoming side — a join card is a link).
@@ -5138,6 +5658,7 @@ const OutgoingMessageRow = memo(function OutgoingMessageRow({
     // (not a raw URL bubble) with the delivery state below.
     return (
       <li id={`msg-${row.id}`} className={liClass}>
+        {selectMask}
         <div className="relative max-w-[80%] flex flex-col items-end gap-1" {...pressAttrs()}>
           {replyHeader}
           {/* An invite I sent had no menu on any gesture at all:
@@ -5159,6 +5680,7 @@ const OutgoingMessageRow = memo(function OutgoingMessageRow({
     // A photo I sent — render the image bubble + delivery state.
     return (
       <li id={`msg-${row.id}`} className={liClass}>
+        {selectMask}
         <div className="relative max-w-[80%] flex flex-col items-end gap-1" {...pressAttrs()}>
           {replyHeader}
           <div className="relative">
@@ -5181,6 +5703,7 @@ const OutgoingMessageRow = memo(function OutgoingMessageRow({
     // A voice note I sent (here, or elsewhere via a carbon).
     return (
       <li id={`msg-${row.id}`} className={liClass}>
+        {selectMask}
         <div className="relative max-w-[80%] flex flex-col items-end gap-1" {...pressAttrs()}>
           {replyHeader}
           <div className="relative rounded-lg px-3 py-1.5 bg-bubble-self rcq-selectable">
@@ -5205,6 +5728,7 @@ const OutgoingMessageRow = memo(function OutgoingMessageRow({
     // render the player + delivery state.
     return (
       <li id={`msg-${row.id}`} className={liClass}>
+        {selectMask}
         <div className="relative max-w-[80%] flex flex-col items-end gap-1" {...pressAttrs()}>
           {replyHeader}
           <div className="relative">
@@ -5237,6 +5761,7 @@ const OutgoingMessageRow = memo(function OutgoingMessageRow({
     // A document I sent — render the download chip + delivery state.
     return (
       <li id={`msg-${row.id}`} className={liClass}>
+        {selectMask}
         <div className="relative max-w-[80%] flex flex-col items-end gap-1" {...pressAttrs()}>
           {replyHeader}
           <FileBubble
@@ -5271,6 +5796,7 @@ const OutgoingMessageRow = memo(function OutgoingMessageRow({
     // that everything around it still refers to.
     return (
       <li id={`msg-${row.id}`} className={liClass}>
+        {selectMask}
         <div className="relative max-w-[80%] flex flex-col items-end gap-1" {...pressAttrs()}>
           {replyHeader}
           <div className="relative">
@@ -5291,6 +5817,7 @@ const OutgoingMessageRow = memo(function OutgoingMessageRow({
     // another device, echoed here via a carbon.
     return (
       <li id={`msg-${row.id}`} className={liClass}>
+        {selectMask}
         <div className="relative max-w-[80%] flex flex-col items-end gap-1" {...pressAttrs()}>
           {replyHeader}
           <div className="relative">
@@ -5309,7 +5836,8 @@ const OutgoingMessageRow = memo(function OutgoingMessageRow({
     )
   }
   return (
-    <li id={`msg-${row.id}`} className={liClass} {...swipeReplyAttrs(() => h.startReply(row))}>
+    <li id={`msg-${row.id}`} className={liClass} {...(selecting ? {} : swipeReplyAttrs(() => h.startReply(row)))}>
+      {selectMask}
       <div className="relative max-w-[80%] flex flex-col items-end gap-1">
         {row.fwdName && (
           <div className="text-[0.625rem] uppercase tracking-wider text-fg-dim">
@@ -5397,6 +5925,7 @@ const OutgoingMessageRow = memo(function OutgoingMessageRow({
               <ActionButton onClick={() => h.pinMessage(row.text)} label={t('chat.actions.pin')} icon={<MenuPinIcon />} />
             )}
             <ActionButton onClick={() => h.startForward(row.text, myNickname)} label={t('chat.actions.forward')} icon={<MenuForwardIcon />} />
+            <ActionButton onClick={() => h.startSelection(row.id)} label={t('chat.actions.select')} icon={<MenuSelectIcon />} />
             <ActionButton onClick={() => h.deleteForEveryone(row)} label={t('chat.actions.delete')} icon={<MenuTrashIcon />} danger />
           </ActionMenu>
         )}
@@ -5588,6 +6117,17 @@ function MenuForwardIcon() {
     <MenuIconSvg>
       <polyline points="15 14 20 9 15 4" />
       <path d="M4 20v-7a4 4 0 0 1 4-4h12" />
+    </MenuIconSvg>
+  )
+}
+
+/// A ticked box — the way into multi-select, drawn as the thing the mode is
+/// made of rather than as another abstract glyph.
+function MenuSelectIcon() {
+  return (
+    <MenuIconSvg>
+      <path d="M9 11l3 3L22 4" />
+      <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
     </MenuIconSvg>
   )
 }

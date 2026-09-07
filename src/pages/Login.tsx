@@ -64,13 +64,36 @@ export function Login() {
         <LanguagePicker />
       </div>
 
+      {/* The way back to the account you already have. It sat at the BOTTOM of
+          the form, under the create/recover switch, where a person adding a
+          second account had to read past the whole form to find out they could
+          simply leave. A corner is where a way out belongs (founder, 07.09). */}
+      {resume && (
+        <div className="absolute top-4 left-4 z-10">
+          <button
+            type="button"
+            onClick={() => {
+              // The activation is a vault write on desktop; it has to land
+              // before the reload or the login screen resurrects (same race
+              // as addAccount, see flushVaultWriter).
+              if (activateStoredIdentity(resume.uin)) void flushVaultWriter().finally(() => window.location.assign('/'))
+            }}
+            className="text-sm text-fg-secondary hover:text-fg-primary transition-colors"
+          >
+            {t('login.cancel_add').replace('{nick}', `${resume.uin}`)}
+          </button>
+        </div>
+      )}
+
       <div className="w-full flex items-center justify-center">
         <div className="w-full max-w-sm space-y-8">
           <header className="flex flex-col items-center gap-3 text-center">
             {/* Always-spinning brand mark (linear 30s), matches iOS. */}
             <Logo size={64} spin />
             <div className="text-2xl font-bold tracking-tight">{t('brand.name')}</div>
-            <p className="text-fg-dim text-sm">{t('login.tagline')}</p>
+            {/* The tagline used to sit here and is gone (founder, 07.09): the
+                first screen should ask one question, not also make a claim.
+                The KEY stays — Settings renders it in About. */}
           </header>
 
           <ModeSwitch
@@ -93,20 +116,6 @@ export function Login() {
             }}
           />
 
-          {resume && (
-            <button
-              type="button"
-              onClick={() => {
-                // The activation is a vault write on desktop; it has to land
-                // before the reload or the login screen resurrects (same race
-                // as addAccount, see flushVaultWriter).
-                if (activateStoredIdentity(resume.uin)) void flushVaultWriter().finally(() => window.location.assign('/'))
-              }}
-              className="w-full text-center text-sm text-fg-secondary hover:text-fg-primary transition-colors"
-            >
-              {t('login.cancel_add').replace('{nick}', `${resume.uin}`)}
-            </button>
-          )}
         </div>
       </div>
     </div>
@@ -175,12 +184,20 @@ function RecoverPane({ onDone }: { onDone: (id: WebIdentity) => void }) {
   const [phrase, setPhrase] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [island, setIsland] = useState(() => rememberedIsland())
+  // ⚠ This pane used to restore onto `rememberedIsland()` with no way to see
+  // or change it. That value is written only by the CREATE tab, so somebody
+  // restoring an account that lives on their own island had to go make a new
+  // account first, pick the island there, and come back — and if they did not
+  // know that, they restored against whatever island this browser last
+  // happened to look at, and read a phrase error (founder, 07.09). iOS has had
+  // the row behind an "Advanced" disclosure since it shipped.
 
   async function submit() {
     setError(null)
     setBusy(true)
     try {
-      const id = await recoverFromPhrase(phrase, rememberedIsland())
+      const id = await recoverFromPhrase(phrase, island)
       onDone(id)
     } catch (e) {
       const code = e instanceof RecoverError ? e.code : 'network'
@@ -193,6 +210,7 @@ function RecoverPane({ onDone }: { onDone: (id: WebIdentity) => void }) {
   return (
     <div className="space-y-4">
       <p className="text-sm text-fg-secondary">{t('login.recover.body' + dk)}</p>
+      <IslandField value={island} onChange={(next) => setIsland(next.base)} />
       <textarea
         value={phrase}
         onChange={(e) => setPhrase(e.target.value)}
@@ -412,16 +430,26 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
   // Shown when the island says it is invite-only, and revealed by a refusal
   // when it does not (a cached or unreachable /server/info, or an island that
   // closed while this tab was open).
-  const caps = useServerCapabilities(rememberedIsland())
+  // Held here, not inside `IslandField`: everything below has to know which
+  // island was picked, and the field used to keep that to itself.
+  const [island, setIsland] = useState(() => rememberedIsland())
+  const caps = useServerCapabilities(island)
   const [invite, setInvite] = useState('')
   const [needsInvite, setNeedsInvite] = useState(false)
-  const askCode = needsInvite || caps.registration_policy === 'invite'
+  // ⚠ BOTH settings, because they are two independent knobs on the island and
+  // the client had been reading only one. `registration_policy` decides
+  // whether the door wants a code; `closed_island` is what the picker prints
+  // "Closed club" from. An operator who set only the second got a picker that
+  // advertised a club and a form with no way in, one screen apart, which is
+  // exactly what the founder walked into (07.09). A stray code on an island
+  // that does not want one is ignored by the island, so asking is cheap.
+  const askCode = needsInvite || caps.registration_policy === 'invite' || caps.closed_island === true
 
   async function submit() {
     setError(null)
     setBusy(true)
     try {
-      const id = await createNewAccount(nickname, rememberedIsland(), invite)
+      const id = await createNewAccount(nickname, island, invite)
       const words = currentRecoveryPhrase()
       if (words) setPending({ id, words })
       else onDone(id) // shouldn't happen for a fresh account; fail open
@@ -496,7 +524,7 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
         <p className="text-xs text-fg-dim">{t('login.create.nickname_hint')}</p>
       </div>
 
-      <IslandField />
+      <IslandField value={island} onChange={(next) => setIsland(next.base)} />
 
       {/* The club door. Shown when the island says it is invite-only, and
           revealed by a refusal when it does not: an island can close while
@@ -574,9 +602,16 @@ function Spinner() {
 /// answer for almost everyone, and a bare "server" field on a sign-up screen
 /// asks a question most people cannot answer and makes the ones who can't feel
 /// they are missing something. It opens for the ones who run their own.
-function IslandField() {
+/// ⚠ The pick is the CALLER's state, not this component's. It used to keep
+/// `base` in its own `useState`, so choosing a closed island re-rendered the
+/// row and nothing else: the form above it went on computing "does this island
+/// want a code?" from the island the page opened with, and the code field
+/// never appeared. It healed by accident on the next keystroke in the nickname
+/// field, which is a hard bug to report and an easy one to disbelieve
+/// (founder, 07.09).
+function IslandField({ value, onChange }: { value: string; onChange: (next: IslandAddress) => void }) {
   const { t } = useI18n()
-  const [base, setBase] = useState(() => rememberedIsland())
+  const base = value
   const [open, setOpen] = useState(false)
   // ⚠ The HOOK, not a bare read of the cache. The cache alone paints the first
   // frame and then never moves, so an island whose name we learn a moment later
@@ -593,8 +628,9 @@ function IslandField() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+
   function commit(next: IslandAddress) {
-    setBase(next.base)
+    onChange(next)
     rememberIsland(next.base)
     // §3: a fingerprint typed with the address goes on file before anything is
     // dialled - the island card's request that follows this render waits on it

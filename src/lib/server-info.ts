@@ -66,6 +66,14 @@ export interface ServerCapabilities {
   /// refusal, because the refusal deliberately cannot: it is byte-identical to
   /// "no such number".
   closed_island: boolean
+  /// What this island charges to join, in US cents; 0 = entry is not sold.
+  /// Read from the island rather than the catalogue, which is a file we
+  /// maintain by hand and would be stale the day after a price changed.
+  entry_price_cents: number
+  /// Where entry is bought, when the island names a page. ⚠ Never shown on
+  /// iOS: Apple does not allow an app to point at a purchase it does not
+  /// handle.
+  entry_url: string
   nearby: boolean
   random_chat: boolean
   reports: boolean
@@ -121,6 +129,8 @@ export const DEFAULT_CAPABILITIES: ServerCapabilities = {
   hall_of_fame: false,
   registration_policy: 'open',
   closed_island: false,
+  entry_price_cents: 0,
+  entry_url: '',
   nearby: true,
   random_chat: true,
   reports: true,
@@ -195,6 +205,11 @@ function normalize(raw: unknown): ServerInfo | null {
           ? caps.registration_policy
           : DEFAULT_CAPABILITIES.registration_policy,
       closed_island: bool('closed_island'),
+      entry_price_cents:
+        typeof caps.entry_price_cents === 'number' && caps.entry_price_cents > 0
+          ? Math.floor(caps.entry_price_cents)
+          : 0,
+      entry_url: typeof caps.entry_url === 'string' ? caps.entry_url : '',
       nearby: bool('nearby'),
       random_chat: bool('random_chat'),
       reports: bool('reports'),

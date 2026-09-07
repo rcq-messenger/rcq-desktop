@@ -72,6 +72,8 @@ export const ru: Record<string, string> = {
   'login.island': 'Остров',
   'island.picker.title': 'Выбор острова',
   'island.picker.manual': 'Ввести адрес вручную',
+  'island.entry.price': 'Вход: {price}',
+  'island.entry.closed': 'Закрытый клуб',
   'island.picker.offline': 'Каталог сейчас недоступен. Введите адрес вручную.',
   'island.flagship.desc': 'Основной остров команды RCQ',
   'login.island.hint': 'Сервер, на котором будет жить аккаунт. По умолчанию наш. Можно указать любой другой остров, чужой или свой.',

@@ -5,6 +5,7 @@ import { hostnameOf, isIpLiteral, islandLabel, normaliseIsland, type IslandAddre
 import { isCaOnlyHost } from '../lib/island-trust'
 import { isTauri } from '../lib/desktop'
 import { useI18n } from '../lib/i18n-context'
+import { useServerCapabilities } from '../lib/use-server-info'
 import { IslandAvatar } from './IslandAvatar'
 
 interface CatalogIsland {
@@ -139,6 +140,7 @@ export function IslandPickerModal({
                     {s.description && (
                       <span className="block text-[0.6875rem] text-fg-secondary truncate">{s.description}</span>
                     )}
+                    <IslandEntryLine apiBase={base} />
                   </span>
                   {active && <span className="flex-none text-accent text-sm">✓</span>}
                 </button>
@@ -180,4 +182,33 @@ export function IslandPickerModal({
     </AnimatePresence>,
     document.body,
   )
+}
+
+/// What an island charges to get in, under its name in the picker.
+///
+/// ⚠ Asked of the ISLAND, not of the catalogue. servers.json is a file we
+/// maintain by hand and it would be stale the day after an operator changed
+/// their price — and a wrong price is worse than no price. The island answers
+/// for itself on /server/info, which the picker already warms for the logo.
+///
+/// Nothing is drawn for an open island, or for one that has not set a price:
+/// a picker full of "free" labels teaches nobody anything.
+function IslandEntryLine({ apiBase }: { apiBase: string }) {
+  const { t } = useI18n()
+  const caps = useServerCapabilities(apiBase)
+  if (!caps.closed_island) return null
+  const cents = caps.entry_price_cents ?? 0
+  return (
+    <span className="block text-[0.6875rem] text-accent truncate">
+      {cents > 0
+        ? t('island.entry.price', { price: formatUsd(cents) })
+        : t('island.entry.closed')}
+    </span>
+  )
+}
+
+/// Cents to a string a person reads. Whole dollars lose the ".00": a club that
+/// costs fifteen dollars should say fifteen dollars.
+function formatUsd(cents: number): string {
+  return cents % 100 === 0 ? `$${cents / 100}` : `$${(cents / 100).toFixed(2)}`
 }

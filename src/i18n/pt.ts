@@ -67,6 +67,8 @@ export const pt: Record<string, string> = {
   'login.island': 'Ilha',
   'island.picker.title': 'Escolher ilha',
   'island.picker.manual': 'Digitar um endereço',
+  'island.entry.price': 'Entrada: {price}',
+  'island.entry.closed': 'Clube fechado',
   'island.picker.offline': 'O catálogo está indisponível. Digite um endereço.',
   'island.flagship.desc': 'A ilha principal da equipe RCQ',
   'login.island.hint': 'O servidor onde sua conta vai viver. A nossa por padrão. Aponte para qualquer outra ilha, de outra pessoa ou sua.',

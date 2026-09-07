@@ -5,6 +5,7 @@
 // backend's job.
 
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { BadgeMark } from '../components/BadgeMark'
 import { Link, useNavigate } from 'react-router-dom'
 import { Api, ApiError, type UserInfo } from '../lib/api'
@@ -31,7 +32,11 @@ export function AddContact({
   // "that exact number and nothing else", which is what a caller who already
   // knows the number wants — see the ordering comment in the island's
   // /users/search.
-  const [query, setQuery] = useState(initialQuery)
+  // ⚠ `?q=` as a fallback, for the shared-link route: `/u/<uin>` hands the
+  // address over this way rather than through navigation state, which does not
+  // survive a reload or a link opened in a fresh tab — which is most of them.
+  const [linkParams] = useSearchParams()
+  const [query, setQuery] = useState(initialQuery || linkParams.get('q') || '')
   const [results, setResults] = useState<UserInfo[]>([])
   const [searching, setSearching] = useState(false)
   const [error, setError] = useState<string | null>(null)

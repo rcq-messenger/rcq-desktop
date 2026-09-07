@@ -19,6 +19,7 @@ import { Chat } from './pages/Chat'
 import { Settings } from './pages/Settings'
 import { PendingRequests } from './pages/PendingRequests'
 import { AddContact } from './pages/AddContact'
+import { ContactLink } from './pages/ContactLink'
 import { Profile } from './pages/Profile'
 import { GroupInfo } from './pages/GroupInfo'
 import { HowItWorks } from './pages/HowItWorks'
@@ -78,6 +79,13 @@ export default function App() {
             <CallOverlay />
             <Routes>
               <Route path="/" element={<RootEntry />} />
+              {/* ⚠ A SHARED CONTACT LINK, which this app could not open at all.
+                  `https://rcq.app/u/<uin>?h=…#c=<card>` is what every client
+                  builds and what a person pastes, and the chat app had no route
+                  for it: the marketing site caught the path and offered to open
+                  an app, which on desktop IS this app. The guest card in the
+                  fragment therefore reached the phones and never the web. */}
+              <Route path="/u/:uin" element={<ContactLink />} />
               <Route
                 path="/contacts"
                 element={

@@ -2886,7 +2886,13 @@ export function Chat() {
   const typingSentAt = useRef(0)
   const typingStop = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const notifyTyping = useCallback(() => {
-    if (isGroup || isSelf || !peerUIN) return
+    // ⚠⚠ NEVER FOR A CROSS-ISLAND PEER. This rides OUR island's websocket to
+    // `to_uin`, and a number is per-island: for somebody on another island it
+    // addresses whoever happens to hold that number HERE. A stranger would see
+    // a name typing at them from a conversation that does not exist, and the
+    // real peer would see nothing. Same class as the delivered receipt fixed
+    // in message-receiver, found by the same call-site map.
+    if (isGroup || isSelf || !peerUIN || islandHost) return
     const now = Date.now()
     if (now - typingSentAt.current > 4000) {
       typingSentAt.current = now

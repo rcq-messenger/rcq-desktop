@@ -209,7 +209,7 @@ function RecoverPane({ onDone }: { onDone: (id: WebIdentity) => void }) {
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-fg-secondary">{t('login.recover.body' + dk)}</p>
+      <p className="text-xs text-fg-secondary leading-relaxed">{t('login.recover.body' + dk)}</p>
       <IslandField value={island} onChange={(next) => setIsland(next.base)} />
       <textarea
         value={phrase}
@@ -221,8 +221,13 @@ function RecoverPane({ onDone }: { onDone: (id: WebIdentity) => void }) {
         autoCorrect="off"
         autoCapitalize="off"
       />
+      {/* ⚠ Tokens and an alpha fill, never `bg-red-50`/`border-red-200`. Those
+          two are fixed light colours: in the true-black theme this box was a
+          white slab with dark red text sitting on a black page, which is the
+          "looks cheap" the founder means (07.09). Same box as the create
+          pane's now, so the two halves of the join path fail alike. */}
       {error && (
-        <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md p-2">{error}</div>
+        <div className="text-sm text-red-500 bg-red-500/10 border border-red-500/25 rounded-md p-2">{error}</div>
       )}
       <button
         onClick={submit}
@@ -317,7 +322,7 @@ function LinkPane({ onDone }: { onDone: (id: WebIdentity) => void }) {
 
   return (
     <div className="space-y-4 text-center">
-      <p className="text-sm text-fg-secondary">{t('login.link.scan_body')}</p>
+      <p className="text-xs text-fg-secondary leading-relaxed">{t('login.link.scan_body')}</p>
       {/* The code is smaller than it was: at 252px it dominated a screen whose
           job is to explain what linking costs you, and a phone camera does not
           need it that big from 30cm. It grows a little under the cursor and
@@ -435,6 +440,9 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
   const [island, setIsland] = useState(() => rememberedIsland())
   const caps = useServerCapabilities(island)
   const [invite, setInvite] = useState('')
+  /// Whether the person asked for the code box on an island that does not
+  /// demand one. Reset by a change of island below, with the refusal.
+  const [codeRevealed, setCodeRevealed] = useState(false)
   const [needsInvite, setNeedsInvite] = useState(false)
   // ⚠ BOTH settings, because they are two independent knobs on the island and
   // the client had been reading only one. `registration_policy` decides
@@ -462,11 +470,22 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
   // exactly that — and a buyer who is never shown the box registers as an
   // ordinary stranger and their payment buys nothing. Somebody holding a code
   // must always have somewhere to put it.
-  const showCode =
-    needsInvite ||
-    caps.registration_policy === 'invite' ||
-    caps.closed_island === true ||
-    (caps.entry_price_cents ?? 0) > 0
+  // ⚠ The hint under the field follows the DOOR, not the field: an island that
+  // merely sells entry with its door open must not be told "this island is
+  // closed", which is the one sentence on the screen that explains the box.
+  const doorIsShut = needsInvite || caps.registration_policy === 'invite' || caps.closed_island === true
+  // ⚠⚠ AN OPEN ISLAND THAT SELLS ENTRY NO LONGER SHOWS THE BOX BY DEFAULT, it
+  // offers a line to open one (founder, 07.09: "the field shows even when the
+  // island I picked is not closed"). The flagship is exactly that island: its
+  // door is open and its till sells codes, so the old rule put an empty code
+  // box in front of every ordinary newcomer, and the overwhelming majority of
+  // them have no code and never will. The buyer still has somewhere to paste,
+  // one tap away, which was the whole point of the rule.
+  //
+  // A door that is genuinely SHUT still shows the field outright: there the
+  // code is not an extra, it is the only way in.
+  const sellsEntry = (caps.entry_price_cents ?? 0) > 0
+  const showCode = doorIsShut || codeRevealed
   const requireCode = needsInvite || caps.registration_policy === 'invite'
 
   async function submit() {
@@ -481,13 +500,34 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
       // The island's own words for the door, not a status code. `invite_required`
       // also OPENS the field: an island can close while this tab is open, and
       // the person is then one paste away rather than stuck.
-      const code = e instanceof ApiError ? parseErrorCode(e.body) : null
+      //
+      // ⚠⚠ THE BODY IS NOT ALWAYS ON AN ApiError, and reading only that one
+      // shape is why none of this ran. `createNewAccount` registers with a bare
+      // `fetch`, not the `request()` helper, and throws `new Error(body)` — so
+      // on a closed island every refusal fell through to the generic branch and
+      // the person was shown the island's raw JSON, `{"detail":{"code":
+      // "invite_invalid"}}`, instead of the sentence written for exactly that
+      // moment. `needsInvite` never armed either, so an island that closed
+      // while the tab was open kept its code field hidden. Verified on is2,
+      // 07.09. Both shapes carry the body; take whichever we were handed.
+      const body = e instanceof ApiError ? e.body : e instanceof Error ? e.message : ''
+      const code = parseErrorCode(body)
       if (code === 'invite_required') {
         setNeedsInvite(true)
         setError(t('auth.error.invite_required'))
       } else if (code === 'invite_invalid') {
         setNeedsInvite(true)
         setError(t('auth.error.invite_invalid'))
+      } else if (e instanceof TypeError) {
+        // ⚠ A TypeError out of `fetch` is the ONLY thing a browser gives us for
+        // "the island did not answer": DNS, a dead host, a blocked network, a
+        // certificate the browser refused. Its message is "Failed to fetch" /
+        // "Load failed" / "NetworkError…" depending on the engine, and printing
+        // that told nobody which island failed or what to do. This is the
+        // founder's "could not connect" (07.09) — and it stays INSIDE the form,
+        // with the address one tap away, rather than becoming a dialog whose
+        // only button is "try again".
+        setError(t('auth.error.register_offline', { island: islandLabel(island) }))
       } else {
         const detail = e instanceof Error ? e.message : 'unknown'
         setError(t('auth.error.register_failed', { detail }))
@@ -529,7 +569,7 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-fg-secondary">{t('login.create.body' + dk)}</p>
+      <p className="text-xs text-fg-secondary leading-relaxed">{t('login.create.body' + dk)}</p>
 
       <div className="space-y-1">
         <label className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
@@ -548,12 +588,40 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
         <p className="text-xs text-fg-dim">{t('login.create.nickname_hint')}</p>
       </div>
 
-      <IslandField value={island} onChange={(next) => setIsland(next.base)} />
+      {/* ⚠ Changing the island RETIRES the last island's refusal. Both of these
+          are facts about the island we just left: `needsInvite` is "that island
+          asked for a code" and it also makes the code MANDATORY, so after one
+          refusal the form went on demanding a code for every island picked
+          afterwards, including an open one that issues none — a dead Create
+          button with no way to explain itself. The error is stale for the same
+          reason. The typed code is deliberately kept: switching islands by
+          mistake should not throw away something the person pasted. */}
+      <IslandField
+        value={island}
+        onChange={(next) => {
+          setIsland(next.base)
+          setNeedsInvite(false)
+          // The box the person opened by hand belongs to the island they opened
+          // it on: carrying it to the next one puts an unexplained field back
+          // on a screen that did not ask for one. The typed code stays.
+          setCodeRevealed(false)
+          setError(null)
+        }}
+      />
 
       {/* The club door. Shown when the island says it is invite-only, and
           revealed by a refusal when it does not: an island can close while
           this tab is open, and an operator can hand a code out for a member
           they let in for free, not only for one who paid. */}
+      {!showCode && sellsEntry && (
+        <button
+          type="button"
+          onClick={() => setCodeRevealed(true)}
+          className="self-start text-xs text-accent hover:underline"
+        >
+          {t('login.create.have_code')}
+        </button>
+      )}
       {showCode && (
         <div className="space-y-1">
           <label className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
@@ -565,17 +633,19 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
             onChange={(e) => setInvite(e.target.value)}
             maxLength={128}
             placeholder={t('login.create.invite_placeholder')}
-            className="w-full h-10 px-3 rounded-md bg-field outline-none focus:ring-1 focus:ring-accent text-sm font-mono"
+            className="w-full h-10 px-3 rounded-md bg-field outline-none focus:ring-1 focus:ring-accent text-sm"
             spellCheck={false}
             autoCorrect="off"
             autoCapitalize="off"
           />
-          <p className="text-xs text-fg-dim">{t('login.create.invite_hint')}</p>
+          <p className="text-xs text-fg-dim">
+            {t(doorIsShut ? 'login.create.invite_hint' : 'login.create.invite_hint_paid')}
+          </p>
         </div>
       )}
 
       {error && (
-        <div className="text-sm text-red-600 bg-red-500/10 rounded-md p-2">
+        <div className="text-sm text-red-500 bg-red-500/10 border border-red-500/25 rounded-md p-2">
           {error}
         </div>
       )}
@@ -588,7 +658,7 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
           and the links carry colour instead of an underline (founder, 07.09).
           The checkbox shrinks with it, or a 16px box next to 12px text reads
           as the subject of the sentence. */}
-      <label className="flex items-start gap-2 text-xs text-fg-dim cursor-pointer select-none">
+      <label className="flex items-start gap-2 text-[0.6875rem] leading-snug text-fg-dim cursor-pointer select-none">
         <input type="checkbox" className="mt-0.5 h-3 w-3 accent-accent" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} />
         <span>
           {t('login.terms.accept')}{' '}

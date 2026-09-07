@@ -76,6 +76,8 @@ export const en: Record<string, string> = {
   'island.picker.manual': 'Enter an address by hand',
   'island.entry.price': 'Entry: {price}',
   'island.entry.closed': 'Closed club',
+  'island.entry.invite': 'By invitation only',
+  'island.entry.open': 'Open to everyone',
   'island.entry.buy': 'buy',
   'invites.title': 'Invites',
   'invites.next': 'Your next one arrives {date}',
@@ -111,10 +113,12 @@ export const en: Record<string, string> = {
   'island.trust.ca_only': 'The RCQ flagship is trusted through a certificate authority and takes no fingerprint.',
   'login.create.nickname_hint': 'You can change it later in Settings.',
   'login.create.invite': 'Access code',
+  'login.create.have_code': 'I have an access code',
   'add.ci.closed_island': 'This island is closed. To write to somebody there you need a link from them: a shared contact, or a message they sent you first.',
   'add.ci.no_user': 'No account {uin} on {host}.',
   'login.create.invite_placeholder': 'the code from the island',
   'login.create.invite_hint': 'This island is closed. Its operator gives out the code: with an invitation, with residency, or however they choose.',
+  'login.create.invite_hint_paid': 'This island sells entry. If you have already paid, or somebody gave you a code, paste it here. Leave it empty to join without one.',
   'auth.error.invite_required': 'This island is closed: joining needs a code from its operator. Paste it above.',
   'auth.error.invite_invalid': 'That code was not accepted. It may be used up, expired, or meant for another island.',
   "login.terms.accept": "I accept the",
@@ -147,6 +151,7 @@ export const en: Record<string, string> = {
   'auth.error.wrong_size': 'Linking blob has malformed key bytes.',
   'auth.error.network': 'Couldn\'t reach the server. Check your connection and try again.',
   'auth.error.register_failed': 'Could not create account: {detail}',
+  'auth.error.register_offline': '{island} did not answer. Check the address and your connection, then try again.',
 
   // Contacts
   'contacts.title': 'Contacts',
@@ -1247,7 +1252,7 @@ export const en: Record<string, string> = {
   'uin_market.tiers.note': 'Ordinary seven to nine digit numbers are free. Short ones, and numbers with a pattern anyone would recognise, are sold at the price of their length.',
   'uin_market.info.what.title': 'What is a UIN',
   'uin_market.info.what.body':
-    'Your UIN is your handle on RCQ, the number people add to reach you. A shorter one is easier to share and remember.',
+    'Your UIN is your handle on this island, the number people add to reach you. A shorter one is easier to share and remember.',
   'uin_market.info.migrate.title': 'Taking a number does not change who you are',
   'uin_market.info.migrate.body':
     'The number joins your collection and you keep answering as you do now. Moving onto it is a separate step under Your UINs, and it is reversible: the number you leave stays yours too, so nobody else can take it.',

@@ -5,7 +5,7 @@ import { hostnameOf, isIpLiteral, islandLabel, normaliseIsland, type IslandAddre
 import { isCaOnlyHost } from '../lib/island-trust'
 import { isTauri } from '../lib/desktop'
 import { useI18n } from '../lib/i18n-context'
-import { useServerCapabilities } from '../lib/use-server-info'
+import { useServerInfo } from '../lib/use-server-info'
 import { IslandAvatar } from './IslandAvatar'
 
 interface CatalogIsland {
@@ -184,19 +184,37 @@ export function IslandPickerModal({
   )
 }
 
-/// What an island charges to get in, under its name in the picker.
+/// Whether an island lets you in at all, and what it charges, under its name
+/// in the picker.
 ///
 /// ⚠ Asked of the ISLAND, not of the catalogue. servers.json is a file we
 /// maintain by hand and it would be stale the day after an operator changed
 /// their price — and a wrong price is worse than no price. The island answers
 /// for itself on /server/info, which the picker already warms for the logo.
 ///
-/// Nothing is drawn for an open island, or for one that has not set a price:
-/// a picker full of "free" labels teaches nobody anything.
+/// ⚠⚠ TWO flags decide "closed", the same pair the create form reads (see
+/// Login.tsx). `registration_policy` is what the door actually enforces;
+/// `closed_island` also withholds the residents' envelope key. An operator can
+/// set either alone, and this line used to read only the second — so an
+/// invite-only island that had not been marked closed advertised itself as an
+/// ordinary island and then refused the person at the last step.
+///
+/// ⚠ `useServerInfo`, not `useServerCapabilities`: the capabilities hook fills
+/// its gaps with the PERMISSIVE defaults, which say "open". Printing that for
+/// an island that has not answered yet — or cannot be reached at all — would
+/// promise a door we never knocked on. Silence until the island speaks for
+/// itself (founder, 07.09: the picker must say which islands are closed).
 function IslandEntryLine({ apiBase }: { apiBase: string }) {
   const { t } = useI18n()
-  const caps = useServerCapabilities(apiBase)
-  if (!caps.closed_island) return null
+  const info = useServerInfo(apiBase)
+  if (!info) return null
+  const caps = info.capabilities
+  const closed = caps.closed_island || caps.registration_policy === 'invite'
+  if (!closed) {
+    // Dim, unlike the closed line: this is the ordinary answer, and the row it
+    // sits in should not shout it.
+    return <span className="block text-[0.6875rem] text-fg-dim truncate">{t('island.entry.open')}</span>
+  }
   const cents = caps.entry_price_cents ?? 0
   // Where the island sells entry, in its own words. `entry_url` is the
   // operator's setting, so a self-hoster sends people to their own shop and we
@@ -205,7 +223,9 @@ function IslandEntryLine({ apiBase }: { apiBase: string }) {
   const url = (caps.entry_url || '').trim()
   const line = cents > 0
     ? t('island.entry.price', { price: formatUsd(cents) })
-    : t('island.entry.closed')
+    : caps.closed_island
+      ? t('island.entry.closed')
+      : t('island.entry.invite')
   if (!url || !/^https:\/\//i.test(url)) {
     return <span className="block text-[0.6875rem] text-accent truncate">{line}</span>
   }

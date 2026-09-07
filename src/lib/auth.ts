@@ -854,9 +854,22 @@ export function listStoredIdentities(): WebIdentity[] {
 
 /// Make `uin` the active account. Returns false when this browser does not hold
 /// it, so a caller can refuse rather than sign the user out of everything.
+///
+/// ⚠ It also moves the row to the HEAD of the roster, and that is not cosmetic.
+/// The list was in the order the accounts were added, so the head was the
+/// OLDEST account here, while two places read the head as "the one you were
+/// on": the login screen's way back (it lands there with the active slot
+/// cleared, so the roster is all it has) and `removeStoredIdentity`, which
+/// promotes `list[0]` after the active account is signed out. Both therefore
+/// offered a stranger — the founder's "dumped onto an account I was not even
+/// using", from the web's side (07.09). Ordering by last use makes the head
+/// mean what both readers already assumed.
 export function activateStoredIdentity(uin: number): boolean {
-  const hit = readAccounts().find((a) => a.uin === uin)
-  if (!hit) return false
+  const list = readAccounts()
+  const i = list.findIndex((a) => a.uin === uin)
+  if (i < 0) return false
+  const hit = list[i]
+  if (i > 0) writeAccounts([hit, ...list.slice(0, i), ...list.slice(i + 1)])
   acctSet(STORAGE_KEY, JSON.stringify(hit))
   return true
 }

@@ -76,6 +76,8 @@ export const ru: Record<string, string> = {
   'island.picker.manual': 'Ввести адрес вручную',
   'island.entry.price': 'Вход: {price}',
   'island.entry.closed': 'Закрытый клуб',
+  'island.entry.invite': 'Только по приглашению',
+  'island.entry.open': 'Открыт для всех',
   'island.entry.buy': 'купить',
   'invites.title': 'Приглашения',
   'invites.next': 'Следующее появится {date}',
@@ -110,14 +112,16 @@ export const ru: Record<string, string> = {
   'island.trust.ca_only': 'Флагман RCQ доверяется через удостоверяющий центр, отпечаток ему не нужен.',
   'login.create.nickname_hint': 'Можно поменять позже в настройках.',
   'login.create.invite': 'Код доступа',
+  'login.create.have_code': 'У меня есть код доступа',
   'add.ci.closed_island': 'Этот остров закрытый. Чтобы написать туда, нужна ссылка от самого человека: он делится контактом или пишет вам первым.',
   'add.ci.no_user': 'На {host} нет номера {uin}.',
   'login.create.invite_placeholder': 'код от острова',
   'login.create.invite_hint': 'Этот остров закрытый. Код выдаёт его оператор: по приглашению, вместе с резидентством или как решит сам.',
+  'login.create.invite_hint_paid': 'Этот остров продаёт вход. Если вы уже оплатили или вам дали код, вставьте его сюда. Можно оставить пустым и войти без кода.',
   'auth.error.invite_required': 'Остров закрытый: чтобы войти, нужен код от его оператора. Вставьте его выше.',
   'auth.error.invite_invalid': 'Код не принят. Возможно, он уже использован, истёк или выдан для другого острова.',
   "login.terms.accept": "Принимаю",
-  "login.terms.terms": "Условия использования",
+  "login.terms.terms": "Условия",
   "login.terms.and": "и",
   "login.terms.privacy": "Политику конфиденциальности",
   'login.create.cta': 'Создать аккаунт',
@@ -146,6 +150,7 @@ export const ru: Record<string, string> = {
   'auth.error.wrong_size': 'В коде связывания некорректные байты ключей.',
   'auth.error.network': 'Не удалось связаться с сервером. Проверьте подключение.',
   'auth.error.register_failed': 'Не удалось создать аккаунт: {detail}',
+  'auth.error.register_offline': 'Остров {island} не ответил. Проверьте адрес и связь и попробуйте ещё раз.',
 
   // Contacts
   'contacts.title': 'Контакты',
@@ -1245,7 +1250,7 @@ export const ru: Record<string, string> = {
   'uin_market.tiers.note': 'Обычные номера от семи до девяти цифр бесплатны. Короткие и с узнаваемым рисунком продаются по цене своей длины.',
   'uin_market.info.what.title': 'Что такое UIN',
   'uin_market.info.what.body':
-    'UIN это ваш номер в RCQ, его добавляют, чтобы написать вам. Короткий проще запомнить и сообщить.',
+    'UIN это ваш номер на этом острове, его добавляют, чтобы написать вам. Короткий проще запомнить и сообщить.',
   'uin_market.info.migrate.title': 'Взять номер это не сменить себя',
   'uin_market.info.migrate.body':
     "Номер попадает в вашу коллекцию, а отвечаете вы по-прежнему как сейчас. Перейти на него это отдельное действие в разделе «Ваши UIN'ы», и оно обратимо: номер, с которого вы уходите, тоже остаётся вашим, занять его никто не сможет.",

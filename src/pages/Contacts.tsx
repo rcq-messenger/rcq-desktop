@@ -91,6 +91,7 @@ import {
   type SectionRecord,
   type SectionsTree,
 } from '../lib/sections'
+import { bytesToB64 } from '../lib/crypto'
 import { useIdentity } from '../lib/identity-context'
 import { useToast } from '../lib/toast'
 import { buildContactLink } from '../lib/federation'
@@ -179,7 +180,25 @@ export function Contacts() {
   /// already uses; the clipboard everywhere else.
   async function shareMyLink() {
     if (!identity) return
-    const link = buildContactLink({ uin: identity.uin, host: 'api.rcq.app' })
+    // ⚠⚠ The host is THIS ACCOUNT'S island, and it was hardcoded to the
+    // flagship. A UIN is issued by an island, so 4242 on is2 and 4242 on the
+    // flagship are two different people: a member of any other island was
+    // handing out a link that pointed at a stranger, or at nobody. The QR next
+    // to this button has read `identity.apiBase` all along (MyQRCode).
+    let host = 'api.rcq.app'
+    try {
+      host = new URL(identity.apiBase).host
+    } catch {
+      /* an unparseable base is not a reason to share nothing */
+    }
+    // ⚠ The signing key rides along so a scanner can pin without a round trip,
+    // exactly as the QR does. What is deliberately NOT here is the identity key
+    // and the closed island's guest card: both need an await, and an await
+    // before `navigator.share`/`writeText` spends the user gesture those two
+    // APIs require — Safari then refuses the share AND the clipboard fallback,
+    // and the tap does nothing at all. A link without the card still adds you;
+    // it just cannot be written to until you hand them the QR.
+    const link = buildContactLink({ uin: identity.uin, host }, { sk: bytesToB64(identity.signingPub) })
     const text = t('contacts.invite.text', { link })
     try {
       if (navigator.share) {

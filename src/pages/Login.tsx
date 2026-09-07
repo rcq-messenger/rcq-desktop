@@ -443,7 +443,21 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
   // advertised a club and a form with no way in, one screen apart, which is
   // exactly what the founder walked into (07.09). A stray code on an island
   // that does not want one is ignored by the island, so asking is cheap.
-  const askCode = needsInvite || caps.registration_policy === 'invite' || caps.closed_island === true
+  // ⚠⚠ TWO flags, not one, and the difference is a dead Create button.
+  //
+  // `showCode` decides whether to DRAW the field. `requireCode` decides
+  // whether the form refuses to submit without it. They were one value, and
+  // widening that one value to include `closed_island` — which is what it took
+  // to make the field appear at all — also made the code MANDATORY on an
+  // island that is closed but still registers anyone. The island's own help
+  // text warns operators they can end up in exactly that state ("an island
+  // anyone may join and nobody may write into"), and on it the register call
+  // ignores a code entirely. So a single flag would have demanded a code that
+  // nobody issues and that nothing reads, and the button would never enable.
+  //
+  // Closed-but-open therefore OFFERS the field and does not insist on it.
+  const showCode = needsInvite || caps.registration_policy === 'invite' || caps.closed_island === true
+  const requireCode = needsInvite || caps.registration_policy === 'invite'
 
   async function submit() {
     setError(null)
@@ -530,7 +544,7 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
           revealed by a refusal when it does not: an island can close while
           this tab is open, and an operator can hand a code out for a member
           they let in for free, not only for one who paid. */}
-      {askCode && (
+      {showCode && (
         <div className="space-y-1">
           <label className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
             {t('login.create.invite')}
@@ -575,7 +589,7 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
       </label>
       <button
         onClick={submit}
-        disabled={busy || !nickname.trim() || !accepted || (askCode && !invite.trim())}
+        disabled={busy || !nickname.trim() || !accepted || (requireCode && !invite.trim())}
         className="w-full h-11 rounded-md bg-accent hover:bg-accent-dim text-white font-semibold disabled:opacity-60 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
       >
         {busy && <Spinner />}

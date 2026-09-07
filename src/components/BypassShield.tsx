@@ -44,11 +44,6 @@ export function BypassShield({ className = '' }: { className?: string }) {
   const { identity } = useIdentity()
   const [status, setStatus] = useState<BypassStatus | null>(null)
   const [verified, setVerified] = useState(false)
-  // Whether the first probe has answered at all, which is a different question
-  // from what it answered. Until it has, the desktop holds an empty slot of
-  // exactly the shield's size (see below), so the icon fades in INTO space
-  // that already existed instead of widening the header under the pointer.
-  const [probed, setProbed] = useState(false)
   const [open, setOpen] = useState(false)
   const reduce = useReducedMotion()
   const boxRef = useRef<HTMLDivElement>(null)
@@ -65,7 +60,6 @@ export function BypassShield({ className = '' }: { className?: string }) {
       const s = await bypassStatus()
       if (!alive) return
       setStatus(s)
-      setProbed(true)
       if (!s?.running) return setVerified(false)
       // Seconds on a censored network — each probe waits out its timeout — so
       // this stays on the slow timer and is never tied to opening the menu.
@@ -99,12 +93,19 @@ export function BypassShield({ className = '' }: { className?: string }) {
     }
   }, [open])
 
-  // Browser build: there is no bypass to offer, and so no slot to hold. On the
-  // desktop the slot is held from the first frame: 1.625rem is what the button
-  // below measures, the 1.125rem glyph plus its `p-1`.
+  // Browser build: there is no bypass to offer, and so no slot to hold.
+  //
+  // ⚠ On the desktop the slot is held for as long as there is no status, NOT
+  // merely until the first probe answers. `bypassStatus()` returns null both
+  // before the first answer and whenever the invoke throws (desktop.ts catches
+  // and returns null), and the probe repeats every two minutes forever — so a
+  // slot tied to "have we probed yet" would collapse in precisely the case it
+  // exists for, and the header would shift under the pointer on a timer.
+  //
+  // Same 26px reservation the unread counters use (Contacts.tsx, 07.09).
   if (!status) {
-    return isTauri() && !probed
-      ? <span aria-hidden className={'flex-none w-[1.625rem] h-[1.625rem] ' + className} />
+    return isTauri()
+      ? <span aria-hidden className="flex-none inline-flex min-w-[26px]" />
       : null
   }
 

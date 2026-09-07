@@ -21,10 +21,11 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { MenuPanel } from './MenuPanel'
-import { AnimatePresence } from 'framer-motion'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { Link } from 'react-router-dom'
 import {
   bypassStatus,
+  isTauri,
   networkDiagnostics,
   relaunchApp,
   setBypassEnabled,
@@ -43,7 +44,13 @@ export function BypassShield({ className = '' }: { className?: string }) {
   const { identity } = useIdentity()
   const [status, setStatus] = useState<BypassStatus | null>(null)
   const [verified, setVerified] = useState(false)
+  // Whether the first probe has answered at all, which is a different question
+  // from what it answered. Until it has, the desktop holds an empty slot of
+  // exactly the shield's size (see below), so the icon fades in INTO space
+  // that already existed instead of widening the header under the pointer.
+  const [probed, setProbed] = useState(false)
   const [open, setOpen] = useState(false)
+  const reduce = useReducedMotion()
   const boxRef = useRef<HTMLDivElement>(null)
   // The panel is portalled to the body (see MenuPanel), so a click inside it
   // is outside the box: both refs count as inside.
@@ -58,6 +65,7 @@ export function BypassShield({ className = '' }: { className?: string }) {
       const s = await bypassStatus()
       if (!alive) return
       setStatus(s)
+      setProbed(true)
       if (!s?.running) return setVerified(false)
       // Seconds on a censored network — each probe waits out its timeout — so
       // this stays on the slow timer and is never tied to opening the menu.
@@ -91,8 +99,14 @@ export function BypassShield({ className = '' }: { className?: string }) {
     }
   }, [open])
 
-  // Browser build: there is no bypass to offer.
-  if (!status) return null
+  // Browser build: there is no bypass to offer, and so no slot to hold. On the
+  // desktop the slot is held from the first frame: 1.625rem is what the button
+  // below measures, the 1.125rem glyph plus its `p-1`.
+  if (!status) {
+    return isTauri() && !probed
+      ? <span aria-hidden className={'flex-none w-[1.625rem] h-[1.625rem] ' + className} />
+      : null
+  }
 
   const running = status.running
   const tone = !running ? 'text-fg-secondary' : verified ? 'text-accent' : 'text-amber-500'
@@ -113,7 +127,15 @@ export function BypassShield({ className = '' }: { className?: string }) {
   }
 
   return (
-    <div className="relative flex-none" ref={boxRef}>
+    // Arrives the way it does on the phones: a fade instead of a pop. The slot
+    // above means nothing is displaced while it does (founder, 07.09).
+    <motion.div
+      className="relative flex-none"
+      ref={boxRef}
+      initial={reduce ? false : { opacity: 0, scale: 0.6 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 0.28, ease: 'easeInOut' }}
+    >
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -122,7 +144,7 @@ export function BypassShield({ className = '' }: { className?: string }) {
         aria-expanded={open}
         className={'flex-none p-1 rounded-md hover:bg-surface-dim transition-colors ' + className}
       >
-        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" className={'w-[1.125rem] h-[1.125rem] ' + tone}>
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" className={'w-[1.125rem] h-[1.125rem] transition-colors ' + tone}>
           <path d="M12 2 4 5.5v6c0 4.6 3.2 8.9 8 10.5 4.8-1.6 8-5.9 8-10.5v-6L12 2Z" />
         </svg>
       </button>
@@ -224,6 +246,6 @@ export function BypassShield({ className = '' }: { className?: string }) {
         </MenuPanel>
         )}
       </AnimatePresence>
-    </div>
+    </motion.div>
   )
 }

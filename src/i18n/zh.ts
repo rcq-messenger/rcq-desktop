@@ -21,6 +21,8 @@ export const zh: Record<string, string> = {
   'news.more': '阅读',
   'news.less': '收起',
   'news.failed': '无法加载新闻。',
+  'news.wide': '加宽',
+  'news.narrow': '恢复宽度',
   'common.loading': '加载中…',
   'common.retry': '重试',
   'common.continue': '继续',

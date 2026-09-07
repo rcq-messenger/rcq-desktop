@@ -21,6 +21,8 @@ export const es: Record<string, string> = {
   'news.more': 'Leer',
   'news.less': 'Contraer',
   'news.failed': 'No se pudieron cargar las noticias.',
+  'news.wide': 'Ensanchar',
+  'news.narrow': 'Ancho normal',
   'common.loading': 'Cargando…',
   'common.retry': 'Reintentar',
   'common.continue': 'Continuar',

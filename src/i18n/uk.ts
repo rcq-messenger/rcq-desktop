@@ -21,6 +21,8 @@ export const uk: Record<string, string> = {
   'news.more': 'Читати',
   'news.less': 'Згорнути',
   'news.failed': 'Не вдалося завантажити новини.',
+  'news.wide': 'Розгорнути ширше',
+  'news.narrow': 'Звичайна ширина',
   'common.loading': 'Завантаження…',
   'common.retry': 'Повторити',
   'common.continue': 'Далі',

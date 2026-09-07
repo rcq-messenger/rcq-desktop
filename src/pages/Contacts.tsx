@@ -952,6 +952,15 @@ export function Contacts() {
                 </span>
                 <span className="text-[0.625rem] text-fg-dim">{me.uin}</span>
               </Link>
+              {/* Desktop only. Back beside the name, and AFTER the mark, where
+                  it was until 06.09 (founder, 07.09). Deliberately the last
+                  child of the identity block rather than the first: the avatar
+                  and the name are laid out before it, so the shield turning up
+                  cannot push them sideways, and the icon row after it is held
+                  to the edge by `ml-auto`, which eats the width instead of
+                  passing it on. Ahead of the avatar, the way iOS does it, is
+                  exactly the arrangement that moves the name. */}
+              <BypassShield />
             </>
           )}
           <div className="ml-auto flex items-center gap-0.5">
@@ -960,12 +969,6 @@ export function Contacts() {
                 first so that the icons keep their places when it appears —
                 inserted mid-row it used to shove half of them sideways. */}
             <UpdateBadge className="mr-1" />
-            {/* Desktop only, and only while a relay is actually carrying us.
-                It used to sit between the nickname and the icons, which put a
-                state indicator in the middle of the identity block; it reads
-                as one of the header's controls, so it lives with them
-                (founder, 06.09). */}
-            <BypassShield />
             {/* Windows, not detours. Both of these used to be full-page routes
                 that took the whole desktop window away from the list you were
                 reading and had to be navigated back out of. The routes stay

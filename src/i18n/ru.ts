@@ -18,6 +18,8 @@ export const ru: Record<string, string> = {
   'news.more': 'Читать',
   'news.less': 'Свернуть',
   'news.failed': 'Не удалось загрузить новости.',
+  'news.wide': 'Развернуть шире',
+  'news.narrow': 'Обычная ширина',
   'common.loading': 'Загружаем…',
   'common.retry': 'Повторить',
   'common.continue': 'Продолжить',

@@ -18,6 +18,8 @@ export const en: Record<string, string> = {
   'news.more': 'Read',
   'news.less': 'Collapse',
   'news.failed': 'Could not load the news.',
+  'news.wide': 'Widen',
+  'news.narrow': 'Normal width',
   'common.loading': 'Loading…',
   'common.retry': 'Retry',
   'common.continue': 'Continue',

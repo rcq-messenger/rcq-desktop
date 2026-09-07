@@ -43,6 +43,29 @@ function markSeen(latest: number | null) {
   if (latest != null) localStorage.setItem(SEEN_KEY(), String(latest))
 }
 
+/// Reading WIDTH is a device preference, not an account one: it is about this
+/// window, and two accounts in one browser want the same thing from it. So a
+/// flat key like `lib/fontscale.ts` uses, not `scopedKey`.
+const WIDE_KEY = 'rcq.web.chat.news.wide'
+
+function readWide(): boolean {
+  try {
+    return localStorage.getItem(WIDE_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function writeWide(on: boolean) {
+  // A private window with storage disabled still gets the wider panel for this
+  // session rather than a control that refuses to do anything.
+  try {
+    localStorage.setItem(WIDE_KEY, on ? '1' : '0')
+  } catch {
+    /* nothing to remember it in */
+  }
+}
+
 /// Posts carry both languages in one body, separated by a `---` rule (that is
 /// how every post since 0.86 is written). Showing both at once doubles the
 /// panel and hands half of it to a language the reader did not pick, so split
@@ -185,6 +208,11 @@ export function NewsButton({ className }: { className?: string }) {
   /// panel is portalled out of the wrapper, so "is this click inside?" can no
   /// longer be answered by the DOM tree the button lives in.
   const panelRef = useRef<HTMLDivElement>(null)
+  /// Persisted, because somebody who wants the wide panel wants it every time;
+  /// re-picking it on each open is the sort of thing a preference exists to
+  /// stop. Only the popover form has a width to change: the narrow form is
+  /// already the full window.
+  const [wide, setWide] = useState(readWide)
 
   const load = useCallback(async () => {
     if (!identity) return
@@ -267,8 +295,30 @@ export function NewsButton({ className }: { className?: string }) {
   // One feed, two shapes. Identical content either way.
   const body = (
     <>
-      <div className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
-        {t('news.title')}
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-semibold text-fg-secondary uppercase tracking-wide">
+          {t('news.title')}
+        </span>
+        {/* Only the popover has a width to give: the sheet below is already as
+            wide as the window, so the same control there would promise
+            something it cannot deliver. `-m-1 p-1` buys a real hit target
+            without making the title row any taller. */}
+        {!narrow && (
+          <button
+            type="button"
+            onClick={() => {
+              const next = !wide
+              setWide(next)
+              writeWide(next)
+            }}
+            className="flex-none -m-1 p-1 rounded-md text-fg-dim hover:text-fg-primary hover:bg-field transition-colors"
+            title={wide ? t('news.narrow') : t('news.wide')}
+            aria-label={wide ? t('news.narrow') : t('news.wide')}
+            aria-pressed={wide}
+          >
+            {wide ? <ShrinkIcon /> : <ExpandIcon />}
+          </button>
+        )}
       </div>
 
       {posts == null && !error && (
@@ -361,14 +411,53 @@ export function NewsButton({ className }: { className?: string }) {
         createPortal(
           <div
             ref={panelRef}
-            style={{ position: 'fixed', top: anchor.top, right: anchor.right }}
-            className="w-[min(22rem,calc(100vw-2rem))] max-h-[min(26rem,calc(100vh-8rem))] overflow-y-auto overscroll-contain rounded-lg bg-surface/85 backdrop-blur-lg shadow-xl z-50 p-3 space-y-3"
+            style={{
+              position: 'fixed',
+              top: anchor.top,
+              right: anchor.right,
+              // ⚠ The width cap subtracts the ANCHOR, not a flat margin. `right`
+              // is pinned to the button, so the panel grows LEFTWARDS: measured
+              // from the viewport edge instead, the wide form would start off
+              // the left of a 640px window, the narrowest that still gets a
+              // popover at all. Height is measured from the panel's own top for
+              // the same reason, which also retires the 8rem that stood in for
+              // it.
+              width: `min(${wide ? '34rem' : '22rem'}, calc(100vw - ${anchor.right}px - 1rem))`,
+              maxHeight: `min(${wide ? '44rem' : '26rem'}, calc(100vh - ${anchor.top}px - 1rem))`,
+            }}
+            className="overflow-y-auto overscroll-contain rounded-lg bg-surface/85 backdrop-blur-lg shadow-xl z-50 p-3 space-y-3"
           >
             {body}
           </div>,
           document.body,
         )}
     </div>
+  )
+}
+
+/// Corners pushing apart, and pulling together. There is no icon package in
+/// this repo: every glyph is an inline 24-box on `currentColor`, so these are
+/// two more of the same. 15px rather than 20, because this pair sits on a
+/// `text-xs` title row and not in the header.
+function ExpandIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <polyline points="15 3 21 3 21 9" />
+      <polyline points="9 21 3 21 3 15" />
+      <line x1="21" y1="3" x2="14" y2="10" />
+      <line x1="3" y1="21" x2="10" y2="14" />
+    </svg>
+  )
+}
+
+function ShrinkIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <polyline points="20 10 14 10 14 4" />
+      <polyline points="4 14 10 14 10 20" />
+      <line x1="14" y1="10" x2="21" y2="3" />
+      <line x1="3" y1="21" x2="10" y2="14" />
+    </svg>
   )
 }
 

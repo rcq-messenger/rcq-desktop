@@ -21,6 +21,8 @@ export const tr: Record<string, string> = {
   'news.more': 'Oku',
   'news.less': 'Daralt',
   'news.failed': 'Haberler yüklenemedi.',
+  'news.wide': 'Genişlet',
+  'news.narrow': 'Normal genişlik',
   'common.loading': 'Yükleniyor…',
   'common.retry': 'Tekrar dene',
   'common.continue': 'Devam',

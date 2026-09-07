@@ -74,6 +74,8 @@ export const es: Record<string, string> = {
   'island.entry.invite': 'Solo por invitación',
   'island.entry.open': 'Abierta para todos',
   'island.entry.buy': 'comprar',
+  'island.rules.title': 'Reglas de la isla',
+  'island.back_to_list': 'Volver a la lista',
   'invites.title': 'Invitaciones',
   'invites.next': 'La siguiente llega el {date}',
   'invites.all': 'Las tienes todas',
@@ -1073,7 +1075,7 @@ export const es: Record<string, string> = {
   'uin_market.tiers.len9': 'de nueve cifras',
   'uin_market.tiers.reserved': 'no están a la venta',
   'uin_market.status.resale': 'lo vende una persona',
-  'uin_market.resale.seller': 'lo vende #{uin}',
+  'uin_market.resale.seller': 'lo vende {uin}',
   'uin_market.tab.island': 'De la isla',
   'uin_market.tab.people': 'De personas',
   'uin_market.people.empty': 'Ahora mismo nadie vende un número.',
@@ -1082,7 +1084,7 @@ export const es: Record<string, string> = {
   'uin_market.sell.action': 'Vender',
   'uin_market.sell.unlist': 'Retirar',
   'uin_market.sell.listed': 'en venta, {price}',
-  'uin_market.sell.title': 'Vender #{uin}',
+  'uin_market.sell.title': 'Vender {uin}',
   'uin_market.sell.price': 'Tu precio, en dólares',
   'uin_market.sell.wallet': 'Tu dirección de {chain}',
   'uin_market.sell.echo': 'Los compradores pagarán {price}',
@@ -1202,4 +1204,10 @@ export const es: Record<string, string> = {
   'settings.backup.restoredExpired': '{n} mensajes temporales estaban en el archivo y no se restauraron.',
   'settings.backup.restoredMediaIgnored': '{n} adjuntos estaban en el archivo; el navegador guarda las imágenes en la isla, así que no se sacaron de él.',
   'settings.backup.warning': 'Este archivo más tu frase son todo tu historial. No contiene claves y no sirve para iniciar sesión.',
+  // La cuenta se mudó a otro número y la isla no confirmó la mudanza para este
+  // navegador. Aquí no se borra nada, y el texto tiene que decirlo.
+  'account_moved.title': 'Este número se ha mudado',
+  'account_moved.body': 'La cuenta que era {uin} responde ahora con otro número: la moviste en otro de tus dispositivos. Esta ventana no pudo seguirla automáticamente. Aquí no se borró nada, tus mensajes siguen en este dispositivo. Inténtalo de nuevo o inicia sesión con tu frase de recuperación.',
+  'account_moved.retry': 'Intentar de nuevo',
+  'account_moved.signin': 'Iniciar sesión con la frase',
 }

@@ -888,3 +888,24 @@ export async function depositToExtraHomes(
     return 0
   }
 }
+
+/// Forget a peer's cached home-island record because they changed their UIN.
+///
+/// ⚠ DROPPED, NOT CARRIED, and that is the opposite of what every other
+/// per-contact store does on a migration. A home-island record is SIGNED and
+/// names the uin it was minted for, so filing it under the new number would
+/// cache a document that fails its own verification. The island agrees from the
+/// other side: `home_island_records` is the one row `/account/migrate` deletes
+/// instead of re-keying (`uin_rows.DROP_ON_REKEY`), precisely because the
+/// migrating client republishes a fresh one on its next boot. So the right
+/// answer here is an empty cache and one resolve.
+export function forgetPeerHomes(uin: number): void {
+  try {
+    const cache = readPeerCache()
+    if (cache[String(uin)] === undefined) return
+    delete cache[String(uin)]
+    localStorage.setItem(PEER_CACHE_KEY(), JSON.stringify(cache))
+  } catch {
+    /* unreadable cache is an empty cache as far as every reader is concerned */
+  }
+}

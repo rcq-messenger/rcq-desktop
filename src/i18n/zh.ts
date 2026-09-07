@@ -74,6 +74,8 @@ export const zh: Record<string, string> = {
   'island.entry.invite': '仅限邀请',
   'island.entry.open': '对所有人开放',
   'island.entry.buy': '购买',
+  'island.rules.title': '岛屿规则',
+  'island.back_to_list': '返回列表',
   'invites.title': '邀请',
   'invites.next': '下一个将在 {date} 到来',
   'invites.all': '全部都在您手上',
@@ -1071,7 +1073,7 @@ export const zh: Record<string, string> = {
   'uin_market.tiers.len9': '9 位号',
   'uin_market.tiers.reserved': '不出售',
   'uin_market.status.resale': '有人在出售',
-  'uin_market.resale.seller': '#{uin} 出售',
+  'uin_market.resale.seller': '{uin} 出售',
   'uin_market.tab.island': '来自岛屿',
   'uin_market.tab.people': '来自他人',
   'uin_market.people.empty': '目前没有人在出售号码。',
@@ -1080,7 +1082,7 @@ export const zh: Record<string, string> = {
   'uin_market.sell.action': '出售',
   'uin_market.sell.unlist': '下架',
   'uin_market.sell.listed': '出售中，{price}',
-  'uin_market.sell.title': '出售 #{uin}',
+  'uin_market.sell.title': '出售 {uin}',
   'uin_market.sell.price': '你的价格，美元',
   'uin_market.sell.wallet': '你的 {chain} 地址',
   'uin_market.sell.echo': '买家将支付 {price}',
@@ -1200,4 +1202,10 @@ export const zh: Record<string, string> = {
   'settings.backup.restoredExpired': '文件中有 {n} 条限时消息，它们没有被恢复。',
   'settings.backup.restoredMediaIgnored': '文件中有 {n} 个附件；浏览器把图片存在岛上，所以没有从文件里取出。',
   'settings.backup.warning': '这个文件加上你的短语就是你的全部历史记录。它不含密钥，无法用来登录。',
+  // 账号搬到了另一个号码，而岛没有为这个浏览器确认这次搬迁。这条路上不会删除任何
+  // 本地数据，文案必须把这一点说清楚。
+  'account_moved.title': '这个号码已经搬走',
+  'account_moved.body': '原本是 {uin} 的账号现在用另一个号码应答：它在你的另一台设备上被搬走了。这个窗口无法自动跟过去。这里什么都没有删除，你的消息仍在这台设备上。可以重试，或者用恢复短语登录。',
+  'account_moved.retry': '重试',
+  'account_moved.signin': '用恢复短语登录',
 }

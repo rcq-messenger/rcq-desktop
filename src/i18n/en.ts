@@ -79,6 +79,8 @@ export const en: Record<string, string> = {
   'island.entry.invite': 'By invitation only',
   'island.entry.open': 'Open to everyone',
   'island.entry.buy': 'buy',
+  'island.rules.title': 'House rules',
+  'island.back_to_list': 'Back to the list',
   'invites.title': 'Invites',
   'invites.next': 'Your next one arrives {date}',
   'invites.all': 'You are holding all of them',
@@ -1228,7 +1230,7 @@ export const en: Record<string, string> = {
   'uin_market.tiers.len9': 'nine-digit',
   'uin_market.tiers.reserved': 'not for sale',
   'uin_market.status.resale': 'somebody is selling it',
-  'uin_market.resale.seller': 'sold by #{uin}',
+  'uin_market.resale.seller': 'sold by {uin}',
   'uin_market.tab.island': 'From the island',
   'uin_market.tab.people': 'From people',
   'uin_market.people.empty': 'Nobody is selling a number right now.',
@@ -1237,7 +1239,7 @@ export const en: Record<string, string> = {
   'uin_market.sell.action': 'Sell',
   'uin_market.sell.unlist': 'Unlist',
   'uin_market.sell.listed': 'on sale, {price}',
-  'uin_market.sell.title': 'Sell #{uin}',
+  'uin_market.sell.title': 'Sell {uin}',
   'uin_market.sell.price': 'Your price, in dollars',
   'uin_market.sell.wallet': 'Your {chain} address',
   'uin_market.sell.echo': 'Buyers will pay {price}',
@@ -1368,4 +1370,12 @@ export const en: Record<string, string> = {
   'settings.backup.restoredExpired': "{n} disappearing messages were in the file and were not restored.",
   'settings.backup.restoredMediaIgnored': "{n} attachments were in the file; the browser keeps pictures on the island, so they were not taken from it.",
   'settings.backup.warning': "This file plus your phrase is your whole history. It holds no keys and cannot be used to sign in.",
+  // An account that moved to another number while this window was open, and
+  // the island would not confirm the move for this browser (the old number is
+  // taken again, or the signing key is on more than one account). Nothing
+  // local is deleted on this path, and the text has to say so.
+  'account_moved.title': "This number has moved",
+  'account_moved.body': "The account that was {uin} answers as a different number now: it was moved on another of your devices. This window could not follow it automatically. Nothing here was deleted, your messages are still on this device. Try again, or sign in with your recovery phrase.",
+  'account_moved.retry': "Try again",
+  'account_moved.signin': "Sign in with recovery phrase",
 }

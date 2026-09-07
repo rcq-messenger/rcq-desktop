@@ -79,6 +79,8 @@ export const ru: Record<string, string> = {
   'island.entry.invite': 'Только по приглашению',
   'island.entry.open': 'Открыт для всех',
   'island.entry.buy': 'купить',
+  'island.rules.title': 'Правила острова',
+  'island.back_to_list': 'Вернуться к списку',
   'invites.title': 'Приглашения',
   'invites.next': 'Следующее появится {date}',
   'invites.all': 'Все на руках',
@@ -1226,7 +1228,7 @@ export const ru: Record<string, string> = {
   'uin_market.tiers.len9': 'девятизначные',
   'uin_market.tiers.reserved': 'не продаются',
   'uin_market.status.resale': 'номер продаёт человек',
-  'uin_market.resale.seller': 'продаёт #{uin}',
+  'uin_market.resale.seller': 'продаёт {uin}',
   'uin_market.tab.island': 'От острова',
   'uin_market.tab.people': 'От людей',
   'uin_market.people.empty': 'Сейчас никто не продаёт номер.',
@@ -1235,7 +1237,7 @@ export const ru: Record<string, string> = {
   'uin_market.sell.action': 'Продать',
   'uin_market.sell.unlist': 'Снять',
   'uin_market.sell.listed': 'на продаже, {price}',
-  'uin_market.sell.title': 'Продажа #{uin}',
+  'uin_market.sell.title': 'Продажа {uin}',
   'uin_market.sell.price': 'Ваша цена, в долларах',
   'uin_market.sell.wallet': 'Ваш адрес {chain}',
   'uin_market.sell.echo': 'Покупатель заплатит {price}',
@@ -1366,4 +1368,12 @@ export const ru: Record<string, string> = {
   'settings.backup.restoredExpired': "В файле было исчезающих сообщений: {n}. Они не восстановлены.",
   'settings.backup.restoredMediaIgnored': "В файле было вложений: {n}. Браузер держит картинки на острове, поэтому из файла они не взяты.",
   'settings.backup.warning': "Этот файл вместе с фразой это вся переписка. Ключей в нём нет, войти по нему нельзя.",
+  // Аккаунт переехал на другой номер, пока это окно было открыто, а остров не
+  // подтвердил переезд именно для этого браузера (старый номер уже занят, либо
+  // ключ подписи есть у нескольких аккаунтов). На этом пути ничего локально не
+  // удаляется, и текст обязан это сказать.
+  'account_moved.title': "Номер переехал",
+  'account_moved.body': "Аккаунт, у которого был номер {uin}, теперь отвечает под другим номером: его перенесли на другом вашем устройстве. Это окно не смогло перейти следом. Здесь ничего не удалено, переписка на месте. Попробуйте ещё раз или войдите по фразе восстановления.",
+  'account_moved.retry': "Попробовать ещё раз",
+  'account_moved.signin': "Войти по фразе восстановления",
 }

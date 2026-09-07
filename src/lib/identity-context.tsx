@@ -55,6 +55,22 @@ interface IdentityCtx {
   /// or switched to one already held) and hard-reload under it. Use this
   /// rather than setIdentity + a reload of your own.
   adoptMigration: (newUin: number, token: string, to?: string) => void
+  /// The island said over the socket that this account now answers as a
+  /// DIFFERENT number (`account_moved`): its owner took a shorter one on
+  /// another device. Follow it.
+  ///
+  /// ⚠⚠ This is not a burn and must never end in a wipe. It asks
+  /// POST /auth/refresh and adopts ONLY the number the island itself names in
+  /// `moved_from`; when the island refuses, every local store is left exactly
+  /// as it is and [movedStranded] below says so on screen.
+  followAccountMove: (announcedUin?: number) => void
+  /// Set when the follow above could not complete. Carries the number this
+  /// browser was signed in as, which is the only one it can still name.
+  movedStranded: { from: number; busy: boolean } | null
+  /// The way back in from that state: the login screen, with every local store
+  /// untouched and the other accounts still signed in. Recovery by phrase
+  /// lives there.
+  leaveMovedAccount: () => void
 }
 
 const Ctx = createContext<IdentityCtx | undefined>(undefined)
@@ -140,6 +156,35 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
     setAccounts(listStoredIdentities())
   }
 
+  /// Adopt a UIN move the ISLAND has confirmed: it answered /auth/refresh with
+  /// a token for another number and named the one we asked about as the one
+  /// this account LEFT (`moved_from`). Everything module-level on this page is
+  /// keyed by the old number — the socket, the libsignal device, the incoming
+  /// store — so this ends in the same hard reload a migration made from this
+  /// tab takes.
+  ///
+  /// ⚠ The only place a new uin is ever adopted from. A socket frame can say
+  /// "you moved"; it can never say WHERE, because acting on a number this
+  /// browser has not proved possession of would be how a session lands in
+  /// somebody else's account. `mintSessionToken` does that proof.
+  ///
+  /// (Uses `migrating` and `movedAway`, both declared further down: this is a
+  /// closure, and nothing calls it during the render pass.)
+  const adoptMove = (target: WebIdentity, movedTo: number, token: string) => {
+    // Same shield the migrating tab raises. From here to the reload every 401
+    // still in the air is expected — the island retires the old number's
+    // tokens the moment the swap commits — and must not be read as "this
+    // session was revoked".
+    migrating.current = true
+    movedAway.current = true
+    // The account is alive one number over, so whatever ended the previous
+    // session is over too. Without this the row wears "session ended" under
+    // its new number for good.
+    clearSessionRevoked(target.uin)
+    setIdentity(adoptMigratedUin(target, movedTo, token))
+    void flushVaultWriter().finally(() => window.location.assign('/'))
+  }
+
   // One in-flight mint at a time. A page that wakes up with an expired token
   // fires a dozen requests at once, and each 401 would otherwise start its own.
   //
@@ -158,12 +203,11 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
     const p = mintSessionToken(target)
       .then((mint) => {
         if (mint.token && mint.movedTo) {
-          // The account moved on another device WHILE this tab was open. Every
-          // module-level cache here is keyed by the old number, so this is the
-          // same hard reload a migration made from this tab takes.
-          migrating.current = true
-          setIdentity(adoptMigratedUin(target, mint.movedTo, mint.token))
-          void flushVaultWriter().finally(() => window.location.assign('/'))
+          // The account moved on another device WHILE this tab was open, and
+          // this re-mint is where we found out (a 401 sent us here). The
+          // socket now says so too — see `followAccountMove` — but this path
+          // stays: it is the one that works when the socket never delivered.
+          adoptMove(target, mint.movedTo, mint.token)
           return mint.token
         }
         if (mint.token) {
@@ -261,6 +305,111 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
   // HTTP response) and is never cleared on success: the page reloads.
   const migrating = useRef(false)
 
+  // ── the account moved and THIS window was not the one that moved it ───────
+  //
+  // The island fans `account_moved` out to every socket the OLD number had
+  // (app/routers/migrate.py). Until 07.09 it fanned out `account_burned`
+  // instead, and those sockets belong to the owner's OTHER devices: a person
+  // signed in on a laptop and two phones, who took a shorter number on the
+  // laptop, watched both phones erase themselves. Nothing here erases
+  // anything. The event is only ever a reason to ASK the island, and the
+  // island's answer is the only thing acted on.
+  //
+  // ⚠⚠ `account_burned` keeps its old meaning and its old ending: the burn
+  // listener in ws.tsx still runs the full sign-out with the local wipe. The
+  // two words are different on the wire and different here, and that is the
+  // whole fix.
+
+  /// This account is not at the number this browser knows any more. Set the
+  /// moment a follow starts and never cleared while the window lives: from
+  /// then on every 401 is the retired token of a number that no longer exists,
+  /// which is a fact about the NUMBER, not about the session, and must not
+  /// bounce the person to the login screen over a notice explaining what
+  /// happened.
+  const movedAway = useRef(false)
+  /// One follow at a time. `account_moved` reaches every socket the old number
+  /// had, and this window may hold more than one over a reconnect.
+  const followingRef = useRef(false)
+  /// Retries left for a follow that failed on the NETWORK rather than on the
+  /// island's judgement. A move is announced at the exact moment the island is
+  /// busiest with this account, so one bad request must not be the ending.
+  const followTriesRef = useRef(0)
+  const [movedStranded, setMovedStranded] = useState<{ from: number; busy: boolean } | null>(null)
+
+  const followAccountMove = (announcedUin?: number) => {
+    // The window that DID the migration set `migrating` before its request went
+    // out and is already reloading under the new number. It must ignore this,
+    // exactly as it has always ignored the burn.
+    if (migrating.current) return
+    const target = identity
+    if (!target) return
+    // A frame naming the number we are already on is not a move. Nothing else
+    // in the payload is used: see `adoptMove`.
+    if (typeof announcedUin === 'number' && announcedUin === target.uin) return
+    if (followingRef.current) return
+    followingRef.current = true
+    movedAway.current = true
+    // ⚠ The FIRST attempt says nothing on screen. It normally ends in the
+    // reload a fraction of a second later, and a dialog thrown up for that
+    // fraction would be a flash on the one path that works. Only a window that
+    // has already been told it is stranded shows the attempt (as a disabled
+    // button), which is the person pressing "try again" and deserving an
+    // answer to the press.
+    setMovedStranded((cur) => (cur ? { ...cur, busy: true } : null))
+    // A press of "try again" earns a fresh set of automatic retries: the
+    // person is telling us the network is back.
+    if (movedStranded) followTriesRef.current = 0
+    void mintSessionToken(target)
+      .then((mint) => {
+        if (mint.token && mint.movedTo) {
+          // Confirmed by the island, with the old number named as the one this
+          // account left. Adopt and reload; the banner never gets drawn.
+          adoptMove(target, mint.movedTo, mint.token)
+          return
+        }
+        followingRef.current = false
+        // ⚠⚠ A token for the number we ASKED about: the island still has this
+        // account exactly where it was, so whatever that frame was, it was not
+        // this account moving. Stand down completely — nothing moved, so the
+        // 401 shield comes back off and no notice is raised. Without this
+        // branch a stale or duplicated frame stranded a perfectly healthy
+        // session behind a dialog and muted its 401 handling for good.
+        if (mint.token) {
+          movedAway.current = false
+          followTriesRef.current = 0
+          setMovedStranded(null)
+          adoptToken(target, mint.token)
+          return
+        }
+        // Everything below leaves LOCAL DATA ALONE. There are two ways to get
+        // here and neither is a reason to delete a message:
+        //
+        //  * the island refused (`dead`): the old number is not vacant, or the
+        //    signing key resolves to more than one account. A handful of keys
+        //    on the flagship are carried by two accounts, and for those the
+        //    refresh deliberately refuses rather than guess — the way back is
+        //    the recovery phrase, with a person looking at the screen.
+        //  * we could not ask (offline, a 5xx, an island older than the
+        //    endpoint). That says nothing at all about the account.
+        //
+        // The first is final; the second is worth retrying a few times before
+        // the person is told anything.
+        if (!mint.dead && !mint.unsupported && followTriesRef.current < 3) {
+          const delay = 2_000 * 3 ** followTriesRef.current
+          followTriesRef.current += 1
+          window.setTimeout(() => followAccountMove(announcedUin), delay)
+          return
+        }
+        setMovedStranded({ from: target.uin, busy: false })
+      })
+      .catch(() => {
+        // mintSessionToken swallows its own network errors, so this is a bug
+        // rather than a bad minute. Still no wipe: say so and stop.
+        followingRef.current = false
+        setMovedStranded({ from: target.uin, busy: false })
+      })
+  }
+
   // Any other 401 from an authed API call means this web session was revoked
   // (the phone unlinked it) or expired. Drop the identity so the app
   // routes straight back to login instead of showing a raw
@@ -269,6 +418,14 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     setUnauthorizedHandler((uin: number) => {
       if (migrating.current) return
+      // ⚠ The account moved off this number, and the island retires every
+      // token minted for it as part of the swap — so a 401 here is certain,
+      // immediate, and says nothing about this session's right to exist.
+      // Without this the follow above was raced by its own 401: the identity
+      // was dropped, the app bounced to the login screen marked "session
+      // ended", and the notice explaining the move never got drawn. Local
+      // data is untouched either way; what this protects is the explanation.
+      if (movedAway.current) return
       // Mark before clearing: once the identity is gone we no longer know
       // which account died, and the Settings list would show a row that
       // silently bounces to login every time it is tapped ("зайти не даёт").
@@ -287,6 +444,18 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
     return () => setUnauthorizedHandler(null)
   }, [])
 
+  /// Land on the login screen without taking anything with us: the roster
+  /// keeps every account, the local stores keep every message, only the ACTIVE
+  /// slot is cleared. Two callers with the same need — "add another account"
+  /// and the way out of a move this window could not follow.
+  const openLoginScreen = () => {
+    clearGroupPreviewCache()
+    clearRandomPeers()
+    clearIdentity()
+    showTransitionVeil()
+    void flushVaultWriter().finally(() => window.location.assign('/'))
+  }
+
   const value = useMemo<IdentityCtx>(
     () => ({
       identity,
@@ -300,16 +469,14 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
         showTransitionVeil()
         void flushVaultWriter().finally(() => window.location.assign('/'))
       },
-      addAccount: () => {
-        // The roster keeps every account; clearing only the ACTIVE slot lands
-        // on the login screen with the others still here, so "add" cannot
-        // become "sign out of everything" by accident.
-        clearGroupPreviewCache()
-        clearRandomPeers()
-        clearIdentity()
-        showTransitionVeil()
-        void flushVaultWriter().finally(() => window.location.assign('/'))
-      },
+      addAccount: openLoginScreen,
+      followAccountMove,
+      movedStranded,
+      // ⚠ The SAME call "add another account" makes, deliberately: it clears
+      // the active slot and nothing else. No `wipeLocalAccountData`, no
+      // `idbClearAll` — this window is here because an account moved, and the
+      // only copy of its history on this machine is the one it is holding.
+      leaveMovedAccount: openLoginScreen,
       signOutAccount: (uin: number) => {
         // Tell the ACCOUNT BEING SIGNED OUT that this session is gone, not
         // whichever one happens to be active — otherwise leaving account B
@@ -396,7 +563,9 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
         void flushVaultWriter().finally(() => window.location.assign(to))
       },
     }),
-    [identity, accounts],
+    // `movedStranded` is in here so the notice appears (and its button stops
+    // spinning) without waiting for some other state to change.
+    [identity, accounts, movedStranded],
   )
 
   if (!hydrated) return null

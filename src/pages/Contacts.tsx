@@ -52,6 +52,7 @@ import {
   type UserStatus,
 } from '../lib/api'
 import { contactsCache, persistSnapshot, restoreSnapshot } from '../lib/contacts-cache'
+import { drainContactMoves, noteContactMoves } from '../lib/contact-migration'
 import { mirrorContactsToVault } from '../lib/contacts-vault'
 import { memberCount } from '../lib/group-roster'
 import { compactCount } from '../lib/format-count'
@@ -357,6 +358,20 @@ export function Contacts() {
     if (!identity) return
     setError(null)
     if (!background) setLoading(true)
+    /// The roster as it stood BEFORE this answer, captured before the first
+    /// await so nothing below can have replaced it. It is what a contact's UIN
+    /// migration is detected against (contact-migration.ts), and the persisted
+    /// snapshot is the half that matters: a contact who moved while this
+    /// browser was closed is only visible by comparing against the last list
+    /// this device actually held.
+    const rosterBefore =
+      (rosterKept.uin === identity.uin ? rosterKept.list : null) ??
+      contactsCache.get(identity.uin)?.contacts ??
+      []
+    // Anything still owed from an earlier sighting — the received half of a
+    // conversation cannot move until the incoming store has hydrated, which is
+    // often after the refresh that spotted the move.
+    drainContactMoves(identity)
     try {
       const [rosterAnswer, pendingList, myInfo, groupList, foreignGroups] = await Promise.all([
         // Conditional: a 304 hands back the rows kept from the last full
@@ -384,6 +399,11 @@ export function Contacts() {
       // offline (Android hit exactly this as report #909 on 0.173). On 304 the
       // list is left alone; everything else in this refresh still runs.
       const served = rosterAnswer.list
+      // ⚠ Only a FULL answer can show a migration: on a 304 the island is
+      // telling us the roster is byte-for-byte what we already have, so there
+      // is nothing to compare. Runs before `rosterKept` is replaced, so the
+      // "before" list is still the one this device held.
+      if (served) noteContactMoves(identity, rosterBefore, served)
       if (served) rosterKept = { uin: identity.uin, etag: rosterAnswer.etag, list: served }
       const list = served ?? (rosterKept.uin === identity.uin ? rosterKept.list : null) ?? (await Api.contacts(identity))
       if (served) setContacts(list)
@@ -1681,7 +1701,7 @@ function CrossIslandRow({
               {aliasFor(ci.uin, ci.host) || ci.nickname || `${ci.uin}@${ci.host}`}
             </div>
             <div className="text-xs text-fg-dim truncate">
-              #{ci.uin} · {ci.host}
+              {ci.uin} · {ci.host}
             </div>
           </div>
         </Link>

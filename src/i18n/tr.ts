@@ -74,6 +74,8 @@ export const tr: Record<string, string> = {
   'island.entry.invite': 'Yalnızca davetle',
   'island.entry.open': 'Herkese açık',
   'island.entry.buy': 'satın al',
+  'island.rules.title': 'Ada kuralları',
+  'island.back_to_list': 'Listeye dön',
   'invites.title': 'Davetler',
   'invites.next': 'Bir sonraki {date} tarihinde gelir',
   'invites.all': 'Hepsi elinizde',
@@ -1073,7 +1075,7 @@ export const tr: Record<string, string> = {
   'uin_market.tiers.len9': 'dokuz haneli',
   'uin_market.tiers.reserved': 'satılık değil',
   'uin_market.status.resale': 'birisi satıyor',
-  'uin_market.resale.seller': '#{uin} satıyor',
+  'uin_market.resale.seller': '{uin} satıyor',
   'uin_market.tab.island': 'Adadan',
   'uin_market.tab.people': 'Kişilerden',
   'uin_market.people.empty': 'Şu anda kimse numara satmıyor.',
@@ -1082,7 +1084,7 @@ export const tr: Record<string, string> = {
   'uin_market.sell.action': 'Sat',
   'uin_market.sell.unlist': 'Kaldır',
   'uin_market.sell.listed': 'satışta, {price}',
-  'uin_market.sell.title': '#{uin} satışı',
+  'uin_market.sell.title': '{uin} satışı',
   'uin_market.sell.price': 'Fiyatınız, dolar',
   'uin_market.sell.wallet': '{chain} adresiniz',
   'uin_market.sell.echo': 'Alıcılar {price} ödeyecek',
@@ -1202,4 +1204,10 @@ export const tr: Record<string, string> = {
   'settings.backup.restoredExpired': 'Dosyada {n} kaybolan mesaj vardı, geri yüklenmedi.',
   'settings.backup.restoredMediaIgnored': 'Dosyada {n} ek vardı; tarayıcı resimleri adada tuttuğu için oradan alınmadı.',
   'settings.backup.warning': 'Bu dosya artı ifaden, bütün geçmişin demek. İçinde anahtar yok ve giriş yapmak için kullanılamaz.',
+  // Hesap başka bir numaraya taşındı ve ada bu tarayıcı için taşınmayı
+  // doğrulamadı. Bu yolda hiçbir şey silinmez, metnin bunu söylemesi gerekir.
+  'account_moved.title': 'Bu numara taşındı',
+  'account_moved.body': '{uin} olan hesap artık başka bir numarayla yanıt veriyor: başka bir cihazında taşınmış. Bu pencere otomatik olarak takip edemedi. Burada hiçbir şey silinmedi, mesajların hâlâ bu cihazda. Tekrar dene ya da kurtarma ifadenle giriş yap.',
+  'account_moved.retry': 'Tekrar dene',
+  'account_moved.signin': 'Kurtarma ifadesiyle giriş yap',
 }

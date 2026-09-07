@@ -135,7 +135,7 @@ function OutgoingList() {
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-medium">{r.nickname || `${r.to_uin}`}</div>
             <div className="truncate text-[0.6875rem] text-fg-dim">
-              #{r.to_uin} ·{' '}
+              {r.to_uin} ·{' '}
               {r.state === 'declined' ? t('pending.outgoing.declined') : t('pending.outgoing.waiting')}
             </div>
           </div>

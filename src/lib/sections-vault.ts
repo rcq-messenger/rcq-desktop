@@ -43,6 +43,7 @@ import {
   forgetMember,
   groupKey,
   merge,
+  renameMember,
   sameContent,
   SectionsError,
   touchTree,
@@ -317,4 +318,23 @@ export function forgetSectionMember(identity: WebIdentity | null, key: string | 
   if (!key) return
   if (userSections(loadSectionsTree()).length === 0) return
   mutateSections(identity, (tree) => forgetMember(tree, key) ?? touchTree(tree), { defer: true })
+}
+
+/// The same chat, filed under a new member key: a contact who moved to another
+/// UIN (see `contact-migration.ts`). Without this the person drops out of the
+/// section I put them in the moment their number changes, which is half of the
+/// founder's 07.09 report.
+///
+/// ⚠⚠ Written UNCONDITIONALLY, for exactly the reason spelled out above
+/// `forgetSectionMember`: a put that happens only when the moved chat turned
+/// out to be filed tells the island, from its own request log, that this uin
+/// was in one of my sections. Deferred for the same reason.
+export function renameSectionMember(
+  identity: WebIdentity | null,
+  oldKey: string | null,
+  newKey: string | null,
+): void {
+  if (!oldKey || !newKey || oldKey === newKey) return
+  if (userSections(loadSectionsTree()).length === 0) return
+  mutateSections(identity, (tree) => renameMember(tree, oldKey, newKey) ?? touchTree(tree), { defer: true })
 }

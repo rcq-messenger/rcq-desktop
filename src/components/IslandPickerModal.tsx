@@ -46,6 +46,14 @@ export function IslandPickerModal({
   const [failed, setFailed] = useState(false)
   const [manual, setManual] = useState('')
   const [error, setError] = useState<string | null>(null)
+  /// The island whose house rules are being read, in place of the list.
+  ///
+  /// ⚠ A PAGE OF THIS MODAL, not an overlay on top of it. Both bars of this
+  /// app carry a `backdrop-filter`, which makes them the containing block for
+  /// anything `fixed` inside them, and a second overlay is how that trap gets
+  /// sprung (Settings opens the same text in place for the same reason). One
+  /// way back, the way the phones do it.
+  const [rules, setRules] = useState<{ name: string; text: string } | null>(null)
 
   useEffect(() => {
     let dead = false
@@ -59,10 +67,17 @@ export function IslandPickerModal({
   }, [])
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    // Escape backs out one step at a time: out of the rules and back to the
+    // list, then out of the picker. Closing the whole thing from the rules
+    // would throw away the choice somebody opened them to make.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      if (rules) setRules(null)
+      else onClose()
+    }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [onClose])
+  }, [onClose, rules])
 
   function pick(input: string) {
     const address = normaliseIsland(input)
@@ -110,9 +125,25 @@ export function IslandPickerModal({
           className="w-full max-w-md max-h-[80vh] mx-4 flex flex-col rounded-xl bg-surface shadow-xl overflow-hidden"
         >
           <header className="flex items-center justify-between px-4 py-3 border-b border-line/40">
-            <span className="text-sm font-semibold">{t('island.picker.title')}</span>
+            <span className="text-sm font-semibold">{rules ? rules.name : t('island.picker.title')}</span>
             <button onClick={onClose} aria-label={t('common.cancel')} className="text-fg-secondary hover:text-fg-primary px-1">✕</button>
           </header>
+          {rules ? (
+            <>
+              <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3 text-xs text-fg-secondary leading-relaxed whitespace-pre-wrap">
+                {rules.text}
+              </div>
+              <footer className="px-4 py-3 border-t border-line/40">
+                <button
+                  type="button"
+                  onClick={() => setRules(null)}
+                  className="text-xs text-accent hover:underline"
+                >
+                  {t('island.back_to_list')}
+                </button>
+              </footer>
+            </>
+          ) : (<>
           <div className="flex-1 min-h-0 overflow-y-auto py-1">
             {catalog == null && !failed && (
               <div className="py-8 text-center text-sm text-fg-dim">{t('common.loading')}</div>
@@ -124,26 +155,40 @@ export function IslandPickerModal({
               const base = normaliseIsland(s.url).base
               const active = base === current
               return (
-                <button
+                // ⚠ The rules button is a SIBLING of the row, not a button
+                // inside it: one button nested in another is markup a browser
+                // is free to untangle however it likes, and the whole point of
+                // this control is that it does something other than what the
+                // row it sits in does.
+                <div
                   key={s.url}
-                  type="button"
-                  onClick={() => pick(s.url)}
-                  className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-field ${active ? 'bg-accent/10' : ''}`}
+                  className={`flex items-stretch transition-colors hover:bg-field ${active ? 'bg-accent/10' : ''}`}
                 >
-                  <IslandAvatar apiBase={base} size={34} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-medium truncate">
-                      {s.name || islandLabel(base)}
-                      {s.region ? <span className="ml-1.5 text-[0.625rem] text-fg-dim uppercase">{s.region}</span> : null}
+                  <button
+                    type="button"
+                    onClick={() => pick(s.url)}
+                    className="min-w-0 flex-1 flex items-center gap-3 px-4 py-2.5 text-left"
+                  >
+                    <IslandAvatar apiBase={base} size={34} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-medium truncate">
+                        {s.name || islandLabel(base)}
+                        {s.region ? <span className="ml-1.5 text-[0.625rem] text-fg-dim uppercase">{s.region}</span> : null}
+                      </span>
+                      <span className="block text-xs text-fg-dim truncate">{islandLabel(base)}</span>
+                      {s.description && (
+                        <span className="block text-[0.6875rem] text-fg-secondary truncate">{s.description}</span>
+                      )}
+                      <IslandEntryLine apiBase={base} />
                     </span>
-                    <span className="block text-xs text-fg-dim truncate">{islandLabel(base)}</span>
-                    {s.description && (
-                      <span className="block text-[0.6875rem] text-fg-secondary truncate">{s.description}</span>
-                    )}
-                    <IslandEntryLine apiBase={base} />
-                  </span>
-                  {active && <span className="flex-none text-accent text-sm">✓</span>}
-                </button>
+                    {active && <span className="flex-none text-accent text-sm">✓</span>}
+                  </button>
+                  <IslandRulesButton
+                    apiBase={base}
+                    fallbackName={s.name || islandLabel(base)}
+                    onOpen={(name, text) => setRules({ name, text })}
+                  />
+                </div>
               )
             })}
           </div>
@@ -177,10 +222,53 @@ export function IslandPickerModal({
               <div className="text-xs text-fg-dim leading-relaxed">{t('island.trust.browser_hint')}</div>
             )}
           </footer>
+          </>)}
         </motion.div>
       </motion.div>
     </AnimatePresence>,
     document.body,
+  )
+}
+
+/// The island's house rules, one click from the row that would join it
+/// (founder, 07.09: "a good idea, so you can look before joining"). The same
+/// words its own Settings page shows to the people already living there.
+///
+/// ⚠ Drawn ONLY when the operator actually wrote some. A blank welcome is the
+/// ordinary case, and a button that opens an empty page is worse than no
+/// button at all — so this renders nothing until the island has answered and
+/// said it has something to show.
+///
+/// The extra `useServerInfo` costs no extra request: `fetchServerInfo` hands
+/// every caller for the same island the one promise it already has in flight.
+function IslandRulesButton({
+  apiBase,
+  fallbackName,
+  onOpen,
+}: {
+  apiBase: string
+  fallbackName: string
+  onOpen: (name: string, text: string) => void
+}) {
+  const { t } = useI18n()
+  const info = useServerInfo(apiBase)
+  const text = info?.welcome.trim()
+  if (!text) return null
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(info?.name.trim() || fallbackName, text)}
+      title={t('island.rules.title')}
+      aria-label={t('island.rules.title')}
+      className="flex-none px-3 text-fg-dim hover:text-accent transition-colors"
+    >
+      {/* A sheet of paper with lines on it: hand-drawn like every other glyph
+          in this tree, which ships no icon dependency. */}
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M6 3.5h9L19 8v12.5H6z" />
+        <path d="M14 3.5V8h5M9 12h6M9 16h4" />
+      </svg>
+    </button>
   )
 }
 

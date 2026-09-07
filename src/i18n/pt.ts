@@ -74,6 +74,8 @@ export const pt: Record<string, string> = {
   'island.entry.invite': 'Só por convite',
   'island.entry.open': 'Aberta para todos',
   'island.entry.buy': 'comprar',
+  'island.rules.title': 'Regras da ilha',
+  'island.back_to_list': 'Voltar à lista',
   'invites.title': 'Convites',
   'invites.next': 'O próximo chega em {date}',
   'invites.all': 'Você tem todos',
@@ -1073,7 +1075,7 @@ export const pt: Record<string, string> = {
   'uin_market.tiers.len9': 'de nove dígitos',
   'uin_market.tiers.reserved': 'não estão à venda',
   'uin_market.status.resale': 'está à venda por alguém',
-  'uin_market.resale.seller': 'vendido por #{uin}',
+  'uin_market.resale.seller': 'vendido por {uin}',
   'uin_market.tab.island': 'Da ilha',
   'uin_market.tab.people': 'De pessoas',
   'uin_market.people.empty': 'Neste momento ninguém está a vender um número.',
@@ -1082,7 +1084,7 @@ export const pt: Record<string, string> = {
   'uin_market.sell.action': 'Vender',
   'uin_market.sell.unlist': 'Retirar',
   'uin_market.sell.listed': 'à venda, {price}',
-  'uin_market.sell.title': 'Vender #{uin}',
+  'uin_market.sell.title': 'Vender {uin}',
   'uin_market.sell.price': 'O seu preço, em dólares',
   'uin_market.sell.wallet': 'O seu endereço {chain}',
   'uin_market.sell.echo': 'Os compradores vão pagar {price}',
@@ -1202,4 +1204,10 @@ export const pt: Record<string, string> = {
   'settings.backup.restoredExpired': '{n} mensagens temporárias estavam no arquivo e não foram restauradas.',
   'settings.backup.restoredMediaIgnored': '{n} anexos estavam no arquivo; o navegador guarda as imagens na ilha, então eles não foram tirados dali.',
   'settings.backup.warning': 'Este arquivo mais a sua frase são todo o seu histórico. Ele não guarda chaves e não serve para entrar na conta.',
+  // A conta mudou para outro número e a ilha não confirmou a mudança para este
+  // navegador. Aqui nada é apagado, e o texto precisa dizer isso.
+  'account_moved.title': 'Este número mudou',
+  'account_moved.body': 'A conta que era {uin} responde agora por outro número: ela foi movida em outro dos seus aparelhos. Esta janela não conseguiu segui-la automaticamente. Nada aqui foi apagado, suas mensagens continuam neste aparelho. Tente de novo ou entre com a sua frase de recuperação.',
+  'account_moved.retry': 'Tentar de novo',
+  'account_moved.signin': 'Entrar com a frase de recuperação',
 }

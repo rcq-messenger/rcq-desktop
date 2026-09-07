@@ -214,3 +214,26 @@ export async function cardForEnvelope(
     return {}
   }
 }
+
+/// A guest card follows the PERSON who handed it out, not the number they
+/// handed it out as. The island agrees: `guest_cards.owner_uin` is re-keyed by
+/// `/account/migrate` (services/uin_rows.py says so in as many words, because
+/// leaving it behind made every card a migrating resident had ever given out
+/// stop opening their door). Leaving our copy filed under the old number would
+/// reintroduce the same failure from this end — we would simply stop presenting
+/// the card we were given.
+export function carryTheirCard(oldUin: number, newUin: number, host?: string | null): void {
+  if (oldUin === newUin) return
+  const all = loadTheirs()
+  const from = handleOf(oldUin, host)
+  const to = handleOf(newUin, host)
+  const card = all[from]
+  if (card === undefined) return
+  delete all[from]
+  if (all[to] === undefined) all[to] = card
+  try {
+    localStorage.setItem(THEIRS_KEY(), JSON.stringify(all))
+  } catch {
+    /* quota — the card is re-offered by its owner on the next visit */
+  }
+}

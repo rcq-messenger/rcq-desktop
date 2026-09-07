@@ -64,6 +64,15 @@ export function DecryptedVideo({ mediaId, mediaKey, thumbnailB64, durationSec, a
     if (!ok) setFailed(true)
   }
 
+  // The poster below is sized by its own pixels: `w-auto` plus the preflight
+  // `height:auto`, with only MAXIMA on both sides, makes the browser fit it
+  // into 16rem x 16rem at its real ratio — a 16:9 clip lands at 256x144 and
+  // uses the whole bubble width the way a player does. So the square crop the
+  // founder saw is not here; it was the Android bubble, which had a hard 220dp
+  // box. `object-contain`, not `object-cover`: both are no-ops while the box
+  // carries the poster's own ratio, but cover is the class that turns into a
+  // cropper the moment somebody pins a height on this element, which is exactly
+  // how Android got into that state.
   const poster = thumbnailB64 ? `data:image/jpeg;base64,${thumbnailB64}` : null
   const dur = fmtDuration(durationSec)
 
@@ -76,7 +85,7 @@ export function DecryptedVideo({ mediaId, mediaKey, thumbnailB64, durationSec, a
       <>
         <div className="relative overflow-hidden rounded-lg bg-surface-dim">
           {poster ? (
-            <img src={poster} alt="" className="max-h-64 max-w-[16rem] w-auto object-cover" draggable={false} />
+            <img src={poster} alt="" className="max-h-64 max-w-[16rem] w-auto object-contain" draggable={false} />
           ) : (
             <div className="flex h-40 w-56 max-w-full items-center justify-center text-2xl">🎬</div>
           )}
@@ -113,7 +122,7 @@ export function DecryptedVideo({ mediaId, mediaKey, thumbnailB64, durationSec, a
   return (
     <div className="relative overflow-hidden rounded-lg bg-surface-dim">
       {poster ? (
-        <img src={poster} alt="" className="max-h-64 max-w-[16rem] w-auto object-cover" draggable={false} />
+        <img src={poster} alt="" className="max-h-64 max-w-[16rem] w-auto object-contain" draggable={false} />
       ) : (
         <div className="flex h-40 w-56 max-w-full items-center justify-center text-2xl">🎬</div>
       )}

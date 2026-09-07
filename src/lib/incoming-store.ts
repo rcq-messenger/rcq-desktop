@@ -1187,3 +1187,58 @@ export function incomingSnapshots(): {
 } {
   return { peers: byPeer, groups: byGroup }
 }
+
+/// A contact moved to a new UIN: carry their received half of the conversation,
+/// and its badge, onto the new number.
+///
+/// ⚠⚠ REFUSES TO RUN BEFORE HYDRATION, and the caller must respect that.
+/// `byPeer` is EMPTY until `hydrateIncoming` has read the blob off IndexedDB,
+/// so a move applied early would find nothing, persist an empty snapshot over
+/// the real one and destroy the very history it was called to save. `false`
+/// means "not yet, ask again"; it never means "nothing to move".
+///
+/// Nothing is dropped when the new number already has rows: the two are merged
+/// by envelope id (the peer may well have written from the new number before
+/// this device noticed the move) and re-sorted on the send clock.
+export function movePeerHistory(oldUin: number, newUin: number): boolean {
+  if (_activeUin == null || _hydratedFor !== _activeUin) return false
+  if (oldUin === newUin) return true
+
+  const from = byPeer.get(oldUin)
+  if (from && from.length > 0) {
+    const into = byPeer.get(newUin) ?? []
+    const have = new Set(into.map((r) => r.id))
+    const merged = [...into, ...from.filter((r) => !have.has(r.id))]
+    merged.sort((a, b) => (a.srvAt ?? a.sentAt ?? a.at) - (b.srvAt ?? b.sentAt ?? b.at))
+    byPeer.set(newUin, merged)
+    // The dedupe memory is keyed by thread as well as by id, so a row carried
+    // across would be accepted a second time off the queue without this.
+    for (const r of from) {
+      seen.delete(`p:${oldUin}:${r.id}`)
+      seen.add(`p:${newUin}:${r.id}`)
+    }
+  }
+  byPeer.delete(oldUin)
+
+  // The badge follows the messages. Summed rather than replaced for the same
+  // reason the rows are merged.
+  const oldKey = peerKey(oldUin)
+  const newKey = peerKey(newUin)
+  const carried = unread.get(oldKey)
+  if (carried != null) {
+    unread.delete(oldKey)
+    unread.set(newKey, (unread.get(newKey) ?? 0) + carried)
+  }
+  // A chat open on the number that just changed is still the chat on screen.
+  if (_activeThread === oldKey) {
+    _activeThread = newKey
+    unread.delete(newKey)
+  }
+  if (carried != null || _activeThread === newKey) {
+    persistUnread()
+    emitUnread()
+  }
+  persist()
+  emit()
+  return true
+}

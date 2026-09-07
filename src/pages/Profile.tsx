@@ -343,7 +343,10 @@ function ReadView({
           </div>
         </div>
         <div className="text-xs text-fg-dim">
-          #{info.uin}{crossIslandHost ? ` · ${crossIslandHost}` : ''}
+          {/* ⚠ No hash. A UIN is the number itself, and the site, the phones
+              and every other line in this app print it bare; the lone # here
+              read as a different kind of identifier (founder, 07.09). */}
+          {info.uin}{crossIslandHost ? ` · ${crossIslandHost}` : ''}
         </div>
         {info.status_message && (
           <div className="text-sm text-fg-secondary pt-1">{info.status_message}</div>

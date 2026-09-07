@@ -75,10 +75,18 @@ export function DecryptedImage({ mediaId, mediaKey, apiBase }: Props) {
         className="block overflow-hidden rounded-lg"
         title={t('chat.media.open')}
       >
+        {/* Aspect: `w-auto` + `h-auto` (preflight) with only MAXIMA on both
+            sides means the browser scales the picture down inside 16rem x 16rem
+            and keeps its ratio — the element box IS the media's shape, so a
+            landscape photo spends the full bubble width and nothing is cut.
+            `object-contain`, not `object-cover`: the box and the picture agree
+            today, so either is a no-op, but cover is the class that silently
+            becomes a cropper the day somebody pins a height here. That is
+            exactly how the Android bubble ended up square. */}
         <img
           src={url}
           alt=""
-          className="max-h-64 max-w-[16rem] w-auto object-cover"
+          className="max-h-64 max-w-[16rem] w-auto object-contain"
           draggable={false}
         />
       </button>

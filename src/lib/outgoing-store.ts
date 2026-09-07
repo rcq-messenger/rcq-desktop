@@ -571,3 +571,44 @@ export function fileOutgoingCarbon(carbon: CarbonEnvelope): void {
     appendToThreadLog(threadKey, row) // dedup + localStorage for a non-open thread
   }
 }
+
+/// Move a whole thread log from one storage key to another: the peer migrated
+/// to a new UIN, and their conversation is filed under the number they left.
+///
+/// Nothing is merged. A destination that already holds rows means the new
+/// number has its own conversation (they wrote first from it, say), so the two
+/// halves are concatenated in send order and de-duplicated by row id rather
+/// than one of them being dropped on the floor — losing sent messages to a
+/// number change is not a trade this file gets to make.
+///
+/// Returns true when something moved. Idempotent: with nothing under `oldKey`
+/// there is nothing to do.
+export function moveThreadLog(oldKey: string, newKey: string): boolean {
+  if (oldKey === newKey) return false
+  const from = rawRows(oldKey)
+  // ⚠⚠ NOTHING IS DELETED ON AN EMPTY READ. Under a PIN, a sealed blob whose
+  // key is gone reads as zero rows (`adoptSealedOutgoing` deliberately leaves
+  // it out of `mem` rather than replacing it with garbage), and an empty read
+  // is also what a quota-blocked or unparseable log looks like. Removing the
+  // key on that evidence would turn "cannot open this right now" into "this is
+  // gone for good".
+  if (from.length === 0) return false
+  const into = rawRows(newKey)
+  const seen = new Set(into.map((r) => r.id))
+  const merged = [...into, ...from.filter((r) => !seen.has(r.id))].sort((a, b) => a.sentAt - b.sentAt)
+  savePersisted(newKey, merged)
+  dropThreadLog(oldKey)
+  return true
+}
+
+/// Forget one thread's log entirely — disk and, under a PIN, the in-memory
+/// overlay that shadows it. Both, or the seal path resurrects it on the next
+/// write of anything else.
+function dropThreadLog(key: string): void {
+  mem?.delete(key)
+  try {
+    localStorage.removeItem(key)
+  } catch {
+    /* storage denied — the memory copy is already gone */
+  }
+}

@@ -135,3 +135,22 @@ async function sendReadReceipt(identity: WebIdentity, peerUin: number, targetIDs
     /* the peer keeps a plain tick */
   }
 }
+
+/// Carry the "already receipted" memory to a peer's new UIN.
+///
+/// Cosmetic-looking and not: `movePeerHistory` carries the received rows onto
+/// the new number, and a fresh number with no memory takes the SEED path
+/// (`loadSent` returning null), which silently marks the whole carried history
+/// as already-read-and-announced. Once. The next genuine message is receipted
+/// normally either way, so what this actually buys is that the seed does not
+/// have to be trusted with two weeks of somebody else's messages.
+export function carryReceiptMemory(oldPeer: number, newPeer: number): void {
+  if (oldPeer === newPeer) return
+  const ids = loadSent(oldPeer)
+  try {
+    if (ids && loadSent(newPeer) == null) saveSent(newPeer, ids)
+    localStorage.removeItem(keyFor(oldPeer))
+  } catch {
+    /* storage denied: the age gate keeps a re-receipt storm off the wire */
+  }
+}

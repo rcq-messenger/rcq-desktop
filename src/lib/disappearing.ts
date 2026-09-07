@@ -164,3 +164,21 @@ export function remainingLabel(expiresAt: number, now: number = Date.now()): str
 /// on screen, long enough to be free: the work is a filter over arrays already
 /// in memory and it exits without touching the disk when nothing lapsed.
 export const SWEEP_INTERVAL_MS = 10_000
+
+/// Carry a 1:1 thread's timer to the peer's new UIN. A disappearing timer is a
+/// promise about a CONVERSATION, so a contact changing their number must not
+/// quietly turn it off — that is the failure direction that leaves messages on
+/// disk which both sides believe are already gone.
+///
+/// The new number's own setting wins if it has one; otherwise the old thread's
+/// timer moves across. The old entry goes either way.
+export function carryThreadTtl(oldUin: number, newUin: number): void {
+  if (oldUin === newUin) return
+  const from = ttlThreadKey(false, oldUin)
+  const to = ttlThreadKey(false, newUin)
+  const cur = read()
+  const ttl = cur[from]
+  if (ttl === undefined) return
+  if (cur[to] === undefined && ttl > 0) setThreadTtl(to, ttl)
+  setThreadTtl(from, null)
+}

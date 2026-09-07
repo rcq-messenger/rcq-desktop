@@ -242,3 +242,28 @@ export async function askForProfileKey(
 /// Byte helpers re-exported so callers do not reach past this module for the
 /// one thing it exists to hand them.
 export { b64ToBytes }
+
+/// A contact moved to a new UIN: keep the key that opens their face.
+///
+/// This map is the only copy — the island stopped holding the key column under
+/// the profile-key model, which is the whole point of it — so a key left filed
+/// under the number they walked away from is a contact whose picture turns into
+/// a lettered tile and stays one until they happen to hand the key out again.
+/// Indistinguishable, from the outside, from "they removed their picture".
+///
+/// Both halves are moved: the live map and the copy on disk. Returns true when
+/// there was something to move.
+export function carryPeerProfileKey(oldUin: number, newUin: number): boolean {
+  if (oldUin === newUin) return false
+  const k = theirs.get(oldUin)
+  theirs.delete(oldUin)
+  if (k == null) {
+    persistTheirs()
+    return false
+  }
+  // Never overwrite: a key already filed under the new number came from the
+  // new number, and is the one that opens what is published there now.
+  if (!theirs.has(newUin)) theirs.set(newUin, k)
+  persistTheirs()
+  return true
+}

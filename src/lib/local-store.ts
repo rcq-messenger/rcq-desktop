@@ -265,3 +265,60 @@ export function useCollapsedSections(): {
     },
   }
 }
+
+// -----------------------------------------------------------
+// A contact who changed their number
+// -----------------------------------------------------------
+
+/// Move everything THIS DEVICE holds about a person from the UIN they left to
+/// the one they moved onto.
+///
+/// ⚠⚠ WHY THIS IS NEEDED AT ALL. `/account/migrate` re-keys the island's own
+/// rows (`services/uin_rows.PER_UIN_COLUMNS` includes `contacts.contact_uin`),
+/// so the roster simply starts serving the same person under a new number and
+/// nothing on the wire ever says the two are the same. Every record in this
+/// file is keyed by the OLD number, so without this the person arrives as a
+/// stranger: the name I gave them is gone (they start showing their own nick
+/// again), they are out of my favourites, out of my archive, and unmuted. That
+/// is the founder's report of 07.09, and it was silent.
+///
+/// Idempotent: a second call finds nothing under the old key and does nothing.
+/// Never overwrites a value already sitting under the new key — if I have
+/// already named the new number, that answer is the newer one.
+export function carryContactDeviceState(
+  oldUin: number,
+  newUin: number,
+  host?: string | null,
+): void {
+  if (oldUin === newUin) return
+  // The alias. Keyed WITH the host (see aliasKey), so the two ends of the move
+  // have to be built the same way rather than from the bare numbers.
+  try {
+    const raw = localStorage.getItem(KEYS.aliases) ?? '{}'
+    const map = JSON.parse(raw) as Record<string, string>
+    const from = aliasKey(oldUin, host)
+    const to = aliasKey(newUin, host)
+    const name = map[from]
+    if (name !== undefined) {
+      delete map[from]
+      if (map[to] === undefined) map[to] = name
+      localStorage.setItem(KEYS.aliases, JSON.stringify(map))
+      window.dispatchEvent(new StorageEvent('storage', { key: KEYS.aliases }))
+    }
+  } catch {
+    /* storage denied / unparseable: the name stays where it is */
+  }
+  // The three membership sets. All keyed by the bare uin — a set holds numbers,
+  // so a cross-island contact was never in one of these to begin with.
+  for (const key of [KEYS.favorites, KEYS.archive, KEYS.mutedPeers]) {
+    try {
+      const s = readSet(key)
+      if (!s.has(oldUin)) continue
+      s.delete(oldUin)
+      s.add(newUin)
+      writeSet(key, s)
+    } catch {
+      /* one set failing must not stop the others */
+    }
+  }
+}

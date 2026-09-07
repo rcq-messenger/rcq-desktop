@@ -74,6 +74,8 @@ export const uk: Record<string, string> = {
   'island.entry.invite': 'Лише за запрошенням',
   'island.entry.open': 'Відкритий для всіх',
   'island.entry.buy': 'купити',
+  'island.rules.title': 'Правила острова',
+  'island.back_to_list': 'Назад до списку',
   'invites.title': 'Запрошення',
   'invites.next': 'Наступне з’явиться {date}',
   'invites.all': 'Усі на руках',
@@ -1073,7 +1075,7 @@ export const uk: Record<string, string> = {
   'uin_market.tiers.len9': "дев'ятизначні",
   'uin_market.tiers.reserved': 'не продаються',
   'uin_market.status.resale': 'номер продає людина',
-  'uin_market.resale.seller': 'продає #{uin}',
+  'uin_market.resale.seller': 'продає {uin}',
   'uin_market.tab.island': 'Від острова',
   'uin_market.tab.people': 'Від людей',
   'uin_market.people.empty': 'Зараз ніхто не продає номер.',
@@ -1082,7 +1084,7 @@ export const uk: Record<string, string> = {
   'uin_market.sell.action': 'Продати',
   'uin_market.sell.unlist': 'Зняти',
   'uin_market.sell.listed': 'на продажу, {price}',
-  'uin_market.sell.title': 'Продаж #{uin}',
+  'uin_market.sell.title': 'Продаж {uin}',
   'uin_market.sell.price': 'Ваша ціна, у доларах',
   'uin_market.sell.wallet': 'Ваша адреса {chain}',
   'uin_market.sell.echo': 'Покупець заплатить {price}',
@@ -1202,4 +1204,11 @@ export const uk: Record<string, string> = {
   'settings.backup.restoredExpired': 'У файлі було {n} зникомих повідомлень, їх не відновлено.',
   'settings.backup.restoredMediaIgnored': 'У файлі було {n} вкладень; браузер тримає картинки на острові, тож з файлу їх не брали.',
   'settings.backup.warning': 'Цей файл разом з твоєю фразою це вся твоя історія. Ключів у ньому немає, і увійти з нього не можна.',
+  // Акаунт переїхав на інший номер, а острів не підтвердив переїзд саме для
+  // цього браузера. На цьому шляху нічого не видаляється, і текст має це
+  // сказати.
+  'account_moved.title': 'Номер переїхав',
+  'account_moved.body': 'Акаунт, який мав номер {uin}, тепер відповідає під іншим номером: його перенесли на іншому твоєму пристрої. Це вікно не змогло перейти слідом. Тут нічого не видалено, листування на місці. Спробуй ще раз або увійди за фразою відновлення.',
+  'account_moved.retry': 'Спробувати ще раз',
+  'account_moved.signin': 'Увійти за фразою відновлення',
 }

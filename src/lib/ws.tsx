@@ -55,7 +55,7 @@ const Ctx = createContext<WsCtx | undefined>(undefined)
 const STABLE_MS = 60_000
 
 export function WSProvider({ children }: { children: ReactNode }) {
-  const { identity, signOut } = useIdentity()
+  const { identity, signOut, followAccountMove } = useIdentity()
   const [connected, setConnected] = useState(false)
   const sockRef = useRef<WebSocket | null>(null)
   const listenersRef = useRef<Map<string, Set<Listener>>>(new Map())
@@ -258,6 +258,12 @@ export function WSProvider({ children }: { children: ReactNode }) {
   // this browser tab is open), drop the local identity so the
   // routing layer bounces back to /. The next render's IdentityCtx
   // is null which the Authed wrappers redirect from.
+  //
+  // ⚠⚠ UNCHANGED, on purpose. A real burn destroys the account on the island
+  // and this device's copy has to go with it — `signOut` wipes the local
+  // stores and clears IndexedDB, and that is still exactly what happens here.
+  // Only the MIGRATION stopped sending this word; see the `account_moved`
+  // handler below for what a move does instead.
   useEffect(() => {
     let cancelled = false
     const set = listenersRef.current.get('account_burned') ?? new Set<Listener>()
@@ -272,6 +278,43 @@ export function WSProvider({ children }: { children: ReactNode }) {
       set.delete(handler)
     }
   }, [signOut])
+
+  // Account-MOVED handler, and the reason the one above still exists in its
+  // old shape.
+  //
+  // ⚠⚠ `account_moved` is NOT `account_burned` and must never end in a wipe.
+  // The island fans this out to the OLD number when an account takes a new one
+  // (app/routers/migrate.py), which means it lands on the owner's OTHER
+  // devices — the phones in their pocket while they bought a shorter number on
+  // the laptop. Until 07.09 the island sent `account_burned` here, the handler
+  // above ran, and those phones erased their copy of a live account and then
+  // could not connect (reported 07.09). The tab doing the migrating never saw
+  // it: it suppresses the event on itself.
+  //
+  // So this frame is a reason to ASK, never to act. `followAccountMove` re-runs
+  // POST /auth/refresh — the same rescue a device that was ASLEEP has taken
+  // since 03.09 — and adopts only the number the island itself names as the
+  // one this account left. If the island refuses (the old number is not
+  // vacant, or the signing key is carried by more than one account) nothing
+  // local is touched and the person is told.
+  //
+  // The frame's `uin` is used ONLY to notice a frame naming the number we are
+  // already on. Adopting a number a socket named would put this browser into
+  // whatever account that frame chose.
+  useEffect(() => {
+    let cancelled = false
+    const set = listenersRef.current.get('account_moved') ?? new Set<Listener>()
+    const handler: Listener = (ev) => {
+      if (cancelled) return
+      followAccountMove(typeof ev.uin === 'number' ? ev.uin : undefined)
+    }
+    set.add(handler)
+    listenersRef.current.set('account_moved', set)
+    return () => {
+      cancelled = true
+      set.delete(handler)
+    }
+  }, [followAccountMove])
 
   // The vault's two slots, kept fresh. This is the first consumer of
   // `vault_changed`: the island has fanned the frame out since the vault

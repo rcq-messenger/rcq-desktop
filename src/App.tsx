@@ -13,6 +13,7 @@ import { Sites } from './pages/Sites'
 import { ToastProvider } from './lib/toast'
 import { PinGate } from './lib/pin-gate'
 import { CallOverlay } from './components/CallOverlay'
+import { AccountMovedNotice } from './components/AccountMoved'
 import { Login } from './pages/Login'
 import { Contacts } from './pages/Contacts'
 import { Chat } from './pages/Chat'
@@ -77,6 +78,11 @@ export default function App() {
             {/* Above every route: a call has to survive navigation, and the
                 incoming sheet has to appear wherever the user happens to be. */}
             <CallOverlay />
+            {/* Above every route as well, and drawing nothing almost always:
+                it appears only when this account moved to another number and
+                this window could not follow it. Every request is answering 401
+                by then, so there is no screen underneath it left to use. */}
+            <AccountMovedNotice />
             <Routes>
               <Route path="/" element={<RootEntry />} />
               {/* ⚠ A SHARED CONTACT LINK, which this app could not open at all.

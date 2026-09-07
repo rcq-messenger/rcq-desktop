@@ -679,6 +679,50 @@ export function forgetMember(tree: SectionsTree, key: string, now = Date.now()):
   return removeMemberFrom(tree, holder, key, now)
 }
 
+/// The same chat, under a new member key: a contact who migrated to another
+/// UIN. Returns null when they were not filed anywhere, so the caller can tell
+/// "nothing to do" from "moved" (and still write, see `renameSectionMember`).
+///
+/// ⚠ NOT `removeMemberFrom` + `addMembers`. Two reasons, and both bite:
+///   * `addMembers` stamps the new key with `now`, which loses the moment the
+///     chat was actually filed and, on a merge, lets a fresh add beat an older
+///     deliberate move on another device;
+///   * `addMembers` enforces the caps, and this cannot fail on a cap: the
+///     member count is unchanged, one key out and one key in, and a section
+///     sitting exactly on [MAX_MEMBERS_PER_SECTION] would otherwise throw and
+///     drop the person out of the section entirely — the very bug this exists
+///     to fix, arriving through the fix.
+///
+/// The old key is TOMBSTONED at the same ts, which is what makes the move
+/// survive syncing with a device that has not seen it: that device still holds
+/// `m[old]`, and `mergeMembers` gives the tombstone the newer stamp, so the
+/// old key loses and the new one stands. Without the tombstone the person
+/// would be filed twice, once under a number that no longer exists.
+export function renameMember(
+  tree: SectionsTree,
+  oldKey: string,
+  newKey: string,
+  now = Date.now(),
+): SectionsTree | null {
+  if (oldKey === newKey) return null
+  const index = memberIndex(tree)
+  const holder = index.get(oldKey)
+  if (!holder) return null
+  // Already filed under the new key (a second device got there first, or two
+  // tabs raced). Then this is only a cleanup of the number they left.
+  if (index.has(newKey)) return removeMemberFrom(tree, holder, oldKey, now)
+  return patch(tree, holder, now, (r) => {
+    const m = { ...plainMap(r.m) }
+    const x = { ...plainMap(r.x) }
+    const filedAt = m[oldKey]
+    delete m[oldKey]
+    m[newKey] = filedAt ?? now
+    x[oldKey] = now
+    delete x[newKey]
+    return { ...r, k: r.k ?? 'u', m, x }
+  })
+}
+
 /// Stamp the tree as touched without changing anything anybody can see.
 ///
 /// It exists for one reason and it is not cosmetic: see the write-timing note

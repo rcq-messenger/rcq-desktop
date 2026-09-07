@@ -26,7 +26,7 @@ import { migrateFlatDataInto, setAccountScope } from './account-scope'
 import { showTransitionVeil } from './transition-veil'
 import { flushVaultWriter } from './pin-gate'
 import { defaultHome } from './routing'
-import { Api, setTokenRefresher, setUnauthorizedHandler } from './api'
+import { Api, setTokenRefresher, setUnauthorizedHandler , clearGroupPreviewCache } from './api'
 import { idbClearAll } from './signal-persist'
 
 interface IdentityCtx {
@@ -303,6 +303,7 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
         // The roster keeps every account; clearing only the ACTIVE slot lands
         // on the login screen with the others still here, so "add" cannot
         // become "sign out of everything" by accident.
+        clearGroupPreviewCache()
         clearIdentity()
         showTransitionVeil()
         void flushVaultWriter().finally(() => window.location.assign('/'))

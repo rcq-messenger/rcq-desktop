@@ -525,6 +525,18 @@ export function reportNumber(r: MyReport): number {
 
 // -----------------------------------------------------------
 
+/// Keyed by account AND island, so switching either does not serve one
+/// account's rooms to another. Cleared on sign-out with the rest of the
+/// per-account caches.
+const previewCache = new Map<string, GroupPreview>()
+
+/// Belt and braces: the key above is already scoped to account and island, and
+/// every account change hard-reloads the page, so nothing can leak between two
+/// accounts today. This exists so that stays true if either of those changes.
+export function clearGroupPreviewCache() {
+  previewCache.clear()
+}
+
 export const Api = {
   // Profile -------------------------------------------------
 
@@ -834,7 +846,25 @@ export const Api = {
   /// Non-member preview for a group-invite link — name, member count,
   /// owner, open/closed. Used by the in-chat join card + `/g/:id` page.
   groupPreview(id: WebIdentity, groupId: number): Promise<GroupPreview> {
-    return request<GroupPreview>(id, 'GET', `/groups/${groupId}/preview`)
+    // ⚠⚠ Memoised for the life of the page, and it has to be. A pinned message
+    // can carry many links and the sheet mounts a card per link, each firing
+    // its own preview. One production room's pin holds nineteen; the island
+    // allows thirty a minute per identity, so opening that sheet twice inside a
+    // minute spends the bucket and the rest come back 429 — and a failed
+    // preview draws the placeholder, so the list turns into a column of "Не
+    // удалось загрузить группу". That is #918 on the phones, fixed there in
+    // 0.174 by 3fa32ab, and #919 is the same sheet on the desktop, where it was
+    // never fixed.
+    //
+    // SUCCESSES ONLY. Caching a failure would poison the card for the life of
+    // the page over one bad minute; the whole point is that the next open works.
+    const key = `${id.uin}@${id.apiBase}:${groupId}`
+    const hit = previewCache.get(key)
+    if (hit) return Promise.resolve(hit)
+    return request<GroupPreview>(id, 'GET', `/groups/${groupId}/preview`).then((p) => {
+      previewCache.set(key, p)
+      return p
+    })
   },
 
   /// Self-join an open group. Idempotent — already-member returns the

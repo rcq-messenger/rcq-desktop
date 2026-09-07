@@ -19,6 +19,7 @@
 // two accounts, which is the exact bug account-scope.ts was written to end.
 
 import { setAccountScope } from '../../src/lib/account-scope'
+import { theirCard } from '../../src/lib/guest-card'
 import { Api, ApiError, type Contact, type PendingRequest, type RCQGroup, type UserInfo } from '../../src/lib/api'
 import {
   contactsCache,
@@ -399,7 +400,7 @@ function withDeadline<T>(p: Promise<T>, ms: number): Promise<T> {
 export async function lookupUser(identity: WebIdentity, uin: number): Promise<Lookup> {
   if (missing.has(uin)) return { state: 'missing' }
   try {
-    const info = await withDeadline(Api.userInfo(identity, uin), LOOKUP_MS)
+    const info = await withDeadline(Api.userInfo(identity, uin, theirCard(uin)), LOOKUP_MS)
     if (info?.nickname) learnName(identity.uin, uin, info.nickname)
     return { state: 'known', info }
   } catch (e) {

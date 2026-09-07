@@ -14,6 +14,7 @@
 //    to their end are acked at all.
 
 import fs from 'node:fs'
+import { rememberTheirCard, theirCard } from '../../src/lib/guest-card'
 import { answerKeyAsk, putRoomKey } from '../../src/lib/group-state'
 import { handleProfileKeyEnvelope } from '../../src/lib/profile-key'
 import { rosterFor } from './groups'
@@ -323,6 +324,14 @@ export async function ingestDecrypted(
   // `got.senderHost` on its own is set for local v=1 senders too (see
   // foreignHost), and every use below turns on the difference.
   const host = foreignHost(identity, got.senderHost)
+  // ⚠ A GUEST CARD the sender handed us, kept before anything is decided about
+  // the message: it is what makes "they wrote to me" into "I can answer them",
+  // and the delivered receipt below fires in the same call. Never from a
+  // carbon, where the card is ours coming back from another of our devices.
+  if (env.kind !== 'carbon' && got.senderUIN !== identity.uin) {
+    const card = (env as { card?: unknown }).card
+    if (typeof card === 'string' && card) rememberTheirCard(got.senderUIN, host ?? null, card)
+  }
   if (env.kind === 'carbon') {
     // A message we sent from another device, echoed to our own uin. The
     // origin device re-receives its own carbon — dedup by the inner id.
@@ -541,7 +550,7 @@ async function sendDeliveredReceipt(identity: WebIdentity, peerUin: number, targ
   try {
     const reached = await sendV2(identity, peerUin, env, 'read').catch(() => 0)
     if (reached === 0) {
-      const info = await Api.userInfo(identity, peerUin).catch(() => null)
+      const info = await Api.userInfo(identity, peerUin, theirCard(peerUin)).catch(() => null)
       if (!info?.identity_key || !info.signing_key) {
         // No keys to seal to, so there is no receipt to send. Same one line as
         // a failure, because to the person waiting on a tick it is one.

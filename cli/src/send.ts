@@ -4,6 +4,7 @@
 // once per typed line without ever leaving the process.
 
 import { Api, peerBundleFrom } from '../../src/lib/api'
+import { cardForEnvelope, theirCard } from '../../src/lib/guest-card'
 import { bytesToB64, encryptV1, type CarbonEnvelope, type Envelope, type TextEnvelope, type WebIdentity } from '../../src/lib/crypto'
 import { PartialFanOutError, sendV2 } from '../../src/lib/signal-device'
 import { tr } from './i18n'
@@ -76,7 +77,14 @@ export async function sendText(
   uin: number,
   text: string,
 ): Promise<{ id: string; mode: string }> {
-  const env: TextEnvelope = { kind: 'text', id: crypto.randomUUID().toUpperCase(), text }
+  // ⚠ On a CLOSED island the envelope carries a guest card, which is the whole
+  // of "I wrote to you first, so you may write back". The CLI had none of this:
+  // it built its own envelope here, so a person reached from the terminal could
+  // never answer. Same helper the web and the composer use.
+  const env: TextEnvelope = {
+    kind: 'text', id: crypto.randomUUID().toUpperCase(), text,
+    ...(await cardForEnvelope(identity, true)),
+  }
   let mode: string
   const reached = await sendV2(identity, uin, env, 'message').catch((e) => {
     if (e instanceof PartialFanOutError) throw e
@@ -85,7 +93,9 @@ export async function sendText(
   if (reached > 0) {
     mode = `v2 devices=${reached}`
   } else {
-    const info = await Api.userInfo(identity, uin)
+    // The card they gave us: on a closed island this lookup is refused without
+    // it, and this is the v=1 fallback every first message to a stranger takes.
+    const info = await Api.userInfo(identity, uin, theirCard(uin))
     await Api.sendSealed(identity, uin, encryptV1(env, identity, peerBundleFrom(info)), 'message')
     mode = 'v1'
   }

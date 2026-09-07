@@ -5098,10 +5098,12 @@ const OutgoingMessageRow = memo(function OutgoingMessageRow({
   ) : null
 
   const deliveryLine = (withDismiss: boolean, retryable = true) => (
-    <div className="flex items-center justify-end gap-1 text-[0.625rem] text-fg-dim">
+    // ⚠ `tabular-nums`: a proportional 1 is narrower than a 0, so a clock going
+    // from 11:11 to 12:00 changed the width of this row and nudged everything
+    // in it. Every messenger sets figures to a fixed advance for exactly this.
+    <div className="flex items-center justify-end gap-1 text-[0.625rem] text-fg-dim tabular-nums">
       {new Date(row.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
       {row.expiresAt != null && <ExpiryMark expiresAt={row.expiresAt} t={t} />}
-      {row.state === 'sending' && <ClockMark />}
       <DeliveryMarks state={row.state} />
       {row.state === 'failed' && (
         <>
@@ -5867,17 +5869,32 @@ function DoubleTickMark() {
 
 /// The delivery ladder after the composer let go: sent -> delivered -> read.
 /// 'sending' and 'failed' keep their own inline markup (clock / retry row).
+///
+/// ⚠⚠ A FIXED-WIDTH SLOT, and every state lives inside it. The three marks are
+/// genuinely different sizes — one tick is 15px, two are 17, and 'read' adds a
+/// tinted pill with padding on top of that — so the meta row got wider at every
+/// step of the ladder and the timestamp beside it jumped twice for every
+/// message sent, seconds apart, with nothing the reader did to cause it
+/// (founder, 07.09: "галки прыгают").
+///
+/// The slot is the width of the widest state, so nothing reflows when a receipt
+/// lands. This is the same reason a clock face reserves room for the widest
+/// digit rather than resizing per minute.
 function DeliveryMarks({ state }: { state: OutgoingRow['state'] }) {
-  if (state === 'sent') return <TickMark />
-  if (state === 'delivered') return <span className="text-accent"><DoubleTickMark /></span>
-  if (state === 'read') {
-    return (
-      <span className="rounded bg-accent/25 px-0.5 text-accent">
-        <DoubleTickMark />
-      </span>
-    )
-  }
-  return null
+  return (
+    <span className="inline-flex w-[21px] flex-none items-center justify-end">
+      {/* The clock lives in the SAME slot: drawn beside it, its appearance and
+          disappearance moved the row exactly as the ticks did. */}
+      {state === 'sending' && <ClockMark />}
+      {state === 'sent' && <TickMark />}
+      {state === 'delivered' && <span className="text-accent"><DoubleTickMark /></span>}
+      {state === 'read' && (
+        <span className="rounded bg-accent/25 px-0.5 text-accent">
+          <DoubleTickMark />
+        </span>
+      )}
+    </span>
+  )
 }
 
 function SearchIcon() {

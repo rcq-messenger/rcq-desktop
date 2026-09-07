@@ -1565,7 +1565,18 @@ function ContactRow({
             </div>
           </div>
         </Link>
-        {unread > 0 && <UnreadBadge n={unread} />}
+        {/* ⚠⚠ A RESERVED SLOT, always present. The name beside the avatar is
+            `truncate`, so it fills whatever width is left — which means the
+            mark and the glyphs after it sit at the right edge of that space.
+            When an unread counter appeared or cleared, that space changed and
+            everything on the line JUMPED. Measured: 34px. That is why a mark
+            drifts on rows that did nothing, while the row whose status actually
+            changed — no counter appearing — stays put (founder, 07.09).
+            Reserving the common width fixes the common case; a three-digit
+            counter still widens, which is rare and explains itself. */}
+        <span className="flex-none inline-flex min-w-[26px] justify-center">
+          {unread > 0 && <UnreadBadge n={unread} />}
+        </span>
         <Link
           to={`/profile/${contact.uin}`}
           className="text-fg-secondary hover:text-accent p-2 rounded-md hover:bg-surface"
@@ -1727,7 +1738,9 @@ function GroupRow({
             @
           </span>
         )}
-        {unread > 0 && <UnreadBadge n={unread} />}
+        <span className="flex-none inline-flex min-w-[26px] justify-center">
+          {unread > 0 && <UnreadBadge n={unread} />}
+        </span>
         <button
           onClick={() => setMenuOpen((v) => !v)}
           className="text-fg-secondary hover:text-fg-primary p-2 rounded-md hover:bg-surface"

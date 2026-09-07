@@ -30,7 +30,7 @@ export const es: Record<string, string> = {
   'common.done': 'Listo',
   // Login: two-mode entry surface
   'login.tagline': 'La misma alma, criptografía moderna.',
-  'login.cancel_add': 'Cancelar, volver a {nick}',
+  'login.cancel_add': 'Cancelar',
   'login.mode.create': 'Cuenta nueva',
   'login.mode.recover': 'Recuperar',
   'login.mode.link': 'Conectar teléfono',
@@ -115,6 +115,9 @@ export const es: Record<string, string> = {
   'login.create.invite_placeholder': 'el código de la isla',
   'login.create.invite_hint': 'Esta isla es cerrada. Su operador reparte el código: por invitación, junto con la residencia, o como prefiera.',
   'login.create.invite_hint_paid': 'Esta isla vende la entrada. Si ya pagaste, o alguien te dio un código, pégalo aquí. Puedes dejarlo vacío y entrar sin código.',
+  'login.create.buy_entry': 'Comprar entrada · {price}',
+  'login.create.buy_entry_hint': 'El pago ocurre en la página de la propia isla, que se abre en tu navegador. Vuelves de allí con un código de acceso y lo pegas abajo.',
+  'login.create.entry_no_url': 'La entrada aquí cuesta {price}, pero esta isla no dice dónde se vende. Su operador reparte los códigos de acceso.',
   'auth.error.invite_required': 'La isla es cerrada: para entrar hace falta un código de su operador. Pegalo arriba.',
   'auth.error.invite_invalid': 'Ese código no fue aceptado. Puede estar usado, vencido o ser de otra isla.',
   "login.terms.accept": "Acepto los",

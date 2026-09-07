@@ -14,6 +14,7 @@ import { Logo } from '../components/Logo'
 import {
   RecoverError,
   activateStoredIdentity,
+  addAccountOrigin,
   adoptLinkBlob,
   createNewAccount,
   currentRecoveryPhrase,
@@ -30,6 +31,7 @@ import { bytesToB64, newLinkEphemeral, openLinkSeal, type WebIdentity } from '..
 import { IslandPickerModal } from '../components/IslandPickerModal'
 import { ApiError, parseErrorCode } from '../lib/api'
 import { useServerCapabilities } from '../lib/use-server-info'
+import { formatUsd } from '../lib/server-info'
 import { islandLabel, rememberIsland, rememberedIsland, type IslandAddress } from '../lib/island-choice'
 import { engageIslandEagerly, prePinIsland } from '../lib/island-trust'
 import { IslandAvatar } from '../components/IslandAvatar'
@@ -52,7 +54,22 @@ export function Login() {
   // so a mistap forced you to make one. Any stored identity means we got here
   // from a signed-in session, so offer to go back to it.
   const [stored] = useState(() => listStoredIdentities())
-  const resume = stored[0]
+  // ⚠ Where "cancel" lands is NOT the head of the roster. The head means "last
+  // account switched into", and an account reaches the active slot by routes
+  // that leave the order alone (created, recovered by phrase, linked from a
+  // phone), so reading it as "the one you were on" was right most of the time
+  // and wrong the rest — the founder's "sometimes returns me to a different
+  // one" (07.09). `addAccountOrigin` is the account this tab actually left,
+  // stamped by openLoginScreen on the way here.
+  //
+  // The head stays as the FALLBACK, for the other way onto this screen: a
+  // session the island ended drops the active slot without passing through
+  // "add account", and the way back to the remaining accounts should not
+  // disappear because there is no stamp to read.
+  const [resume] = useState(() => {
+    const from = addAccountOrigin()
+    return (from == null ? undefined : stored.find((a) => a.uin === from)) ?? stored[0]
+  })
 
   return (
     <div className="relative min-h-screen flex items-center justify-center bg-surface-dim px-4 py-6">
@@ -80,7 +97,7 @@ export function Login() {
             }}
             className="text-sm text-fg-secondary hover:text-fg-primary transition-colors"
           >
-            {t('login.cancel_add').replace('{nick}', `${resume.uin}`)}
+            {t('login.cancel_add')}
           </button>
         </div>
       )}
@@ -485,6 +502,26 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
   // A door that is genuinely SHUT still shows the field outright: there the
   // code is not an extra, it is the only way in.
   const sellsEntry = (caps.entry_price_cents ?? 0) > 0
+  // ⚠ THE OTHER HALF OF THE DOOR. The form had the box to paste a code into
+  // and nowhere to get one: "there is only a field for the access code, but
+  // where is the crypto payment gateway?" (founder, 07.09). The gateway is not
+  // in this app and must not be — the operator's page takes the crypto,
+  // watches the chain and hands back a signed code — so all that was missing
+  // is the way out to it.
+  //
+  // ⚠⚠ THE ISLAND'S OWN ADDRESS, never a constant. Every operator runs their
+  // own till, so a self-hoster sells their entry and we sell ours; sending a
+  // buyer to the flagship's page for somebody else's island is real money paid
+  // where the account is not, with no way back.
+  //
+  // ⚠ https ONLY, and no button at all without it. This string comes from a
+  // server we may merely be probing and it ends up opening in the person's
+  // real browser (see the anchor below), so a plaintext or exotic scheme is
+  // refused rather than cleaned up. An island that names no address gets a
+  // sentence with its price and no link: a button that goes nowhere is worse
+  // than nothing.
+  const entryUrl = (caps.entry_url || '').trim()
+  const canBuyEntry = sellsEntry && /^https:\/\//i.test(entryUrl)
   const showCode = doorIsShut || codeRevealed
   const requireCode = needsInvite || caps.registration_policy === 'invite'
 
@@ -608,6 +645,42 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
           setError(null)
         }}
       />
+
+      {/* The way to the till, ABOVE the box the code goes into: buy first,
+          paste second, in the order the person actually does it. Only an
+          island that sells entry has anything to offer here, and only one that
+          names a page gets a link.
+
+          ⚠ A PLAIN ANCHOR, deliberately, and not a click handler that calls
+          `openExternal`. On the desktop this is a Tauri webview, where
+          `target="_blank"` means `window.open` and wry implements none, so the
+          link would silently do nothing — but `installExternalLinkHandler`
+          (lib/desktop.ts, armed once in main.tsx) already catches every
+          left-click on an `http(s)` anchor in the capture phase and hands the
+          URL to the system browser. Every external link in this tree rides
+          that one path, including the terms and privacy links below; a bespoke
+          handler here would be a second path to keep working. */}
+      {sellsEntry && (canBuyEntry ? (
+        <div className="space-y-1">
+          <a
+            href={entryUrl}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="flex items-center justify-center w-full h-10 rounded-md bg-field hover:bg-line/40 text-accent text-sm font-semibold transition-colors"
+          >
+            {t('login.create.buy_entry', { price: formatUsd(caps.entry_price_cents) })}
+          </a>
+          <p className="text-xs text-fg-dim leading-relaxed">{t('login.create.buy_entry_hint')}</p>
+        </div>
+      ) : (
+        // The island charges for entry and does not say where it is sold. The
+        // price is still worth printing: it is the one fact this screen would
+        // otherwise never mention, and it tells the person the code they need
+        // costs money rather than being something they forgot to be sent.
+        <p className="text-xs text-fg-dim leading-relaxed">
+          {t('login.create.entry_no_url', { price: formatUsd(caps.entry_price_cents) })}
+        </p>
+      ))}
 
       {/* The club door. Shown when the island says it is invite-only, and
           revealed by a refusal when it does not: an island can close while

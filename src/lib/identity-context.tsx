@@ -11,6 +11,8 @@ import {
   claimInstallToken,
   clearIdentity,
   clearSessionRevoked,
+  forgetAddAccountOrigin,
+  rememberAddAccountOrigin,
   listStoredIdentities,
   loadStoredIdentity,
   markSessionRevoked,
@@ -85,6 +87,11 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const stored = loadStoredIdentity()
+    // There is an account again, so whatever "add account" was in flight is
+    // over — it ended either in a new account or in cancel, and both are here.
+    // Cleared on the boot that HAS one, never on the login screen itself, so
+    // reloading that screen does not lose the way back (see the key's note).
+    if (stored) forgetAddAccountOrigin()
     // ⚠ BEFORE anything reads a store. Every local key and the device database
     // are namespaced by the active account, and a read taken without a scope
     // would land in the flat namespace — which is the pre-multi-account world
@@ -449,6 +456,13 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
   /// slot is cleared. Two callers with the same need — "add another account"
   /// and the way out of a move this window could not follow.
   const openLoginScreen = () => {
+    // ⚠ Name the account we are leaving BEFORE the slot is cleared, or the
+    // login screen has to guess it from the roster order and sometimes guesses
+    // a stranger (see [rememberAddAccountOrigin]). `identity` is what this
+    // window is showing; the stored row is the fallback for the moved-account
+    // exit, which gets here with the identity already dropped.
+    const from = identity?.uin ?? loadStoredIdentity()?.uin
+    if (from != null) rememberAddAccountOrigin(from)
     clearGroupPreviewCache()
     clearRandomPeers()
     clearIdentity()

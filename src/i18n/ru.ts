@@ -28,7 +28,7 @@ export const ru: Record<string, string> = {
 
   // Login
   'login.tagline': 'Та же душа, современная криптография.',
-  'login.cancel_add': 'Отмена, вернуться в {nick}',
+  'login.cancel_add': 'Отменить',
   'login.mode.create': 'Новый аккаунт',
   'login.mode.recover': 'Восстановить',
   'login.mode.link': 'Телефон',
@@ -120,6 +120,9 @@ export const ru: Record<string, string> = {
   'login.create.invite_placeholder': 'код от острова',
   'login.create.invite_hint': 'Этот остров закрытый. Код выдаёт его оператор: по приглашению, вместе с резидентством или как решит сам.',
   'login.create.invite_hint_paid': 'Этот остров продаёт вход. Если вы уже оплатили или вам дали код, вставьте его сюда. Можно оставить пустым и войти без кода.',
+  'login.create.buy_entry': 'Купить вход · {price}',
+  'login.create.buy_entry_hint': 'Оплата проходит на странице самого острова, она откроется в браузере. Оттуда вы вернётесь с кодом доступа и вставите его ниже.',
+  'login.create.entry_no_url': 'Вход сюда стоит {price}, но остров не говорит, где его продают. Код доступа выдаёт оператор острова.',
   'auth.error.invite_required': 'Остров закрытый: чтобы войти, нужен код от его оператора. Вставьте его выше.',
   'auth.error.invite_invalid': 'Код не принят. Возможно, он уже использован, истёк или выдан для другого острова.',
   "login.terms.accept": "Принимаю",

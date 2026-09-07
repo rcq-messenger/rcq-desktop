@@ -30,7 +30,7 @@ export const pt: Record<string, string> = {
   'common.done': 'Pronto',
   // Login: two-mode entry surface
   'login.tagline': 'A mesma alma, criptografia moderna.',
-  'login.cancel_add': 'Cancelar, voltar para {nick}',
+  'login.cancel_add': 'Cancelar',
   'login.mode.create': 'Nova conta',
   'login.mode.recover': 'Recuperar',
   'login.mode.link': 'Conectar celular',
@@ -115,6 +115,9 @@ export const pt: Record<string, string> = {
   'login.create.invite_placeholder': 'o código da ilha',
   'login.create.invite_hint': 'Esta ilha é fechada. O operador dela distribui o código: por convite, junto com a residência, ou como preferir.',
   'login.create.invite_hint_paid': 'Esta ilha vende a entrada. Se você já pagou, ou alguém lhe deu um código, cole aqui. Pode deixar vazio e entrar sem código.',
+  'login.create.buy_entry': 'Comprar entrada · {price}',
+  'login.create.buy_entry_hint': 'O pagamento acontece na página da própria ilha, que abre no seu navegador. Você volta de lá com um código de acesso e cola abaixo.',
+  'login.create.entry_no_url': 'A entrada aqui custa {price}, mas esta ilha não diz onde ela é vendida. O operador dela distribui os códigos de acesso.',
   'auth.error.invite_required': 'A ilha é fechada: para entrar é preciso um código do operador dela. Cole-o acima.',
   'auth.error.invite_invalid': 'Esse código não foi aceito. Pode estar usado, expirado ou ser de outra ilha.',
   "login.terms.accept": "Aceito os",

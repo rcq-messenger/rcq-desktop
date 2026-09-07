@@ -6,6 +6,7 @@ import { isCaOnlyHost } from '../lib/island-trust'
 import { isTauri } from '../lib/desktop'
 import { useI18n } from '../lib/i18n-context'
 import { useServerInfo } from '../lib/use-server-info'
+import { formatUsd } from '../lib/server-info'
 import { IslandAvatar } from './IslandAvatar'
 
 interface CatalogIsland {
@@ -333,8 +334,6 @@ function IslandEntryLine({ apiBase }: { apiBase: string }) {
   )
 }
 
-/// Cents to a string a person reads. Whole dollars lose the ".00": a club that
-/// costs fifteen dollars should say fifteen dollars.
-function formatUsd(cents: number): string {
-  return cents % 100 === 0 ? `$${cents / 100}` : `$${(cents / 100).toFixed(2)}`
-}
+// `formatUsd` used to live here. It moved to lib/server-info.ts, next to the
+// `entry_price_cents` field it formats, once the create form began printing
+// the same price beside the access-code box.

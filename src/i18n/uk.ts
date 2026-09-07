@@ -30,7 +30,7 @@ export const uk: Record<string, string> = {
   'common.done': 'Готово',
   // Login: two-mode entry surface
   'login.tagline': 'Та сама душа, сучасна криптографія.',
-  'login.cancel_add': 'Скасувати, назад до {nick}',
+  'login.cancel_add': 'Скасувати',
   'login.mode.create': 'Новий акаунт',
   'login.mode.recover': 'Відновити',
   'login.mode.link': 'Підключити телефон',
@@ -115,6 +115,9 @@ export const uk: Record<string, string> = {
   'login.create.invite_placeholder': 'код від острова',
   'login.create.invite_hint': 'Цей острів закритий. Код видає його оператор: за запрошенням, разом із резидентством або як вирішить сам.',
   'login.create.invite_hint_paid': 'Цей острів продає вхід. Якщо ти вже оплатив або тобі дали код, встав його сюди. Можна лишити порожнім і увійти без коду.',
+  'login.create.buy_entry': 'Купити вхід · {price}',
+  'login.create.buy_entry_hint': 'Оплата проходить на сторінці самого острова, вона відкриється у браузері. Звідти ти повернешся з кодом доступу і вставиш його нижче.',
+  'login.create.entry_no_url': 'Вхід сюди коштує {price}, але острів не каже, де його продають. Код доступу видає оператор острова.',
   'auth.error.invite_required': 'Острів закритий: щоб увійти, потрібен код від його оператора. Вставте його вище.',
   'auth.error.invite_invalid': 'Код не прийнято. Можливо, він уже використаний, минув або виданий для іншого острова.',
   "login.terms.accept": "Приймаю",

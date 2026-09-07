@@ -30,7 +30,7 @@ export const zh: Record<string, string> = {
   'common.done': '完成',
   // Login: two-mode entry surface
   'login.tagline': '一样的灵魂，现代的加密。',
-  'login.cancel_add': '取消，返回 {nick}',
+  'login.cancel_add': '取消',
   'login.mode.create': '新账号',
   'login.mode.recover': '恢复',
   'login.mode.link': '连接手机',
@@ -113,6 +113,9 @@ export const zh: Record<string, string> = {
   'login.create.invite_placeholder': '来自岛屿的代码',
   'login.create.invite_hint': '这个岛屿是封闭的。代码由岛主发放：可以是邀请、随居留权一起，或按他们自己的方式。',
   'login.create.invite_hint_paid': '这个岛屿出售入场。如果你已经付款，或者有人给了你代码，请粘贴在这里。也可以留空，不用代码直接加入。',
+  'login.create.buy_entry': '购买入场 · {price}',
+  'login.create.buy_entry_hint': '付款在岛屿自己的页面上完成，该页面会在你的浏览器中打开。付完后你会拿到一个访问码，粘贴在下面。',
+  'login.create.entry_no_url': '这里的入场费是 {price}，但这个岛屿没有说在哪里出售。访问码由岛主发放。',
   'auth.error.invite_required': '岛屿是封闭的：加入需要岛主提供的代码。请粘贴在上方。',
   'auth.error.invite_invalid': '该代码未被接受。可能已被使用、已过期，或属于另一个岛屿。',
   "login.terms.accept": "我接受",

@@ -874,6 +874,64 @@ export function activateStoredIdentity(uin: number): boolean {
   return true
 }
 
+/// Which account this tab was signed in as when it left for the login screen
+/// ("add another account"). Written on the way out, read by the way back.
+///
+/// ⚠ It exists because roster ORDER is not a reliable answer to "the one you
+/// were on", and the login screen has nothing else: it lands there with the
+/// active slot cleared. [activateStoredIdentity] keeps the head meaning "last
+/// account switched INTO", but an account becomes active by other routes that
+/// never touch the order — created, recovered from a phrase, or linked from a
+/// phone all end in [persistIdentity], which updates the row IN PLACE and
+/// moves nothing; and a roster written before the ordering rule existed is
+/// still in insertion order until its next switch. So the head is right most
+/// of the time and quietly wrong the rest of it, which is exactly the shape of
+/// "cancel SOMETIMES returns me to a different account" (founder, 07.09).
+/// Naming the account outright removes ordering from the answer entirely.
+///
+/// ⚠ sessionStorage, deliberately, and NOT one of the [ACCOUNT_KEYS]. It is a
+/// note about this tab's navigation, not account data: it must survive the one
+/// hard reload between here and the login screen (same trick as the UIN market
+/// after a migration), it must be readable while there is no active scope, and
+/// it has no business being written to disk or sealed into the desktop vault.
+/// Per-tab is also the right shape — two windows on one profile each remember
+/// the account THEY left, which the shared roster could never express.
+const ADD_ACCOUNT_FROM_KEY = 'rcq.web.addaccount.from'
+
+export function rememberAddAccountOrigin(uin: number): void {
+  try {
+    sessionStorage.setItem(ADD_ACCOUNT_FROM_KEY, String(uin))
+  } catch {
+    /* storage refused (private mode, disabled): the reader falls back below */
+  }
+}
+
+/// The account the login screen should offer to go back to, or null when this
+/// tab did not get here through "add account".
+export function addAccountOrigin(): number | null {
+  try {
+    const raw = sessionStorage.getItem(ADD_ACCOUNT_FROM_KEY)
+    if (!raw) return null
+    const uin = Number(raw)
+    return Number.isInteger(uin) ? uin : null
+  } catch {
+    return null
+  }
+}
+
+/// Drop the note. Called once an account is active again — the add is over,
+/// whether it ended in a new account or in cancel.
+///
+/// ⚠ NOT called when the login screen merely mounts: reloading that screen
+/// (or restarting the desktop app on it) must still know where cancel goes.
+export function forgetAddAccountOrigin(): void {
+  try {
+    sessionStorage.removeItem(ADD_ACCOUNT_FROM_KEY)
+  } catch {
+    /* nothing to forget */
+  }
+}
+
 /// Forget ONE account, leaving the others alone.
 ///
 /// ⚠ Its message logs and its IndexedDB are deliberately NOT swept here. They

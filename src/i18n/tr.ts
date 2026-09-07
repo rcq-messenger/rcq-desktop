@@ -30,7 +30,7 @@ export const tr: Record<string, string> = {
   'common.done': 'Tamam',
   // Login: two-mode entry surface
   'login.tagline': 'Aynı ruh, modern kriptografi.',
-  'login.cancel_add': 'İptal, {nick} hesabına dön',
+  'login.cancel_add': 'İptal',
   'login.mode.create': 'Yeni hesap',
   'login.mode.recover': 'Kurtar',
   'login.mode.link': 'Telefonu bağla',
@@ -115,6 +115,9 @@ export const tr: Record<string, string> = {
   'login.create.invite_placeholder': 'adadan gelen kod',
   'login.create.invite_hint': 'Bu ada kapalı. Kodu adanın işletmecisi verir: davetle, yerleşimle birlikte veya kendi bildiği gibi.',
   'login.create.invite_hint_paid': 'Bu ada girişi satıyor. Ödediysen ya da biri sana kod verdiyse buraya yapıştır. Boş bırakıp kodsuz da girebilirsin.',
+  'login.create.buy_entry': 'Girişi satın al · {price}',
+  'login.create.buy_entry_hint': 'Ödeme adanın kendi sayfasında yapılır, sayfa tarayıcında açılır. Oradan bir erişim koduyla dönüp aşağıya yapıştırırsın.',
+  'login.create.entry_no_url': 'Buraya giriş {price}, ama bu ada nerede satıldığını söylemiyor. Erişim kodlarını adanın işletmecisi veriyor.',
   'auth.error.invite_required': 'Ada kapalı: girmek için işletmecisinden bir kod gerekiyor. Yukarıya yapıştırın.',
   'auth.error.invite_invalid': 'Bu kod kabul edilmedi. Kullanılmış, süresi dolmuş veya başka bir adaya ait olabilir.',
   "login.terms.accept": "Kabul ediyorum:",

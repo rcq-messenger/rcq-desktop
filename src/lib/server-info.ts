@@ -119,6 +119,17 @@ export function islandLogoURL(apiBase: string, logoVersion: string): string {
   return `${apiBase}/server/logo?v=${encodeURIComponent(logoVersion)}`
 }
 
+/// `entry_price_cents` as a string a person reads. Whole dollars lose the
+/// ".00": a club that costs fifteen dollars should say fifteen dollars.
+///
+/// ⚠ Lives HERE, next to the field it formats, because two screens print the
+/// same number: the island picker under an island's name, and the create form
+/// beside the access-code box. Two copies of this would be two prices for one
+/// island the day somebody edited only one of them.
+export function formatUsd(cents: number): string {
+  return cents % 100 === 0 ? `$${cents / 100}` : `$${(cents / 100).toFixed(2)}`
+}
+
 /// Mirrors Android's `ServerCapabilities` defaults (net/RcqApi.kt) field for
 /// field. uin_shop and hall_of_fame default OFF because a self-host island that
 /// says nothing runs neither; everything else defaults ON, except

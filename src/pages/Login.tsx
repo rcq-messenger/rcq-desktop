@@ -456,7 +456,17 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
   // nobody issues and that nothing reads, and the button would never enable.
   //
   // Closed-but-open therefore OFFERS the field and does not insist on it.
-  const showCode = needsInvite || caps.registration_policy === 'invite' || caps.closed_island === true
+  //
+  // ⚠⚠ AND on an island that SELLS entry, even one that is not locked. The
+  // till can be selling access codes while the door is open — the flagship is
+  // exactly that — and a buyer who is never shown the box registers as an
+  // ordinary stranger and their payment buys nothing. Somebody holding a code
+  // must always have somewhere to put it.
+  const showCode =
+    needsInvite ||
+    caps.registration_policy === 'invite' ||
+    caps.closed_island === true ||
+    (caps.entry_price_cents ?? 0) > 0
   const requireCode = needsInvite || caps.registration_policy === 'invite'
 
   async function submit() {

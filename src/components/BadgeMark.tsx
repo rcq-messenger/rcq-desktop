@@ -1,4 +1,4 @@
-import { useState, type MouseEvent } from 'react'
+import { useState, type CSSProperties, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { useI18n } from '../lib/i18n-context'
 import { islandCard } from '../lib/island-card'
@@ -25,9 +25,9 @@ const GLOW: Record<string, string> = {
   special: 'rgba(244,63,94,0.45)',
 }
 
-function Seal({ className }: { className: string }) {
+function Seal({ className, style }: { className: string; style?: CSSProperties }) {
   return (
-    <svg viewBox="0 0 24 24" className={className} aria-hidden>
+    <svg viewBox="0 0 24 24" className={className} style={style} aria-hidden>
       <path
         fill="currentColor"
         d="M12 1.6l2.3 2 3-.5 1.2 2.8 2.8 1.2-.5 3 2 2.3-2 2.3.5 3-2.8 1.2-1.2 2.8-3-.5-2.3 2-2.3-2-3 .5-1.2-2.8-2.8-1.2.5-3-2-2.3 2-2.3-.5-3 2.8-1.2L6.7 3.1l3 .5z"
@@ -115,7 +115,18 @@ export function BadgeMark({ kind, className = 'h-3.5 w-3.5' }: { kind?: string |
                 className="absolute inset-0 rounded-full blur-2xl"
                 style={{ background: glow, animation: 'rcq-badge-breathe 2.6s ease-in-out infinite alternate' }}
               />
-              <Seal className={`relative h-16 w-16 ${colour}`} />
+              {/* ⚠ The SAME inline colour as the small mark in the row.
+                  `colour` is an empty string whenever the island supplied its
+                  own colour — that is how the Tailwind class is suppressed so
+                  the inline style can win — and this seal was given only the
+                  class. So the one place that exists to SHOW somebody what
+                  their mark looks like drew it in the page's text colour: a
+                  white seal, whatever colour the operator had chosen
+                  (founder, 07.09). */}
+              <Seal
+                className={`relative h-16 w-16 ${colour}`}
+                style={ownColour ? { color: ownColour } : undefined}
+              />
             </div>
             <div className="text-lg font-semibold text-fg-primary">{label}</div>
             <p className="text-sm text-fg-secondary leading-relaxed">{description}</p>

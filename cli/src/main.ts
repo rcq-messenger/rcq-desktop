@@ -6,6 +6,7 @@
 // status and log lines go to stderr. Exit codes: 0 ok, 1 error, 2 usage.
 
 import './bootstrap'
+import { fetchServerInfo } from '../../src/lib/server-info'
 import fs from 'node:fs'
 import readline from 'node:readline'
 import {
@@ -515,7 +516,21 @@ async function cmdRegister(opts: Map<string, string>, island: string): Promise<v
   // flag silently: unknown `--flag value` pairs land in `opts` and are never
   // read, so the code was accepted, dropped, and the refusal blamed nothing.
   const invite = opts.get('--invite')
-  const identity = await createNewAccount(nick, island, invite)
+  let identity
+  try {
+    identity = await createNewAccount(nick, island, invite)
+  } catch (e) {
+    // ⚠ A closed island refuses here, and the refusal alone does not say what
+    // it would cost to get in. The price is asked ONLY on this path, after a
+    // refusal, and never while listing islands: probing every host in the
+    // catalogue to decorate a list would hand our address to all of them.
+    const msg = e instanceof Error ? e.message : String(e)
+    if (msg.includes('invite_required')) {
+      const price = await entryPriceOf(island)
+      if (price) process.stderr.write(out.dim(tr('register.entryPrice', { price })) + '\n')
+    }
+    throw e
+  }
   initDirectory(identity.uin)
   printPhraseBlock(identity.uin)
 }
@@ -1726,3 +1741,19 @@ main().then(
     die(humanError(e))
   },
 )
+
+/// What an island charges to get in, as a printable string, or null.
+///
+/// Asked of the ISLAND rather than of the catalogue: servers.json is edited by
+/// hand and would be stale the day after an operator changed a price, and a
+/// wrong price is worse than no price.
+async function entryPriceOf(island: string): Promise<string | null> {
+  try {
+    const info = await fetchServerInfo(island)
+    const cents = info?.capabilities.entry_price_cents ?? 0
+    if (!info?.capabilities.closed_island || cents <= 0) return null
+    return cents % 100 === 0 ? `$${cents / 100}` : `$${(cents / 100).toFixed(2)}`
+  } catch {
+    return null
+  }
+}

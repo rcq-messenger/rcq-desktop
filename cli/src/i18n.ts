@@ -715,6 +715,17 @@ RCQ_VERBOSE=1 显示协议细节; NO_COLOR 去掉颜色。
   // What the island says at the door, in words. A club answers
   // `invite_required` to a plain registration, and the raw JSON told a person
   // nothing about what to do next.
+  // What the club costs, printed under the refusal above when the island names
+  // a price. Asked of the island, never of the catalogue.
+  'register.entryPrice': {
+    en: 'entry to this island costs {price}',
+    ru: 'вход на этот остров стоит {price}',
+    es: 'la entrada a esta isla cuesta {price}',
+    pt: 'a entrada nesta ilha custa {price}',
+    tr: 'bu adaya giriş {price} tutuyor',
+    uk: 'вхід на цей острів коштує {price}',
+    'zh-Hans': '进入这个岛屿需要 {price}',
+  },
   'refusal.invite_required': {
     en: 'this island is a club: registration needs a code. Try: rcq register --invite <code>',
     ru: 'этот остров — клуб: для регистрации нужен код. Попробуйте: rcq register --invite <код>',

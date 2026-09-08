@@ -1367,6 +1367,8 @@ export const en: Record<string, string> = {
   'profile.name.clear': 'Clear',
   'profile.name.hint': 'Stays on this device only. The other person is never told.',
   'profile.their_name': 'They call themselves {name}',
+  'profile.uin.copied': 'UIN copied',
+  'profile.uin.copy': 'Copy the UIN',
   'settings.backup.title': "Backup",
   'settings.backup.body': "Saves this device's history to a file, encrypted with your recovery phrase. The file is yours: keep it wherever you like. Nothing is uploaded to us, and we cannot read it.",
   'settings.backup.save': "Save a backup",

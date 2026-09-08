@@ -1196,6 +1196,8 @@ export const zh: Record<string, string> = {
   'profile.name.clear': '清除',
   'profile.name.hint': '只保存在这台设备上。对方不会知道。',
   'profile.their_name': '对方自称 {name}',
+  'profile.uin.copied': '已复制号码',
+  'profile.uin.copy': '复制号码',
   'settings.backup.title': '备份',
   'settings.backup.body': '把这台设备的历史记录保存成文件，用你的恢复短语加密。文件归你：想放在哪里都行。它不会上传给我们，我们也读不了。',
   'settings.backup.save': '保存备份',

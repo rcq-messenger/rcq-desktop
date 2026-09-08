@@ -1198,6 +1198,8 @@ export const tr: Record<string, string> = {
   'profile.name.clear': 'Temizle',
   'profile.name.hint': 'Yalnızca bu cihazda kalır. Karşı tarafa hiç söylenmez.',
   'profile.their_name': 'Kendine {name} diyor',
+  'profile.uin.copied': 'UIN kopyalandı',
+  'profile.uin.copy': 'UIN’i kopyala',
   'settings.backup.title': 'Yedek',
   'settings.backup.body': 'Bu cihazdaki geçmişi, kurtarma ifadenle şifreleyip bir dosyaya kaydeder. Dosya senin: istediğin yerde sakla. Bize hiçbir şey yüklenmez ve biz okuyamayız.',
   'settings.backup.save': 'Yedek kaydet',

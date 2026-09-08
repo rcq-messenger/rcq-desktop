@@ -1198,6 +1198,8 @@ export const uk: Record<string, string> = {
   'profile.name.clear': 'Очистити',
   'profile.name.hint': 'Лишається тільки на цьому пристрої. Іншій людині про нього не кажуть.',
   'profile.their_name': 'Себе називає {name}',
+  'profile.uin.copied': 'Номер скопійовано',
+  'profile.uin.copy': 'Скопіювати номер',
   'settings.backup.title': 'Резервна копія',
   'settings.backup.body': 'Зберігає історію з цього пристрою у файл, зашифрований твоєю фразою відновлення. Файл твій: тримай його де завгодно. До нас нічого не вивантажується, і прочитати його ми не можемо.',
   'settings.backup.save': 'Зберегти копію',

@@ -1362,6 +1362,8 @@ export const ru: Record<string, string> = {
   'profile.name.clear': 'Убрать',
   'profile.name.hint': 'Остаётся только на этом устройстве. Собеседник об этом не узнает.',
   'profile.their_name': 'Себя называет {name}',
+  'profile.uin.copied': 'Номер скопирован',
+  'profile.uin.copy': 'Скопировать номер',
   'settings.backup.title': "Резервная копия",
   'settings.backup.body': "Сохраняет историю этого устройства в файл, зашифрованный вашей фразой восстановления. Файл ваш: храните его где хотите. К нам он не уходит, и прочитать его мы не можем.",
   'settings.backup.save': "Сохранить копию",

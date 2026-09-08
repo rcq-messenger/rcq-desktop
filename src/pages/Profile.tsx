@@ -300,6 +300,7 @@ function ReadView({
   /// card, null when there is none (then no report button at all).
   reportIdent: WebIdentity | null
 }) {
+  const { toast } = useToast()
   // My own name for them. Device-only, and shown alongside what they call
   // themselves so a rename never hides who you are actually talking to.
   // ⚠ Keyed WITH the host for a cross-island peer (see aliasKey): the bare-uin
@@ -342,12 +343,25 @@ function ReadView({
             )}
           </div>
         </div>
-        <div className="text-xs text-fg-dim">
-          {/* ⚠ No hash. A UIN is the number itself, and the site, the phones
-              and every other line in this app print it bare; the lone # here
-              read as a different kind of identifier (founder, 07.09). */}
+        {/* The number is a control, not a caption. A reporter wanted to send
+            an add request straight from a stranger's card and found the number
+            unselectable: "tapping the number does not copy it, so you cannot
+            send a contact request" (#945). Copies the digits alone - the host
+            beside them is where the card came from, not part of the address you
+            paste. A denied clipboard says so rather than promising silently. */}
+        <button
+          type="button"
+          onClick={() => {
+            void navigator.clipboard
+              ?.writeText(String(info.uin))
+              .then(() => toast(t('profile.uin.copied')))
+              .catch(() => toast(t('contacts.error'), 'error'))
+          }}
+          className="text-xs text-fg-dim hover:text-fg-secondary transition-colors"
+          title={t('profile.uin.copy')}
+        >
           {info.uin}{crossIslandHost ? ` · ${crossIslandHost}` : ''}
-        </div>
+        </button>
         {info.status_message && (
           <div className="text-sm text-fg-secondary pt-1">{info.status_message}</div>
         )}

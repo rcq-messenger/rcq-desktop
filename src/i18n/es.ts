@@ -1198,6 +1198,8 @@ export const es: Record<string, string> = {
   'profile.name.clear': 'Borrar',
   'profile.name.hint': 'Se queda solo en este dispositivo. La otra persona nunca se entera.',
   'profile.their_name': 'Se hace llamar {name}',
+  'profile.uin.copied': 'UIN copiado',
+  'profile.uin.copy': 'Copiar el UIN',
   'settings.backup.title': 'Copia de seguridad',
   'settings.backup.body': 'Guarda el historial de este dispositivo en un archivo, cifrado con tu frase de recuperación. El archivo es tuyo: guárdalo donde quieras. No se sube nada a nuestros servidores y no podemos leerlo.',
   'settings.backup.save': 'Guardar una copia',

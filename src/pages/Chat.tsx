@@ -520,8 +520,44 @@ export function Chat() {
     savePersisted(persistKey, outgoing)
   }, [persistKey, outgoing])
 
+  /// ⚠⚠ THE RETRY THIS LOAD NEVER HAD. Everything the composer needs to seal a
+  /// message — the peer's keys, or the room — is fetched exactly once, here.
+  /// One failed `/contacts` or `/groups/{id}` at open time (a dropped socket, a
+  /// token being refreshed, a phone changing network) left `peer` and `group`
+  /// null, and the composer is DISABLED on `!peer && !group`: the field, the
+  /// attach button, the microphone and Send all go dead and the placeholder
+  /// reads "Loading…" for ever, because nothing ever asked again. Reported as
+  /// "не даёт написать, пишет загружаем" (#961, 08.09).
+  ///
+  /// Bounded, because a chat with somebody who is genuinely not a contact is
+  /// not going to become one by asking harder: five tries with a widening gap,
+  /// and a fresh set whenever the browser comes back online or the window is
+  /// looked at again, which is when the answer has actually changed.
+  const [loadAttempt, setLoadAttempt] = useState(0)
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    if (peer || group) return
+    const bump = () => setLoadAttempt((n) => n + 1)
+    const onVisible = () => { if (document.visibilityState === 'visible') bump() }
+    window.addEventListener('online', bump)
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      window.removeEventListener('online', bump)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [peer, group])
+  useEffect(() => () => { if (retryTimer.current) clearTimeout(retryTimer.current) }, [])
+
   useEffect(() => {
     if (!identity) return
+    /// Ask again in a while, unless we have run out of tries. Cleared on the
+    /// next attempt so a visibility bump and a timer cannot both fire.
+    const askAgain = () => {
+      if (loadAttempt >= 4) return
+      if (retryTimer.current) clearTimeout(retryTimer.current)
+      const wait = [1500, 3000, 6000, 12000][loadAttempt] ?? 12000
+      retryTimer.current = setTimeout(() => setLoadAttempt((n) => n + 1), wait)
+    }
     void (async () => {
       try {
         if (isGroup && groupId != null) {
@@ -573,6 +609,7 @@ export function Chat() {
           const ci = getCrossIsland(peerUIN, islandHost)
           if (!ci) {
             setError(t('chat.error.peer_not_in_contacts', { uin: peerUIN }))
+            askAgain()
             return
           }
           setPeer({
@@ -598,6 +635,9 @@ export function Chat() {
             // Only surface "not in contacts" on a COLD load — if we already
             // painted from cache, keep showing it rather than flashing an error.
             if (!_peerCache.has(peerUIN)) setError(t('chat.error.peer_not_in_contacts', { uin: peerUIN }))
+            // A contact accepted in another tab, or a roster that arrived a
+            // moment late, both look exactly like this. Ask again.
+            askAgain()
             return
           }
           _peerCache.set(peerUIN, found)
@@ -605,10 +645,11 @@ export function Chat() {
         }
       } catch (e) {
         setError(e instanceof Error ? e.message : t('chat.error.peer_load_failed'))
+        askAgain()
       }
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [identity, peerUIN, groupId, isGroup, islandHost])
+  }, [identity, peerUIN, groupId, isGroup, islandHost, loadAttempt])
 
   // Pull own profile once for the nickname — used as authorName on
   // replies-to-self and as fwdName on forwards. Best-effort; if it

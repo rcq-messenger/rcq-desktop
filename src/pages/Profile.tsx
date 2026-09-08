@@ -357,7 +357,14 @@ function ReadView({
               .then(() => toast(t('profile.uin.copied')))
               .catch(() => toast(t('contacts.error'), 'error'))
           }}
-          className="text-xs text-fg-dim hover:text-fg-secondary transition-colors"
+          // ⚠ `block w-fit`, and both of these need it. A <button> is
+          // inline-level, so the number and the "set a name" link below it sat
+          // on ONE line with not even a space between them ("1001010Задать своё
+          // имя", founder 09.09): the section's `space-y-1` is a top margin on
+          // block siblings and cannot separate two inline boxes sharing a line.
+          // `w-fit` keeps the click target on the digits rather than stretching
+          // it across the card.
+          className="block w-fit text-xs text-fg-dim hover:text-fg-secondary transition-colors"
           title={t('profile.uin.copy')}
         >
           {info.uin}{crossIslandHost ? ` · ${crossIslandHost}` : ''}
@@ -369,7 +376,9 @@ function ReadView({
           <button
             type="button"
             onClick={() => setEditingAlias(alias ?? '')}
-            className="text-xs text-accent hover:underline"
+            // See the note on the number above: a button is inline, and these
+            // two shared a line.
+            className="block w-fit text-xs text-accent hover:underline"
           >
             {alias ? t('profile.name.change') : t('profile.name.set')}
           </button>

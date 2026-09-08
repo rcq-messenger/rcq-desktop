@@ -74,6 +74,10 @@ export interface ServerCapabilities {
   /// iOS: Apple does not allow an app to point at a purchase it does not
   /// handle.
   entry_url: string
+  /// How many accounts live on the island. 0 means it did not say — an island
+  /// older than the field, or one that has not counted yet — so a card draws
+  /// nothing rather than claiming an empty island.
+  user_count: number
   nearby: boolean
   random_chat: boolean
   reports: boolean
@@ -141,6 +145,7 @@ export const DEFAULT_CAPABILITIES: ServerCapabilities = {
   registration_policy: 'open',
   closed_island: false,
   entry_price_cents: 0,
+  user_count: 0,
   entry_url: '',
   nearby: true,
   random_chat: true,
@@ -221,6 +226,10 @@ function normalize(raw: unknown): ServerInfo | null {
           ? Math.floor(caps.entry_price_cents)
           : 0,
       entry_url: typeof caps.entry_url === 'string' ? caps.entry_url : '',
+      user_count:
+        typeof caps.user_count === 'number' && caps.user_count > 0
+          ? Math.floor(caps.user_count)
+          : 0,
       nearby: bool('nearby'),
       random_chat: bool('random_chat'),
       reports: bool('reports'),

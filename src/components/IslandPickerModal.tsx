@@ -303,10 +303,21 @@ function IslandEntryLine({ apiBase }: { apiBase: string }) {
   // without also sealing its directory was drawn as open and then refused
   // the registration it had just invited.
   const closed = caps.closed_island || caps.registration_policy !== 'open'
+  // ⚠ How many people live there, appended to whatever the line already says,
+  // never a line of its own: this row is one line in a scrolling list and a
+  // second one would reflow the whole list. Absent when the island did not say
+  // (0), because a card that says nothing is honest and one that says 0 is not
+  // (founder, 09.09).
+  const people = caps.user_count ?? 0
+  const crowd = people > 0 ? ` · ${people.toLocaleString()}` : ''
   if (!closed) {
     // Dim, unlike the closed line: this is the ordinary answer, and the row it
     // sits in should not shout it.
-    return <span className="block text-[0.6875rem] text-fg-dim truncate">{t('island.entry.open')}</span>
+    return (
+      <span className="block text-[0.6875rem] text-fg-dim truncate">
+        {t('island.entry.open')}{crowd}
+      </span>
+    )
   }
   const cents = caps.entry_price_cents ?? 0
   // Where the island sells entry, in its own words. `entry_url` is the
@@ -314,11 +325,11 @@ function IslandEntryLine({ apiBase }: { apiBase: string }) {
   // send people to ours; an island that set a price and no address gets the
   // line without a link rather than a link to somewhere we made up.
   const url = (caps.entry_url || '').trim()
-  const line = cents > 0
+  const line = (cents > 0
     ? t('island.entry.price', { price: formatUsd(cents) })
     : caps.closed_island
       ? t('island.entry.closed')
-      : t('island.entry.invite')
+      : t('island.entry.invite')) + crowd
   if (!url || !/^https:\/\//i.test(url)) {
     return <span className="block text-[0.6875rem] text-accent truncate">{line}</span>
   }

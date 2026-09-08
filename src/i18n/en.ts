@@ -120,13 +120,15 @@ export const en: Record<string, string> = {
   'add.ci.no_user': 'No account {uin} on {host}.',
   'login.create.invite_placeholder': 'the code from the island',
   'login.create.invite_hint': 'This island is closed. Its operator gives out the code: with an invitation, with residency, or however they choose.',
-  'login.create.invite_hint_paid': 'This island sells entry. If you have already paid, or somebody gave you a code, paste it here. Leave it empty to join without one.',
+  'login.create.invite_hint_paid': 'This island sells residency. If you have already paid, or somebody gave you a code, paste it here. Leave it empty to join without one.',
   // The door to the operator's till, next to the box its code goes into.
   // ⚠ The price is the ISLAND's own `entry_price_cents`, so it is right for
   // whichever island was picked, not for ours.
   'login.create.buy_entry': 'Buy entry · {price}',
   'login.create.buy_entry_hint': 'Payment happens on the island’s own page, which opens in your browser. You come back with an access code and paste it below.',
   'login.create.entry_no_url': 'Entry here costs {price}, but this island does not say where it is sold. Its operator hands out the access codes.',
+  'login.create.buy_residency': 'Buy residency · {price}',
+  'login.create.residency_no_url': 'Residency here costs {price}, but this island does not say where it is sold. Its operator hands out the codes.',
   'auth.error.invite_required': 'This island is closed: joining needs a code from its operator. Paste it above.',
   'auth.error.invite_invalid': 'That code was not accepted. It may be used up, expired, or meant for another island.',
   "login.terms.accept": "I accept the",

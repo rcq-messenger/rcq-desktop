@@ -660,6 +660,12 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
           URL to the system browser. Every external link in this tree rides
           that one path, including the terms and privacy links below; a bespoke
           handler here would be a second path to keep working. */}
+      {/* ⚠ THE LABEL FOLLOWS THE DOOR, NOT THE PRICE. A shut island sells the
+          way in, so it is "entry"; an open one that charges sells standing
+          inside it, so it is "residency" — anyone can walk in for free. The
+          flagship is the second kind, and calling its $15 an entry fee on an
+          open door told every visitor they had to pay to register (founder,
+          07.09). Same button, same code field, different sentence. */}
       {sellsEntry && (canBuyEntry ? (
         <div className="space-y-1">
           <a
@@ -668,7 +674,8 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
             rel="noreferrer noopener"
             className="flex items-center justify-center w-full h-10 rounded-md bg-field hover:bg-line/40 text-accent text-sm font-semibold transition-colors"
           >
-            {t('login.create.buy_entry', { price: formatUsd(caps.entry_price_cents) })}
+            {t(doorIsShut ? 'login.create.buy_entry' : 'login.create.buy_residency',
+               { price: formatUsd(caps.entry_price_cents) })}
           </a>
           <p className="text-xs text-fg-dim leading-relaxed">{t('login.create.buy_entry_hint')}</p>
         </div>
@@ -678,7 +685,8 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
         // otherwise never mention, and it tells the person the code they need
         // costs money rather than being something they forgot to be sent.
         <p className="text-xs text-fg-dim leading-relaxed">
-          {t('login.create.entry_no_url', { price: formatUsd(caps.entry_price_cents) })}
+          {t(doorIsShut ? 'login.create.entry_no_url' : 'login.create.residency_no_url',
+             { price: formatUsd(caps.entry_price_cents) })}
         </p>
       ))}
 

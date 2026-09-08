@@ -298,7 +298,11 @@ function IslandEntryLine({ apiBase }: { apiBase: string }) {
   const info = useServerInfo(apiBase)
   if (!info) return null
   const caps = info.capabilities
-  const closed = caps.closed_island || caps.registration_policy === 'invite'
+  // ⚠ "paid" belongs here. The server has three policies (open, invite,
+  // paid) and this line listed two, so an island that charges for entry
+  // without also sealing its directory was drawn as open and then refused
+  // the registration it had just invited.
+  const closed = caps.closed_island || caps.registration_policy !== 'open'
   if (!closed) {
     // Dim, unlike the closed line: this is the ordinary answer, and the row it
     // sits in should not shout it.

@@ -490,7 +490,7 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
   // ⚠ The hint under the field follows the DOOR, not the field: an island that
   // merely sells entry with its door open must not be told "this island is
   // closed", which is the one sentence on the screen that explains the box.
-  const doorIsShut = needsInvite || caps.registration_policy === 'invite' || caps.closed_island === true
+  const doorIsShut = needsInvite || caps.registration_policy !== 'open' || caps.closed_island === true
   // ⚠⚠ AN OPEN ISLAND THAT SELLS ENTRY NO LONGER SHOWS THE BOX BY DEFAULT, it
   // offers a line to open one (founder, 07.09: "the field shows even when the
   // island I picked is not closed"). The flagship is exactly that island: its
@@ -523,7 +523,10 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
   const entryUrl = (caps.entry_url || '').trim()
   const canBuyEntry = sellsEntry && /^https:\/\//i.test(entryUrl)
   const showCode = doorIsShut || codeRevealed
-  const requireCode = needsInvite || caps.registration_policy === 'invite'
+  // Mirrors `auth.register`, which refuses on the POLICY alone: invite or
+  // paid. `closed_island` is a different question (who may write to a
+  // resident) and does not decide whether registration needs a code.
+  const requireCode = needsInvite || caps.registration_policy !== 'open'
 
   async function submit() {
     setError(null)
@@ -549,9 +552,14 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
       // 07.09. Both shapes carry the body; take whichever we were handed.
       const body = e instanceof ApiError ? e.body : e instanceof Error ? e.message : ''
       const code = parseErrorCode(body)
-      if (code === 'invite_required') {
+      if (code === 'invite_required' || code === 'entry_required') {
+        // ⚠ TWO codes, one door. A closed island answers `invite_required`; one
+        // whose policy is "paid" answers `entry_required` (auth.py). Matching
+        // only the first is how the flagship spent its first minutes closed
+        // showing people its own raw JSON, which is the exact failure the
+        // comment above was written about — under a second name.
         setNeedsInvite(true)
-        setError(t('auth.error.invite_required'))
+        setError(t(code === 'entry_required' ? 'auth.error.entry_required' : 'auth.error.invite_required'))
       } else if (code === 'invite_invalid') {
         setNeedsInvite(true)
         setError(t('auth.error.invite_invalid'))

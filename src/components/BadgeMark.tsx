@@ -18,11 +18,18 @@ const COLOUR: Record<string, string> = {
   official: 'text-sky-500',
   tester: 'text-amber-500',
   special: 'text-rose-500',
+  // ⚠⚠ The one kind the ISLAND grants by itself, and the only one no client
+  // knew: /auth/register writes it the moment an entry voucher verifies, so
+  // somebody who has just paid to get in wore a mark that fell through to the
+  // neutral fallback and was named by its raw slug. Orange, clearly apart from
+  // the tester's amber.
+  resident: 'text-orange-500',
 }
 const GLOW: Record<string, string> = {
   official: 'rgba(14,165,233,0.45)',
   tester: 'rgba(245,158,11,0.45)',
   special: 'rgba(244,63,94,0.45)',
+  resident: 'rgba(249,115,22,0.45)',
 }
 
 function Seal({ className, style }: { className: string; style?: CSSProperties }) {

@@ -76,7 +76,7 @@ export const en: Record<string, string> = {
   'login.island': 'Island',
   'island.picker.title': 'Choose an island',
   'island.picker.manual': 'Enter an address by hand',
-  'island.entry.price': 'Entry: {price}',
+  'island.entry.price': '{price} once',
   'island.entry.closed': 'Closed club',
   'island.entry.invite': 'By invitation only',
   'island.entry.open': 'Open to everyone',

@@ -71,7 +71,7 @@ export const zh: Record<string, string> = {
   'login.island': '岛',
   'island.picker.title': '选择岛屿',
   'island.picker.manual': '手动输入地址',
-  'island.entry.price': '入场：{price}',
+  'island.entry.price': '一次性 {price}',
   'island.entry.closed': '封闭俱乐部',
   'island.entry.invite': '仅限邀请',
   'island.entry.open': '对所有人开放',

@@ -71,7 +71,7 @@ export const tr: Record<string, string> = {
   'login.island': 'Ada',
   'island.picker.title': 'Ada seç',
   'island.picker.manual': 'Adresi elle gir',
-  'island.entry.price': 'Giriş: {price}',
+  'island.entry.price': 'tek seferlik {price}',
   'island.entry.closed': 'Kapalı kulüp',
   'island.entry.invite': 'Yalnızca davetle',
   'island.entry.open': 'Herkese açık',

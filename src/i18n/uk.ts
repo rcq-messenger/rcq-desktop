@@ -71,7 +71,7 @@ export const uk: Record<string, string> = {
   'login.island': 'Острів',
   'island.picker.title': 'Вибір острова',
   'island.picker.manual': 'Ввести адресу вручну',
-  'island.entry.price': 'Вхід: {price}',
+  'island.entry.price': '{price} разово',
   'island.entry.closed': 'Закритий клуб',
   'island.entry.invite': 'Лише за запрошенням',
   'island.entry.open': 'Відкритий для всіх',

@@ -37,6 +37,22 @@ interface Props {
   disabledNote?: string
 }
 
+/// A filename split into the part that may be shortened and the part that may
+/// not.
+///
+/// ⚠ A dot alone does not make an extension. "v1.2 final notes" ends in
+/// " final notes", and pinning that to the right of the row would hold open a
+/// column wider than the name it was protecting, so the tail has to look like
+/// a suffix: short, and with no spaces in it. A name with no such tail (or one
+/// that starts with a dot and has nothing else) is all stem, exactly as before.
+function splitName(name: string): { stem: string; ext: string } {
+  const dot = name.lastIndexOf('.')
+  if (dot <= 0 || dot === name.length - 1) return { stem: name, ext: '' }
+  const tail = name.slice(dot)
+  if (tail.length > 9 || /\s/.test(tail)) return { stem: name, ext: '' }
+  return { stem: name.slice(0, dot), ext: tail }
+}
+
 /// Human-readable byte size (1 KB = 1024 B).
 function fmtSize(bytes?: number): string | null {
   if (bytes == null || bytes <= 0) return null
@@ -83,6 +99,7 @@ export function FileBubble({ mediaId, mediaKey, fileName, mime, size, apiBase, o
   }
 
   const name = fileName || 'file'
+  const { stem, ext } = splitName(name)
   const sizeLabel = fmtSize(size)
   const busy = busyOutside || selfBusy
   const disabled = disabledNote != null
@@ -154,7 +171,15 @@ export function FileBubble({ mediaId, mediaKey, fileName, mime, size, apiBase, o
         )}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium">{name}</span>
+        {/* ⚠ THE EXTENSION IS NOT ALLOWED TO BE THE PART THAT GETS CUT.
+            `truncate` clips the tail, so a long name ate exactly the four
+            characters that say what the file IS: report #962, "if the file
+            name is too long I cannot see its suffix type". The stem takes the
+            ellipsis and the extension is its own box, which cannot shrink. */}
+        <span className="flex min-w-0 items-baseline text-sm font-medium" title={name}>
+          <span className="truncate">{stem}</span>
+          {ext && <span className="flex-none">{ext}</span>}
+        </span>
         <span className="block text-[0.6875rem] text-fg-dim">{subLabel}</span>
         {/* A bar only while it is moving: a finished row should look like a
             file again, not like a progress widget that happens to be full. */}

@@ -3566,6 +3566,17 @@ export function Chat() {
                 size={28}
                 mediaId={peer.avatar_media_id}
                 mediaKey={peer.avatar_media_key}
+                // ⚠⚠ WITHOUT THESE TWO THE HEADER DRAWS NO FACE AT ALL for
+                // anybody whose picture was set under the profile-key model.
+                // The island does not hold the key to such a picture, so
+                // `avatar_media_key` comes back NULL and the real key is
+                // either on this device already or has to be asked of its
+                // owner. The contact list has always passed them; this header
+                // never did, so the same person had a face in the list and a
+                // flower in the chat, and only for people added recently
+                // enough to have a keyed picture (founder, 09.09).
+                uinForKey={peer.uin}
+                askPeer={peer}
                 crossIsland={!!peer.host}
               />
             )}

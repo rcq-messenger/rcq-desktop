@@ -293,6 +293,35 @@ function IslandRulesButton({
 /// an island that has not answered yet — or cannot be reached at all — would
 /// promise a door we never knocked on. Silence until the island speaks for
 /// itself (founder, 07.09: the picker must say which islands are closed).
+/// The headcount, with a GLYPH in front of it.
+///
+/// ⚠ "$15 once · 2,649" reads as two prices (founder, 09.09: "what is 2649?").
+/// The little two-person mark says which number is money and which is people,
+/// in every language and without spending a word on it. Inline in the same
+/// line, never a row of its own: this sits in a scrolling list of islands.
+function CrowdMark({ n }: { n: number }) {
+  return (
+    <>
+      {' · '}
+      <svg
+        width="11"
+        height="11"
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        className="inline-block align-[-0.1em]"
+        aria-hidden
+      >
+        <circle cx="9" cy="7.5" r="3.5" />
+        <path d="M2 20c0-3.6 3.1-5.5 7-5.5s7 1.9 7 5.5z" />
+        <circle cx="17.5" cy="8.5" r="2.8" />
+        <path d="M17.5 13.2c3.3 0 4.5 2.2 4.5 4.6h-5.2c0-1.9-.6-3.4-1.6-4.4a7.6 7.6 0 0 1 2.3-.2z" />
+      </svg>
+      {' '}
+      {n.toLocaleString()}
+    </>
+  )
+}
+
 function IslandEntryLine({ apiBase }: { apiBase: string }) {
   const { t } = useI18n()
   const info = useServerInfo(apiBase)
@@ -309,7 +338,7 @@ function IslandEntryLine({ apiBase }: { apiBase: string }) {
   // (0), because a card that says nothing is honest and one that says 0 is not
   // (founder, 09.09).
   const people = caps.user_count ?? 0
-  const crowd = people > 0 ? ` · ${people.toLocaleString()}` : ''
+  const crowd = people > 0 ? <CrowdMark n={people} /> : null
   if (!closed) {
     // Dim, unlike the closed line: this is the ordinary answer, and the row it
     // sits in should not shout it.
@@ -325,13 +354,13 @@ function IslandEntryLine({ apiBase }: { apiBase: string }) {
   // send people to ours; an island that set a price and no address gets the
   // line without a link rather than a link to somewhere we made up.
   const url = (caps.entry_url || '').trim()
-  const line = (cents > 0
+  const line = cents > 0
     ? t('island.entry.price', { price: formatUsd(cents) })
     : caps.closed_island
       ? t('island.entry.closed')
-      : t('island.entry.invite')) + crowd
+      : t('island.entry.invite')
   if (!url || !/^https:\/\//i.test(url)) {
-    return <span className="block text-[0.6875rem] text-accent truncate">{line}</span>
+    return <span className="block text-[0.6875rem] text-accent truncate">{line}{crowd}</span>
   }
   return (
     <a
@@ -344,7 +373,7 @@ function IslandEntryLine({ apiBase }: { apiBase: string }) {
       onClick={(e) => e.stopPropagation()}
       className="block text-[0.6875rem] text-accent truncate hover:underline"
     >
-      {line} · {t('island.entry.buy')}
+      {line}{crowd} · {t('island.entry.buy')}
     </a>
   )
 }

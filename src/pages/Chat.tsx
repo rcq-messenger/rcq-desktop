@@ -3094,7 +3094,7 @@ export function Chat() {
     // enough that the two are no longer one thought.
     const RUN_GAP_MS = 5 * 60 * 1000
     const out: Array<
-      | ((typeof items)[number] & { cont?: boolean })
+      | ((typeof items)[number] & { cont?: boolean; contNext?: boolean })
       | { kind: 'day'; at: number }
       | { kind: 'unread'; at: number; count: number }
     > = []
@@ -3123,6 +3123,18 @@ export function Chat() {
       lastAuthor = author
       lastAt = it.at
     }
+    // The other half of the same question: is the row BELOW this one part of
+    // the same run. `cont` alone says where a run starts; the bubble also has
+    // to know where it ends, because the corner facing the next bubble is
+    // squared off only while there is one (#958). A divider between two
+    // messages of the same person already reset `cont` below it, so this
+    // answers false there without knowing anything about dividers.
+    for (let i = 0; i < out.length - 1; i++) {
+      const here = out[i]
+      const below = out[i + 1]
+      if ('cont' in here && 'cont' in below && below.cont) here.contNext = true
+    }
+
     // The number on the divider, so it reads "Unread messages (7)" the way the
     // Android divider does (#701 asked for one look across the clients). Counted
     // over what the divider actually divides: inbound items below it.
@@ -3979,6 +3991,7 @@ export function Chat() {
                     key={`in-${m.id}`}
                     msg={m}
                     cont={!!item.cont}
+                    contNext={!!item.contNext}
                     highlighted={highlightId === m.id}
                     showActions={openMenu}
                     showReactionPicker={openPicker}
@@ -4031,6 +4044,7 @@ export function Chat() {
                   key={row.id}
                   row={row}
                   cont={!!item.cont}
+                  contNext={!!item.contNext}
                   highlighted={highlightId === row.id}
                   showActions={openMenu}
                   showReactionPicker={openPicker}
@@ -4950,6 +4964,10 @@ interface CommonRowProps {
   /// This row is a continuation of the one above it (same author, same day,
   /// close enough in time) — it loses its name and tightens the gap.
   cont: boolean
+  /// The row BELOW is part of the same run. Only the corners decide anything
+  /// on it: a bubble squares off the corner it presents to its neighbour on
+  /// the author's own side, and that needs to know about both neighbours.
+  contNext: boolean
   /// A quote or a search hit landed on this row: flash it.
   highlighted: boolean
   showActions: boolean
@@ -5010,6 +5028,31 @@ interface OutgoingRowProps extends CommonRowProps {
 /// the viewer's own asset is highlighted. Tapping a chip toggles it.
 /// `align` matches the bubble side. Reads the shared reactions store, which
 /// is why every row carries `reactionsVersion`.
+/// The corners a text bubble presents to its neighbours in a run (#958).
+///
+/// Only the two on the AUTHOR'S OWN SIDE are squared off: the right for my
+/// messages, the left for theirs. A bubble whose neighbour above is from the
+/// same person loses the top one, one whose neighbour below is loses the
+/// bottom, so a run reads as a single column with a flat spine instead of a
+/// stack of separate cards. The far side stays round the whole way down:
+/// bubbles differ in width, and a squared corner with nothing beside it reads
+/// as a rendering fault rather than as grouping.
+///
+/// `rounded-*-sm` is 2px against `rounded-lg`'s 8px, not 0: a hard corner
+/// against a rounded one reads as a glitch, which is why every messenger that
+/// groups bubbles keeps a pixel or two. Tailwind emits the per-corner
+/// utilities after the all-corner one, so appending these overrides
+/// `rounded-lg` on exactly those corners.
+///
+/// ⚠ Text bubbles only. Photos, video, voice and files draw their own
+/// containers and keep their plain corners; a run of those is rare enough
+/// that carrying the spine through all of them is more code than it is worth.
+function runCorners(mine: boolean, cont: boolean, contNext: boolean): string {
+  const top = mine ? 'rounded-tr-sm' : 'rounded-tl-sm'
+  const bottom = mine ? 'rounded-br-sm' : 'rounded-bl-sm'
+  return `${cont ? top : ''} ${contNext ? bottom : ''}`
+}
+
 function reactionChips(targetId: string, align: 'start' | 'end', myUin: number, h: RowActions) {
   const chips = aggregateReactions(targetId, myUin)
   if (chips.length === 0) return null
@@ -5216,6 +5259,7 @@ const IncomingMessageRow = memo(function IncomingMessageRow({
   t,
   h,
   cont,
+  contNext,
   highlighted,
   showActions,
   showReactionPicker,
@@ -5395,7 +5439,7 @@ const IncomingMessageRow = memo(function IncomingMessageRow({
             data-chat-menu
             onClick={(e) => h.toggleActions(m.id, e.currentTarget, e)}
             onContextMenu={(e) => { e.preventDefault(); h.toggleActions(m.id, e.currentTarget, e) }}
-            className="rounded-lg px-3 py-2 text-sm text-left bg-bubble-other rcq-selectable hover:brightness-110 transition-colors"
+            className={`rounded-lg px-3 py-2 text-sm text-left bg-bubble-other rcq-selectable hover:brightness-110 transition-colors ${runCorners(false, cont, contNext)}`}
           >
             <EmoticonText text={m.text} emoticonSize={18} mention={mention} link={{ enabled: linksAllowed }} />
             {m.edited && <span className="ml-1 text-[0.625rem] text-fg-dim italic">{t('chat.edit.edited')}</span>}
@@ -5576,6 +5620,7 @@ const OutgoingMessageRow = memo(function OutgoingMessageRow({
   t,
   h,
   cont,
+  contNext,
   highlighted,
   showActions,
   showReactionPicker,
@@ -5941,7 +5986,7 @@ const OutgoingMessageRow = memo(function OutgoingMessageRow({
           // deleting a note "is still not there" when it had been
           // there all along, one left-click away.
           onContextMenu={(e) => { e.preventDefault(); h.toggleActions(row.id, e.currentTarget, e) }}
-          className={`rounded-lg px-3 py-2 text-sm text-left transition-colors ${
+          className={`rounded-lg px-3 py-2 text-sm text-left transition-colors ${runCorners(true, cont, contNext)} ${
             row.state === 'failed'
               // ⚠⚠ `bg-red-50 border border-red-200` was Tailwind's LIGHT red:
               // a near-white slab under this app's light-on-dark text, so the

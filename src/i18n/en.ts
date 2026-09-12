@@ -64,7 +64,7 @@ export const en: Record<string, string> = {
   'login.link.security_more': 'What changes?',
   'login.link.security_note':
     'Linking hands this browser your account keys, so link only on a computer you trust and disconnect it when you are done (in the app: Settings → Linked devices). The encryption itself is unaffected: every device holds its own keys and receives its own copy of each message.',
-  'login.link.waiting': 'Waiting for your phone… the code is valid for 2 minutes.',
+  'login.link.waiting': 'Waiting for your phone… the code is valid for 10 minutes.',
   'login.link.enlarge': 'Tap to enlarge the code',
   'login.link.expired': 'Code expired.',
   'login.link.error': "Couldn't connect.",

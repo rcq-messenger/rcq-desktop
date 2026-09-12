@@ -60,7 +60,7 @@ export const pt: Record<string, string> = {
   'login.link.scan_body': 'Abra o RCQ no telefone, entre em Configurações, depois em Dispositivos conectados, e escaneie este código para entrar aqui com a conta do telefone.',
   'login.link.security_more': 'Por que é mais fraca?',
   'login.link.security_note': 'Enquanto o celular e este navegador estiverem conectados, suas mensagens diretas usam uma criptografia mais simples para que os dois possam recebê-las (os grupos não mudam). Desconecte o navegador quando quiser, no app, em Configurações → Dispositivos conectados, e a segurança volta ao máximo.',
-  'login.link.waiting': 'Esperando seu celular… o código vale por 2 minutos.',
+  'login.link.waiting': 'Esperando seu celular… o código vale por 10 minutos.',
   'login.link.enlarge': 'Toque para ampliar o código',
   'login.link.expired': 'O código expirou.',
   'login.link.error': 'Não foi possível conectar.',

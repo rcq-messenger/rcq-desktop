@@ -146,7 +146,13 @@ export function Login() {
 
 function ModeSwitch({ onDone }: { onDone: (id: WebIdentity) => void }) {
   const { t } = useI18n()
-  const [mode, setMode] = useState<'create' | 'recover' | 'link'>('create')
+  // ⚠ On the desktop the first tab is "Connect phone", not "New account".
+  // The desktop app is almost never somebody's first RCQ device, and with
+  // Create first, filled green, and a nickname already suggested, one reflex
+  // click made a SECOND account with its own number ("Computer and phone
+  // under different numbers", #968). The web keeps Create first: for a
+  // browser it genuinely may be the first device.
+  const [mode, setMode] = useState<'create' | 'recover' | 'link'>(isTauri() ? 'link' : 'create')
   const tab = (m: typeof mode, label: string) => (
     <button
       onClick={() => setMode(m)}
@@ -158,9 +164,19 @@ function ModeSwitch({ onDone }: { onDone: (id: WebIdentity) => void }) {
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-3 gap-1 p-1 rounded-lg bg-surface-dim text-sm font-medium">
-        {tab('create', t('login.mode.create'))}
-        {tab('recover', t('login.mode.recover'))}
-        {tab('link', t('login.mode.link'))}
+        {isTauri() ? (
+          <>
+            {tab('link', t('login.mode.link'))}
+            {tab('recover', t('login.mode.recover'))}
+            {tab('create', t('login.mode.create'))}
+          </>
+        ) : (
+          <>
+            {tab('create', t('login.mode.create'))}
+            {tab('recover', t('login.mode.recover'))}
+            {tab('link', t('login.mode.link'))}
+          </>
+        )}
       </div>
       {mode === 'create' ? (
         <CreatePane onDone={onDone} />

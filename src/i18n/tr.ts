@@ -60,7 +60,7 @@ export const tr: Record<string, string> = {
   'login.link.scan_body': "Telefonunuzda RCQ'yu açın, Ayarlar'a girin, ardından Bağlı cihazlar'a gidin ve telefondaki hesapla burada oturum açmak için bu kodu tarayın.",
   'login.link.security_more': 'Neden daha zayıf?',
   'login.link.security_note': 'Telefonun ve bu tarayıcı aynı anda bağlıyken özel mesajların daha basit bir şifreleme kullanır, böylece ikisi de alabilir (grup sohbetleri etkilenmez). En yüksek güvenliğe dönmek için tarayıcıyı istediğin zaman uygulamada Ayarlar → Bağlı cihazlar altından ayırabilirsin.',
-  'login.link.waiting': 'Telefonun bekleniyor… kod 2 dakika geçerli.',
+  'login.link.waiting': 'Telefonun bekleniyor… kod 10 dakika geçerli.',
   'login.link.enlarge': 'Kodu büyütmek için dokun',
   'login.link.expired': 'Kodun süresi doldu.',
   'login.link.error': 'Bağlanılamadı.',

@@ -60,7 +60,7 @@ export const zh: Record<string, string> = {
   'login.link.scan_body': '在手机上打开 RCQ,进入设置,然后进入已连接设备,扫描此二维码即可在此处登录手机上的账号。',
   'login.link.security_more': '为什么会更弱？',
   'login.link.security_note': '当手机和这个浏览器同时连接时，你的私聊消息会使用较简单的加密，好让两边都能收到（群组聊天不受影响）。随时可以在应用的“设置 → 已连接设备”里断开浏览器，安全性会重新回到最高。',
-  'login.link.waiting': '正在等待你的手机…QR 码 2 分钟内有效。',
+  'login.link.waiting': '正在等待你的手机…QR 码 10 分钟内有效。',
   'login.link.enlarge': '点击放大 QR 码',
   'login.link.expired': 'QR 码已过期。',
   'login.link.error': '连接失败。',

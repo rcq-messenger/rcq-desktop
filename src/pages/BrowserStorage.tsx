@@ -30,8 +30,10 @@ import { useToast } from '../lib/toast'
 /// lands somewhere sensible instead of vanishing from the list.
 function groupOf(key: string): 'account' | 'messages' | 'lists' | 'settings' {
   const k = key.toLowerCase()
+  // `island-keys` is the gateway keys of private islands (auth.ts): counted
+  // with the account, never listed by value.
   if (k.includes('identity.v1') || k.includes('accounts.v1') || k.includes('multihome') ||
-      k.includes('visited.v1') || k.includes('revoked.v1')) return 'account'
+      k.includes('visited.v1') || k.includes('revoked.v1') || k.includes('island-keys')) return 'account'
   if (k.includes('outgoing.') || k.includes('unread')) return 'messages'
   if (k.includes('theme') || k.includes('fontscale') || k.includes('language') ||
       k.includes('sounds') || k.includes('privacy') || k.includes('install.id') ||

@@ -26,6 +26,9 @@ const ACCOUNTS_KEY = 'rcq.web.accounts.v1'
 /// UINs whose session is known dead. Declared with the other two because all
 /// three move together into the desktop vault below.
 const REVOKED_KEY = 'rcq.web.revoked.v1'
+/// Gateway keys of private islands, `{ "host:port": token }`. Declared with
+/// the other three because it moves with them into the desktop vault.
+const GATE_KEYS_KEY = 'rcq.web.island-keys.v1'
 const LINK_TTL_SECONDS = 5 * 60
 
 // -----------------------------------------------------------
@@ -40,9 +43,10 @@ const LINK_TTL_SECONDS = 5 * 60
 // The indirection is three functions rather than a rewrite of every caller
 // because every read and write of an account already goes through this file.
 
-/// The three keys that ARE the account: the active identity, the switcher
-/// list, and which of them the island has stopped accepting.
-const ACCOUNT_KEYS = [STORAGE_KEY, ACCOUNTS_KEY, REVOKED_KEY]
+/// The keys that ARE the account: the active identity, the switcher list,
+/// which of them the island has stopped accepting, and the gateway keys of
+/// the private islands this device may enter (see the section below).
+const ACCOUNT_KEYS = [STORAGE_KEY, ACCOUNTS_KEY, REVOKED_KEY, GATE_KEYS_KEY]
 
 let vaulted: Record<string, string> | null = null
 let vaultWriter: ((rows: Record<string, string>) => void) | null = null
@@ -106,6 +110,71 @@ export function restoreAccountRowsToDisk(rows: Record<string, string>): void {
   vaulted = null
   vaultWriter = null
   for (const [k, v] of Object.entries(rows)) localStorage.setItem(k, v)
+}
+
+// -----------------------------------------------------------
+// Gateway keys of private islands
+// -----------------------------------------------------------
+//
+// A masquerade island (backend/app/routers/gate.py) shows a decoy site to any
+// request without its key in `X-RCQ-Auth`. The key is the island's front door
+// for THIS device, revocable per device by the operator, and it is held here,
+// next to the identity, for one reason: this is the one store the desktop PIN
+// vault seals (src-tauri/src/vault.rs), so with a PIN on the key never sits on
+// the disk in the clear. It is deliberately NOT in `rcq.web.islands.v1` (the
+// remembered-islands list, plain localStorage), NOT in `rcq.island.<host>`
+// (the public island card), NOT in the catalogue cache, and never in a URL:
+// each of those is either readable by anything or rewritten by something
+// else, and a key copied into one of them would outlive its removal here.
+// Read only by the desktop's fetch wrapper (lib/island-gate.ts), which sends it
+// to its own authority and nowhere else; the destroy-everything wipe takes it
+// with the identities, and Forget on the picker's card takes one.
+// Founder, 12.09: the hand-typed private island has to survive on the
+// desktop, and its key has to survive with it.
+
+function readGateKeys(): Record<string, string> {
+  try {
+    const raw = acctGet(GATE_KEYS_KEY)
+    const map = raw ? (JSON.parse(raw) as unknown) : null
+    if (!map || typeof map !== 'object' || Array.isArray(map)) return {}
+    const out: Record<string, string> = {}
+    for (const [k, v] of Object.entries(map as Record<string, unknown>)) {
+      if (typeof v === 'string' && v) out[k] = v
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+function writeGateKeys(map: Record<string, string>): void {
+  if (Object.keys(map).length === 0) acctRemove(GATE_KEYS_KEY)
+  else acctSet(GATE_KEYS_KEY, JSON.stringify(map))
+}
+
+/// The key on file for `authority` (`host:port`, lowercased), or null.
+export function islandGatewayKey(authority: string): string | null {
+  return readGateKeys()[authority] ?? null
+}
+
+export function hasIslandGatewayKey(authority: string): boolean {
+  return islandGatewayKey(authority) != null
+}
+
+export function setIslandGatewayKey(authority: string, token: string): void {
+  const t = token.trim()
+  if (!t) {
+    forgetIslandGatewayKey(authority)
+    return
+  }
+  writeGateKeys({ ...readGateKeys(), [authority]: t })
+}
+
+export function forgetIslandGatewayKey(authority: string): void {
+  const map = readGateKeys()
+  if (!(authority in map)) return
+  delete map[authority]
+  writeGateKeys(map)
 }
 
 /// The install this JWT is issued to (`dev` claim), or null. Payload peek only

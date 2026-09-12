@@ -25,6 +25,7 @@ import {
   withSessionToken,
 } from './auth'
 import { migrateFlatDataInto, setAccountScope } from './account-scope'
+import { backfillRememberedIslands, touchRememberedIsland } from './remembered-islands'
 import { showTransitionVeil } from './transition-veil'
 import { flushVaultWriter } from './pin-gate'
 import { defaultHome } from './routing'
@@ -98,7 +99,14 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
     // and belongs to nobody in particular.
     setAccountScope(stored?.uin ?? null)
     if (stored) migrateFlatDataInto(stored.uin)
-    setAccounts(listStoredIdentities())
+    const held = listStoredIdentities()
+    setAccounts(held)
+    // The islands this profile's accounts live on are on the picker's deck
+    // (remembered-islands.ts; founder, 12.09). Accounts from before the list
+    // existed are backfilled once, and the island that just booted moves to
+    // the front, which covers a switch too: a switch ends in this same boot.
+    backfillRememberedIslands(held.map((a) => a.apiBase))
+    touchRememberedIsland(stored?.apiBase)
     // The ordinary case: a token is either not needed (no account) or still on
     // disk (this account's island cannot mint one, or this is the first start
     // after the update).

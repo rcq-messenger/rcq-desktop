@@ -286,6 +286,21 @@ html.dark .rcq-wave {
   .rcq-wave { animation: none; opacity: 0; }
 }
 
+/* The island picker's painting drifts 4px up and down over 2.6s, the float
+   the phones' cards have (IslandCard on Android, IslandArtView on iOS). CSS
+   rather than JS so it starts on the first frame; off for people who asked
+   for less motion, like the waves above. */
+@keyframes rcq-island-float {
+  from { transform: translateY(-4px); }
+  to   { transform: translateY(4px); }
+}
+.rcq-island-float {
+  animation: rcq-island-float 2.6s ease-in-out infinite alternate;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rcq-island-float { animation: none; }
+}
+
 /* The header sits on the page's own background rather than on a lighter panel.
    Two shades of dark stacked on top of each other read as a web page's chrome;
    one continuous surface reads as an app. The grey the header used to be is not

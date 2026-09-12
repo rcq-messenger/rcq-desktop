@@ -33,6 +33,7 @@ import { ApiError, parseErrorCode } from '../lib/api'
 import { useServerCapabilities } from '../lib/use-server-info'
 import { formatUsd } from '../lib/server-info'
 import { islandLabel, rememberIsland, rememberedIsland, type IslandAddress } from '../lib/island-choice'
+import { rememberReachedIsland } from '../lib/remembered-islands'
 import { engageIslandEagerly, prePinIsland } from '../lib/island-trust'
 import { IslandAvatar } from '../components/IslandAvatar'
 import { useIslandCard } from '../lib/use-server-info'
@@ -231,6 +232,9 @@ function RecoverPane({ onDone }: { onDone: (id: WebIdentity) => void }) {
     setBusy(true)
     try {
       const id = await recoverFromPhrase(phrase, island)
+      // Reached, so remembered: the picker offers this island again on this
+      // profile, whichever account is active later (founder, 12.09).
+      rememberReachedIsland(island, 'recovered')
       onDone(id)
     } catch (e) {
       const code = e instanceof RecoverError ? e.code : 'network'
@@ -336,6 +340,8 @@ function LinkPane({ onDone }: { onDone: (id: WebIdentity) => void }) {
           const { blob } = await res.json()
           const plain = openLinkSeal(blob, eph.priv, eph.pub)
           const id = adoptLinkBlob(parseLinkBlob(new TextDecoder().decode(plain)))
+          // The phone's island is one this profile has reached now.
+          rememberReachedIsland(id.apiBase, 'linked')
           if (!cancelled) onDone(id)
         } catch {
           // A malformed / wrong-key deposit landed in our slot.
@@ -549,6 +555,9 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
     setBusy(true)
     try {
       const id = await createNewAccount(nickname, island, invite)
+      // Reached, so remembered: the picker offers this island again on this
+      // profile, whichever account is active later (founder, 12.09).
+      rememberReachedIsland(island, 'created')
       const words = currentRecoveryPhrase()
       if (words) setPending({ id, words })
       else onDone(id) // shouldn't happen for a fresh account; fail open

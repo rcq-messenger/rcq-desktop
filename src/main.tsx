@@ -5,6 +5,7 @@ import './index.css'
 import { bypassStatus, installExternalLinkHandler, isTauri } from './lib/desktop'
 import { installFrontRouting, refreshFrontRouting, setFrontHost } from './lib/front'
 import { engageIslandEagerly, installIslandTrust } from './lib/island-trust'
+import { installIslandGate } from './lib/island-gate'
 import { loadStoredIdentity, wipeLocalAccountData } from './lib/auth'
 import { setAccountScope } from './lib/account-scope'
 import { idbClearAll } from './lib/signal-persist'
@@ -63,6 +64,11 @@ if (isTauri()) {
   // asked eagerly so the decision is made before the first request; every
   // other island origin is asked by the wrapper before its first request.
   installIslandTrust()
+  // Desktop only: a private island's gateway key on every request to it
+  // (lib/island-gate.ts). Installed AFTER the trust wrapper so it runs first
+  // and stamps the original URL; the trust layer under it keeps the header
+  // when it moves the request to loopback.
+  installIslandGate()
   try {
     void engageIslandEagerly(loadStoredIdentity()?.apiBase)
   } catch {

@@ -55,6 +55,47 @@ export class TillError extends Error {
   }
 }
 
+/// What entry to an island costs and which chains its till takes for it.
+/// `price_cents: 0` is "not on sale": no island answering the till, or no
+/// price set by its operator.
+export interface EntryQuote {
+  host: string
+  price_cents: number
+  chains: { id: string; label: string; confirmations: number }[]
+}
+
+/// An invoice for ENTRY (residency) rather than a number. Same shape as
+/// `UinInvoice` minus the number plus the island it is for; the voucher it
+/// ends in is redeemed at registration or, for an account already here, at
+/// `POST /residency/redeem`.
+export interface EntryInvoice {
+  id: string
+  host: string
+  chain: string
+  chain_label: string
+  address: string
+  amount: string
+  usd: number
+  confirmations: number
+  expires_at: number
+  status: 'pending' | 'expired' | 'paid' | 'late'
+  paid_at?: number | null
+  voucher?: string | null
+}
+
+/// The till for ENTRY, and only the one the island named. ⚠⚠ NO FALLBACK,
+/// unlike `base()` above: numbers needed the built-in for islands too old to
+/// name a till, and it took a header (`X-RCQ-Checkout`) to keep that from
+/// sending a self-hoster's customer to pay us. Entry was born after islands
+/// could name their till, so an island that names none simply sells nothing
+/// in the app, and a caller with an empty address gets a refusal here rather
+/// than an invoice from the wrong till.
+function entryBase(tillUrl: string): string {
+  const named = (tillUrl ?? '').trim().replace(/\/+$/, '')
+  if (!/^https:\/\//i.test(named)) throw new TillError('no_till')
+  return named
+}
+
 async function call<T>(path: string, init?: RequestInit, checkoutUrl?: string | null): Promise<T> {
   let r: Response
   try {
@@ -93,6 +134,28 @@ export const Till = {
   /// confident "no such invoice" for a payment that is really in flight.
   invoice(id: string, checkoutUrl?: string | null): Promise<UinInvoice> {
     return call<UinInvoice>(`/v1/uin/invoice/${encodeURIComponent(id)}`, undefined, checkoutUrl)
+  },
+
+  // ── entry (residency), at the island's OWN till and nowhere else ──
+
+  /// The price the ISLAND publishes and the chains its operator takes; the
+  /// till asks the island, signed, and keeps the answer a minute.
+  entryQuote(host: string, tillUrl: string): Promise<EntryQuote> {
+    return call<EntryQuote>(`/v1/entry/quote?host=${encodeURIComponent(host)}`, undefined, entryBase(tillUrl))
+  },
+
+  /// Write an invoice for entry to `host`. The address on it is the island
+  /// operator's wallet, handed to the till per invoice by the island itself.
+  createEntryInvoice(host: string, chain: string, tillUrl: string): Promise<EntryInvoice> {
+    return call<EntryInvoice>('/v1/entry/invoice', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ host, chain }),
+    }, entryBase(tillUrl))
+  },
+
+  entryInvoice(id: string, tillUrl: string): Promise<EntryInvoice> {
+    return call<EntryInvoice>(`/v1/entry/invoice/${encodeURIComponent(id)}`, undefined, entryBase(tillUrl))
   },
 }
 
@@ -142,6 +205,51 @@ export function listInvoices(): StoredInvoice[] {
 export function forgetInvoice(id: string): void {
   try {
     localStorage.setItem(KEY, JSON.stringify(listInvoices().filter((i) => i.id !== id)))
+  } catch {
+    /* see rememberInvoice */
+  }
+}
+
+/// Entry invoices this browser has opened, newest first: their OWN key.
+///
+/// ⚠ Not the number list above. The Market sweep polls every stored id
+/// through the number endpoint and redeems what it finds paid as a number;
+/// an entry invoice in that list would come back "no such invoice" from the
+/// till and, worse, be dropped. The create form and the residency row sweep
+/// this list for the island they are on.
+const ENTRY_KEY = 'rcq.web.entry.invoices'
+
+export interface StoredEntryInvoice {
+  id: string
+  host: string
+  chain: string
+  created_at: number
+  /// Which till issued it: an invoice id only exists at the till that made it.
+  tillUrl: string
+}
+
+export function rememberEntryInvoice(inv: EntryInvoice, tillUrl: string): void {
+  try {
+    const all = listEntryInvoices().filter((i) => i.id !== inv.id)
+    all.unshift({ id: inv.id, host: inv.host, chain: inv.chain, created_at: Date.now(), tillUrl })
+    localStorage.setItem(ENTRY_KEY, JSON.stringify(all.slice(0, 20)))
+  } catch {
+    /* see rememberInvoice */
+  }
+}
+
+export function listEntryInvoices(): StoredEntryInvoice[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(ENTRY_KEY) || '[]')
+    return Array.isArray(raw) ? (raw as StoredEntryInvoice[]) : []
+  } catch {
+    return []
+  }
+}
+
+export function forgetEntryInvoice(id: string): void {
+  try {
+    localStorage.setItem(ENTRY_KEY, JSON.stringify(listEntryInvoices().filter((i) => i.id !== id)))
   } catch {
     /* see rememberInvoice */
   }

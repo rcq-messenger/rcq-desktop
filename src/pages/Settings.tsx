@@ -18,6 +18,7 @@ import { Logo } from '../components/Logo'
 import { IslandAvatar } from '../components/IslandAvatar'
 import { IslandTrustRow } from '../components/IslandTrust'
 import { ResidentInvites } from '../components/ResidentInvites'
+import { ResidencyRow } from '../components/ResidencyRow'
 import { hostnameOf, normaliseIsland } from '../lib/island-choice'
 import { isCaOnlyHost, prePinIsland } from '../lib/island-trust'
 import { useIslandCard } from '../lib/use-server-info'
@@ -206,6 +207,10 @@ export function Settings() {
   // 'macos' | 'windows' | 'linux', null in a browser — About names the build.
   const [platform, setPlatform] = useState<string | null>(null)
   const [me, setMe] = useState<UserInfo | null>(null)
+  // Bumped when residency is bought on this screen: the mark is granted
+  // server-side, and the profile and the invites counter must follow without
+  // a reload.
+  const [profileTick, setProfileTick] = useState(0)
 
   // Seed the HoF toggle + avatar from the server (owner-self echoes both).
   useEffect(() => {
@@ -226,7 +231,7 @@ export function Settings() {
     return () => {
       alive = false
     }
-  }, [identity])
+  }, [identity, profileTick])
 
   useEffect(() => {
     void appVersion().then(setDesktopVersion)
@@ -831,7 +836,17 @@ export function Settings() {
               05.09). Placed on the section, not inside the row, because the
               row itself is conditional on the desktop. */}
           <p className="text-xs text-fg-dim leading-relaxed">{t('island.trust.settings.footer')}</p>
-          <ResidentInvites identity={identity} />
+          {/* Residency, and the invites it pays for, one under the other
+              (founder item 5, 12.09). */}
+          <ResidencyRow
+            identity={identity}
+            me={me}
+            caps={caps}
+            islandName={islandName ?? null}
+            host={islandHost}
+            onChanged={() => setProfileTick((n) => n + 1)}
+          />
+          <ResidentInvites identity={identity} tick={profileTick} />
           {islandRules && (
             <>
               <button

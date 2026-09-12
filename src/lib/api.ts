@@ -196,6 +196,13 @@ export interface UserInfo {
   /// Owner-only: every mark this account HOLDS. Empty for a peer, and for
   /// somebody with nothing. The one they WEAR is `badge` above.
   badges_earned?: string[]
+  /// Owner-only, ISO-8601: when this account became a resident, null for
+  /// everybody who did not pay. The residency row in Settings reads it and
+  /// falls back to the mark on an island older than the field.
+  resident_since?: string | null
+  /// Owner-only: `voucher` | `invite` | `open`, null on a row older than the
+  /// column. Carried for parity with the wire; nothing branches on it yet.
+  entered_via?: string | null
   avatar_media_id?: string | null
   avatar_media_key?: string | null
   identity_key: string
@@ -861,8 +868,36 @@ export const Api = {
     used: number
     remaining: number
     next_at: string | null
+    /// `resident` for somebody who paid, `free` for an account that was here
+    /// before residency existed and gets a smaller drip; '' or absent from an
+    /// island older than the field. One line of copy is keyed on it.
+    kind?: string
   }> {
     return request(id, 'GET', '/invites')
+  },
+
+  /// Spend an entry voucher on the account that is already here (founder
+  /// item 5, 12.09). Until then the voucher was accepted by registration
+  /// alone, so somebody here for free had no way in short of a second
+  /// account. Refusals carry a code in the body: `already_resident` and
+  /// `voucher_spent` (409), `suspended`, `voucher_other_island`,
+  /// `voucher_expired`, `bad_signature` (403), `sales_disabled` (404).
+  redeemResidency(id: WebIdentity, voucher: string): Promise<{
+    resident_since: string | null
+    badge: string | null
+    badges_earned: string[]
+    invites: {
+      enabled: boolean
+      eligible: boolean
+      total: number
+      granted: number
+      used: number
+      remaining: number
+      next_at: string | null
+      kind?: string
+    } | null
+  }> {
+    return request(id, 'POST', '/residency/redeem', { voucher })
   },
 
   /// ⚠ The raw code comes back ONCE. The island keeps the hash, so a caller

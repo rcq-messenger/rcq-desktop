@@ -74,6 +74,18 @@ export interface ServerCapabilities {
   /// iOS: Apple does not allow an app to point at a purchase it does not
   /// handle.
   entry_url: string
+  /// The island's own till (checkout), https only, '' when it names none.
+  /// ⚠⚠ THE ONE RULE OF THE IN-APP GATEWAY: entry is bought inside the app
+  /// ONLY when the island names this. There is no built-in fallback for
+  /// entry, ever: the flagship's till compiled into the client would take a
+  /// self-hoster's customer's money for an account on somebody else's island
+  /// (the X-RCQ-Checkout trap the number shop had to patch around).
+  till_url: string
+  /// The operator's own terms and refund page, when they name one. Linked
+  /// beside the payment; empty means the client says instead that refunds
+  /// are the operator's decision. The RCQ team's terms cover the flagship
+  /// only and are never linked for somebody else's sale.
+  terms_url: string
   /// How many accounts live on the island. 0 means it did not say — an island
   /// older than the field, or one that has not counted yet — so a card draws
   /// nothing rather than claiming an empty island.
@@ -147,6 +159,8 @@ export const DEFAULT_CAPABILITIES: ServerCapabilities = {
   entry_price_cents: 0,
   user_count: 0,
   entry_url: '',
+  till_url: '',
+  terms_url: '',
   nearby: true,
   random_chat: true,
   reports: true,
@@ -226,6 +240,17 @@ function normalize(raw: unknown): ServerInfo | null {
           ? Math.floor(caps.entry_price_cents)
           : 0,
       entry_url: typeof caps.entry_url === 'string' ? caps.entry_url : '',
+      // https only, no trailing slash: money is sent through this address.
+      till_url:
+        typeof caps.till_url === 'string' && /^https:\/\//i.test(caps.till_url.trim())
+          ? caps.till_url.trim().replace(/\/+$/, '')
+          : '',
+      // A link, not a payment path, so plain http is tolerated (a LAN island
+      // may have no certificate); anything else is dropped.
+      terms_url:
+        typeof caps.terms_url === 'string' && /^https?:\/\//i.test(caps.terms_url.trim())
+          ? caps.terms_url.trim()
+          : '',
       user_count:
         typeof caps.user_count === 'number' && caps.user_count > 0
           ? Math.floor(caps.user_count)

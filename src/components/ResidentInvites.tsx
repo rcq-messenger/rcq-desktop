@@ -16,7 +16,16 @@ import { useI18n } from '../lib/i18n-context'
 /// date: the accrual rule lives on the island so that changing it does not
 /// need four client releases, and a client that did its own sum would disagree
 /// with the server the moment an operator changed the period.
-export function ResidentInvites({ identity }: { identity: WebIdentity | null }) {
+export function ResidentInvites({
+  identity,
+  tick = 0,
+}: {
+  identity: WebIdentity | null
+  /// Bumped by the residency row above when a voucher is redeemed: the
+  /// counter goes from nothing to a full allowance in that one round trip,
+  /// and a row that read once per screen kept drawing nothing.
+  tick?: number
+}) {
   const { t } = useI18n()
   const [state, setState] = useState<Awaited<ReturnType<typeof Api.myInvites>> | null>(null)
   const [minted, setMinted] = useState<string | null>(null)
@@ -37,7 +46,7 @@ export function ResidentInvites({ identity }: { identity: WebIdentity | null }) 
     return () => {
       alive = false
     }
-  }, [identity?.uin, identity?.apiBase])
+  }, [identity?.uin, identity?.apiBase, tick])
 
   if (!state || !state.enabled || !state.eligible) return null
 
@@ -68,6 +77,12 @@ export function ResidentInvites({ identity }: { identity: WebIdentity | null }) 
         </span>
       </div>
       <p className="text-xs text-fg-dim leading-relaxed">{nextLine}</p>
+      {/* An account that was here before residency existed gets a smaller
+          drip (founder item 5, 12.09). The counter is the same; this one line
+          is what says why it is there. */}
+      {state.kind === 'free' && (
+        <p className="text-xs text-fg-dim leading-relaxed">{t('invites.free')}</p>
+      )}
       {state.remaining > 0 && (
         <button
           onClick={mint}

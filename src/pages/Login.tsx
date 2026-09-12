@@ -29,6 +29,8 @@ import { defaultHome } from '../lib/routing'
 import { clientLabel } from '../lib/client-name'
 import { bytesToB64, newLinkEphemeral, openLinkSeal, type WebIdentity } from '../lib/crypto'
 import { IslandPickerModal } from '../components/IslandPickerModal'
+import { EntryCheckout } from '../components/EntryCheckout'
+import { Till, forgetEntryInvoice, listEntryInvoices } from '../lib/till'
 import { ApiError, parseErrorCode } from '../lib/api'
 import { useServerCapabilities } from '../lib/use-server-info'
 import { formatUsd } from '../lib/server-info'
@@ -544,6 +546,46 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
   // than nothing.
   const entryUrl = (caps.entry_url || '').trim()
   const canBuyEntry = sellsEntry && /^https:\/\//i.test(entryUrl)
+  // ⚠⚠ THE GATEWAY INSIDE THE APP, only when the island names its own till
+  // (`till_url`; see lib/server-info.ts). The button then opens EntryCheckout
+  // in place of the anchor above, and the code it ends in lands in the box
+  // below by itself. An island that names a page and no till keeps the
+  // anchor; one that names neither gets the sentence with the price.
+  const tillUrl = caps.till_url
+  const inAppEntry = sellsEntry && !!tillUrl
+  const [checkout, setCheckout] = useState<{ resumeId?: string } | null>(null)
+  const islandHostname = islandLabel(island)
+  const { name: islandCardName } = useIslandCard(island)
+  // A payment that landed while nobody was looking: an entry invoice this
+  // browser opened for THIS island and paid after the tab was closed. The
+  // code is put into the box, which is where the person was heading.
+  useEffect(() => {
+    if (!inAppEntry) return
+    let dead = false
+    void (async () => {
+      for (const stored of listEntryInvoices()) {
+        if (dead) return
+        if (stored.host.toLowerCase() !== islandHostname.toLowerCase()) continue
+        try {
+          const inv = await Till.entryInvoice(stored.id, stored.tillUrl || tillUrl)
+          if (dead) return
+          if (inv.status === 'paid' && inv.voucher) {
+            setInvite(inv.voucher)
+            setCodeRevealed(true)
+            forgetEntryInvoice(inv.id)
+            return
+          }
+          if (inv.status === 'expired') forgetEntryInvoice(inv.id)
+        } catch {
+          /* a till we cannot reach today is one we ask again tomorrow */
+        }
+      }
+    })()
+    return () => {
+      dead = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inAppEntry, islandHostname, tillUrl])
   const showCode = doorIsShut || codeRevealed
   // Mirrors `auth.register`, which refuses on the POLICY alone: invite or
   // paid. `closed_island` is a different question (who may write to a
@@ -699,7 +741,44 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
           flagship is the second kind, and calling its $15 an entry fee on an
           open door told every visitor they had to pay to register (founder,
           07.09). Same button, same code field, different sentence. */}
-      {sellsEntry && (canBuyEntry ? (
+      {sellsEntry && (inAppEntry ? (
+        <div className="space-y-1">
+          <button
+            type="button"
+            onClick={() =>
+              setCheckout({
+                resumeId: listEntryInvoices().find(
+                  (s) => s.host.toLowerCase() === islandHostname.toLowerCase(),
+                )?.id,
+              })
+            }
+            className="flex items-center justify-center w-full h-10 rounded-md bg-field hover:bg-line/40 text-accent text-sm font-semibold transition-colors"
+          >
+            {t(doorIsShut ? 'login.create.buy_entry' : 'login.create.buy_residency',
+               { price: formatUsd(caps.entry_price_cents) })}
+          </button>
+          <p className="text-xs text-fg-dim leading-relaxed">{t('login.create.buy_entry_hint_inapp')}</p>
+          <AnimatePresence>
+            {checkout && (
+              <EntryCheckout
+                host={islandHostname}
+                islandName={islandCardName || ''}
+                priceDisplay={t('island.entry.price', { price: formatUsd(caps.entry_price_cents) })}
+                tillUrl={tillUrl}
+                termsUrl={caps.terms_url}
+                resumeId={checkout.resumeId}
+                onPaid={(voucher, id) => {
+                  setInvite(voucher)
+                  setCodeRevealed(true)
+                  forgetEntryInvoice(id)
+                  setCheckout(null)
+                }}
+                onClose={() => setCheckout(null)}
+              />
+            )}
+          </AnimatePresence>
+        </div>
+      ) : canBuyEntry ? (
         <div className="space-y-1">
           <a
             href={entryUrl}

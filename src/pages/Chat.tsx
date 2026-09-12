@@ -145,12 +145,20 @@ const CARBON_KINDS = new Set<Envelope['kind']>(['text', 'photo', 'video', 'voice
 /// the web decrypts the whole blob into memory to download — keep that bounded.
 const MAX_FILE_BYTES = 100 * 1024 * 1024 // 100 MB
 
+/// How much of a quoted message rides in the reply: the same 280 on every
+/// client now. It was 220 here, 100 on Android and 80 on the iPhone, so one
+/// reply read three different ways and the phones lost the point of the
+/// sentence (founder item 3, #964). Cut at a word, and in code points so an
+/// emoji is never split down the middle.
+const QUOTE_MAX = 280
+
 function buildSnippet(text: string): string {
-  // Carry enough of the quoted message that the reply has context (#14 — a
-  // 60-char cut hid what was being answered). The quote renders clamped to a
-  // few lines, so a generous cap is fine.
   const collapsed = text.replace(/\s+/g, ' ').trim()
-  return collapsed.length > 220 ? collapsed.slice(0, 220) + '…' : collapsed
+  const cps = Array.from(collapsed)
+  if (cps.length <= QUOTE_MAX) return collapsed
+  const cut = cps.slice(0, QUOTE_MAX).join('')
+  const sp = cut.lastIndexOf(' ')
+  return (sp > cut.length / 2 ? cut.slice(0, sp) : cut).trimEnd() + '…'
 }
 
 // Module-level caches of the open chat's peer / group info. The Chat route
@@ -392,6 +400,9 @@ export function Chat() {
   /// Message id whose reaction authors are on screen, or null.
   const [reactionAuthorsFor, setReactionAuthorsFor] = useState<string | null>(null)
   const [replyTo, setReplyTo] = useState<ReplyContext | null>(null)
+  // The strip shows one line; a tap opens the whole quote, as the iPhone's
+  // strip always did (#964). Closed again for every new reply.
+  const [replyOpen, setReplyOpen] = useState(false)
   const [highlightId, setHighlightId] = useState<string | null>(null)
   // Search inside this conversation. Android has had it; the web had no way to
   // find anything you had said, in a thread that can run for months.
@@ -2258,6 +2269,7 @@ export function Chat() {
   /// as a `ReplyContext` so the recipient sees the quote rendered.
   function startReplyTo(id: string, text: string, authorName: string) {
     setReplyTo({ id, snippet: buildSnippet(text), authorName })
+    setReplyOpen(false)
     setActionsForRowId(null)
     // Without this, replying showed a strip and left the caret wherever it was:
     // on a desktop, where nothing else moves, that reads as the button doing
@@ -2314,11 +2326,13 @@ export function Chat() {
   /// with nothing marked leaves you hunting for which line you were sent to.
   /// A quote can also point at a message that is not loaded (older than this
   /// thread's window, or deleted), and saying so beats scrolling nowhere.
-  function jumpToMessage(id: string) {
+  /// Answers whether it could. A quote's tap opens the quote in place when the
+  /// target is not here (`quiet`, no toast); a search jump still says so.
+  function jumpToMessage(id: string, opts?: { quiet?: boolean }): boolean {
     const el = document.getElementById(`msg-${id}`)
     if (!el) {
-      toast(t('chat.reply.not_loaded'), 'error')
-      return
+      if (!opts?.quiet) toast(t('chat.reply.not_loaded'), 'error')
+      return false
     }
     // The user has asked to be somewhere specific, so stop holding the view
     // against the unread divider: this moves the list without a wheel or a
@@ -2327,6 +2341,7 @@ export function Chat() {
     el.scrollIntoView({ behavior: 'smooth', block: 'center' })
     setHighlightId(id)
     window.setTimeout(() => setHighlightId((cur) => (cur === id ? null : cur)), 1400)
+    return true
   }
 
   /// Arriving from the home screen's global search: land on the message the
@@ -4255,12 +4270,20 @@ export function Chat() {
                   transition={{ duration: 0.14 }}
                   className="rcq-menu flex items-start gap-2 rounded-2xl shadow-lg px-3 py-2 text-xs"
                 >
-                  <div className="border-l-2 border-accent/60 pl-2 flex-1 min-w-0">
+                  <button
+                    type="button"
+                    aria-expanded={replyOpen}
+                    title={replyOpen ? t('chat.reply.collapse') : t('chat.reply.expand')}
+                    onClick={() => setReplyOpen((v) => !v)}
+                    className="border-l-2 border-accent/60 pl-2 flex-1 min-w-0 text-left"
+                  >
                     <div className="text-[0.625rem] text-fg-dim">
                       {t('chat.reply.replying_to', { name: replyTo.authorName })}
                     </div>
-                    <div className="text-fg-secondary truncate"><EmoticonText text={replyTo.snippet} emoticonSize={14} /></div>
-                  </div>
+                    <div className={replyOpen ? 'text-fg-secondary break-words' : 'text-fg-secondary truncate'}>
+                      <EmoticonText text={replyTo.snippet} emoticonSize={14} />
+                    </div>
+                  </button>
                   <button
                     onClick={cancelReply}
                     className="text-[0.625rem] uppercase tracking-wider text-fg-dim hover:text-fg-primary"
@@ -4865,13 +4888,40 @@ interface PressState {
 
 /// Everything a bubble can ask the thread to do. Built once, in Chat, with a
 /// stable identity — see the note where it is assembled.
+/// The quote above a reply. Tapping it jumps to the quoted message when that
+/// message is on the page; when it is not (older than the loaded window, or
+/// gone), the quote opens in place instead of a toast that scrolls nowhere.
+/// The quote carries up to 280 characters and the clamp shows three lines.
+/// One component for both the incoming and the outgoing bubble: the two
+/// copies of this markup were how the outgoing one went missing once.
+function ReplyQuote({ reply, h }: { reply: ReplyContext; h: RowActions }) {
+  const [open, setOpen] = useState(false)
+  const { t } = useI18n()
+  return (
+    <button
+      type="button"
+      aria-expanded={open}
+      title={open ? t('chat.reply.collapse') : t('chat.reply.expand')}
+      onClick={() => {
+        if (!h.jumpToMessage(reply.id, { quiet: true })) setOpen((v) => !v)
+      }}
+      className="border-l-2 border-accent/60 pl-2 max-w-full text-left rounded-r hover:bg-line/30 transition-colors cursor-pointer"
+    >
+      <div className="text-[0.625rem] text-fg-dim">{reply.authorName}</div>
+      <div className={`text-[0.6875rem] text-fg-secondary break-words max-w-[18rem] ${open ? '' : 'line-clamp-3'}`}>
+        <EmoticonText text={reply.snippet} emoticonSize={14} />
+      </div>
+    </button>
+  )
+}
+
 interface RowActions {
   toggleActions: (rowId: string, anchor?: HTMLElement | null, ev?: { target: EventTarget | null }) => void
   toggleReactionPicker: (rowId: string, anchor: HTMLElement) => void
   openReactionPicker: (rowId: string) => void
   showReactionAuthors: (targetId: string) => void
   toggleReaction: (targetId: string, asset: string | null) => void
-  jumpToMessage: (id: string) => void
+  jumpToMessage: (id: string, opts?: { quiet?: boolean }) => boolean
   startReplyTo: (id: string, text: string, authorName: string) => void
   startReply: (row: OutgoingRow) => void
   startEdit: (row: OutgoingRow) => void
@@ -5250,16 +5300,7 @@ const IncomingMessageRow = memo(function IncomingMessageRow({
             <BadgeMark kind={senderBadge} className="h-3 w-3" />
           </Link>
         )}
-        {m.replyTo && (
-          <button
-            type="button"
-            onClick={() => h.jumpToMessage(m.replyTo!.id)}
-            className="border-l-2 border-accent/60 pl-2 max-w-full text-left rounded-r hover:bg-line/30 transition-colors cursor-pointer"
-          >
-            <div className="text-[0.625rem] text-fg-dim">{m.replyTo.authorName}</div>
-            <div className="text-[0.6875rem] text-fg-secondary line-clamp-3 break-words max-w-[18rem]"><EmoticonText text={m.replyTo.snippet} emoticonSize={14} /></div>
-          </button>
-        )}
+        {m.replyTo && <ReplyQuote reply={m.replyTo} h={h} />}
         {m.kind === 'poll' ? (
           // A ballot from an old peer, or one this account received before
           // polls were cut (founder item 14a). It renders as "no longer
@@ -5650,18 +5691,7 @@ const OutgoingMessageRow = memo(function OutgoingMessageRow({
   // location and text - so this is only what the sender is shown. Kept as one
   // element rather than copied into seven branches, because a copy is how it
   // goes missing from the eighth.
-  const replyHeader = row.replyTo ? (
-    <button
-      type="button"
-      onClick={() => h.jumpToMessage(row.replyTo!.id)}
-      className="border-l-2 border-accent/60 pl-2 max-w-full text-left rounded-r hover:bg-line/30 transition-colors cursor-pointer"
-    >
-      <div className="text-[0.625rem] text-fg-dim">{row.replyTo.authorName}</div>
-      <div className="text-[0.6875rem] text-fg-secondary line-clamp-3 break-words max-w-[18rem]">
-        <EmoticonText text={row.replyTo.snippet} emoticonSize={14} />
-      </div>
-    </button>
-  ) : null
+  const replyHeader = row.replyTo ? <ReplyQuote reply={row.replyTo} h={h} /> : null
 
   const deliveryLine = (withDismiss: boolean, retryable = true) => (
     // ⚠ `tabular-nums`: a proportional 1 is narrower than a 0, so a clock going

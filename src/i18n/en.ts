@@ -304,6 +304,8 @@ export const en: Record<string, string> = {
   'chat.edit.edited': '(edited)',
   'chat.reply.replying_to': 'Replying to {name}',
   'chat.reply.cancel': 'cancel',
+  'chat.reply.expand': 'Show the whole quote',
+  'chat.reply.collapse': 'Collapse the quote',
   'chat.search.open': 'Search in this chat',
   'chat.search.placeholder': 'Find in this chat',
   'voice.play': 'Play',

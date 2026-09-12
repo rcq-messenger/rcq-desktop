@@ -298,6 +298,8 @@ export const ru: Record<string, string> = {
   'chat.edit.edited': '(изм.)',
   'chat.reply.replying_to': 'В ответ {name}',
   'chat.reply.cancel': 'отменить',
+  'chat.reply.expand': 'Показать цитату целиком',
+  'chat.reply.collapse': 'Свернуть цитату',
   'chat.search.open': 'Поиск по переписке',
   'chat.search.placeholder': 'Найти в переписке',
   'voice.play': 'Слушать',

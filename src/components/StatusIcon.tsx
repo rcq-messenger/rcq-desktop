@@ -32,7 +32,23 @@ export function StatusIcon({ status, size = 16, className = '', crossIsland = fa
       width={size}
       height={size}
       className={`inline-block flex-none ${className}`}
-      style={{ imageRendering: 'auto', filter: crossIsland ? 'grayscale(1)' : undefined }}
+      // ⚠⚠ THE SIZE HAS TO BE A REAL STYLE, not just the attributes above.
+      // `width`/`height` on an <img> are presentational hints, and Tailwind's
+      // preflight sets `img { height: auto }`, which beats them. The flower
+      // PNGs are not all the same shape (online 400x401, offline 384x390, away
+      // 407x415, dnd 396x403), so the drawn box was 28 x (natH/natW) and
+      // CHANGED WITH THE STATUS: measured 28.063 online against 28.547 away.
+      // In the contact list that is latent, because the two-line column is
+      // taller than the flower — but it is not latent in the single-line rows
+      // of the global search overlay, where the avatar sets the row height, and
+      // it is the kind of drift that surfaces the moment a layout changes
+      // around it.
+      style={{
+        width: size,
+        height: size,
+        imageRendering: 'auto',
+        filter: crossIsland ? 'grayscale(1)' : undefined,
+      }}
     />
   )
 }

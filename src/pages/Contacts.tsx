@@ -1127,7 +1127,7 @@ export function Contacts() {
             either, so a person who already joined something keeps a quiet
             list (founder, 05.09). */}
         {!loading && contacts.length === 0 && groups.length === 0 && !error && (
-          <DiscoverGroupsStrip />
+          <DiscoverGroupsStrip bleed={4} />
         )}
         {!loading && contacts.length === 0 && !error && (
           <div className="text-center text-sm text-fg-secondary py-12 space-y-2">

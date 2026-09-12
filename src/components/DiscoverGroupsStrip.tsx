@@ -11,7 +11,15 @@ import { BadgeMark } from './BadgeMark'
 /// island answered with something: no heading over an empty strip. Every new
 /// account used to be dropped into one beta room; this is the replacement,
 /// and joining is the person's own click (founder, 05.09).
-export function DiscoverGroupsStrip() {
+/// ⚠ `bleed` is the HORIZONTAL PADDING OF THE PARENT, in Tailwind steps, and
+/// it exists because getting it wrong is invisible until you look at the right
+/// edge. The strip cancels its own `px-4` with `-mx-4`, but the surface around
+/// it has padding too, so the scroll viewport still stopped short of the window
+/// on both sides and the last card was sliced. Android hit exactly this and
+/// solved it with the same knob (`bleed` in HomeScreen.kt). Pass the parent's
+/// padding: 4 inside a `px-4` surface cancels both and the strip runs edge to
+/// edge, while the heading and the first card stay where they were.
+export function DiscoverGroupsStrip({ bleed = 0 }: { bleed?: 0 | 4 } = {}) {
   const { t } = useI18n()
   const { toast } = useToast()
   const { identity } = useIdentity()
@@ -51,7 +59,7 @@ export function DiscoverGroupsStrip() {
   return (
     <div className="px-4 pt-6 pb-2 space-y-2">
       <div className="text-xs uppercase tracking-wide text-fg-dim">{t('contacts.discover.title')}</div>
-      <div className="flex gap-2.5 overflow-x-auto pb-1 -mx-4 px-4">
+      <div className={`flex gap-2.5 overflow-x-auto pb-1 ${bleed === 4 ? '-mx-8 px-8' : '-mx-4 px-4'}`}>
         {rooms.map((room) => (
           <div key={room.id} className="shrink-0 w-[132px] rounded-2xl bg-field p-3 flex flex-col items-center gap-2">
             <GroupAvatar size={48} mediaId={room.avatar_media_id ?? undefined} mediaKey={room.avatar_media_key ?? undefined} />

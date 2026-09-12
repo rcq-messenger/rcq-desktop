@@ -10,6 +10,7 @@ import { BadgeMark } from '../components/BadgeMark'
 import { Link, useNavigate } from 'react-router-dom'
 import { Api, ApiError, type UserInfo } from '../lib/api'
 import { useI18n } from '../lib/i18n-context'
+import { DiscoverGroupsStrip } from '../components/DiscoverGroupsStrip'
 import { fetchServerInfo } from '../lib/server-info'
 import { useIdentity } from '../lib/identity-context'
 import { parseAddress } from '../lib/federation'
@@ -229,6 +230,16 @@ export function AddContact({
             </button>
           </div>
         )}
+
+        {/* Rooms to walk into, exactly where the phones put them: under the
+            field, gone the moment anything is typed. This surface was the one
+            client that never had it, so a person who opened Add on the desktop
+            saw a hint and an empty page where an iPhone offered somewhere to
+            go (founder, 12.09).
+            ⚠ Hidden while a cross-island address is being confirmed: that flow
+            already owns the space under the field, and two things competing
+            for it read as a broken layout. */}
+        {!query.trim() && !crossIsland && <DiscoverGroupsStrip bleed={4} />}
 
         {!query.trim() && (
           <div className="text-center text-sm text-fg-secondary py-12">

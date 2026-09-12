@@ -389,19 +389,13 @@ export function PinGate({ children }: { children: ReactNode }) {
   // is locked, because the account is not in the page at all.
   return (
     <div className="relative h-screen [height:100dvh] overflow-hidden bg-surface-dim">
-      <div
-        aria-hidden
-        // Rising, not falling: the tint sits at the BOTTOM and fades upward
-        // (founder, 19.08). `to-tr` runs bottom-left → top-right, so the
-        // `from-` stop is the low corner.
-        // ⚠ The two far stops are TRANSPARENT, not `surface-dim`. Painted in
-        // the colour they were, this layer covered the background chosen in
-        // settings with a flat slab and the lock screen looked like a
-        // different app than the one behind it (founder, 05.09). The rising
-        // accent tint survives; what it rises out of is now whatever the
-        // window is actually painted with.
-        className="absolute inset-0 bg-gradient-to-tr from-accent/10 via-transparent to-transparent"
-      />
+      {/* No decoration here on purpose. A green tint used to rise from the
+          bottom-left corner; the founder asked for it gone on 12.09. This is
+          the screen a person meets when the app is locked, it has one job, and
+          the accent belongs on the thing you press rather than behind it.
+          ⚠ The lock screen only exists in the desktop build — `vaultSupported()`
+          keeps `locked` false everywhere else — so nothing in the browser
+          changes with it. */}
       <div className="relative h-full flex flex-col items-center justify-center px-6">
       {forgot ? (
         /* Deliberately a whole panel and not a confirm(): what goes is not

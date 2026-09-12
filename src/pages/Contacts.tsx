@@ -228,6 +228,12 @@ export function Contacts() {
   const [contacts, setContacts] = useState<Contact[]>(() => _cachedAtMount?.contacts ?? [])
   /// Blocked uins as of the last roster fold, for handlers whose closure is older.
   const blockedRef = useRef<Set<number>>(new Set())
+  /// Which section each person was put in, held for as long as this list is
+  /// mounted. See the long note where it is read, down in the bucketing.
+  /// ⚠ Up here with the other refs on purpose: read at render time in the
+  /// middle of the body, and a hook declared down there would break the moment
+  /// somebody adds an early return above it.
+  const placedRef = useRef(new Map<string, boolean>())
   const [groups, setGroups] = useState<RCQGroup[]>(() => _cachedAtMount?.groups ?? [])
   const [pending, setPending] = useState<PendingRequest[]>(() => _cachedAtMount?.pending ?? [])
   const [me, setMe] = useState<UserInfo | null>(() => _cachedAtMount?.me ?? null)
@@ -549,6 +555,28 @@ export function Contacts() {
   // which wins over status. iOS does the same: it sees the user's most-recent
   // intent. ⚠ The key carries the host: `1234` here and `1234@is2.rcq.app` are
   // two different people.
+  // ⚠⚠ WHICH SECTION A PERSON IS IN IS DECIDED ONCE AND THEN HELD, even though
+  // their flower keeps telling the truth. Presence arrives as a live event, and
+  // re-bucketing on it moved the row out of Offline and into Online under the
+  // reader's hand: every row below it jumped, and what the founder saw was the
+  // marks beside the names sliding down the screen while he was looking at
+  // something else (12.09, "вертикальное"). Nothing in the row's layout was
+  // wrong; the row itself was being carried.
+  //
+  // So the section is frozen per person for as long as this list is mounted,
+  // and a fresh load re-decides it. A contact who came online while you watched
+  // shows a green flower where they already were, which is the honest place to
+  // put a fact that arrived after the list was drawn — and the one place it
+  // costs nobody a lost line of sight.
+  const aroundWhenPlaced = (c: Contact) => {
+    const k = peerKey(c.uin, c.host)
+    const held = placedRef.current.get(k)
+    if (held !== undefined) return held
+    const now = isAround(c.status)
+    placedRef.current.set(k, now)
+    return now
+  }
+
   const archived: Contact[] = []
   const fav: Contact[] = []
   const online: Contact[] = []
@@ -562,7 +590,7 @@ export function Contacts() {
     if (archive.has(c.uin)) archived.push(c)
     else if (sid) file(filedContacts, sid, c)
     else if (favorites.has(c.uin)) fav.push(c)
-    else if (isAround(c.status)) online.push(c)
+    else if (aroundWhenPlaced(c)) online.push(c)
     else offline.push(c)
   }
   // Bucket groups the same way (separate fav/archive sets so a group id can't

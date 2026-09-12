@@ -5426,7 +5426,11 @@ const IncomingMessageRow = memo(function IncomingMessageRow({
               label={t('chat.actions.reply')}
               icon={<MenuReplyIcon />}
             />
-            {m.kind === 'text' && (
+            {/* #971: a caption is text too. Gated on the kind, a photo with a
+                paragraph under it had no Copy at all; `text` IS the caption
+                for media (incoming-store.ts:21), so the only question is
+                whether there is anything in it. */}
+            {m.text.trim() !== '' && (m.kind === 'text' || m.kind === 'photo' || m.kind === 'video' || m.kind === 'voice' || m.kind === 'file') && (
               <ActionButton onClick={() => h.copyText(m.text)} label={t('chat.actions.copy')} icon={<MenuCopyIcon />} />
             )}
             {canPin && isPlainText && (

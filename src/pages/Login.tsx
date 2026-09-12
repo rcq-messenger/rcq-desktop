@@ -6,7 +6,7 @@
 // a separate future feature; until then web is a standalone account.
 
 import { AnimatePresence, motion } from 'framer-motion'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import QRCode from 'qrcode'
 import { LanguagePicker } from '../components/LanguagePicker'
 import { ThemeToggle } from '../components/ThemeToggle'
@@ -35,6 +35,7 @@ import { ApiError, parseErrorCode } from '../lib/api'
 import { useServerCapabilities } from '../lib/use-server-info'
 import { formatUsd } from '../lib/server-info'
 import { islandLabel, rememberIsland, rememberedIsland, type IslandAddress } from '../lib/island-choice'
+import { FLAGSHIP_HOST } from '../lib/federation'
 import { rememberReachedIsland } from '../lib/remembered-islands'
 import { engageIslandEagerly, prePinIsland } from '../lib/island-trust'
 import { IslandAvatar } from '../components/IslandAvatar'
@@ -554,6 +555,15 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
   const tillUrl = caps.till_url
   const inAppEntry = sellsEntry && !!tillUrl
   const [checkout, setCheckout] = useState<{ resumeId?: string } | null>(null)
+  /// The paid invoice whose voucher is sitting in the code box, and the island
+  /// it was bought for. ⚠⚠ THE STORED ROW IS DROPPED ONLY ONCE THE ACCOUNT
+  /// EXISTS. The voucher itself lives in unpersisted React state, and the till
+  /// hands it back by invoice id alone, so forgetting the row at hand-off (as
+  /// this did) means a person who pays and then reloads, closes the tab or
+  /// fails to register has no route back to what they paid for: pressing Buy
+  /// again finds no invoice to resume and opens a second one. Kept in a ref
+  /// because nothing on screen depends on it.
+  const paidEntryInvoice = useRef<{ id: string; host: string } | null>(null)
   const islandHostname = islandLabel(island)
   const { name: islandCardName } = useIslandCard(island)
   // A payment that landed while nobody was looking: an entry invoice this
@@ -572,7 +582,7 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
           if (inv.status === 'paid' && inv.voucher) {
             setInvite(inv.voucher)
             setCodeRevealed(true)
-            forgetEntryInvoice(inv.id)
+            paidEntryInvoice.current = { id: inv.id, host: inv.host }
             return
           }
           if (inv.status === 'expired') forgetEntryInvoice(inv.id)
@@ -600,6 +610,14 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
       // Reached, so remembered: the picker offers this island again on this
       // profile, whichever account is active later (founder, 12.09).
       rememberReachedIsland(island, 'created')
+      // The voucher is spent, so the invoice can be forgotten, and not one
+      // moment earlier. The island check is for the person who paid here and
+      // then picked another island: that invoice is still theirs to resume.
+      const paid = paidEntryInvoice.current
+      if (paid && paid.host.toLowerCase() === islandHostname.toLowerCase()) {
+        forgetEntryInvoice(paid.id)
+        paidEntryInvoice.current = null
+      }
       const words = currentRecoveryPhrase()
       if (words) setPending({ id, words })
       else onDone(id) // shouldn't happen for a fresh account; fail open
@@ -770,7 +788,7 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
                 onPaid={(voucher, id) => {
                   setInvite(voucher)
                   setCodeRevealed(true)
-                  forgetEntryInvoice(id)
+                  paidEntryInvoice.current = { id, host: islandHostname }
                   setCheckout(null)
                 }}
                 onClose={() => setCheckout(null)}
@@ -851,15 +869,39 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
           and the links carry colour instead of an underline (founder, 07.09).
           The checkbox shrinks with it, or a 16px box next to 12px text reads
           as the subject of the sentence. */}
-      <label className="flex items-start gap-2 text-[0.6875rem] leading-snug text-fg-dim cursor-pointer select-none">
-        <input type="checkbox" className="mt-0.5 h-3 w-3 accent-accent" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} />
-        <span>
-          {t('login.terms.accept')}{' '}
-          <a href="https://rcq.app/terms" target="_blank" rel="noreferrer" className="text-accent no-underline hover:underline underline-offset-2">{t('login.terms.terms')}</a>
-          {' '}{t('login.terms.and')}{' '}
-          <a href="https://rcq.app/privacy" target="_blank" rel="noreferrer" className="text-accent no-underline hover:underline underline-offset-2">{t('login.terms.privacy')}</a>
-        </span>
-      </label>
+      {/* ⚠⚠ OUR DOCUMENTS COVER OUR ISLAND AND NOTHING ELSE. The gate asked
+          every visitor to accept rcq.app's terms and, worse, rcq.app's privacy
+          policy, which describes OUR database and OUR retention, for an
+          account that will live entirely on somebody else's server. So the
+          links follow the island: the flagship keeps its two, an island whose
+          operator named a `terms_url` gets that page, and one that named none
+          gets no link at all rather than a borrowed one. The checkbox stays in
+          all three cases, because somebody must still agree to something. */}
+      <div className="space-y-1">
+        <label className="flex items-start gap-2 text-[0.6875rem] leading-snug text-fg-dim cursor-pointer select-none">
+          <input type="checkbox" className="mt-0.5 h-3 w-3 accent-accent" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} />
+          <span>
+            {islandHostname.toLowerCase() === FLAGSHIP_HOST ? (
+              <>
+                {t('login.terms.accept')}{' '}
+                <a href="https://rcq.app/terms" target="_blank" rel="noreferrer" className="text-accent no-underline hover:underline underline-offset-2">{t('login.terms.terms')}</a>
+                {' '}{t('login.terms.and')}{' '}
+                <a href="https://rcq.app/privacy" target="_blank" rel="noreferrer" className="text-accent no-underline hover:underline underline-offset-2">{t('login.terms.privacy')}</a>
+              </>
+            ) : caps.terms_url ? (
+              <>
+                {t('login.terms.island_accept')}{' '}
+                <a href={caps.terms_url} target="_blank" rel="noreferrer noopener" className="text-accent no-underline hover:underline underline-offset-2">{t('login.terms.island_rules')}</a>
+              </>
+            ) : (
+              t('login.terms.island_no_rules')
+            )}
+          </span>
+        </label>
+        {islandHostname.toLowerCase() !== FLAGSHIP_HOST && (
+          <p className="pl-5 text-[0.6875rem] leading-snug text-fg-dim">{t('login.terms.island_operator')}</p>
+        )}
+      </div>
       <button
         onClick={submit}
         disabled={busy || !nickname.trim() || !accepted || (requireCode && !invite.trim())}

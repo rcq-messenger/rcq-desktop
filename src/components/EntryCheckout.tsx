@@ -25,8 +25,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import QRCode from 'qrcode'
-import { Till, TillError, rememberEntryInvoice, forgetEntryInvoice, type EntryInvoice } from '../lib/till'
+import { Till, TillError, rememberEntryInvoice, forgetEntryInvoice, listEntryInvoices, type EntryInvoice } from '../lib/till'
 import { useI18n } from '../lib/i18n-context'
+import { formatUsd } from '../lib/server-info'
 import { CoinIcon } from './CoinIcons'
 
 const SPRING = { type: 'spring' as const, stiffness: 420, damping: 34 }
@@ -105,13 +106,30 @@ export function EntryCheckout({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [left, setLeft] = useState<number>(0)
+  /// What the till quoted for this island a moment ago, in cents. The caller's
+  /// `priceDisplay` is built from /server/info, read once for the run, so an
+  /// operator who edits the price mid-session leaves it showing the old one.
+  const [quotedCents, setQuotedCents] = useState<number | null>(null)
+  /// The stored invoice id came back from its own till as "no such invoice".
+  /// Set only by the resume effect below, and only for that answer.
+  const [resumeGone, setResumeGone] = useState(false)
+  /// ⚠⚠ WHICH TILL THIS INVOICE LIVES AT, which is not always the island's
+  /// current one. An invoice id only exists at the till that wrote it, and the
+  /// row carries that address (`rcq.web.entry.invoices`); an operator who
+  /// changes `uin_till_url` between paying and coming back would otherwise
+  /// have us ask the NEW till about an id it never issued, get "no such
+  /// invoice", and drop a row that still has money behind it. A fresh invoice
+  /// is written at the island's current till, so the default is that.
+  const [invoiceTill, setInvoiceTill] = useState(
+    () => (resumeId ? listEntryInvoices().find((r) => r.id === resumeId)?.tillUrl : '') || tillUrl,
+  )
   const handed = useRef(false)
   const flagship = host.toLowerCase() === 'api.rcq.app'
 
   useEffect(() => {
-    if (!resumeId) return
+    if (!resumeId || resumeGone) return
     let dead = false
-    Till.entryInvoice(resumeId, tillUrl).then(
+    Till.entryInvoice(resumeId, invoiceTill).then(
       (inv) => {
         if (dead) return
         setInvoice(inv)
@@ -124,23 +142,41 @@ export function EntryCheckout({
           margin: 1, width: 320, color: { dark: '#000000', light: '#FFFFFF' },
         }).then((url) => !dead && setQr(url), () => {})
       },
-      () => !dead && setError(t('uin_checkout.error.unreachable')),
+      (e) => {
+        if (dead) return
+        // ⚠ A till that ANSWERS "no such invoice" is final, and the stored row
+        // goes with it: an operator who rebuilt their till on an empty
+        // database turns every id this browser kept into a 404, and a row left
+        // behind then blocks the resume path forever, so this island could
+        // never be paid from this browser again. Anything else keeps the id,
+        // `http_404` included: that one is a 404 whose body was NOT the till's
+        // own answer (a CDN page, a proxy mid-deploy, a route not up yet), and
+        // those heal, while the money behind the row does not come back.
+        if (e instanceof TillError && e.code === 'not_found') {
+          forgetEntryInvoice(resumeId)
+          setResumeGone(true)
+          return
+        }
+        setError(t('uin_checkout.error.unreachable'))
+      },
     )
     return () => {
       dead = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resumeId])
+  }, [resumeId, resumeGone, invoiceTill])
 
   useEffect(() => {
     let dead = false
-    if (resumeId) return
+    if (resumeId && !resumeGone) return
     Till.entryQuote(host, tillUrl).then(
       (q) => {
         if (dead) return
         // The ISLAND's answer, through its till: a price of zero is "not on
         // sale", whatever the picker said a minute ago.
         if (!(q.price_cents > 0) || q.chains.length === 0) setError(t('entry_checkout.not_for_sale'))
+        // And when it is on sale, this is the figure the invoice will carry.
+        else setQuotedCents(q.price_cents)
         setChains(q.chains.map((c) => ({ id: c.id, label: c.label })))
       },
       () => !dead && setError(t('uin_checkout.error.unreachable')),
@@ -149,7 +185,7 @@ export function EntryCheckout({
       dead = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [host, tillUrl])
+  }, [host, tillUrl, resumeGone])
 
   const open = useCallback(
     async (chain: string) => {
@@ -160,6 +196,7 @@ export function EntryCheckout({
         // Stored BEFORE anything else can fail: an invoice we cannot find
         // again is money that cannot be accounted for.
         rememberEntryInvoice(inv, tillUrl)
+        setInvoiceTill(tillUrl)
         setInvoice(inv)
         setQr(
           await QRCode.toDataURL(payUri(inv.chain, inv.address, inv.amount), {
@@ -190,7 +227,7 @@ export function EntryCheckout({
     let dead = false
     const tick = async () => {
       try {
-        const fresh = await Till.entryInvoice(invoice.id, tillUrl)
+        const fresh = await Till.entryInvoice(invoice.id, invoiceTill)
         if (dead) return
         setInvoice(fresh)
         if (fresh.status === 'paid' && fresh.voucher && !handed.current) {
@@ -206,7 +243,7 @@ export function EntryCheckout({
       dead = true
       clearInterval(h)
     }
-  }, [invoice, onPaid, tillUrl])
+  }, [invoice, onPaid, invoiceTill])
 
   useEffect(() => {
     if (!invoice) return
@@ -218,6 +255,15 @@ export function EntryCheckout({
 
   const mm = String(Math.floor(left / 60)).padStart(2, '0')
   const ss = String(left % 60).padStart(2, '0')
+
+  // What is actually being charged, and never the caller's cached figure once
+  // the till has spoken: the invoice's own dollars first (the till asked the
+  // island for them when it wrote the invoice), then the live quote. The
+  // caller's string holds the place only until one of the two arrives.
+  // Without this a price edited mid-session was read in dollars off
+  // /server/info and paid in crypto at the new one, with nothing on screen
+  // saying so.
+  const chargedCents = invoice ? Math.round(invoice.usd * 100) : quotedCents
 
   // Who sells and what comes back, beside every control that takes money.
   const legal = (
@@ -260,7 +306,11 @@ export function EntryCheckout({
         <div className="text-center">
           <div className="text-lg font-semibold tracking-tight">{t('entry_checkout.title', { island: islandName || host })}</div>
           <div className="text-xs text-fg-dim">{host}</div>
-          <div className="mt-2 text-2xl font-bold tabular-nums">{priceDisplay}</div>
+          <div className="mt-2 text-2xl font-bold tabular-nums">
+            {chargedCents != null
+              ? t('island.entry.price', { price: formatUsd(chargedCents) })
+              : priceDisplay}
+          </div>
         </div>
 
         {/* No AnimatePresence around these three: see UinCheckout. */}

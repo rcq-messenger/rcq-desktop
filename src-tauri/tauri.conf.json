@@ -46,6 +46,7 @@
   "plugins": {
     "updater": {
       "endpoints": [
+        "https://api.rcq.app/desktop/latest.json",
         "https://dl.rcq.app/desktop/latest.json",
         "https://rcq.app/desktop/latest.json"
       ],

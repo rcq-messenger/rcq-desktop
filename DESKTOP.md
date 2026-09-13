@@ -166,10 +166,27 @@ build is published it prompts, downloads, installs, and relaunches.
 - **Update signing key:** `~/.rcq/desktop-updater/rcq-desktop.key` (private —
   BACK IT UP; losing it breaks updates) + `.key.pub`. The public key is pinned
   in `tauri.conf.json` `plugins.updater.pubkey`.
-- **Endpoint:** `https://rcq.app/desktop/latest.json`, served straight off the
-  droplet from `/var/www/rcq/desktop/` (`rcq.app` is DNS-only in Cloudflare and
-  Caddy sends `cache-control: no-cache`, so there is no CDN copy to bust).
-  `deploy/deploy-web.sh` excludes `desktop/`, so a landing deploy won't wipe it.
+- **Endpoints, in order:** `https://api.rcq.app/desktop/latest.json`, then
+  `https://dl.rcq.app/...`, then `https://rcq.app/...`. All three are the same
+  file off the droplet's `/var/www/rcq/desktop/`; `deploy/deploy-web.sh`
+  excludes `desktop/`, so a landing deploy won't wipe it.
+
+  ⚠⚠ THE ORDER IS THE POINT, and the line that used to be here was out of date
+  in a way that cost people their updates. It said "`rcq.app` is DNS-only in
+  Cloudflare". It is not, not any more: on 13.09.2026 `dig rcq.app` and
+  `dig dl.rcq.app` both give 104.21.95.8 and 172.67.142.123, the same pair of
+  Cloudflare addresses, so BOTH endpoints were orange clouded and a desktop
+  behind a carrier that throttles Cloudflare could not even learn that an update
+  existed. Report #980, "автообновление запускается только на машинах со
+  включенным VPN". `api.rcq.app` is the only grey host left (165.232.69.229,
+  straight at the droplet) and it is the one the app must reach to carry a
+  single message, so it goes first: an update check now works wherever messaging
+  works.
+
+  ⚠ The MANIFEST only. The artifacts stay on the CDN deliberately, because 470 MB
+  of release traffic through the API box is what took the island down at 13:04 on
+  13.09. Somebody in that position still learns an update exists and still cannot
+  download it; that half of #980 is open.
 
 To cut a release:
 

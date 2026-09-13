@@ -226,8 +226,8 @@ function PhraseGrid({ words }: { words: string[] }) {
 
 function RecoverPane({ onDone }: { onDone: (id: WebIdentity) => void }) {
   const { t } = useI18n()
+  const { toast } = useToast()
   const [phrase, setPhrase] = useState('')
-  const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [island, setIsland] = useState(() => rememberedIsland())
   // ⚠ This pane used to restore onto `rememberedIsland()` with no way to see
@@ -239,7 +239,6 @@ function RecoverPane({ onDone }: { onDone: (id: WebIdentity) => void }) {
   // the row behind an "Advanced" disclosure since it shipped.
 
   async function submit() {
-    setError(null)
     setBusy(true)
     try {
       const id = await recoverFromPhrase(phrase, island)
@@ -249,7 +248,7 @@ function RecoverPane({ onDone }: { onDone: (id: WebIdentity) => void }) {
       onDone(id)
     } catch (e) {
       const code = e instanceof RecoverError ? e.code : 'network'
-      setError(t(`login.recover.error.${code}`))
+      toast(t(`login.recover.error.${code}`), 'error')
     } finally {
       setBusy(false)
     }
@@ -274,9 +273,6 @@ function RecoverPane({ onDone }: { onDone: (id: WebIdentity) => void }) {
           white slab with dark red text sitting on a black page, which is the
           "looks cheap" the founder means (07.09). Same box as the create
           pane's now, so the two halves of the join path fail alike. */}
-      {error && (
-        <div className="text-sm text-red-500 bg-red-500/10 border border-red-500/25 rounded-md p-2">{error}</div>
-      )}
       <button
         onClick={submit}
         disabled={busy || phrase.trim().split(/\s+/).length < 24}
@@ -469,7 +465,6 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
   const { t } = useI18n()
   const { toast } = useToast()
   const [nickname, setNickname] = useState(() => suggestNickname())
-  const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   // After registration we hold the new identity + its phrase and show a
   // mandatory backup card BEFORE entering the app — losing the phrase means
@@ -610,8 +605,19 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
   // resident) and does not decide whether registration needs a code.
   const requireCode = needsInvite || caps.registration_policy !== 'open'
 
+  /// ⚠ Every refusal below goes to the TOAST, and none of them draws a panel.
+  /// This screen used to answer with a red box under the form, which is one of
+  /// the four idioms lib/toast was built to replace and the only one that had
+  /// not been converted: its own docstring names this file. The founder, on a
+  /// wrong access code (13.09): "у нас же есть минималистичный тост уже, зачем
+  /// рисовать таблицу под полем для ввода".
+  ///
+  /// Nothing durable is lost with the box. The two refusals that CHANGE the
+  /// screen still change it: `invite_required` and `invite_invalid` both reveal
+  /// the code field, and the paragraph under that field explains standing why a
+  /// code is wanted, so a person who comes back after the toast has gone still
+  /// finds the answer where it belongs.
   async function submit() {
-    setError(null)
     setBusy(true)
     try {
       const id = await createNewAccount(nickname, island, invite)
@@ -652,10 +658,10 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
         // showing people its own raw JSON, which is the exact failure the
         // comment above was written about — under a second name.
         setNeedsInvite(true)
-        setError(t(code === 'entry_required' ? 'auth.error.entry_required' : 'auth.error.invite_required'))
+        toast(t(code === 'entry_required' ? 'auth.error.entry_required' : 'auth.error.invite_required'), 'error')
       } else if (code === 'invite_invalid') {
         setNeedsInvite(true)
-        setError(t('auth.error.invite_invalid'))
+        toast(t('auth.error.invite_invalid'), 'error')
       } else if (e instanceof TypeError) {
         // ⚠ A TypeError out of `fetch` is the ONLY thing a browser gives us for
         // "the island did not answer": DNS, a dead host, a blocked network, a
@@ -665,10 +671,10 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
         // founder's "could not connect" (07.09) — and it stays INSIDE the form,
         // with the address one tap away, rather than becoming a dialog whose
         // only button is "try again".
-        setError(t('auth.error.register_offline', { island: islandLabel(island) }))
+        toast(t('auth.error.register_offline', { island: islandLabel(island) }), 'error')
       } else {
         const detail = e instanceof Error ? e.message : 'unknown'
-        setError(t('auth.error.register_failed', { detail }))
+        toast(t('auth.error.register_failed', { detail }), 'error')
       }
     } finally {
       setBusy(false)
@@ -743,7 +749,6 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
           // it on: carrying it to the next one puts an unexplained field back
           // on a screen that did not ask for one. The typed code stays.
           setCodeRevealed(false)
-          setError(null)
         }}
       />
 
@@ -860,12 +865,6 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
           <p className="text-xs text-fg-dim">
             {t(doorIsShut ? 'login.create.invite_hint' : 'login.create.invite_hint_paid')}
           </p>
-        </div>
-      )}
-
-      {error && (
-        <div className="text-sm text-red-500 bg-red-500/10 border border-red-500/25 rounded-md p-2">
-          {error}
         </div>
       )}
 

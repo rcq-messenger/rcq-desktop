@@ -1,0 +1,27 @@
+Компьютер 0.3.82. Вход по QR наконец работает предсказуемо. Телефон кладёт запечатанный аккаунт на СВОЙ остров и иначе не может, а в самом QR-коде острова нет вообще, поэтому окно ожидания спрашивало тот остров, который случайно запомнился на других вкладках входа. Стоило один раз выбрать другой остров где-нибудь на этом экране, и панель QR уходила стучаться туда навсегда: телефон говорил «готово» и показывал новую сессию, а компьютер ждал вечно. Теперь у панели своё поле острова, по умолчанию тот же, что и раньше, и смена острова перезапускает ожидание со свежим кодом.
+
+Проверка обновлений больше не упирается в один хост. Оба адреса, которые мы спрашивали, оказались за Cloudflare, поэтому там, где его придушили, компьютер не мог даже узнать, что обновление вышло. Первым теперь спрашивается адрес острова, который не за Cloudflare: если сообщения ходят, то и проверка обновлений работает. Сами файлы по-прежнему на CDN, это пока не лечится.
+
+Ошибка при неверном коде доступа больше не рисует красную панель под формой, а говорит одной строкой внизу, как и все остальные ответы в приложении.
+
+И список контактов перестал ездить. У строки комнаты вторая строка больше не переносится на два ряда, когда приходит упоминание: раньше от этого строка вырастала и весь список ниже уезжал вниз, причём у человека, который ничего не делал. Значок упоминания теперь держит своё место, а не толкает метку рядом с названием комнаты.
+
+---
+
+Desktop 0.3.82. Linking by QR finally behaves. The phone deposits the sealed account to ITS island and can do nothing else, and the QR carries no island at all, so the waiting pane asked whichever island happened to be remembered from the other login tabs. Pick a different island once anywhere on that screen and the QR pane went on knocking there for good: the phone said done and showed a new session while the computer waited for ever. The pane has its own island field now, defaulting to what it used before, and changing it restarts the wait with a fresh code.
+
+The update check no longer depends on one host. Both addresses we asked turned out to be behind Cloudflare, so where that is throttled the computer could not even learn an update existed. It now asks the island's own address first, which is not behind Cloudflare: if messages get through, the update check does. The files themselves are still on the CDN, and that part is not fixed yet.
+
+A wrong access code no longer draws a red panel under the form; it says one line at the bottom like every other answer in the app.
+
+And the contact list stopped sliding. A room's second line no longer wraps onto two rows when a mention arrives: it used to make the row taller and push everything below it down the screen, for a reader who had done nothing. The mention glyph now holds its own place instead of shoving the mark beside the room's name.
+
+---
+
+桌面版 0.3.82。扫码登录终于可预期了。手机只能把封装好的账户放到它自己的岛屿上，而二维码里根本没有岛屿信息，所以等待页面问的是登录界面其他标签页碰巧记住的那个岛屿。只要在该界面任何地方选过一次别的岛屿，扫码页面就会一直去那里询问：手机显示"完成"并出现新会话，电脑却永远等下去。现在该页面有了自己的岛屿输入框，默认与此前一致，更换岛屿会用新的二维码重新开始等待。
+
+更新检查不再依赖单一主机。我们询问的两个地址都在 Cloudflare 后面，所以在其被限速的地方，电脑甚至无法得知有新版本。现在会先询问岛屿本身的地址，它不在 Cloudflare 后面：只要消息能通，更新检查就能通。安装文件仍在 CDN 上，这一半尚未解决。
+
+访问代码输入错误时不再在表单下方画一块红色面板，而是像应用里其他回应一样，在底部用一行文字说明。
+
+联系人列表也不再滑动了。收到提及时，房间行的第二行不会再折成两行：以前这会让该行变高，把下面所有行都往下推，而读者什么都没做。提及标记现在会占住自己的位置，不再挤动房间名旁边的标记。

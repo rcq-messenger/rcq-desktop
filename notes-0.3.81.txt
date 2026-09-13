@@ -1,0 +1,15 @@
+Компьютер 0.3.81. Мелкие правки, которые видно каждый день. Серый цветок у кросс-островных контактов был меньше остальных: список рисует строки двумя разными компонентами, и один передавал 20 пикселей вместо 28. Вместе с цветком уезжала влево и вся строка.
+
+И ошибка при неудачной отправке перестала быть машинной. Раньше под сообщением краснело «500: {"detail":"internal_error"}», теперь там написано, занят ли остров или пропала связь, и что сообщение сохранено. Отдельно различается «нет сети»: это не поломка острова, а телефон в лифте, и выглядеть это должно по-разному.
+
+---
+
+Desktop 0.3.81. Small things you see every day. The gray flower on a cross-island contact was smaller than the others: the list draws its rows with two different components and one of them passed 20 pixels instead of 28, which also moved the whole row eight pixels left.
+
+And a failed send no longer speaks machine. Where it used to say `500: {"detail":"internal_error"}` in red under the message, it now says whether the island is busy or the connection is gone, and that the message is kept. "No connection" is told apart from an island failure on purpose: one is a phone in a lift and the other is not, and they should not look the same.
+
+---
+
+桌面版 0.3.81。每天都看得见的小修正。跨岛联系人的灰色花朵比其他的小：列表用两种不同的组件绘制行，其中一个传的是 20 像素而不是 28，整行也因此左移了八个像素。
+
+发送失败的提示也不再是机器话。以前消息下面会用红色显示 `500: {"detail":"internal_error"}`，现在会说明是岛屿繁忙还是网络中断，并告诉您消息已保存。“没有网络”与岛屿故障被刻意区分开：一个是手机进了电梯，另一个不是，两者不该看起来一样。

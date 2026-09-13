@@ -234,6 +234,15 @@ export function Contacts() {
   /// middle of the body, and a hook declared down there would break the moment
   /// somebody adds an early return above it.
   const placedRef = useRef(new Map<string, boolean>())
+  /// Whether the island has answered about this roster yet. Placement is frozen
+  /// only from that moment: the first paint's statuses come from
+  /// `contactsCache`, which can be minutes stale, and freezing to those pinned
+  /// people into the wrong section for the whole mount — the Online heading
+  /// disagreeing with the green flowers under it until the screen was left and
+  /// re-entered. Set in the refresh's `finally`, so a failed refresh still
+  /// freezes (the cache is then all there is, and a live presence event must
+  /// still not carry a row out from under the reader).
+  const placementReadyRef = useRef(false)
   const [groups, setGroups] = useState<RCQGroup[]>(() => _cachedAtMount?.groups ?? [])
   const [pending, setPending] = useState<PendingRequest[]>(() => _cachedAtMount?.pending ?? [])
   const [me, setMe] = useState<UserInfo | null>(() => _cachedAtMount?.me ?? null)
@@ -435,6 +444,13 @@ export function Contacts() {
       if (!background) setError(e instanceof Error ? e.message : t('contacts.error'))
     } finally {
       if (!background) setLoading(false)
+      // First answer about this roster, good or bad: from here the sections
+      // hold. Anything placed off the stale cache is dropped so the buckets are
+      // re-decided once, against statuses the island vouched for.
+      if (!placementReadyRef.current) {
+        placementReadyRef.current = true
+        placedRef.current.clear()
+      }
     }
   }
 
@@ -564,7 +580,9 @@ export function Contacts() {
   // wrong; the row itself was being carried.
   //
   // So the section is frozen per person for as long as this list is mounted,
-  // and a fresh load re-decides it. A contact who came online while you watched
+  // and a fresh load re-decides it. ⚠ The freeze does not start until the
+  // island has answered once (placementReadyRef): freezing against the stale
+  // cache is how a green flower ended up sitting under the Offline heading. A contact who came online while you watched
   // shows a green flower where they already were, which is the honest place to
   // put a fact that arrived after the list was drawn — and the one place it
   // costs nobody a lost line of sight.
@@ -573,7 +591,7 @@ export function Contacts() {
     const held = placedRef.current.get(k)
     if (held !== undefined) return held
     const now = isAround(c.status)
-    placedRef.current.set(k, now)
+    if (placementReadyRef.current) placedRef.current.set(k, now)
     return now
   }
 

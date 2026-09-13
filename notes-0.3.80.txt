@@ -1,0 +1,15 @@
+Компьютер 0.3.80. Экран входа и мелочи, которые дёргались. Вход открывается на обычном создании аккаунта, а не на подключении телефона, кнопки вкладок больше не наезжают друг на друга по-русски, а выход из кассы стал такой же капсулой, как переключатель языка. Карусель островов больше не обрезается по краям, у неё мягкое затухание и нормальные стрелки. В заголовке резидентства появилась оранжевая печать со свечением, и она же остаётся на экране ожидания оплаты. В кассе появился Polygon: USDT и USDC в этой сети, рядом с TRON и TON.
+
+И главное, ради чего это стоит поставить: рядом с сообщением больше ничего не двигается после того, как оно нарисовано. Галки доставки стоят на одном месте во всех четырёх состояниях, подсветка «прочитано» больше не толкает их влево. Галка у ника не прыгает, когда дорисовывается аватарка отправителя. Реакции не разъезжаются, когда подгружаются картинки, и то же исправлено под смайликами в тексте, в списке тех, кто поставил реакцию, и в восстановленном черновике. В контакт-листе секции больше не раскладываются по устаревшим статусам, поэтому зелёный кружок не оказывается под заголовком «Не в сети».
+
+---
+
+Desktop 0.3.80. The login screen, and the small things that twitched. Login opens on creating an account rather than on linking a phone, the tab buttons no longer overlap in Russian, and the way out of the checkout is now the same capsule as the language switch. The island carousel is no longer clipped at the edges: it fades softly and has proper arrows. The residency screen wears an orange seal with a glow, and keeps it while a payment is waited for. The checkout gained Polygon: USDT and USDC on that network, beside TRON and TON.
+
+And the part worth installing it for: nothing beside a message moves after it is drawn. The delivery ticks hold one position through all four states, and the "read" tint no longer pushes them left. The mark beside a nickname no longer jumps when the sender's picture finishes decrypting. Reactions no longer walk sideways as their images arrive, and the same is fixed under inline smileys, in the list of who reacted, and in a restored draft. In the contact list the sections are no longer laid out from stale statuses, so a green dot can no longer sit under the "Offline" heading.
+
+---
+
+桌面版 0.3.80。登录界面，以及那些会抖动的小东西。登录现在默认打开创建账户，而不是连接手机；俄语界面下的标签按钮不再互相重叠；离开收银台的按钮变成了和语言切换一样的胶囊形。岛屿轮播不再被边缘裁切，改为柔和渐隐并配有正常的箭头。居留页面加上了带光晕的橙色印章，等待付款时也会保留。收银台新增 Polygon：该网络上的 USDT 和 USDC，与 TRON 和 TON 并列。
+
+最值得为此升级的一点：消息旁边的东西一旦画出来就不再移动。送达对勾在四种状态下都停在同一位置，“已读”的底色不再把它们往左推。发送者头像解密完成时，昵称旁的标记不再跳动。表情回应不会随着图片加载而横向滑动，文本中的内嵌表情、回应者列表和恢复的草稿也做了同样的修正。联系人列表不再按过期状态分组，绿点不会再出现在“离线”标题下面。

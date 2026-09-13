@@ -270,8 +270,22 @@ def upload(work, version, names):
     )
     print(f"  backed up as *{suffix}")
 
+    # ⚠⚠ THROTTLED, and the reason is an outage. dl.rcq.app is orange-clouded
+    # but its ORIGIN is this same droplet, the one that serves api.rcq.app, and
+    # /var/www/rcq is on its disk. On 13.09.2026 a 0.3.80 publish pushed ~470 MB
+    # up at line rate at 13:04 and Cloudflare then pulled every one of those
+    # files back down on the first request for each. The API went with it:
+    # requests over five seconds went 31 -> 123 -> 281 per minute, transactions
+    # stayed open while requests waited, the app's 40 pooled connections were
+    # all checked out, and from 13:12 SQLAlchemy started timing out at twenty
+    # seconds and returning 500 to real people mid-conversation. Nothing was
+    # wrong with the database: max_connections was nowhere near, the box was 86%
+    # idle, and the island simply could not be reached in time.
+    #
+    # 12 MB/s leaves the uplink to the island. A release takes a few minutes
+    # longer, which is not a cost worth measuring.
     subprocess.run(
-        ["rsync", "-az", *[str(work / n) for n in names], work / "latest.json",
+        ["rsync", "-az", "--bwlimit=12M", *[str(work / n) for n in names], work / "latest.json",
          f"{HOST}:{REMOTE}/"],
         check=True,
     )

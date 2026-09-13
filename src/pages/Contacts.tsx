@@ -26,7 +26,7 @@ import { AltText } from '../components/AltText'
 import { applySealedStateAll, loadRoomKeys } from '../lib/group-state'
 import { loadProfileKeys, myProfileKey } from '../lib/profile-key'
 import { AnimatePresence } from 'framer-motion'
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { BypassShield } from '../components/BypassShield'
 import { ChatPreviewModal } from '../components/ChatPreviewModal'
@@ -1614,6 +1614,21 @@ function ContactRow({
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5">
               <RowName name={alias || contact.nickname || `${contact.uin}`} strong={unread > 0} />
+              {/* ⚠ NO RESERVED LANE HERE, and that is a decision, not an
+                  omission. The seal's x IS the rendered width of the name,
+                  because RowName is `truncate` and therefore content-sized
+                  until it clamps, so any glyph appearing between them drags it:
+                  measured 16.5 to 25.3px for a gender glyph, 19.6 to 22.5 for a
+                  block, 18.6 to 28.4 for the island's mark, at the three text
+                  sizes, on every clamped row.
+                  Reserving room for all four costs a clamped name 54 to 68px,
+                  about nine characters, on every row, for ever. These four only
+                  change when the FACT changes: somebody set a gender, earned a
+                  mark, got blocked, or the reader muted them. A mark that moves
+                  because the thing it describes changed is honest; nine
+                  characters off every long name, every day, to hide it is not.
+                  The mention lane below is reserved, because that one moves
+                  while you are looking at a list where nothing happened. */}
               <BadgeMark kind={contact.badge} />
               <GenderIcon gender={contact.gender} />
               {muted && <MuteGlyph />}
@@ -1823,24 +1838,55 @@ function GroupRow({
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5">
               <RowName name={group.name} strong={unread > 0} />
+              {/* Not reserved, for the reason spelled out on the contact row:
+                  a room's mark changes when the island changes it, and the bell
+                  is the reader's own doing a moment earlier. */}
               <BadgeMark kind={group.badge} />
               {isMuted && <MuteGlyph />}
             </div>
-            <div className="text-xs text-fg-dim">
+            {/* ⚠⚠ `truncate`, which a person row's second line has always
+                had and this one did not. Without it the line WRAPS, and then
+                the row's HEIGHT depends on how much text fits across. Caught by
+                the same per-frame watch on the real page, at 380px and the
+                largest text step: a mention arriving narrowed this column, "12
+                members" fell onto a second line, each room's li grew 22.750px,
+                and every row below moved 45.500px down the screen. That is the
+                only movement in this list one row can inflict on another, and
+                the headcount is live - somebody joins a room and the number
+                changes under a reader who did nothing - so other people could
+                move the whole list under his hand. One line, always. Measured
+                again after: 0.000px. */}
+            <div className="text-xs text-fg-dim truncate">
               {t('section.groups.members', { n: compactCount(memberCount(group)) })}
               {group.host && <span className=""> · {group.host}</span>}
             </div>
           </div>
         </Link>
-        {mentioned && (
-          <span
-            title={t('contacts.mentioned_you')}
-            aria-label={t('contacts.mentioned_you')}
-            className="flex-none text-accent font-semibold text-sm leading-none"
-          >
-            @
-          </span>
-        )}
+        {/* ⚠⚠ THE ONE MARK ON THIS SCREEN THAT OTHER PEOPLE MOVE WHILE YOU
+            WATCH, which is what makes it the closest thing in this app to what
+            the founder keeps reporting. It sat outside the reserved unread slot
+            beside it, so the row narrowed the moment somebody called your name
+            in a room and widened again when you read it, and a clamped room
+            name carried its seal that far each way: measured on the real page
+            against the real mention store, 23.109 / 27.016 / 34.828px at the
+            three text sizes - the glyph plus the row's own gap.
+
+            ⚠ This is the ONLY reserved lane in the list, and the choice is
+            affordability, measured, not taste. A group row has no profile
+            button, so it has 152.63px of name line at 380px against a contact
+            row's 115.13px, and this reserve is 13.89px against the 58.58px that
+            reserving all four marks beside a contact's name would have cost.
+            The marks beside a name are not reserved for that reason: see the
+            note there. The gap here was being spent regardless, since an
+            always-rendered lane is one more flex item whether it draws anything
+            or not.
+
+            Cost: 13.89px of room name at the desktop root (11.95 / 13.89 /
+            17.77px at the three text sizes), on rooms whose name is long enough
+            to clamp, drawn or not. */}
+        <MarkLane ghost={<MentionGlyph />}>
+          {mentioned && <MentionGlyph label={t('contacts.mentioned_you')} />}
+        </MarkLane>
         <span className="flex-none inline-flex min-w-[2.25rem] justify-center">
           {unread > 0 && <UnreadBadge n={unread} />}
         </span>
@@ -1879,6 +1925,22 @@ function GroupRow({
 }
 
 // SVG icons -------------------------------------------------------
+
+// Somebody called your name in a room. Separate from the unread count on
+// purpose: forty unread messages in a busy group is noise, one addressed to you
+// is not. A component rather than inline markup so `MarkLane`'s ghost can hold
+// its exact box without a second copy of the classes going stale.
+function MentionGlyph({ label }: { label?: string }) {
+  return (
+    <span
+      title={label}
+      aria-label={label}
+      className="flex-none text-accent font-semibold text-sm leading-none"
+    >
+      @
+    </span>
+  )
+}
 
 // Muted indicator next to a contact/group name — a proper bell-with-slash
 // glyph, not an emoji (founder: "должна быть не эмодзи, а обычные иконки").
@@ -1979,8 +2041,6 @@ function PersonIcon() {
     </svg>
   )
 }
-/// Gender glyph next to a contact's name (iOS/Android parity). Male = blue ♂,
-/// female = pink ♀; anything else renders nothing.
 /// A row's name, whose BOX does not change when the weight does.
 ///
 /// ⚠⚠ THIS IS WHY THE MARK USED TO DRIFT, and the 07.09 fix missed it. The
@@ -2015,6 +2075,97 @@ function RowName({ name, strong }: { name: string; strong: boolean }) {
   )
 }
 
+/// A lane for the marks that follow a name, as wide as ALL of them whether they
+/// are drawn or not.
+///
+/// ⚠⚠ WHY A MARK MOVES WHEN THE ROW DID NOTHING, after the unread slot (07.09)
+/// and RowName's bold ghost had each fixed their own half. `truncate` is
+/// overflow-hidden plus an ellipsis and nothing else, so a name is sized by its
+/// CONTENT until the text overflows and by THE SPACE LEFT once it does. Every
+/// glyph after the name therefore decides where the name stops, and so decides
+/// where the seal sits. Measured on the REAL page, with a real roster answer
+/// landing while the list was on screen and every badge read on every animation
+/// frame for 8s: one gender glyph arriving is worth 19.453px of seal, a block
+/// 20.562px, the island's own seal 21.875px. At the three text sizes the gender
+/// glyph is worth 16.547 / 19.453 / 25.282px.
+///
+/// A roster answer is the dangerous one, because it replaces EVERY row: a
+/// gender the peer set on their phone, or a block that synced from another
+/// device, slides the seal on a row the reader never touched, at a moment
+/// nothing on screen explains. That is "галки смещаются только у тех кого нет
+/// смены" (founder, 13.09), as near as this layout can produce it.
+///
+/// ⚠ NOT what he named as the trigger, and that was measured too before any of
+/// this was written. A presence frame, with or without a status message, moves
+/// nothing: seven drivers x three widths x three text sizes, 482 frames a run,
+/// every badge x and every row height, range 0.000px. Line 2 cannot reach line
+/// 1 - both the row's Link and the two-line column are `flex-1 min-w-0`, so
+/// their basis is 0 and no text below contributes width to anything above.
+/// Changing one row moves no other row (0.000px). Do not go looking there.
+///
+/// So the lane holds room for the whole set. The width comes from an invisible
+/// ghost carrying it, the same trick RowName uses for the bold flip and AltText
+/// for its two texts: no magic number to keep in step with four glyphs measured
+/// in three different units (rem for the seal, em for the gender glyph, fixed px
+/// for the two SVGs), and it stays exact at every font scale and in every
+/// engine. ⚠ The ghost must be a SUPERSET of what the row can draw: the two
+/// stack in ONE grid cell, so the cell is the WIDER of them, and a visible mark
+/// the ghost does not carry widens the cell and brings the drift straight back.
+///
+/// ⚠ THE COST, and it is not small: on a name long enough to clamp, the text
+/// loses the width of the marks it does not have. Measured on the real page, a
+/// clamped contact name goes 448.25px -> 389.67px on a 470.13px line, which is
+/// 58.58px or about nine characters, and 53.70 / 58.58 / 68.35px at the three
+/// text sizes. It reads as an earlier clamp, not as a gap: the spare room sits
+/// to the RIGHT of the marks, in space that was already empty. Short names are
+/// untouched, and most of a list is short names - "iq00" measures 38.52px with
+/// the lane and 38.52px without. What a long name buys for those nine
+/// characters is a seal that sits at one x for as long as the name says the
+/// same thing.
+///
+/// ⚠⚠ AND THE RESERVE IS GIVEN BACK BELOW 520px, deliberately, because there it
+/// costs more than the drift. A 380px window has 115.13px of name line at the
+/// desktop root; holding 58.58px of it clamps names that fit today, and this
+/// was settled by looking at the render rather than at the number - "SergVN"
+/// became "S…" and "iq00" became "iq…". At 520px the same reserve still leaves
+/// "imi.alek…" with its seal at the largest text step, and everything shorter
+/// untouched. So a window under 520px keeps the drift, and a reader there still
+/// sees the seal step 16.5-25.3px when a roster answer brings a glyph. Same
+/// breakpoint the header uses to drop the doors it cannot fit, and this page is
+/// one pane at every size, so the window's width IS the row's width.
+/// Room for a mark that comes and goes, held whether it is there or not.
+///
+/// A ghost copy of the mark sits in the same grid cell, invisible, so the cell
+/// is always the mark's width and nothing after it moves when the real one
+/// arrives. Used for ONE thing, the mention glyph, and the note at its call
+/// site says why that one and not the others.
+///
+/// ⚠ There is no width gate on this. An earlier version had the reserve fall
+/// away under 520 viewport pixels, and two reviewers took it apart for the same
+/// reason: the reserve is measured in rem and grows with the reader's text
+/// size, while the gate was in CSS pixels of the window, so the two were on
+/// different axes. In the 520 to 700 band it clipped names that used to fit,
+/// and a reader who had raised the browser's own font size never reached the
+/// gate at all and paid the reserve everywhere. A reserve you cannot afford at
+/// every size is a reserve you should not take; this one is cheap enough to
+/// take everywhere (13.9px of a room name at the middle text size).
+function MarkLane({ ghost, children }: { ghost: ReactNode; children: ReactNode }) {
+  return (
+    <span className="grid flex-none">
+      <span aria-hidden className="col-start-1 row-start-1 flex items-center gap-1.5 invisible">
+        {ghost}
+      </span>
+      <span className="col-start-1 row-start-1 flex items-center gap-1.5">{children}</span>
+    </span>
+  )
+}
+
+/// Gender glyph next to a contact's name (iOS/Android parity). Male = blue ♂,
+/// female = pink ♀; anything else renders nothing.
+///
+/// ⚠ The two glyphs measure the SAME (12.891px each at the desktop root of
+/// 17.5px in this app's font stack), which is what lets `MarkLane`'s ghost stand
+/// in for either one with a single ♂.
 function GenderIcon({ gender }: { gender?: string | null }) {
   const g = (gender || '').toLowerCase()
   if (g === 'm' || g === 'male') return <span className="text-xs flex-none" style={{ color: '#4A90D9' }}>♂</span>

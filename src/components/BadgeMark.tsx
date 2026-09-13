@@ -44,7 +44,18 @@ function Seal({ className, style }: { className: string; style?: CSSProperties }
   )
 }
 
-export function BadgeMark({ kind, className = 'h-3.5 w-3.5' }: { kind?: string | null; className?: string }) {
+/// The seal's box, named once so anything that reserves room for a mark cannot
+/// drift away from the mark itself.
+///
+/// ⚠ If something ever needs to hold this room WITHOUT drawing a mark, give it
+/// a bare span of this size, not `<BadgeMark kind="official">` behind a
+/// `visibility:hidden`. BadgeMark returns null before it touches anything when
+/// there is no kind, so a row without a mark costs nothing today; a ghost with
+/// a kind would put a localStorage read and a JSON.parse (the island card,
+/// below) on every row of the list on every render, for a box never drawn.
+const MARK_BOX = 'h-3.5 w-3.5'
+
+export function BadgeMark({ kind, className = MARK_BOX }: { kind?: string | null; className?: string }) {
   const { t } = useI18n()
   const { identity } = useIdentity()
   const [open, setOpen] = useState(false)

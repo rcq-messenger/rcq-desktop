@@ -42,6 +42,24 @@ const WHEEL_PX = 40
 /// ...and a trackpad's inertia tail is not a second gesture: nothing pages
 /// again until the wheel has been quiet for this long.
 const WHEEL_QUIET_MS = 300
+/// How the deck ends at the modal's edge: opaque across the middle, gone by
+/// the rim. Wide enough (13%) that the neighbour's own words go with it: at
+/// 7% the painting faded but "2,646" and half a blurb stayed legible at the
+/// rim, which is the debris the hard cut was replaced to get rid of.
+const FADE = 'linear-gradient(to right, transparent 0, #000 13%, #000 87%, transparent 100%)'
+
+/// ⚠ Drawn, not typed. The arrows were the characters ‹ and ›, which sit on
+/// their own font's baseline and came out visibly off-centre in a round
+/// button (founder, 13.09: "стрелки кривые"). A path is centred by the box it
+/// is given.
+function Chevron({ dir }: { dir: 'left' | 'right' }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d={dir === 'left' ? 'M15 5l-7 7 7 7' : 'M9 5l7 7-7 7'} />
+    </svg>
+  )
+}
 
 export function IslandCarousel({
   islands,
@@ -139,9 +157,20 @@ export function IslandCarousel({
         e.stopPropagation()
       }}
     >
+      {/* ⚠ The peek used to end in a hard vertical cut down the middle of the
+          neighbour's painting, which reads as a rendering fault rather than as
+          "there is more this way" (founder, 13.09). The track fades into the
+          modal's own ground at both edges instead. `mask-image` and not an
+          overlaid gradient: an overlay would have to know the modal's
+          background colour, and this sheet is drawn on three of them (light,
+          dark, true black). */}
       <div
         className="overflow-hidden"
-        style={{ touchAction: 'pan-y' }}
+        style={{
+          touchAction: 'pan-y',
+          WebkitMaskImage: FADE,
+          maskImage: FADE,
+        }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerEnd}
@@ -156,11 +185,18 @@ export function IslandCarousel({
           }}
         >
           {islands.map((isl, i) => (
-            // The neighbours fade: their edges say "there is more this way"
-            // without their words reading as stray characters at the cut.
+            // ⚠ The neighbours are DEPTH, not content: dimmed, pushed back and
+            // blurred just enough that their words stop being words. At 40%
+            // opacity alone the card beside the open one still read as text,
+            // so the rim of the deck looked like a half-drawn second island
+            // rather than like the next one waiting (founder, 13.09). The
+            // blur is what makes a peek a peek; the mask above then takes the
+            // very edge into the modal's own ground.
             <div
               key={isl.base}
-              className={`flex-none transition-opacity duration-200 ${i === index ? 'opacity-100' : 'opacity-40'}`}
+              className={`flex-none transition-all duration-200 ${
+                i === index ? 'opacity-100' : 'opacity-30 blur-[3px] scale-[0.96]'
+              }`}
               style={{ width: `${PAGE}%` }}
               aria-hidden={i !== index}
             >
@@ -185,9 +221,9 @@ export function IslandCarousel({
           type="button"
           onClick={() => go(index - 1)}
           aria-label={t('island.picker.prev')}
-          className="absolute left-0 top-20 h-8 w-8 rounded-full bg-surface/85 text-fg-secondary hover:text-fg-primary opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity text-lg leading-none"
+          className="absolute left-1 top-20 h-8 w-8 rounded-full bg-surface/85 shadow-sm text-fg-secondary hover:text-fg-primary opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity flex items-center justify-center"
         >
-          ‹
+          <Chevron dir="left" />
         </button>
       )}
       {index < count - 1 && (
@@ -195,9 +231,9 @@ export function IslandCarousel({
           type="button"
           onClick={() => go(index + 1)}
           aria-label={t('island.picker.next')}
-          className="absolute right-0 top-20 h-8 w-8 rounded-full bg-surface/85 text-fg-secondary hover:text-fg-primary opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity text-lg leading-none"
+          className="absolute right-1 top-20 h-8 w-8 rounded-full bg-surface/85 shadow-sm text-fg-secondary hover:text-fg-primary opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity flex items-center justify-center"
         >
-          ›
+          <Chevron dir="right" />
         </button>
       )}
 

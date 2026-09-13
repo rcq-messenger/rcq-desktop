@@ -35,7 +35,7 @@ export const uk: Record<string, string> = {
   'login.cancel_add': 'Скасувати',
   'login.mode.create': 'Новий акаунт',
   'login.mode.recover': 'Відновити',
-  'login.mode.link': 'Підключити телефон',
+  'login.mode.link': 'З телефона',
   'login.recover.body': 'Введи свою фразу відновлення з 24 слів, щоб відновити акаунт у цьому браузері, зокрема й той, який ти спершу створив на телефоні.',
   'login.recover.placeholder': 'слово1 слово2 слово3 … слово24',
   'login.recover.cta': 'Відновити акаунт',

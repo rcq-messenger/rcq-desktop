@@ -338,7 +338,7 @@ export function UinCheckout({
             onClose()
           }}
           disabled={busy}
-          className="mt-6 w-full h-11 rounded-xl text-sm font-medium text-fg-secondary
+          className="mt-6 w-full h-11 rounded-full text-sm font-medium text-fg-secondary
                      bg-surface dark:bg-field hover:bg-field dark:hover:bg-line active:scale-[0.99] transition"
         >
           {invoice && invoice.status !== 'paid'

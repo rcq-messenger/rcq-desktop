@@ -33,7 +33,7 @@ export const ru: Record<string, string> = {
   'login.cancel_add': 'Отменить',
   'login.mode.create': 'Новый аккаунт',
   'login.mode.recover': 'Восстановить',
-  'login.mode.link': 'Подключить телефон',
+  'login.mode.link': 'С телефона',
   'login.recover.body':
     'Введите свою фразу восстановления из 24 слов, чтобы восстановить аккаунт в этом браузере, включая аккаунт, который вы сначала создали на телефоне.',
   'login.recover.placeholder': 'слово1 слово2 слово3 … слово24',

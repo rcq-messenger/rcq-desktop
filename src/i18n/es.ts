@@ -35,7 +35,7 @@ export const es: Record<string, string> = {
   'login.cancel_add': 'Cancelar',
   'login.mode.create': 'Cuenta nueva',
   'login.mode.recover': 'Recuperar',
-  'login.mode.link': 'Conectar teléfono',
+  'login.mode.link': 'Desde el móvil',
   'login.recover.body': 'Introduce tu frase de recuperación de 24 palabras para restaurar tu cuenta en este navegador, incluida una cuenta que creaste primero en un teléfono.',
   'login.recover.placeholder': 'palabra1 palabra2 palabra3 … palabra24',
   'login.recover.cta': 'Recuperar cuenta',

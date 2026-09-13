@@ -99,7 +99,10 @@ export function Login() {
               // as addAccount, see flushVaultWriter).
               if (activateStoredIdentity(resume.uin)) void flushVaultWriter().finally(() => window.location.assign('/'))
             }}
-            className="text-sm text-fg-secondary hover:text-fg-primary transition-colors"
+            // The same capsule the language and theme buttons wear in the
+            // opposite corner (Dropdown, variant="pill"): bare text in a
+            // corner reads as a caption, not as the way out (founder, 13.09).
+            className="bg-surface rounded-full px-3 py-1.5 text-sm text-fg-secondary hover:text-fg-primary transition-colors"
           >
             {t('login.cancel_add')}
           </button>
@@ -160,9 +163,14 @@ function ModeSwitch({ onDone }: { onDone: (id: WebIdentity) => void }) {
   const tab = (m: typeof mode, label: string) => (
     <button
       onClick={() => setMode(m)}
-      className={`h-9 rounded-md transition-colors whitespace-nowrap px-1 ${mode === m ? 'bg-accent text-white' : 'text-fg-secondary hover:text-fg'}`}
+      // ⚠ min-w-0 and truncate, because the row is a grid of equal thirds and
+      // the longest label decides nothing: "Подключить телефон" simply ran out
+      // of its third and was painted over the tab beside it (founder, 13.09).
+      // The label shrinks a little before it gives up, so most locales still
+      // read in full at 320px.
+      className={`h-9 min-w-0 rounded-md transition-colors px-1 text-[0.8125rem] sm:text-sm ${mode === m ? 'bg-accent text-white' : 'text-fg-secondary hover:text-fg'}`}
     >
-      {label}
+      <span className="block truncate">{label}</span>
     </button>
   )
   return (

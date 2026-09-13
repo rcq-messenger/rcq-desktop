@@ -38,6 +38,29 @@ function payUri(chain: string, address: string, amount: string): string {
   return address
 }
 
+/// The resident mark, big, with its own glow. Same seal and same orange as
+/// `BadgeMark` draws beside a name (kind "resident"), which is what the island
+/// grants the moment the code is redeemed.
+function ResidentSeal() {
+  return (
+    <div className="mb-3 flex justify-center" aria-hidden>
+      <div className="relative">
+        <div
+          className="absolute inset-0 rounded-full blur-lg"
+          style={{ background: 'rgba(249,115,22,0.45)' }}
+        />
+        <svg viewBox="0 0 24 24" className="relative h-12 w-12 text-orange-500">
+          <path
+            fill="currentColor"
+            d="M12 1.6l2.3 2 3-.5 1.2 2.8 2.8 1.2-.5 3 2 2.3-2 2.3.5 3-2.8 1.2-1.2 2.8-3-.5-2.3 2-2.3-2-3 .5-1.2-2.8-2.8-1.2.5-3-2-2.3 2-2.3-.5-3 2.8-1.2 1.2-2.8 3 .5 2.3-2z"
+          />
+          <path d="M8.2 12.4l2.5 2.5 5.1-5.3" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </div>
+    </div>
+  )
+}
+
 function Spinner() {
   return (
     <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent text-fg-dim" />
@@ -304,6 +327,14 @@ export function EntryCheckout({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="text-center">
+          {/* The mark being bought, above the price, in the island's own
+              orange with a soft halo behind it: the sheet asks for money and
+              until now showed nothing of what the money is for (founder,
+              13.09). Drawn here rather than through BadgeMark, which is the
+              interactive seal beside a name and opens its own card on click;
+              this one is decoration and must not swallow a tap in a
+              checkout. */}
+          <ResidentSeal />
           <div className="text-lg font-semibold tracking-tight">{t('entry_checkout.title', { island: islandName || host })}</div>
           <div className="text-xs text-fg-dim">{host}</div>
           <div className="mt-2 text-2xl font-bold tabular-nums">
@@ -384,7 +415,7 @@ export function EntryCheckout({
             onClose()
           }}
           disabled={busy}
-          className="mt-6 w-full h-11 rounded-xl text-sm font-medium text-fg-secondary
+          className="mt-6 w-full h-11 rounded-full text-sm font-medium text-fg-secondary
                      bg-surface dark:bg-field hover:bg-field dark:hover:bg-line active:scale-[0.99] transition"
         >
           {invoice && invoice.status !== 'paid' ? t('uin_checkout.later') : t('common.cancel')}

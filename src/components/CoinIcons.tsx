@@ -45,8 +45,31 @@ export function TonIcon({ className = 'h-5 w-5' }: { className?: string }) {
 
 /// Pick the mark for a chain id the till reports (`tron`, `ton`). Unknown ids
 /// get nothing rather than a wrong coin's colours.
+/// Polygon, switched on 13.09 for entry, numbers and the relay pools. The
+/// token is USDT or USDC, but the button says which CHAIN it is paid on,
+/// because that is the choice the buyer is making and the one they can get
+/// wrong: the same dollars on the wrong network are gone. Hence the chain's
+/// own purple and its hexagon rather than a second green Tether mark, which
+/// would sit one row under the TRON one and differ by nothing but a word.
+export function PolygonIcon({ className = 'h-5 w-5' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+      <circle cx="12" cy="12" r="12" fill="#8247E5" />
+      <path
+        d="M12 5.6l5.2 3v6l-5.2 3-5.2-3v-6l5.2-3z"
+        fill="none"
+        stroke="#fff"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <path d="M12 9.2l2.6 1.5v3L12 15.2l-2.6-1.5v-3L12 9.2z" fill="#fff" />
+    </svg>
+  )
+}
+
 export function CoinIcon({ chain, className }: { chain: string; className?: string }) {
   if (chain === 'tron') return <UsdtIcon className={className} />
   if (chain === 'ton') return <TonIcon className={className} />
+  if (chain === 'polygon') return <PolygonIcon className={className} />
   return null
 }

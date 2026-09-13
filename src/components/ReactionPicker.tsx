@@ -18,6 +18,7 @@
 
 import { useReactionAssets } from '../lib/emoticon-choices'
 import { emoticonAssetURL } from '../lib/emoticons'
+import { rememberEmoticonSize } from '../lib/emoticon-size'
 
 export function ReactionPicker({
   uin,
@@ -53,10 +54,16 @@ export function ReactionPicker({
             {/* ⚠ object-contain. The koloboks are not all square, and a bare
                 h-6 w-6 stretched the wide ones into the box: founder, on the
                 reaction row, "эмотиконы сжаты почему то (некоторые)". */}
+            {/* The box here is fixed, so nothing in this grid can move. The
+                load is still worth recording: an asset seen in the picker is
+                an asset whose shape is already known by the time it turns up
+                as a chip under a bubble, where the width IS the picture's.
+                See lib/emoticon-size.ts. */}
             <img
               src={emoticonAssetURL(a)}
               alt={a}
               className="h-6 w-6 object-contain select-none"
+              onLoad={(e) => rememberEmoticonSize(a, e.currentTarget)}
               draggable={false}
             />
           </button>

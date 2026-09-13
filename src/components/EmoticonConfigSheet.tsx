@@ -17,6 +17,7 @@ import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { PALETTE, PANEL_CAP, REACTION_CAP, emoticonAssetURL } from '../lib/emoticons'
+import { rememberEmoticonSize } from '../lib/emoticon-size'
 import {
   usePanelAssets,
   useReactionAssets,
@@ -121,10 +122,14 @@ export function EmoticonConfigSheet({ uin, open, onClose }: Props) {
                         selected ? 'bg-accent/30' : 'hover:bg-surface-dim'
                       }`}
                     >
+                      {/* This sheet draws the WHOLE palette, so one visit here
+                          warms every shape at once and no emoticon has to settle
+                          on first sight again. See lib/emoticon-size.ts. */}
                       <img
                         src={emoticonAssetURL(p.asset)}
                         alt={p.name}
                         className="h-7 w-7 object-contain"
+                        onLoad={(e) => rememberEmoticonSize(p.asset, e.currentTarget)}
                         draggable={false}
                       />
                     </button>

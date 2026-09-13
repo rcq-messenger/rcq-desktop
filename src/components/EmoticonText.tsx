@@ -12,6 +12,7 @@
 
 import type { ReactNode } from 'react'
 import { tokenize, emoticonAssetURL } from '../lib/emoticons'
+import { emoticonAspect, rememberEmoticonSize } from '../lib/emoticon-size'
 import { matchMentionAt, type MentionRoster } from '../lib/mentions'
 import { siteLinkOf } from '../lib/sites'
 
@@ -251,7 +252,14 @@ export function EmoticonText({ text, emoticonSize = 18, className = '', mention,
             // so a line of smileys came out visibly uneven. Fixing the
             // height and letting the width follow the aspect ratio is what
             // iOS does, and it keeps the text line steady either way.
-            style={{ height: side, width: 'auto' }}
+            //
+            // ⚠ Steady only once the GIF is here. With no bytes there is no
+            // ratio, the browser draws the box zero wide, and every word after
+            // the smiley jumps when the file lands. The aspect hint holds the
+            // room in the meantime and steps aside for the real ratio on load.
+            // Same fix, same reason, as the reaction chips: lib/emoticon-size.
+            style={{ height: side, width: 'auto', aspectRatio: emoticonAspect(tok.asset) }}
+            onLoad={(e) => rememberEmoticonSize(tok.asset, e.currentTarget)}
             className="inline-block align-middle mx-0.5"
             draggable={false}
           />

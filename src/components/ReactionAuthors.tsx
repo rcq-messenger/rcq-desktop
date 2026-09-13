@@ -21,6 +21,7 @@ import { useMemo } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Link } from 'react-router-dom'
 import { emoticonAssetURL } from '../lib/emoticons'
+import { emoticonAspect, rememberEmoticonSize } from '../lib/emoticon-size'
 import { useI18n } from '../lib/i18n-context'
 import { PersonAvatar } from './PersonAvatar'
 import type { UserStatus } from '../lib/api'
@@ -104,7 +105,12 @@ export function ReactionAuthors({
                       alt={asset}
                       // Height only, width by aspect ratio - see EmoticonText:
                       // the set is not square and `w-7` squashed the wide ones.
+                      // ⚠ Which leaves the width at zero until the GIF lands,
+                      // and the count beside it jumping when it does. Same hint,
+                      // same reason, as the chips: lib/emoticon-size.
                       className="h-7 w-auto flex-none select-none"
+                      style={{ aspectRatio: emoticonAspect(asset) }}
+                      onLoad={(e) => rememberEmoticonSize(asset, e.currentTarget)}
                       draggable={false}
                     />
                     <span className="text-sm text-fg-secondary tabular-nums">{people.length}</span>

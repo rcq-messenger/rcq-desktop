@@ -13,6 +13,7 @@
 
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 import { ENTRIES, emoticonAssetURL, tokenize } from '../lib/emoticons'
+import { emoticonAspect, rememberEmoticonSize } from '../lib/emoticon-size'
 
 interface Props {
   value: string
@@ -73,6 +74,11 @@ function emoticonImg(asset: string, code: string, size: number): HTMLImageElemen
   // the one place still forcing a square.
   img.style.height = `${size / 16}rem`
   img.style.width = 'auto'
+  // ⚠ `auto` width is NO width at all until the bytes arrive, so a restored
+  // draft's text jumped sideways the moment its smileys landed. The remembered
+  // shape holds the room and steps aside for the real ratio (lib/emoticon-size).
+  img.style.aspectRatio = emoticonAspect(asset)
+  img.addEventListener('load', () => rememberEmoticonSize(asset, img), { once: true })
   img.draggable = false
   img.className = 'inline-block align-middle mx-0.5'
   return img

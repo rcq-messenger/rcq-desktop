@@ -34,7 +34,20 @@ export function SenderAvatar({ mediaId, mediaKey, size = 16 }: Props) {
     }
   }, [identity?.apiBase, mediaId, mediaKey])
 
-  if (!url) return null
+  if (!url) {
+    // No picture at all: draw nothing, exactly as before, so a thread of people
+    // who never set one keeps the plain nick line it has always had.
+    if (!mediaId || !mediaKey) return null
+    // ⚠⚠ A picture that IS coming keeps its place while it decrypts. The blob
+    // is fetched and AES-GCM opened in the browser, which is a round trip and a
+    // decrypt after the bubble is already on screen, and until this the line
+    // drew nothing and then a 16px face: the nick and the island's mark beside
+    // it jumped 22.56px to the right the moment it landed (measured), on every
+    // message from that sender. That is "галки у ников двигаются" (founder,
+    // 12.09). The reservation is the same box the picture will fill, so the
+    // face fades into a space that was always its own.
+    return <span className="inline-block flex-none" style={{ width: size, height: size }} aria-hidden />
+  }
   return (
     <img
       src={url}

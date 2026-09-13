@@ -116,6 +116,7 @@ import { VoiceBubble } from '../components/VoiceBubble'
 import { MenuPanel } from '../components/MenuPanel'
 import { uploadEncryptedImage, uploadEncryptedFile, uploadEncryptedAudio, downloadEncryptedFile } from '../lib/media'
 import { emoticonAssetURL } from '../lib/emoticons'
+import { emoticonAspect, rememberEmoticonSize } from '../lib/emoticon-size'
 import { useI18n } from '../lib/i18n-context'
 import { useToast } from '../lib/toast'
 import { useIdentity } from '../lib/identity-context'
@@ -5092,11 +5093,19 @@ function reactionChips(targetId: string, align: 'start' | 'end', myUin: number, 
               33x40, 37x25 …), and a fixed w-4 h-4 box squeezed every one of them
               into it — the same flattening `object-contain` fixed in the picker,
               still here under the bubble. The height is what a chip needs to
-              agree on; the width is the picture's own business. */}
+              agree on; the width is the picture's own business.
+              ⚠⚠ Which leaves the width at ZERO until the GIF arrives, and a
+              strip of chips that walks sideways when it does (measured: the
+              first chip of four at x=361.84 in flight, x=234.72 landed). The
+              aspect hint reserves the room before the bytes are here and hands
+              the ratio back to the picture the moment they are. See
+              lib/emoticon-size.ts. */}
           <img
             src={emoticonAssetURL(c.asset)}
             alt={c.asset}
             className="h-6 w-auto max-w-9 select-none object-contain"
+            style={{ aspectRatio: emoticonAspect(c.asset) }}
+            onLoad={(e) => rememberEmoticonSize(c.asset, e.currentTarget)}
             draggable={false}
           />
           {c.count > 1 && <span className="text-xs text-fg-secondary">{c.count}</span>}
@@ -6551,17 +6560,42 @@ function DoubleTickMark() {
 /// The slot is the width of the widest state, so nothing reflows when a receipt
 /// lands. This is the same reason a clock face reserves room for the widest
 /// digit rather than resizing per minute.
+///
+/// ⚠ And the PADDING belongs to the slot, not to one state. The fixed slot
+/// stopped the timestamp beside it from moving, but 'read' was still the only
+/// state that wrapped its glyph in a tinted pill, and `px-0.5` on that pill
+/// alone pushed the ticks 2.19px left inside a box that had not changed width
+/// at all (measured: glyph at x=240.50 delivered, x=238.31 read). So every
+/// state now sits in the same padded box and only the BACKGROUND is state's:
+/// the tint arrives under ticks that do not move. 17px of glyph plus 2px either
+/// side is the 21px the slot reserves.
+///
+/// ⚠ And the padding is CANCELLED by an equal negative margin, so the box takes
+/// no room of its own: the glyph keeps the exact edge it has always had in
+/// sending/sent/delivered and the tint on `read` simply overhangs into the gap
+/// before the timestamp. Padding that took room would have moved the three
+/// states a reader sees most, 2.18px away from the bubble's edge, to hold one
+/// state still. And `px-[2px]`, not `px-0.5`: 0.5 is 0.125rem, the slot is a
+/// literal 21px, and this app's root is 17.5px scaled again by fontscale, so
+/// the rem form overflowed the slot by up to 1.69px at the largest step.
 function DeliveryMarks({ state }: { state: OutgoingRow['state'] }) {
+  // The clock lives in the SAME slot: drawn beside it, its appearance and
+  // disappearance moved the row exactly as the ticks did.
+  const mark =
+    state === 'sending' ? <ClockMark /> :
+    state === 'sent' ? <TickMark /> :
+    state === 'delivered' || state === 'read' ? <DoubleTickMark /> :
+    null
   return (
     <span className="inline-flex w-[21px] flex-none items-center justify-end">
-      {/* The clock lives in the SAME slot: drawn beside it, its appearance and
-          disappearance moved the row exactly as the ticks did. */}
-      {state === 'sending' && <ClockMark />}
-      {state === 'sent' && <TickMark />}
-      {state === 'delivered' && <span className="text-accent"><DoubleTickMark /></span>}
-      {state === 'read' && (
-        <span className="rounded bg-accent/25 px-0.5 text-accent">
-          <DoubleTickMark />
+      {mark && (
+        <span
+          className={
+            'rounded px-[2px] -mx-[2px] ' +
+            (state === 'read' ? 'bg-accent/25 text-accent' : state === 'delivered' ? 'text-accent' : '')
+          }
+        >
+          {mark}
         </span>
       )}
     </span>

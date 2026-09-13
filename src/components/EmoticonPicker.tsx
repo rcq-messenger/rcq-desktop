@@ -8,6 +8,7 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { emoticonAssetURL, panelPaletteFor, type PaletteEntry } from '../lib/emoticons'
+import { rememberEmoticonSize } from '../lib/emoticon-size'
 import { usePanelAssets } from '../lib/emoticon-choices'
 import { EmoticonConfigSheet } from './EmoticonConfigSheet'
 import { useI18n } from '../lib/i18n-context'
@@ -72,10 +73,15 @@ function Grid({ items, onPick }: { items: PaletteEntry[]; onPick: (code: string,
           title={`${p.name}  ${p.primaryCode}`}
           className="w-9 h-9 flex items-center justify-center hover:bg-field rounded-md transition-colors"
         >
+          {/* Fixed box, so nothing here can move. The load is recorded all the
+              same: an asset seen in the picker is an asset whose shape is known
+              by the time it is inserted in the composer or placed as a chip,
+              where the width IS the picture's. See lib/emoticon-size.ts. */}
           <img
             src={emoticonAssetURL(p.asset)}
             alt={p.name}
             className="h-7 w-7 object-contain"
+            onLoad={(e) => rememberEmoticonSize(p.asset, e.currentTarget)}
             draggable={false}
           />
         </button>

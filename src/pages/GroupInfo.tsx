@@ -31,6 +31,7 @@ import { useGroupChanged } from '../lib/group-events'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
 import { groupApiCtx } from '../lib/visited-islands'
+import { forgetGroupNames, groupNamesScope } from '../lib/group-names'
 import { compactCount } from '../lib/format-count'
 
 /// The island's three granular moderator capabilities, in the order it
@@ -298,6 +299,8 @@ export function GroupInfo() {
     setBusy(true)
     try {
       await Api.removeGroupMember(gctx.ident, gctx.gid, myUinThere)
+      // The names kept for its former members go with the room (#982).
+      forgetGroupNames(groupNamesScope(gctx.ident.apiBase, gctx.gid, gctx.host))
       navigate('/contacts', { replace: true })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'failed')
@@ -315,6 +318,7 @@ export function GroupInfo() {
     setBusy(true)
     try {
       await Api.deleteGroup(gctx.ident, gctx.gid)
+      forgetGroupNames(groupNamesScope(gctx.ident.apiBase, gctx.gid, gctx.host))
       navigate('/contacts', { replace: true })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'failed')

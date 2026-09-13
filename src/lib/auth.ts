@@ -1090,6 +1090,8 @@ const PRESERVED_KEYS = new Set<string>([
   'rcq.web.language',
   'rcq.web.sounds.enabled',
   'rcq.web.sounds.presence',
+  'rcq.web.sounds.sent',
+  'rcq.web.sounds.volume',
   // Which browser this is, not who is signed in. Re-minting it on sign-out
   // would leave the account's old cursor behind holding its queue.
   'rcq.web.install.id',

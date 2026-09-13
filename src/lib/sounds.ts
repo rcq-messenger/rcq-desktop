@@ -48,15 +48,27 @@ function audioFor(cue: SoundCue): HTMLAudioElement {
   return a
 }
 
+/// The desktop app, detected the way `desktop.ts` does it. Inlined rather than
+/// imported: this module is pulled in by the incoming store, and the desktop
+/// bridge has no business in that import graph.
+function inTauri(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+}
+
 /// Playback is best-effort. Mute toggle lives in localStorage —
 /// `rcq.web.sounds.enabled` defaults to true; Settings can flip it.
 export function playSound(cue: SoundCue): void {
   if (typeof window === 'undefined') return
-  if (!userInteracted) return // browser autoplay-policy bail
+  // Browser autoplay-policy bail. ⚠ Not on the desktop (#983): an app started
+  // from the tray at login may never see a click in its window, and then it
+  // never chimed at all. WebView2 lets the page play; if it ever refuses, the
+  // rejected promise below is swallowed like any other failure.
+  if (!userInteracted && !inTauri()) return
   if (localStorage.getItem('rcq.web.sounds.enabled') === '0') return
   const a = audioFor(cue)
   try {
     a.currentTime = 0
+    a.volume = soundVolume()
     void a.play().catch(() => {
       // Format-not-supported / other transient. Sound is optional,
       // we don't surface failures.
@@ -73,6 +85,47 @@ export function isSoundEnabled(): boolean {
 
 export function setSoundEnabled(on: boolean) {
   localStorage.setItem('rcq.web.sounds.enabled', on ? '1' : '0')
+}
+
+// How loud the chimes and the call tones play, 0..1 (#983). Defaults to full,
+// which is what everybody had before the slider existed. The desktop had no
+// level of its own, and Windows only lists the WebView2 process in the mixer
+// while something is actually playing, so there was nowhere to turn it down.
+const VOLUME_KEY = 'rcq.web.sounds.volume'
+
+export function soundVolume(): number {
+  if (typeof window === 'undefined') return 1
+  try {
+    const raw = localStorage.getItem(VOLUME_KEY)
+    if (raw == null) return 1
+    const v = Number(raw)
+    return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 1
+  } catch {
+    return 1
+  }
+}
+
+export function setSoundVolume(v: number) {
+  const clamped = Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 1
+  localStorage.setItem(VOLUME_KEY, String(clamped))
+}
+
+/// One chime at the current level, for the slider: moving it silently leaves
+/// the person guessing what they picked. Bypasses the gesture gate, because
+/// dragging the slider IS the gesture.
+export function previewSoundVolume() {
+  if (typeof window === 'undefined') return
+  // A disabled range input still receives pointer events in Chromium, so the
+  // slider's release handler alone does not keep a muted app quiet.
+  if (!isSoundEnabled()) return
+  const a = audioFor('message_incoming')
+  try {
+    a.currentTime = 0
+    a.volume = soundVolume()
+    void a.play().catch(() => {})
+  } catch {
+    /* noop */
+  }
 }
 
 // Sub-toggle: play a chime when a contact comes online / goes offline

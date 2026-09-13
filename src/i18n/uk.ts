@@ -868,6 +868,7 @@ export const uk: Record<string, string> = {
   'settings.section.sound': 'Звук',
   'settings.sound.toggle': 'Системні звуки',
   'settings.sound.footer': 'Програє сигнал на вхідні повідомлення та інші події. Головний вимикач усіх звуків.',
+  'settings.sound.volume': 'Гучність сигналів RCQ',
   'settings.sound.presence': 'Контакт у мережі та поза нею',
   'settings.sound.presence_footer': 'Сигнал, коли контакт заходить у мережу або виходить з неї.',
   'settings.section.theme': 'Тема',

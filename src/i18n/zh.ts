@@ -866,6 +866,7 @@ export const zh: Record<string, string> = {
   'settings.section.sound': '声音',
   'settings.sound.toggle': '系统提示音',
   'settings.sound.footer': '收到消息和其他提示时播放提示音。所有声音的总开关。',
+  'settings.sound.volume': 'RCQ 提示音音量',
   'settings.sound.presence': '联系人上线/离线',
   'settings.sound.presence_footer': '联系人上线或离线时播放提示音。',
   'settings.section.theme': '主题',

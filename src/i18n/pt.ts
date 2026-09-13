@@ -868,6 +868,7 @@ export const pt: Record<string, string> = {
   'settings.section.sound': 'Som',
   'settings.sound.toggle': 'Sons do sistema',
   'settings.sound.footer': 'Toca um sinal quando chega mensagem e em outros avisos. É o interruptor geral de todos os sons.',
+  'settings.sound.volume': 'Volume dos sinais do RCQ',
   'settings.sound.presence': 'Contato online/offline',
   'settings.sound.presence_footer': 'Um sinal quando um contato fica online ou sai.',
   'settings.section.theme': 'Tema',

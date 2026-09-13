@@ -961,6 +961,7 @@ export const en: Record<string, string> = {
   'settings.sound.toggle': 'System sounds',
   'settings.sound.footer':
     'Plays a chime on incoming messages and other cues. The master switch for all sounds.',
+  'settings.sound.volume': 'RCQ tone volume',
   'settings.sound.presence': 'Contact online/offline',
   'settings.sound.presence_footer': 'A chime when a contact comes online or goes offline.',
   'settings.section.theme': 'Theme',

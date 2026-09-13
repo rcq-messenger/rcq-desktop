@@ -241,10 +241,13 @@ pub fn cache_file() -> &'static Path {
 mod tests {
     use super::*;
 
+    // ⚠ Made-up values from documentation ranges. This fixture once held a
+    // real paid node's full Reality descriptor, in a public repository, on
+    // the day that node was sold as unlisted. A test only needs the shape.
     const PAID: &str = r#"{"relays":[
-      {"flow":"xtls-rprx-vision","pbk":"YejEsdRG3WRhZrMhIsN77kRJOdoxvAIpTvvfaFWxsSw","port":443,
-       "proto":"vless","server":"164.92.217.91","sid":"46b99812bac779ec",
-       "sni":"ams3.digitaloceanspaces.com","uuid":"ddcadc57-5564-40c8-b3d7-63dcb63fa1eb",
+      {"flow":"xtls-rprx-vision","pbk":"AAAAtestPublicKeyNotARealNodeAAAAAAAAAAAAAAA","port":443,
+       "proto":"vless","server":"203.0.113.7","sid":"0123456789abcdef",
+       "sni":"example.com","uuid":"00000000-0000-4000-8000-000000000000",
        "tier":"community","private":true}],
       "ts":1786342854,"key":"ok","private_count":1}"#;
 
@@ -256,8 +259,8 @@ mod tests {
         let r = &relays[0];
         // The whole point: pbk/sid, not public_key/short_id. Miss these and the
         // outbound connects and then fails the Reality handshake.
-        assert_eq!(r.public_key.as_deref(), Some("YejEsdRG3WRhZrMhIsN77kRJOdoxvAIpTvvfaFWxsSw"));
-        assert_eq!(r.short_id.as_deref(), Some("46b99812bac779ec"));
+        assert_eq!(r.public_key.as_deref(), Some("AAAAtestPublicKeyNotARealNodeAAAAAAAAAAAAAAA"));
+        assert_eq!(r.short_id.as_deref(), Some("0123456789abcdef"));
         assert!(r.private);
     }
 

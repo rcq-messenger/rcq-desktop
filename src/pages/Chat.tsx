@@ -92,7 +92,7 @@ import {
 import type { MentionContext } from '../components/EmoticonText'
 import { groupApiCtx } from '../lib/visited-islands'
 import { ensureRoster, memberCount } from '../lib/group-roster'
-import { lookupContactStatus } from '../lib/contacts-cache'
+import { contactsCache, lookupContactStatus } from '../lib/contacts-cache'
 import { useGroupChanged } from '../lib/group-events'
 import { compactCount } from '../lib/format-count'
 import {
@@ -124,6 +124,8 @@ import { useIdentity } from '../lib/identity-context'
 import { isSentSoundEnabled, playSound } from '../lib/sounds'
 import { useCall } from '../lib/call'
 import { contactAlias, useContactAliases } from '../lib/local-store'
+import { groupNamesScope, lastKnownName, useGroupNames } from '../lib/group-names'
+import { memberName, quotedAuthorNames } from '../lib/member-name'
 import { useWS } from '../lib/ws'
 
 /// Envelope kinds `shipEnvelopeToCurrentThread` is allowed to encrypt + send.
@@ -2755,6 +2757,56 @@ export function Chat() {
     return byUin
   }, [isGroup, group])
 
+  /// Names for the people the roster no longer lists (#982). The island deletes
+  /// a membership on leave, so every message a former member wrote fell back to
+  /// their number. Kept per island and per the island's own group id, see
+  /// group-names.ts.
+  const namesHost = gctx?.host ?? null
+  const namesScope = isGroup && gctx ? groupNamesScope(gctx.ident.apiBase, gctx.gid, namesHost) : null
+  const namesVersion = useGroupNames(namesScope)
+  /// The author labels of quotes in this thread, per quoted member: the last
+  /// place a lost name may still be written down.
+  const quotedNames = useMemo(
+    () =>
+      isGroup
+        ? quotedAuthorNames(incoming, [...incoming, ...outgoing.map((r) => ({ at: r.sentAt, replyTo: r.replyTo }))])
+        : new Map<number, string>(),
+    [isGroup, incoming, outgoing],
+  )
+  /// My contacts' own nicknames by uin, for the member names below. A map
+  /// rather than a scan per bubble: until the roster arrives, every row of a
+  /// long thread would otherwise walk the whole contact list on each render.
+  const contactNickByUin = useMemo(() => {
+    const byUin = new Map<number, string>()
+    if (isGroup && identity) {
+      for (const c of contactsCache.get(identity.uin)?.contacts ?? []) if (c.nickname) byUin.set(c.uin, c.nickname)
+    }
+    return byUin
+  }, [isGroup, identity, memberByUin])
+  /// A group member's SELF-CHOSEN name as far as this device knows it.
+  ///
+  /// ⚠ Never my alias for them: this is also what a reply quote and a forward
+  /// carry off the device. The screen puts `peerAliasFor` in front of it.
+  const groupWireName = useCallback(
+    (uin: number): string => {
+      const roster = memberByUin.get(uin)?.nickname
+      const lastKnown = namesScope ? lastKnownName(namesScope, uin) : undefined
+      // ⚠ The contact list only on the group's own island: the same number on
+      // another island is somebody else. A foreign group asks the cross-island
+      // store under that host, and only when nothing above named them.
+      const contact =
+        roster || lastKnown
+          ? undefined
+          : namesHost
+            ? getCrossIsland(uin, namesHost)?.nickname
+            : contactNickByUin.get(uin)
+      return memberName(uin, { roster, lastKnown, contact, quoted: quotedNames.get(uin) })
+    },
+    // `namesVersion` is what re-runs this when a stored name loads or changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [memberByUin, namesScope, namesHost, namesVersion, quotedNames, contactNickByUin],
+  )
+
   /// Does this body call me? Used for the bubble tint and for the jump list.
   const bodyMentionsMe = useCallback(
     (text: string) => (identity ? mentionsMe(text, identity.uin, myInfo?.nickname) : false),
@@ -2879,7 +2931,7 @@ export function Chat() {
       const name =
         peerAliasFor(uin, uin === peerUIN ? peer?.host ?? islandHost : undefined) ??
         (mine ? myNickname : undefined) ??
-        member?.nickname ??
+        (isGroup ? groupWireName(uin) : undefined) ??
         (uin === peerUIN ? peer?.nickname : undefined) ??
         `${uin}`
       // Where tapping this person goes (founder item 22). The rows used to be
@@ -2935,7 +2987,7 @@ export function Chat() {
       }
     })
     // `reactionsVersion` is what makes this recompute when a reaction lands.
-  }, [reactionAuthorsFor, identity, isGroup, group, peer, peerUIN, islandHost, myNickname, peerAliasFor, reactionsVersion])
+  }, [reactionAuthorsFor, identity, isGroup, group, peer, peerUIN, islandHost, myNickname, peerAliasFor, reactionsVersion, groupWireName])
   const headerName = isGroup
     ? group?.name ?? `${groupId}`
     : isSelf
@@ -3231,11 +3283,11 @@ export function Chat() {
           : {
               text: it.msg.text,
               author:
-                (isGroup ? memberByUin.get(it.msg.from)?.nickname : peer?.nickname) ?? `${it.msg.from}`,
+                isGroup ? groupWireName(it.msg.from) : peer?.nickname ?? `${it.msg.from}`,
             },
       ),
     }
-  }, [selecting, selectedIds, timeline, myNickname, isGroup, memberByUin, peer])
+  }, [selecting, selectedIds, timeline, myNickname, isGroup, groupWireName, peer])
 
   /// Start selecting FROM a message, seeded with it — never from an empty set,
   /// which would open a mode whose only offer is to leave it again.
@@ -3372,7 +3424,7 @@ export function Chat() {
         author: it.kind === 'out'
           ? undefined
           : isGroup
-            ? (peerAliasFor(it.msg.from) || memberByUin.get(it.msg.from)?.nickname || `${it.msg.from}`)
+            ? (peerAliasFor(it.msg.from) || groupWireName(it.msg.from))
             : undefined,
       }]
     })
@@ -3984,15 +4036,18 @@ export function Chat() {
                 // it does in the 1:1 header. Setting an alias and then still
                 // reading their nick over every message in a group read as the
                 // alias not having been saved at all.
+                // A member who has left keeps the name they had (#982).
                 const senderName = isGroup
-                  ? peerAliasFor(m.from) || senderMember?.nickname || `${m.from}`
+                  ? peerAliasFor(m.from) || groupWireName(m.from)
                   : null
                 // ⚠ NO aliases in here: ReplyContext ships INSIDE the sealed
                 // envelope, so the quote's author label reaches the peer. My
                 // own name for someone is device-only by contract — sending it
                 // to the very person it describes is the one leak worse than
                 // storing it. Their self-chosen nickname only.
-                const replyAuthor = (isGroup ? senderMember?.nickname : peer?.nickname) ?? `${m.from}`
+                // A former member's reply carried their NUMBER to everyone
+                // until the stored name was consulted here too (#982).
+                const replyAuthor = isGroup ? groupWireName(m.from) : peer?.nickname ?? `${m.from}`
                 return (
                   <IncomingMessageRow
                     key={`in-${m.id}`}

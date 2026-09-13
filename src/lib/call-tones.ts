@@ -10,6 +10,8 @@
 // touched yet stays silent — the visual call sheet is the real notification,
 // the tone is the courtesy.
 
+import { soundVolume } from './sounds'
+
 type Tone = { ctx: AudioContext; timer: ReturnType<typeof setInterval> | null }
 
 let active: Tone | null = null
@@ -30,7 +32,11 @@ function context(): AudioContext | null {
 
 /// One burst of `freqs` played together for `seconds`, with short fades so the
 /// tone starts and stops without a click.
-function burst(ctx: AudioContext, freqs: number[], seconds: number, volume: number) {
+function burst(ctx: AudioContext, freqs: number[], seconds: number, level: number) {
+  // Scaled by the Sound settings slider (#983), read per burst so a change
+  // lands on the next ring rather than on the next call.
+  const volume = level * soundVolume()
+  if (volume <= 0) return
   const now = ctx.currentTime
   const gain = ctx.createGain()
   gain.gain.setValueAtTime(0, now)

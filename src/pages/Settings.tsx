@@ -47,7 +47,7 @@ import { snapshotFor } from '../lib/contacts-cache'
 import { PersonAvatar } from '../components/PersonAvatar'
 import { useIdentity } from '../lib/identity-context'
 import { animatedAvatarsEnabled, setAnimatedAvatarsEnabled } from '../lib/media'
-import { isPresenceSoundEnabled, isSentSoundEnabled, isSoundEnabled, setPresenceSoundEnabled, setSentSoundEnabled, setSoundEnabled } from '../lib/sounds'
+import { isPresenceSoundEnabled, isSentSoundEnabled, isSoundEnabled, previewSoundVolume, setPresenceSoundEnabled, setSentSoundEnabled, setSoundEnabled, setSoundVolume, soundVolume } from '../lib/sounds'
 import {
   FONT_SCALES,
   getFontScale,
@@ -160,6 +160,8 @@ export function Settings() {
   const [animAvatars, setAnimAvatars] = useState(() => animatedAvatarsEnabled())
   const [presenceSoundOn, setPresenceSoundOnState] = useState<boolean>(() => isPresenceSoundEnabled())
   const [sentSoundOn, setSentSoundOnState] = useState<boolean>(() => isSentSoundEnabled())
+  // Whole percent in state; the store keeps 0..1.
+  const [soundLevel, setSoundLevel] = useState<number>(() => Math.round(soundVolume() * 100))
   const { pref: themePref, setPref: setThemePref } = useTheme()
   // Which group of settings is open, or null for the index. ⚠⚠ This page used
   // to be one 1700-line column of twenty cards: everything was two scrolls away
@@ -1234,6 +1236,34 @@ export function Settings() {
             />
           </label>
           <p className="text-xs text-fg-dim">{t('settings.sound.footer')}</p>
+          {/* How loud (#983). The desktop had no level at all, and Windows
+              lists WebView2 in its mixer only while a sound is playing. A chime
+              on release, so the level is heard rather than guessed. */}
+          <div className={'pt-1 space-y-2 ' + (soundOn ? '' : 'opacity-40')}>
+            <div className="flex items-center justify-between">
+              <label htmlFor="settings-sound-volume" className="text-sm">{t('settings.sound.volume')}</label>
+              <span className="text-xs text-fg-dim tabular-nums">{soundLevel}%</span>
+            </div>
+            <input
+              id="settings-sound-volume"
+              type="range"
+              min={0}
+              max={100}
+              step={5}
+              value={soundLevel}
+              disabled={!soundOn}
+              onChange={(e) => {
+                const v = Number(e.target.value)
+                setSoundLevel(v)
+                setSoundVolume(v / 100)
+              }}
+              onPointerUp={() => previewSoundVolume()}
+              onKeyUp={(e) => {
+                if (e.key.startsWith('Arrow') || e.key === 'Home' || e.key === 'End' || e.key.startsWith('Page')) previewSoundVolume()
+              }}
+              className={'w-full accent-accent ' + (soundOn ? 'cursor-pointer' : 'cursor-not-allowed')}
+            />
+          </div>
           {/* Separate toggle for contact online/offline chimes, like iOS.
               Greyed out when the master switch is off. */}
           <label className={'flex items-center justify-between pt-1 ' + (soundOn ? 'cursor-pointer' : 'opacity-40 cursor-not-allowed')}>

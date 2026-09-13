@@ -963,6 +963,7 @@ export const ru: Record<string, string> = {
   'settings.sound.toggle': 'Системные звуки',
   'settings.sound.footer':
     'Звук на входящие сообщения и другие события. Главный переключатель всех звуков.',
+  'settings.sound.volume': 'Громкость сигналов RCQ',
   'settings.sound.presence': 'Контакт онлайн/офлайн',
   'settings.sound.presence_footer': 'Звук, когда контакт появляется в сети или уходит.',
   'settings.section.theme': 'Оформление',

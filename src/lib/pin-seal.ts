@@ -210,7 +210,8 @@ export async function openBuffer(stored: unknown): Promise<ArrayBuffer | null> {
 /// libsignal device blob and the non-extractable sealing key live in the same
 /// store, and neither survives a JSON round-trip.
 function isHistoryKey(k: string): boolean {
-  return k.startsWith('incoming:') || (k.startsWith('img:') && k !== 'img:index')
+  // `gnames:` is the last-known nickname per group member (group-names.ts).
+  return k.startsWith('incoming:') || k.startsWith('gnames:') || (k.startsWith('img:') && k !== 'img:index')
 }
 
 /// Set once this database has been swept, so the sweep is not repeated on

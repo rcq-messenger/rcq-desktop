@@ -6,6 +6,29 @@
 import type { WebIdentity, PeerBundle } from './crypto'
 import { messageClass } from './crypto'
 
+/// Told about every roster a group fetch brings back (#982: the last-known
+/// nickname store in group-names.ts). Registered, not imported, for the reason
+/// `onAccountWipe` gives in auth.ts: this module is bundled into the console,
+/// and that build must not pull the browser's stores in behind it.
+type RosterListener = (id: WebIdentity, groupId: number, members: GroupMember[]) => void
+const rosterListeners: RosterListener[] = []
+
+export function onRosterFetched(fn: RosterListener) {
+  rosterListeners.push(fn)
+}
+
+/// `groupId` is the id on the island `id` talks to, never a local alias.
+function tellRoster(id: WebIdentity, groupId: number, g: RCQGroup | null | undefined) {
+  if (!g || !Array.isArray(g.members) || g.members.length === 0) return
+  for (const fn of rosterListeners) {
+    try {
+      fn(id, groupId, g.members)
+    } catch {
+      /* a listener must never fail the fetch */
+    }
+  }
+}
+
 export class ApiError extends Error {
   constructor(public status: number, public body: string) {
     super(`${status}: ${body}`)
@@ -729,7 +752,10 @@ export const Api = {
   /// that genuinely need it — see `ensureRoster`. Older islands ignore the
   /// parameter and answer with the roster anyway, which is the safe direction.
   groups(id: WebIdentity, withMembers = true): Promise<RCQGroup[]> {
-    return request<RCQGroup[]>(id, 'GET', withMembers ? '/groups' : '/groups?members=0')
+    return request<RCQGroup[]>(id, 'GET', withMembers ? '/groups' : '/groups?members=0').then((list) => {
+      if (Array.isArray(list)) for (const g of list) tellRoster(id, g.id, g)
+      return list
+    })
   },
 
   /// Write the sealed room identity (stage 6 phase 2). The version must be
@@ -744,11 +770,17 @@ export const Api = {
 
   /// One group with its roster - the read half of the 409 retry.
   group(id: WebIdentity, groupId: number): Promise<RCQGroup> {
-    return request<RCQGroup>(id, 'GET', `/groups/${groupId}`)
+    return request<RCQGroup>(id, 'GET', `/groups/${groupId}`).then((g) => {
+      tellRoster(id, groupId, g)
+      return g
+    })
   },
 
   groupInfo(id: WebIdentity, groupId: number): Promise<RCQGroup> {
-    return request<RCQGroup>(id, 'GET', `/groups/${groupId}`)
+    return request<RCQGroup>(id, 'GET', `/groups/${groupId}`).then((g) => {
+      tellRoster(id, groupId, g)
+      return g
+    })
   },
 
   // ⚠ `loadPoll` / `votePoll` / `createPoll` were removed on 2026-08-23 with the

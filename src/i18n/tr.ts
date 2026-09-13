@@ -868,6 +868,7 @@ export const tr: Record<string, string> = {
   'settings.section.sound': 'Ses',
   'settings.sound.toggle': 'Sistem sesleri',
   'settings.sound.footer': 'Gelen mesajlarda ve başka durumlarda bir ses çalar. Bütün seslerin ana anahtarı.',
+  'settings.sound.volume': 'RCQ ses düzeyi',
   'settings.sound.presence': 'Kişi çevrimiçi/çevrimdışı',
   'settings.sound.presence_footer': 'Bir kişi çevrimiçi olduğunda ya da çıktığında ses çalar.',
   'settings.section.theme': 'Tema',

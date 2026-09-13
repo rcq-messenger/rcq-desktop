@@ -11,6 +11,8 @@ import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
 import { useArchiveGroups, useFavoriteGroups, useMutedGroups } from '../lib/local-store'
 import { forgetSectionMember, sectionKeyForGroup } from '../lib/sections-vault'
+import { forgetGroupNames, groupNamesScope } from '../lib/group-names'
+import { groupApiCtx } from '../lib/visited-islands'
 
 interface Props {
   group: RCQGroup
@@ -57,6 +59,9 @@ export function GroupActionsMenu({ group, inUserSection, onClose, onChanged, onP
       // Leaving is a deliberate local action, so the section membership goes
       // with a tombstone. Nothing else prunes the slot.
       forgetSectionMember(identity, sectionKeyForGroup(group))
+      // The names kept for its former members go with the room (#982).
+      const ctx = groupApiCtx(identity, group.id)
+      forgetGroupNames(groupNamesScope(ctx.ident.apiBase, ctx.gid, ctx.host))
       onChanged()
       onClose()
     } catch (e) {

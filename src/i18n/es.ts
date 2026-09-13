@@ -868,6 +868,7 @@ export const es: Record<string, string> = {
   'settings.section.sound': 'Sonido',
   'settings.sound.toggle': 'Sonidos del sistema',
   'settings.sound.footer': 'Suena un tono con los mensajes entrantes y otros avisos. El interruptor general de todos los sonidos.',
+  'settings.sound.volume': 'Volumen de los tonos de RCQ',
   'settings.sound.presence': 'Contacto conectado o desconectado',
   'settings.sound.presence_footer': 'Un tono cuando un contacto se conecta o se desconecta.',
   'settings.section.theme': 'Tema',

@@ -1734,15 +1734,13 @@ function CrossIslandRow({
               one, and the flower stays gray behind it.
 
               ⚠⚠ 28, THE SAME NUMBER AS EVERY OTHER ROW IN THIS LIST. It was
-              20, and that is the founder's report of 12.09 that the gray
+              20, and that is the founder's report of 13.09 that the gray
               flower is smaller than the normal ones. Measured in Chrome with
               both rows in the same list: ContactRow drew 28.00 x 28.00 and
               this row 20.00 x 20.00. ContactRow and GroupRow are both 28, so
-              a cross-island row was the one row type in the list drawn at
-              another size, and the same person could get either size
-              depending on which store held them: an F2 contact that arrives
-              as a server contact row is drawn by ContactRow at 28 with this
-              same gray flower.
+              this was the one row type in the list drawn at another size, and
+              what the eye actually caught was the whole row starting 8px to
+              the left of its neighbours, not the flower on its own.
 
               The picture case needs it too, not just the flower. The badge
               PersonAvatar puts on a picture clamps to 12px at both sizes, so

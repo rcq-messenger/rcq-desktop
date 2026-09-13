@@ -117,6 +117,7 @@ import { MenuPanel } from '../components/MenuPanel'
 import { uploadEncryptedImage, uploadEncryptedFile, uploadEncryptedAudio, downloadEncryptedFile } from '../lib/media'
 import { emoticonAssetURL } from '../lib/emoticons'
 import { emoticonAspect, rememberEmoticonSize } from '../lib/emoticon-size'
+import { humanError } from '../lib/human-error'
 import { useI18n } from '../lib/i18n-context'
 import { useToast } from '../lib/toast'
 import { useIdentity } from '../lib/identity-context'
@@ -656,7 +657,7 @@ export function Chat() {
           setPeer(found)
         }
       } catch (e) {
-        setError(e instanceof Error ? e.message : t('chat.error.peer_load_failed'))
+        setError(humanError(e, t, 'chat.error.peer_load_failed'))
         askAgain()
       }
     })()
@@ -1485,7 +1486,12 @@ export function Chat() {
       void sendMessageCarbon(envelope)
       return { ok: true }
     } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : t('chat.error.send_failed') }
+      // ⚠ NOT e.message. ApiError's message is `${status}: ${body}`, so a bad
+      // minute on the island put `500: {"detail":"internal_error"}` in red
+      // under a message, in a room of two thousand people (founder, 13.09).
+      // humanError keeps the raw text on the Error for the console and hands
+      // the person a sentence.
+      return { ok: false, error: humanError(e, t, 'chat.error.send_failed') }
     }
   }
 

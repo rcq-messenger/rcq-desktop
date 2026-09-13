@@ -298,6 +298,30 @@ function LinkPane({ onDone }: { onDone: (id: WebIdentity) => void }) {
   const [state, setState] = useState<'waiting' | 'expired' | 'error'>('waiting')
   const [gen, setGen] = useState(0) // bump → fresh token + QR
   const [zoomed, setZoomed] = useState(false)
+  /// ⚠⚠ WHICH ISLAND TO COLLECT FROM, and it has to be askable.
+  ///
+  /// The phone deposits the sealed account to ITS OWN island and can do nothing
+  /// else: POST /link is authenticated, so it can only deposit where it holds a
+  /// token. The QR carries the token, the ephemeral key and a label, and no
+  /// island at all. So this pane has to be told where to look, and until 13.09
+  /// it was not: it polled `rememberedIsland()`, a sticky localStorage
+  /// preference written by the island field on the OTHER two tabs. Pick or type
+  /// an island once anywhere on this screen and the QR pane polls there for
+  /// good.
+  ///
+  /// The phone then answers 200, says "done" and shows a new session in Linked
+  /// devices, while this screen waits for ever on an island that was never
+  /// given the blob. Not sometimes: permanently, for anyone whose remembered
+  /// island is not the phone's. Counted in the island's own log on 13.09, six
+  /// deposits that day were never collected by anybody. Report #980,
+  /// "приходится делать множество попыток, причём вход не всегда удаётся", and
+  /// the same report says he was linking from his home island into a guest one,
+  /// which is exactly the state that poisons the preference.
+  ///
+  /// RecoverPane grew a field for this identical failure on 07.09 (see its note
+  /// above); LinkPane was left behind. The default is still the remembered
+  /// island, so the common case of one island costs nobody a decision.
+  const [island, setIsland] = useState(() => rememberedIsland())
 
   useEffect(() => {
     let cancelled = false
@@ -336,7 +360,7 @@ function LinkPane({ onDone }: { onDone: (id: WebIdentity) => void }) {
       }
       let res: Response
       try {
-        res = await fetch(`${rememberedIsland()}/link/${token}`)
+        res = await fetch(`${island}/link/${token}`)
       } catch {
         // Network blip — keep polling.
         setTimeout(poll, 2000)
@@ -364,11 +388,22 @@ function LinkPane({ onDone }: { onDone: (id: WebIdentity) => void }) {
       cancelled = true
       clearTimeout(h)
     }
-  }, [gen]) // re-run (fresh token + QR) when the user taps refresh
+    // ⚠ `island` is a dependency: changing it mid-wait has to restart the poll,
+    // or the pane keeps asking the island the person just told it was wrong.
+    // A fresh token comes with it, which is right anyway, since the old one was
+    // shown to a camera pointed at another island.
+  }, [gen, island]) // re-run (fresh token + QR) on refresh or an island change
 
   return (
     <div className="space-y-4 text-center">
       <p className="text-xs text-fg-secondary leading-relaxed">{t('login.link.scan_body')}</p>
+      {/* The island the PHONE is on, because that is where it deposits and the
+          QR cannot say. Left of centre with the rest of the pane because it is
+          a setting, not a step: most people have one island and never touch it.
+          See the note on `island` above for what its absence cost. */}
+      <div className="text-left">
+        <IslandField value={island} onChange={(next) => setIsland(next.base)} />
+      </div>
       {/* The code is smaller than it was: at 252px it dominated a screen whose
           job is to explain what linking costs you, and a phone camera does not
           need it that big from 30cm. It grows a little under the cursor and

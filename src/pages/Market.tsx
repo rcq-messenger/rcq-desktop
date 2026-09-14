@@ -956,6 +956,10 @@ export function Market() {
               {[
                 { id: 'tron', name: 'USDT · TRON' },
                 { id: 'ton', name: 'TON' },
+                // Polygon since 13.09: the till watches it for numbers once
+                // it has an explorer key, and an island that names a Polygon
+                // wallet gets the button (uins.js, `chainsWatchable`).
+                { id: 'polygon', name: 'USDT · Polygon' },
               ].map((m) => (
                 <span
                   key={m.id}

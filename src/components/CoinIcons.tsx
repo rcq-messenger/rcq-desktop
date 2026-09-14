@@ -1,4 +1,9 @@
-// The two coins we can actually take, drawn rather than fetched.
+// The coins we can actually take, drawn rather than fetched.
+//
+// ⚠ TWO COPIES: this file and RCQ/web/src/components/CoinIcons.tsx. The site
+// and the chat app are separate builds with nothing shared between them, so
+// the marks are duplicated rather than imported. Keep both in sync: a coin
+// that looks different on rcq.app and in the app reads as a different coin.
 //
 // ⚠ Inline SVG on purpose. A payment picker is the last place to load an image
 // from somebody else's server: a remote icon is a request that says "this
@@ -43,8 +48,6 @@ export function TonIcon({ className = 'h-5 w-5' }: { className?: string }) {
   )
 }
 
-/// Pick the mark for a chain id the till reports (`tron`, `ton`). Unknown ids
-/// get nothing rather than a wrong coin's colours.
 /// Polygon, switched on 13.09 for entry, numbers and the relay pools. The
 /// token is USDT or USDC, but the button says which CHAIN it is paid on,
 /// because that is the choice the buyer is making and the one they can get
@@ -67,9 +70,37 @@ export function PolygonIcon({ className = 'h-5 w-5' }: { className?: string }) {
   )
 }
 
+/// Bitcoin, which only the relay-pool checkout on rcq.app offers, and only for
+/// totals of $100 or more. Entry and numbers refuse it at the till, so in the
+/// chat app this case is never reached; it is here so the two copies stay one
+/// file.
+export function BtcIcon({ className = 'h-5 w-5' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+      <circle cx="12" cy="12" r="12" fill="#F7931A" />
+      {/* The ₿: a B with two strokes through the top and the bottom, leaning
+          the way the mark leans. The counters are cut with evenodd; the
+          strokes are a separate path so they do not cut the B where they
+          meet it. */}
+      <g fill="#fff" transform="rotate(14 12 12) translate(-0.75 0.5)">
+        <path
+          fillRule="evenodd"
+          d="M9 6.5h4c1.8 0 3 1 3 2.6 0 1-.5 1.7-1.3 2.1 1.1.4 1.8 1.2 1.8 2.5 0 1.8-1.3 2.8-3.3 2.8H9Z
+             M10.9 8.1v2.9h1.9c.9 0 1.5-.5 1.5-1.45 0-.95-.6-1.45-1.5-1.45Z
+             M10.9 12.5v2.4h2.2c1 0 1.7-.55 1.7-1.2 0-.65-.7-1.2-1.7-1.2Z"
+        />
+        <path d="M10.4 4.8h1.1v1.7h-1.1Zm2.2 0h1.1v1.7h-1.1ZM10.4 16.5h1.1v1.7h-1.1Zm2.2 0h1.1v1.7h-1.1Z" />
+      </g>
+    </svg>
+  )
+}
+
+/// Pick the mark for a chain id the till reports (`tron`, `ton`, `polygon`,
+/// `btc`). Unknown ids get nothing rather than a wrong coin's colours.
 export function CoinIcon({ chain, className }: { chain: string; className?: string }) {
   if (chain === 'tron') return <UsdtIcon className={className} />
   if (chain === 'ton') return <TonIcon className={className} />
   if (chain === 'polygon') return <PolygonIcon className={className} />
+  if (chain === 'btc') return <BtcIcon className={className} />
   return null
 }

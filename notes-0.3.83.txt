@@ -1,0 +1,21 @@
+Компьютер 0.3.83. В настройках появилась громкость сигналов. Раньше у компьютера не было своей ручки: сигнал всегда играл на полную, а в микшере Windows приложение показывается только в тот момент, когда что-то звучит, и не под своим именем, поэтому убавить его было негде. Теперь под общим выключателем звуков стоит ползунок, при отпускании он играет пробный сигнал, и та же громкость действует на звонок. Заодно сигнал перестал молчать до первого щелчка в окне: приложение, запущенное в трее при входе в систему, раньше не подавало голоса, пока в него не заглянут.
+
+Участник, вышедший из группы, больше не превращается в номер. Имя над сообщением бралось из текущего списка участников, а остров убирает оттуда ушедшего, так что его старые сообщения подписывались номером, и ответ на них рассылал этот номер всем. Теперь приложение помнит последнее известное имя каждого участника группы, хранит его вместе с историей и подставляет, когда человека в списке уже нет.
+
+В магазине номеров рядом с TRON и TON появилась сеть Polygon.
+
+---
+
+Desktop 0.3.83. Settings gain a sound volume. The computer had no knob of its own: every chime played at full volume, and the Windows mixer lists the app only while something is playing, under a name that is not ours, so there was nowhere to turn it down. A slider now sits under the master sound switch, plays a sample chime when released, and the same level applies to the call ring. The chime also stops staying silent until the first click in the window: an app started in the tray at login used to make no sound until somebody looked at it.
+
+A member who left a group no longer turns into a number. The name above a message came from the current member list, and the island drops a departed member from it, so their old messages were signed with a number, and a reply to them sent that number to everyone. The app now remembers the last known name of every group member, keeps it with the history, and uses it when the person is no longer on the list.
+
+The number market shows the Polygon network beside TRON and TON.
+
+---
+
+桌面版 0.3.83。设置里新增了提示音音量。此前电脑端没有自己的旋钮：提示音总是以最大音量播放，而 Windows 混音器只在有声音播放时才列出本应用，而且用的不是我们的名字，所以无处可调。现在总开关下面多了一个滑块，松开时会播放一声试听提示音，通话铃声也使用同一音量。同时，提示音不再在窗口被点击之前保持沉默：登录时在托盘启动的应用，此前在有人查看之前一直不出声。
+
+退出群组的成员不再变成一串数字。消息上方的名字取自当前成员列表，而岛屿会把已退出的成员从列表中移除，因此其旧消息会以号码署名，回复这些消息还会把号码发给所有人。现在应用会记住每位群成员最后已知的名字，与聊天记录一起保存，并在此人已不在列表中时使用它。
+
+号码市场在 TRON 和 TON 旁新增了 Polygon 网络。

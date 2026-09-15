@@ -1,0 +1,21 @@
+Компьютер 0.3.86. Заявки на ваши копии на других островах (#985, #986). Когда вы входите в группу на другом острове, там появляется копия вашего аккаунта. Если кто-то с того острова пишет этой копии, заявка теперь приходит к вам домой: её можно принять, отклонить или заблокировать. Раньше такие заявки оставались на том острове, и вы их не видели.
+
+Сжигание аккаунта теперь идёт по всем островам: сначала удаляются копии на островах, где вы бывали, потом аккаунт дома. Если какой-то остров не ответил, приложение скажет об этом и предложит повторить, сжечь всё равно или отменить.
+
+Запасной остров (#988): автоматический выбор больше не пытается завести резерв на острове, куда пускают только по коду или приглашению, а идёт к следующему открытому. Если ваша копия там уже есть, она подхватывается. Вместо кодов ошибок теперь понятный текст.
+
+---
+
+Desktop 0.3.86. Requests to your copies on other islands (#985, #986). Joining a group on another island creates a copy of your account there. If someone on that island writes to the copy, the request now reaches you at home, where you can accept, decline or block. Before, those requests stayed on that island and you never saw them.
+
+Burning the account now covers every island: the copies on islands you visited go first, then the account at home. If an island does not answer, the app says so and offers to try again, burn anyway or cancel.
+
+Backup island (#988): the automatic pick no longer tries an island that only lets people in with a code or an invite; it moves on to the next open one. If your copy is already there, it is picked up. Errors are plain sentences instead of codes.
+
+---
+
+桌面版 0.3.86。你在其他岛屿上的副本收到的请求（#985、#986）。加入其他岛屿上的群组时，那里会创建你账号的副本。如果那个岛屿上有人给这个副本发请求，现在请求会送到你的主岛，你可以接受、拒绝或屏蔽。以前这些请求停留在那个岛屿上，你看不到。
+
+销毁账号现在覆盖所有岛屿：先删除你访问过的岛屿上的副本，再删除主岛上的账号。如果某个岛屿没有响应，应用会提示，并让你选择重试、仍然销毁或取消。
+
+备用岛屿（#988）：自动选择不再尝试只凭入岛码或邀请才能进入的岛屿，而是换到下一个开放的岛屿。如果你在那里已有副本，会直接沿用。错误提示改为易懂的文字，不再显示代码。

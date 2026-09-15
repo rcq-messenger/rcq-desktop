@@ -1444,4 +1444,8 @@ export const en: Record<string, string> = {
   'account_moved.body': "The account that was {uin} answers as a different number now: it was moved on another of your devices. This window could not follow it automatically. Nothing here was deleted, your messages are still on this device. Try again, or sign in with your recovery phrase.",
   'account_moved.retry': "Try again",
   'account_moved.signin': "Sign in with recovery phrase",
+  // The keys were changed on another device (404 identity_rotated). Nothing is
+  // deleted on this path either; the new phrase is the only way on.
+  'auth.rotated_elsewhere': "This account's keys were changed on another device. Enter the new recovery phrase to continue.",
+  'auth.rotated_elsewhere.enter': "Enter new phrase",
 }

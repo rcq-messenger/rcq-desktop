@@ -1271,4 +1271,7 @@ export const tr: Record<string, string> = {
   'account_moved.body': '{uin} olan hesap artık başka bir numarayla yanıt veriyor: başka bir cihazında taşınmış. Bu pencere otomatik olarak takip edemedi. Burada hiçbir şey silinmedi, mesajların hâlâ bu cihazda. Tekrar dene ya da kurtarma ifadenle giriş yap.',
   'account_moved.retry': 'Tekrar dene',
   'account_moved.signin': 'Kurtarma ifadesiyle giriş yap',
+  // Keys changed on another device (404 identity_rotated).
+  'auth.rotated_elsewhere': 'Bu hesabın anahtarları başka bir cihazda değiştirildi. Devam etmek için yeni kurtarma ifadesini gir.',
+  'auth.rotated_elsewhere.enter': 'Yeni ifadeyi gir',
 }

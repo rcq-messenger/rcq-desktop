@@ -88,12 +88,41 @@ export function sameSigningKey(a: string | null | undefined, b: string | null | 
 ///
 ///  * a carbon from another island is not ours (every carbon is sealed under
 ///    the home identity and stamped with the home island);
-///  * a carbon that names a verified signing key is ours only when that key is
-///    OUR signing key. v=2 names none (libsignal authenticated it) and keeps
-///    its old behaviour;
+///  * a carbon that NAMES a signing key (a v=1 seal) is ours only when that key
+///    is OUR signing key, whatever inner kind it carries. An empty or
+///    malformed key is a key that is not ours, not "no key";
+///  * a `ciack` carbon is ours only under our own signing key, never without
+///    one. It is the carbon that pins a cross-island contact's keys, which is
+///    the whole forgery this rule exists to stop (spec 2026-09-15, P0.1);
+///  * TRANSITIONAL: a carbon that names NO key is accepted for every other
+///    inner kind. On a 1:1 row that is a v=2 row (decryptV1 always yields the
+///    `spub` it verified; decryptIncoming's v=2 branch yields none), and
+///    Android seals carbons v=2 by default, over its session with our other
+///    installs. Refusing them all stopped every message sent, edited, deleted
+///    or read on Android from syncing to web and desktop of the same account.
+///    The same allowance iOS ships (MessageService.swift, the carbon branch).
+///    It is an allowance, not proof: nothing in v=2 authenticates the sender.
+///    `from` and `dev` sit in the outer wrap unsigned, crypto-v2 decrypt()
+///    uses them as the libsignal address, and the in-memory identity store
+///    trusts whatever identity key a first PreKey message for that address
+///    brings, so anyone can open a fresh session "as" (our number, device 77)
+///    and deposit a keyless carbon of text, an edit or a delete. That is the
+///    residual risk we carry until the strict rule is back; what it can no
+///    longer do is pin keys. A keyless carbon with no readable inner kind is
+///    refused: Android's always carries one, and there is nothing to allow.
+///    ⚠ TODO(strict carbons): once Android 0.194 (which seals carbons v=1
+///    under the account key) has spread, drop this allowance so a carbon is
+///    ours only under our own key for EVERY kind: carbonIsOwn then reduces to
+///    the sameSigningKey line below, and cli/test/carbon-gate.mjs flips its
+///    keyless cases to refused. Flip it together with the same allowance on
+///    Android (net/CrossIslandGate.kt) and iOS (MessageService.swift, the
+///    carbon branch): while any one client still takes keyless carbons, a
+///    forged edit or delete still lands on that client;
 ///  * a carbon never rides a group row. Carbons are deposited 1:1 to our own
 ///    number; one decoded out of a broadcast was re-attributed by a sender-key
 ///    chain whose binding to our number proves nothing about who posted it.
+///    This is also what keeps the keyless allowance to v=2 1:1 rows: the
+///    other routes that name no key are group broadcasts.
 export function carbonIsOwn(
   senderUin: number,
   myUin: number,
@@ -102,13 +131,43 @@ export function carbonIsOwn(
   senderSigningKey: string | null | undefined,
   ownSigningKey: string | null | undefined,
   groupRow: boolean,
+  innerKind: unknown,
 ): boolean {
   if (senderUin !== myUin) return false
   if (groupRow) return false
-  if (typeof senderHost === 'string' && senderHost !== '' && senderHost !== ownHost) return false
+  // Compared canonically, not byte for byte. The two sides have different
+  // writers: ownHost is `new URL(apiBase).host` here, `from_host` is whatever
+  // the sealing client stamped (Android: store.serverHost, as the account was
+  // added). Since Android 0.194 seals carbons v=1, it stamps a host where its
+  // v=2 carbons stamped none, and a case difference, an explicit :443 or a
+  // trailing dot must not refuse every carbon from the account's phone. This
+  // costs nothing in forgery terms: `from_host` is outside the v=1 signature,
+  // so the key checks below carry the proof, not this line.
+  if (typeof senderHost === 'string' && senderHost !== '' && canonicalHost(senderHost) !== canonicalHost(ownHost)) {
+    return false
+  }
+  // A key was named (v=1): only ours will do, every inner kind. sameSigningKey
+  // is false for an empty or malformed key and for a tab with no identity.
   if (senderSigningKey != null) return sameSigningKey(senderSigningKey, ownSigningKey)
-  return true
+  // No key named (v=2), the transitional allowance above.
+  if (typeof innerKind !== 'string' || innerKind === '') return false
+  return !CARBON_KINDS_OWN_KEY_ONLY.has(innerKind)
 }
+
+/// An island host in one spelling, for comparing two writers' stamps: lower
+/// case, no default HTTPS port, no trailing dot (the DNS root label).
+/// `API.RCQ.APP`, `api.rcq.app:443` and `api.rcq.app.` are all `api.rcq.app`.
+/// A non-default port stays: `x.example:8443` is a different island address.
+function canonicalHost(host: string): string {
+  let h = host.trim().toLowerCase()
+  if (h.endsWith(':443')) h = h.slice(0, -4)
+  return h.replace(/\.+$/, '')
+}
+
+/// Inner carbon kinds taken ONLY under our own signing key, never over a v=2
+/// session. `ciack` pins a cross-island contact's keys (crossisland-ack.ts).
+/// Once the strict rule is on (see carbonIsOwn) this set has no job left.
+export const CARBON_KINDS_OWN_KEY_ONLY: ReadonlySet<string> = new Set(['ciack'])
 
 /// Inner kinds that are never applied out of a broadcast from a room on
 /// ANOTHER island.

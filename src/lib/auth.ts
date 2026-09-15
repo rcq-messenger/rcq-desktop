@@ -19,6 +19,7 @@ import { b64ToBytes, bytesToB64, type WebIdentity } from './crypto'
 import { decodePhrase, deriveKeysFromSeed, encodeSeed, newSeed, parsePhrase } from './recovery'
 import { copyScopedKeys } from './move-carry'
 import { rekeySenderKeysOnMove } from './sender-key-store'
+import { mintFromRefusal, type TokenMint } from './session-verdict'
 
 const STORAGE_KEY = 'rcq.web.identity.v1'
 /// Every account this browser holds. The ACTIVE one stays in STORAGE_KEY as
@@ -598,6 +599,81 @@ interface StoredIdentity {
   /// registered under an id the phone minted, and that is the one the
   /// linked-devices list revokes. Absent for accounts made or recovered here.
   sessionDevice?: string
+  /// A key rotation this browser has started or adopted and not finished. See
+  /// [StoredPendingRotation].
+  pendingRotation?: StoredPendingRotation
+}
+
+/// The pending-rotation marker (spec 2026-09-15: P0.2 now, F3 sibling adoption
+/// in C2). Nothing writes it yet. It exists ahead of the code that will, so the
+/// guard that reads it ships first: an install that can rotate must never meet
+/// an install of the same account that erases itself mid-rotation.
+///
+/// ⚠ Kept INSIDE the identity row, not in a key of its own, because it holds
+/// the old signing private key: that way it lives wherever the row lives (the
+/// desktop PIN vault included, see [ACCOUNT_KEYS]), and it goes whenever the
+/// account's row goes. A separate key would be one more secret to remember to
+/// seal and to wipe.
+export interface StoredPendingRotation {
+  /// base64 Ed25519 seed of the signing key the islands still know.
+  oldSigningPriv: string
+  /// Every island this browser has to carry through the rotation.
+  targets: Array<{
+    kind: 'backup' | 'visited'
+    host: string
+    uin: number
+    status: 'pending' | 'done' | 'failed' | 'forgotten'
+  }>
+}
+
+/// The pending rotation stored for `uin`, from whichever row we have: the
+/// active slot, else the switcher list (same shape as [storedSessionDevice]).
+function storedPendingRotation(uin: number): StoredPendingRotation | undefined {
+  try {
+    const raw = acctGet(STORAGE_KEY)
+    if (raw) {
+      const active = JSON.parse(raw) as StoredIdentity
+      if (active.uin === uin && active.pendingRotation != null) return active.pendingRotation
+    }
+  } catch {
+    /* fall through to the list */
+  }
+  return readAccounts().find((a) => a.uin === uin)?.pendingRotation ?? undefined
+}
+
+/// Does this browser hold an unfinished key rotation for `uin`? While it does,
+/// nothing may sign the account out or erase it (session-verdict.ts). Any
+/// value at all counts, a malformed one included: the failure mode of this
+/// check has to be "keep the account", never "erase it".
+export function hasPendingRotation(uin: number): boolean {
+  return storedPendingRotation(uin) != null
+}
+
+/// Write (or with null, clear) the pending rotation for `uin`, on both rows,
+/// like [rememberSessionDevice]: a switch must not restore a row without it.
+export function writePendingRotation(uin: number, pending: StoredPendingRotation | null): void {
+  const apply = <T extends StoredIdentity>(row: T): T => {
+    if (pending) return { ...row, pendingRotation: pending }
+    const { pendingRotation: _gone, ...rest } = row
+    return rest as T
+  }
+  try {
+    const raw = acctGet(STORAGE_KEY)
+    if (raw) {
+      const active = JSON.parse(raw) as StoredIdentity
+      if (active.uin === uin) acctSet(STORAGE_KEY, JSON.stringify(apply(active)))
+    }
+  } catch {
+    /* unreadable active row — the list below still gets its copy */
+  }
+  const list = readAccounts()
+  let touched = false
+  for (let i = 0; i < list.length; i++) {
+    if (list[i].uin !== uin) continue
+    list[i] = apply(list[i])
+    touched = true
+  }
+  if (touched) writeAccounts(list)
 }
 
 /// The linked-session id stored for `uin`, from whichever row we have — the
@@ -680,6 +756,10 @@ export function persistIdentity(id: WebIdentity, seed?: string) {
   // and dropping the linked-session id here would hand the browser straight
   // back to its own install id at the next mint — the whole of report #607.
   const keepDevice = storedSessionDevice(id.uin)
+  // Carried for the same reason: this row is rewritten on every token refresh,
+  // and a rebuild that dropped the pending rotation would drop the old signing
+  // key with it, and the guard that keeps the account alive mid-rotation.
+  const keepRotation = storedPendingRotation(id.uin)
   const tokenless = isTokenless(id.uin)
   const stored: StoredIdentity = {
     uin: id.uin,
@@ -691,6 +771,7 @@ export function persistIdentity(id: WebIdentity, seed?: string) {
     ...(tokenless ? { noToken: true } : { jwt: id.jwt }),
     ...(keepSeed ? { seed: keepSeed } : {}),
     ...(keepDevice ? { sessionDevice: keepDevice } : {}),
+    ...(keepRotation ? { pendingRotation: keepRotation } : {}),
   }
   acctSet(STORAGE_KEY, JSON.stringify(stored))
   // Keep the switcher row in step, or switching accounts would restore the
@@ -756,31 +837,10 @@ export function hasStoredToken(uin: number): boolean {
 // Minting a session token from the signing key
 // -----------------------------------------------------------
 
-/// What came back from an attempt to mint a session token.
-///
-/// The three failures are deliberately NOT the same thing, because acting on
-/// the wrong one signs somebody out of a live account:
-///  * `dead` — the island says this identity is gone. The session really is
-///    over; the caller may send the user back to the login screen.
-///  * `unsupported` — the island predates POST /auth/refresh. Nothing is
-///    wrong; this account simply goes on keeping its token on disk.
-///  * neither — offline, a 5xx, a captive portal. Try again later and change
-///    nothing in the meantime.
-export interface TokenMint {
-  token: string | null
-  dead: boolean
-  unsupported: boolean
-  /// ⚠⚠ The number this account answers as NOW, when it is not the one we
-  /// asked about. Set only when the island said in so many words that the
-  /// account moved off the number we named (`moved_from`), which is a
-  /// different thing from a shared key handing back a stranger.
-  ///
-  /// This exists because the old answer to "that number is not here" was
-  /// `identity_not_found`, and this client reads that as a burn and signs
-  /// itself out. A person who buys a shorter number on their laptop should not
-  /// find their browser logged out and their phone wiped.
-  movedTo?: number
-}
+/// What came back from an attempt to mint a session token. Declared, with the
+/// meaning of every failure, in session-verdict.ts, where the mapping from an
+/// island's refusal to it can be tested without a browser.
+export type { TokenMint }
 
 /// Ask this account's island for a fresh session token, proving possession of
 /// the Ed25519 signing key (the same challenge-response as recovery).
@@ -842,21 +902,16 @@ export async function mintSessionToken(id: WebIdentity, deviceIdOverride?: strin
       }
       return miss
     }
-    // The account disconnected this browser. Same ending as "identity gone":
-    // the session is over and no amount of retrying changes that.
-    if (res.status === 401) {
-      const text = await res.text()
-      if (text.includes('device_revoked')) return { token: null, dead: true, unsupported: false }
-      return miss
+    // A refusal: the account disconnected this browser (401 device_revoked),
+    // no such account, keys rotated elsewhere, an ambiguous key, or an island
+    // older than the endpoint (404/405). ⚠⚠ Read by its exact JSON code in
+    // session-verdict.ts, never with `text.includes`: `identity_rotated` and
+    // `identity_ambiguous` share the 404 and must not sign anybody out, and
+    // nothing does while this browser holds a pending rotation (spec
+    // 2026-09-15, P0.2).
+    if (res.status === 401 || res.status === 404 || res.status === 405) {
+      return mintFromRefusal(res.status, await res.text(), hasPendingRotation(id.uin))
     }
-    if (res.status === 404) {
-      // Two very different 404s: "no such account" (ours, coded) and "no such
-      // route" (an island older than this endpoint).
-      const text = await res.text()
-      if (text.includes('identity_not_found')) return { token: null, dead: true, unsupported: false }
-      return { token: null, dead: false, unsupported: true }
-    }
-    if (res.status === 405) return { token: null, dead: false, unsupported: true }
     return miss
   } catch {
     // Offline. Says nothing about the account.

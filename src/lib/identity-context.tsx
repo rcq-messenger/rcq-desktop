@@ -12,6 +12,7 @@ import {
   clearIdentity,
   clearSessionRevoked,
   forgetAddAccountOrigin,
+  hasPendingRotation,
   rememberAddAccountOrigin,
   listStoredIdentities,
   loadStoredIdentity,
@@ -33,6 +34,7 @@ import { defaultHome } from './routing'
 import { Api, setTokenRefresher, setUnauthorizedHandler , clearGroupPreviewCache } from './api'
 import { clearRandomPeers } from './random-peers'
 import { idbClearAll } from './signal-persist'
+import { bootAction } from './session-verdict'
 
 interface IdentityCtx {
   identity: WebIdentity | null
@@ -75,6 +77,16 @@ interface IdentityCtx {
   /// untouched and the other accounts still signed in. Recovery by phrase
   /// lives there.
   leaveMovedAccount: () => void
+  /// Set when the island answered this account's signing key with 404
+  /// `identity_rotated`: its keys were changed on another device. Carries the
+  /// number this browser is signed in as.
+  ///
+  /// ⚠⚠ Never a sign-out and never a wipe (spec 2026-09-15, P0.2). The old keys
+  /// stay in the roster row: a sibling cascade (F3, C2) needs them.
+  rotatedElsewhere: { uin: number } | null
+  /// The way on from that state: the login screen, to enter the new phrase,
+  /// with every local store untouched. Same call as [leaveMovedAccount].
+  leaveRotatedAccount: () => void
 }
 
 const Ctx = createContext<IdentityCtx | undefined>(undefined)
@@ -86,6 +98,20 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
   // One-shot rehydrate from localStorage on first mount. Until it
   // finishes we render nothing — Routes downstream gate on this.
   const [accounts, setAccounts] = useState<WebIdentity[]>([])
+
+  // ── the keys were changed on another device ───────────────────────────────
+  //
+  // Raised from any mint that comes back `rotated` (start-up, a 401 re-mint, a
+  // move follow). The ref is the 401 shield: once the island has said the keys
+  // rotated, every authed call made with the old session answers 401 (a signed
+  // reissue bumps the account's epoch), and the handler below must not turn
+  // that into "session ended" and clear the slot out from under the notice.
+  const [rotatedElsewhere, setRotatedElsewhere] = useState<{ uin: number } | null>(null)
+  const rotatedRef = useRef(false)
+  const showRotatedElsewhere = (uin: number) => {
+    rotatedRef.current = true
+    setRotatedElsewhere({ uin })
+  }
 
   useEffect(() => {
     const stored = loadStoredIdentity()
@@ -122,7 +148,9 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
     let cancelled = false
     void mintSessionToken(stored).then((mint) => {
       if (cancelled) return
-      if (mint.token && mint.movedTo) {
+      // The whole decision is session-verdict.ts `bootAction`, tested offline.
+      const action = bootAction(mint)
+      if (action === 'moved' && mint.token && mint.movedTo) {
         // ⚠⚠ The account moved while this browser was closed - somebody bought
         // a shorter number on another device. Before this branch existed the
         // island said `identity_not_found` and the answer here was to sign the
@@ -148,15 +176,31 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
         })
         return
       }
-      if (mint.token) {
+      if (action === 'token' && mint.token) {
         // #718: the island just minted a token for this account, so whatever
         // ended the previous session is over. The mark has to go here too: this
         // branch does not run through `adoptToken`, and an account that stayed
         // marked wore "session ended" under its name forever while working.
         clearSessionRevoked(stored.uin)
         setIdentity({ ...stored, jwt: mint.token })
-      } else if (mint.dead) {
-        // The island says this identity is gone. Same ending as a 401.
+      } else if (action === 'rotated') {
+        // ⚠⚠ The keys were changed on another device. Until C0 this 404 read
+        // as `dead` and the account was signed out here. Keep the identity (its
+        // stored history opens behind the notice) and ask for the new phrase.
+        setIdentity(stored)
+        showRotatedElsewhere(stored.uin)
+      } else if (action === 'stranded') {
+        // `identity_ambiguous`: the number is vacant and the key answers for
+        // more than one account, which only happens after a move. The island
+        // will not guess, so this is the moved-account notice, shielded from
+        // the 401s that follow, with nothing cleared.
+        setIdentity(stored)
+        movedAway.current = true
+        setMovedStranded({ from: stored.uin, busy: false })
+      } else if (action === 'signout') {
+        // The island says this identity is gone. Same ending as a 401. Never
+        // reached for a rotated or ambiguous identity, or under a pending
+        // rotation: `dead` is not set for any of them (session-verdict.ts).
         markSessionRevoked(stored.uin)
         clearIdentity()
         setIdentity(null)
@@ -180,6 +224,12 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
     // so a token that expired once (or a phone that revoked this browser before
     // it was relinked) left the account subtitled "session ended" for good.
     clearSessionRevoked(target.uin)
+    // The same proof ends a rotated-elsewhere notice: the island just accepted
+    // the key this browser holds, so for this account nothing rotated.
+    if (rotatedRef.current) {
+      rotatedRef.current = false
+      setRotatedElsewhere(null)
+    }
     markTokenless(target.uin)
     persistIdentity({ ...target, jwt: token })
     setIdentity((cur) => (cur && cur.uin === target.uin ? { ...cur, jwt: token } : cur))
@@ -248,6 +298,13 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
           adoptToken(target, mint.token)
           mintBackoffRef.current = { until: 0, delayMs: 5_000 }
         } else {
+          // Raised BEFORE this mint resolves to null: api.ts calls the 401
+          // handler right after, and the shields it checks must already be up.
+          if (mint.rotated) showRotatedElsewhere(target.uin)
+          else if (mint.ambiguous) {
+            movedAway.current = true
+            setMovedStranded({ from: target.uin, busy: false })
+          }
           const b = mintBackoffRef.current
           mintBackoffRef.current = {
             until: Date.now() + b.delayMs,
@@ -415,6 +472,13 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
           adoptToken(target, mint.token)
           return
         }
+        // Not a move at all: the keys were changed on another device. That
+        // screen, not this one, and never a retry loop against the same answer.
+        if (mint.rotated) {
+          setMovedStranded(null)
+          showRotatedElsewhere(target.uin)
+          return
+        }
         // Everything below leaves LOCAL DATA ALONE. There are two ways to get
         // here and neither is a reason to delete a message:
         //
@@ -427,8 +491,9 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
         //    endpoint). That says nothing at all about the account.
         //
         // The first is final; the second is worth retrying a few times before
-        // the person is told anything.
-        if (!mint.dead && !mint.unsupported && followTriesRef.current < 3) {
+        // the person is told anything. `ambiguous` is the island's judgement
+        // too (it used to arrive as `dead`), so it is final as well.
+        if (!mint.dead && !mint.unsupported && !mint.ambiguous && followTriesRef.current < 3) {
           const delay = 2_000 * 3 ** followTriesRef.current
           followTriesRef.current += 1
           window.setTimeout(() => followAccountMove(announcedUin), delay)
@@ -460,6 +525,9 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
       // ended", and the notice explaining the move never got drawn. Local
       // data is untouched either way; what this protects is the explanation.
       if (movedAway.current) return
+      // Same for keys rotated on another device: every call under the old
+      // session answers 401 from then on, and the notice explains why.
+      if (rotatedRef.current) return
       // Mark before clearing: once the identity is gone we no longer know
       // which account died, and the Settings list would show a row that
       // silently bounces to login every time it is tapped ("зайти не даёт").
@@ -471,6 +539,10 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
       // "session ended" on the way. A 401 for anybody else is a fact about
       // them, not about us.
       if (!dying || dying.uin !== uin) return
+      // ⚠⚠ Never while this browser holds a pending key rotation (spec
+      // 2026-09-15, P0.2): mid-rotation a 401 is expected, and this slot holds
+      // the old key that finishes the rotation on the other islands.
+      if (hasPendingRotation(uin)) return
       markSessionRevoked(dying.uin)
       clearIdentity()
       setIdentity(null)
@@ -518,6 +590,10 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
       // `idbClearAll` — this window is here because an account moved, and the
       // only copy of its history on this machine is the one it is holding.
       leaveMovedAccount: openLoginScreen,
+      rotatedElsewhere,
+      // The same call again, for the same reason: the account is alive under
+      // new keys, and the only history of it on this machine is right here.
+      leaveRotatedAccount: openLoginScreen,
       signOutAccount: (uin: number) => {
         // Tell the ACCOUNT BEING SIGNED OUT that this session is gone, not
         // whichever one happens to be active — otherwise leaving account B
@@ -610,7 +686,7 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
     }),
     // `movedStranded` is in here so the notice appears (and its button stops
     // spinning) without waiting for some other state to change.
-    [identity, accounts, movedStranded],
+    [identity, accounts, movedStranded, rotatedElsewhere],
   )
 
   if (!hydrated) return null

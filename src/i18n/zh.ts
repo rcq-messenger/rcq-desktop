@@ -1267,4 +1267,7 @@ export const zh: Record<string, string> = {
   'account_moved.body': '原本是 {uin} 的账号现在用另一个号码应答：它在你的另一台设备上被搬走了。这个窗口无法自动跟过去。这里什么都没有删除，你的消息仍在这台设备上。可以重试，或者用恢复短语登录。',
   'account_moved.retry': '重试',
   'account_moved.signin': '用恢复短语登录',
+  // Keys changed on another device (404 identity_rotated).
+  'auth.rotated_elsewhere': '这个账号的密钥已在另一台设备上更换。输入新的恢复短语以继续。',
+  'auth.rotated_elsewhere.enter': '输入新短语',
 }

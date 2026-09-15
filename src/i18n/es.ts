@@ -1271,4 +1271,7 @@ export const es: Record<string, string> = {
   'account_moved.body': 'La cuenta que era {uin} responde ahora con otro número: la moviste en otro de tus dispositivos. Esta ventana no pudo seguirla automáticamente. Aquí no se borró nada, tus mensajes siguen en este dispositivo. Inténtalo de nuevo o inicia sesión con tu frase de recuperación.',
   'account_moved.retry': 'Intentar de nuevo',
   'account_moved.signin': 'Iniciar sesión con la frase',
+  // Keys changed on another device (404 identity_rotated).
+  'auth.rotated_elsewhere': 'Las claves de esta cuenta se cambiaron en otro dispositivo. Introduce la nueva frase de recuperación para continuar.',
+  'auth.rotated_elsewhere.enter': 'Introducir la nueva frase',
 }

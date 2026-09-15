@@ -1272,4 +1272,8 @@ export const uk: Record<string, string> = {
   'account_moved.body': 'Акаунт, який мав номер {uin}, тепер відповідає під іншим номером: його перенесли на іншому твоєму пристрої. Це вікно не змогло перейти слідом. Тут нічого не видалено, листування на місці. Спробуй ще раз або увійди за фразою відновлення.',
   'account_moved.retry': 'Спробувати ще раз',
   'account_moved.signin': 'Увійти за фразою відновлення',
+  // Keys changed on another device (404 identity_rotated). «Ти», as elsewhere
+  // in this file.
+  'auth.rotated_elsewhere': 'Ключі цього акаунта змінили на іншому пристрої. Введи нову фразу відновлення, щоб продовжити.',
+  'auth.rotated_elsewhere.enter': 'Ввести нову фразу',
 }

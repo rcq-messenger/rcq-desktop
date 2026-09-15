@@ -14,6 +14,7 @@ import { ToastProvider } from './lib/toast'
 import { PinGate } from './lib/pin-gate'
 import { CallOverlay } from './components/CallOverlay'
 import { AccountMovedNotice } from './components/AccountMoved'
+import { RotatedElsewhereNotice } from './components/RotatedElsewhere'
 import { Login } from './pages/Login'
 import { Contacts } from './pages/Contacts'
 import { Chat } from './pages/Chat'
@@ -83,6 +84,9 @@ export default function App() {
                 this window could not follow it. Every request is answering 401
                 by then, so there is no screen underneath it left to use. */}
             <AccountMovedNotice />
+            {/* Same placement and the same reason: the keys were changed on
+                another device, and under the old ones nothing here answers. */}
+            <RotatedElsewhereNotice />
             <Routes>
               <Route path="/" element={<RootEntry />} />
               {/* ⚠ A SHARED CONTACT LINK, which this app could not open at all.

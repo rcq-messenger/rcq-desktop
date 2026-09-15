@@ -217,21 +217,36 @@ function route(
       rememberTheirCard(senderUIN, senderHost && senderHost !== ownHost ? senderHost : null, card)
     }
   }
-  // Our own signing key, for the two places that ask "did WE seal this": the
-  // carbon branch here and the own-number exemption at the cross-island gate.
+  // Our own signing key, and whether THIS envelope was sealed under it, for the
+  // two places that ask "did WE seal this": the carbon branch here and the
+  // own-number exemption at the cross-island gate further down.
+  //
+  // ⚠⚠ Computed BEFORE the carbon branch (spec 2026-09-15, P0.1). `ownSeal`
+  // used to be worked out below it, next to the gate, so the one branch that
+  // applies an envelope with our own authority was the one that never asked.
   const ownSigningKey = identity ? bytesToB64(identity.signingPub) : null
+  const ownSeal = senderUIN === myUin && sameSigningKey(senderSigningKey, ownSigningKey)
   if (envelope.kind === 'carbon') {
     // ⚠⚠ Not on `from` alone: that field is unsigned in v=1, and a carbon's
     // `ciack` pins contact keys, so a forged one would let a stranger pin
     // their own key for a contact of ours and pass every pinned-key check
-    // after it. The whole rule is carbonIsOwn (crossisland-gate.ts).
-    if (carbonIsOwn(senderUIN, myUin, senderHost, ownHost, senderSigningKey, ownSigningKey, typeof groupId === 'number')) {
+    // after it. The whole rule is carbonIsOwn (crossisland-gate.ts), the
+    // TRANSITIONAL one iOS ships too: a carbon that names a key must name OUR
+    // signing key, every inner kind; a `ciack` carbon is taken only under our
+    // own key; a keyless (v=2) carbon is taken for the other kinds, because
+    // Android seals its carbons v=2 until 0.194 has spread, and then the
+    // strict rule (our key, every kind) is to be switched on. The inner kind
+    // is read HERE, before the rule, because the rule depends on it. A
+    // refused carbon applies nothing and falls through to the return below,
+    // so the caller acks it like any other row route() consumed and the
+    // island stops re-serving it.
+    const inner = envelope.env as
+      | { kind?: string; targetID?: string; text?: string; at?: number }
+      | undefined
+    if (carbonIsOwn(senderUIN, myUin, senderHost, ownHost, senderSigningKey, ownSigningKey, typeof groupId === 'number', inner?.kind)) {
       // Control carbons first: an edit/delete made on another of our devices
       // targets a row we already have — filing it as a NEW row (the content
       // path below) would be wrong twice over.
-      const inner = envelope.env as
-        | { kind?: string; targetID?: string; text?: string; at?: number }
-        | undefined
       if (inner?.kind === 'edit' && inner.targetID != null) {
         const key = carbonThreadKey(envelope)
         if (key) applyEditToOutgoing(key, inner.targetID, inner.text ?? '')
@@ -244,7 +259,13 @@ function route(
         // the peer and overwrite the keys the other device pinned.
         // No event of our own: `clearRequest`/`blockRequest` already notify the
         // store's listeners, and the pending list watches the store.
-        applyRequestAck(inner as Record<string, unknown>)
+        //
+        // `ownSeal` again on purpose, although carbonIsOwn already refuses a
+        // `ciack` carbon not sealed under our key (keyless included, even
+        // while keyless carbons of other kinds are allowed): this is the line
+        // that pins keys, and it should read as guarded without a trip into
+        // another file.
+        if (ownSeal) applyRequestAck(inner as Record<string, unknown>)
       } else if (inner?.kind === 'readmark') {
         // We read this thread on another device (A2): drop the badge here
         // too, minus anything that arrived after that read. Not a message,
@@ -433,8 +454,7 @@ function route(
   // Our own number is exempt only when the seal is really ours. The number is
   // per-island: somebody on another island can hold the same digits, and the
   // old `senderUIN !== myUin` exemption let exactly that stranger past the
-  // gate with any kind at all.
-  const ownSeal = senderUIN === myUin && sameSigningKey(senderSigningKey, ownSigningKey)
+  // gate with any kind at all. (`ownSeal` is computed above the carbon branch.)
   if (senderHost && senderHost !== ownHost && !ownSeal) {
     const kind = (envelope as { kind?: string }).kind ?? ''
     const pinned = getCrossIsland(senderUIN, senderHost)

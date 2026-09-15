@@ -92,26 +92,35 @@ check('pinned address under ANOTHER key: a stranger, flagged', () => {
 check('a carbon is ours only when nothing in it says otherwise', () => {
   const HOME = 'a.example'
   // v=1 carbon from another of our devices: own number, own island, own key.
-  assert.equal(carbonIsOwn(12, 12, HOME, HOME, K_URL, K, false), true)
-  // v=2: no host, no key named; libsignal authenticated it.
-  assert.equal(carbonIsOwn(12, 12, undefined, HOME, undefined, K, false), true)
+  assert.equal(carbonIsOwn(12, 12, HOME, HOME, K_URL, K, false, 'text'), true)
+  assert.equal(carbonIsOwn(12, 12, HOME, HOME, K_URL, K, false, 'ciack'), true)
+  // v=2: no host, no key named. The TRANSITIONAL rule (spec 2026-09-15, P0.1,
+  // as iOS ships it): taken for a non-ciack kind, because Android seals its
+  // carbons v=2 until 0.194 has spread; never for a ciack, which pins keys.
+  assert.equal(carbonIsOwn(12, 12, undefined, HOME, undefined, K, false, 'text'), true)
+  assert.equal(carbonIsOwn(12, 12, undefined, HOME, undefined, K, false, 'ciack'), false)
   // Somebody else's number is never a carbon of ours.
-  assert.equal(carbonIsOwn(13, 12, HOME, HOME, K, K, false), false)
+  assert.equal(carbonIsOwn(13, 12, HOME, HOME, K, K, false, 'text'), false)
+  assert.equal(carbonIsOwn(13, 12, undefined, HOME, undefined, K, false, 'text'), false)
 })
 
 check('a forged carbon is dropped: foreign host, foreign key, or out of a broadcast', () => {
   const HOME = 'a.example'
-  // `from` = our number, sealed under Mallory's key: the ciack pin forgery.
-  assert.equal(carbonIsOwn(12, 12, HOME, HOME, OTHER, K, false), false)
-  assert.equal(carbonIsOwn(12, 12, 'b.example', HOME, OTHER, K, false), false)
-  // Stamped with another island, even under our own key.
-  assert.equal(carbonIsOwn(12, 12, 'b.example', HOME, K, K, false), false)
-  // A key that is named but empty is not our key.
-  assert.equal(carbonIsOwn(12, 12, HOME, HOME, '', K, false), false)
-  // No identity to compare against, and a key was named.
-  assert.equal(carbonIsOwn(12, 12, HOME, HOME, K, null, false), false)
-  // Re-attributed out of a sender-key broadcast.
-  assert.equal(carbonIsOwn(12, 12, undefined, HOME, undefined, K, true), false)
+  for (const kind of ['ciack', 'text', 'edit', 'delete', 'readmark']) {
+    // `from` = our number, sealed under Mallory's key: the ciack pin forgery,
+    // and the same seal carrying any other kind.
+    assert.equal(carbonIsOwn(12, 12, HOME, HOME, OTHER, K, false, kind), false, kind)
+    assert.equal(carbonIsOwn(12, 12, 'b.example', HOME, OTHER, K, false, kind), false, kind)
+    // Stamped with another island, even under our own key.
+    assert.equal(carbonIsOwn(12, 12, 'b.example', HOME, K, K, false, kind), false, kind)
+    // A key that is named but empty is not our key, and not "no key" either.
+    assert.equal(carbonIsOwn(12, 12, HOME, HOME, '', K, false, kind), false, kind)
+    // No identity to compare against, and a key was named.
+    assert.equal(carbonIsOwn(12, 12, HOME, HOME, K, null, false, kind), false, kind)
+    // Re-attributed out of a sender-key broadcast, keyless or under our key.
+    assert.equal(carbonIsOwn(12, 12, undefined, HOME, undefined, K, true, kind), false, kind)
+    assert.equal(carbonIsOwn(12, 12, undefined, HOME, K, K, true, kind), false, kind)
+  }
 })
 
 check('a broadcast from a room on another island never reaches a home-namespace branch', () => {

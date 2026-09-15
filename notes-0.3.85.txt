@@ -1,0 +1,15 @@
+Компьютер 0.3.85. Защита аккаунта при смене ключей. Если ключи аккаунта сменили на другом устройстве, приложение больше не выходит из аккаунта и не стирает его, а просит ввести новую фразу восстановления. Раньше остров отвечал на это как на неизвестный аккаунт.
+
+Копии ваших сообщений с других ваших устройств теперь проверяются вашим ключом. Раньше поддельная копия могла подменить ключи контакта с другого острова. Если заявку с другого острова принять на телефоне с Android 0.193 или старше, здесь её придётся принять ещё раз.
+
+---
+
+Desktop 0.3.85. Account protection around key changes. When this account's keys were changed on another device, the app no longer signs out or wipes the account; it asks for the new recovery phrase. Before, the island answered as if the account were unknown.
+
+Copies of your messages from your other devices are now checked against your key. Before, a forged copy could swap the keys of a contact from another island. A request from another island accepted on a phone with Android 0.193 or older has to be accepted here again.
+
+---
+
+桌面版 0.3.85。更换密钥时的账号保护。如果账号的密钥在另一台设备上被更换，应用不再退出或清除账号，而是请你输入新的恢复短语。以前岛屿会把这种情况当作未知账号。
+
+来自你其他设备的消息副本现在会用你的密钥验证。以前伪造的副本可能替换其他岛屿联系人的密钥。在 Android 0.193 或更早版本的手机上接受的其他岛屿请求，需要在这里再接受一次。

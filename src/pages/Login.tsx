@@ -26,6 +26,7 @@ import {
 import { flushVaultWriter } from '../lib/pin-gate'
 import { isTauri } from '../lib/desktop'
 import { defaultHome } from '../lib/routing'
+import { forgetInviter, inviterFor, takeReturnTo } from '../lib/login-return'
 import { clientLabel } from '../lib/client-name'
 import { bytesToB64, newLinkEphemeral, openLinkSeal, type WebIdentity } from '../lib/crypto'
 import { IslandPickerModal } from '../components/IslandPickerModal'
@@ -136,7 +137,14 @@ export function Login() {
               // the time onDone runs; the reload starts the app scoped.
               // Desktop: the vault write has to land first (same race as the
               // resume button below).
-              void flushVaultWriter().finally(() => window.location.assign(defaultHome()))
+              // ⚠ Home, UNLESS this tab came here from a contact or referral
+              // link (login-return.ts): the person was on their way to add
+              // somebody, and the reload used to drop that on the floor. Read
+              // and forgotten here, once, whichever pane finished. The inviter
+              // is spent as well: a registration used it, a restore cannot.
+              forgetInviter()
+              const target = takeReturnTo() ?? defaultHome()
+              void flushVaultWriter().finally(() => window.location.assign(target))
             }}
           />
 
@@ -639,6 +647,10 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
   // paid. `closed_island` is a different question (who may write to a
   // resident) and does not decide whether registration needs a code.
   const requireCode = needsInvite || caps.registration_policy !== 'open'
+  // The referral this tab arrived with, if it belongs to the island picked
+  // above. Another island has its own holder of that number, so the line (and
+  // the `inviter_uin`) disappear the moment the picker moves away.
+  const inviter = inviterFor(islandHostname)
 
   /// ⚠ Every refusal below goes to the TOAST, and none of them draws a panel.
   /// This screen used to answer with a red box under the form, which is one of
@@ -655,7 +667,7 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
   async function submit() {
     setBusy(true)
     try {
-      const id = await createNewAccount(nickname, island, invite)
+      const id = await createNewAccount(nickname, island, invite, inviterFor(islandHostname))
       // Reached, so remembered: the picker offers this island again on this
       // profile, whichever account is active later (founder, 12.09).
       rememberReachedIsland(island, 'created')
@@ -765,6 +777,9 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
           autoCapitalize="off"
         />
         <p className="text-xs text-fg-dim">{t('login.create.nickname_hint')}</p>
+        {inviter != null && (
+          <p className="text-xs text-fg-dim">{t('login.create.invited_by', { uin: String(inviter) })}</p>
+        )}
       </div>
 
       {/* ⚠ Changing the island RETIRES the last island's refusal. Both of these

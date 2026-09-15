@@ -149,6 +149,7 @@ export const tr: Record<string, string> = {
   'add.ci.closed_island': 'Bu ada kapalı. Oradaki birine yazmak için kişinin kendisinden bir bağlantı gerekir: kişiyi paylaşması ya da size önce yazması.',
   'add.ci.no_user': '{host} üzerinde {uin} numarası yok.',
   'login.create.invite_placeholder': 'adadan gelen kod',
+  'login.create.invited_by': 'Seni {uin} davet etti. Hesap oluşunca birbirinizin kişilerinde olacaksınız.',
   'login.create.invite_hint': 'Bu ada kapalı. Erişim kodlarını adanın işletmecisi verir: davet ettiklerine, yerleşimle birlikte veya kendi bildiği gibi.',
   'login.create.invite_hint_paid': 'Bu ada yerleşiklik satıyor. Ödemeni yaptıysan ya da biri sana kod verdiyse, buraya yapıştır. Boş bırakıp kodsuz da girebilirsin.',
   'login.create.buy_entry': 'Girişi satın al · {price}',

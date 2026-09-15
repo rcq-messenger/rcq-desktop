@@ -376,6 +376,10 @@ export async function createNewAccount(
   nickname: string,
   apiBase: string = DEFAULT_API_BASE,
   invite?: string,
+  /// Whoever's `/r/<uin>` link brought this person here. The island makes the
+  /// two contacts of each other and ignores a number it does not know. ⚠ It is
+  /// a number on THIS island: the caller checks the link's island matches.
+  inviterUin?: number | null,
 ): Promise<WebIdentity> {
   const trimmedNick = nickname.trim()
   if (!trimmedNick) throw new Error('Nickname is required.')
@@ -419,6 +423,7 @@ export async function createNewAccount(
       // and the CLI could not join a closed island at all — which is every
       // island in the club direction.
       ...(invite && invite.trim() ? { invite: invite.trim() } : {}),
+      ...(inviterUin && Number.isSafeInteger(inviterUin) && inviterUin > 0 ? { inviter_uin: inviterUin } : {}),
       ...(challenge
         ? {
             challenge,

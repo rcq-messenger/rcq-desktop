@@ -149,6 +149,7 @@ export const pt: Record<string, string> = {
   'add.ci.closed_island': 'Esta ilha é fechada. Para escrever a alguém de lá é preciso um link da própria pessoa: ela compartilha o contato, ou escreve para você primeiro.',
   'add.ci.no_user': 'Não há conta {uin} em {host}.',
   'login.create.invite_placeholder': 'o código da ilha',
+  'login.create.invited_by': 'Convite de {uin}. Ao criar a conta, vocês ficam nos contatos um do outro.',
   'login.create.invite_hint': 'Esta ilha é fechada. O operador dela distribui os códigos de acesso: a quem convida, junto com a residência, ou como preferir.',
   'login.create.invite_hint_paid': 'Esta ilha vende residência. Se você já pagou, ou alguém lhe deu um código, cole aqui. Pode deixar vazio e entrar sem ele.',
   'login.create.buy_entry': 'Comprar entrada · {price}',

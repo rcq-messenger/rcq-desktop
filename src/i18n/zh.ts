@@ -147,6 +147,7 @@ export const zh: Record<string, string> = {
   'login.create.invite': '访问代码',
   'login.create.have_code': '我有访问代码',
   'login.create.invite_placeholder': '来自岛屿的代码',
+  'login.create.invited_by': '邀请你的是 {uin}。账户创建后，你们会出现在彼此的联系人里。',
   'login.create.invite_hint': '这个岛屿是封闭的。访问代码由岛主发放：发给受邀的人、随居留权一起，或按他们自己的方式。',
   'login.create.invite_hint_paid': '这个岛屿出售居民身份。如果你已经付过款，或者有人给了你代码，粘贴在这里。留空也可以直接加入。',
   'login.create.buy_entry': '购买入场 · {price}',

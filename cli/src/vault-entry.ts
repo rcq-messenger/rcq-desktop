@@ -52,3 +52,7 @@ export { hashCard, newCard } from '../../src/lib/guest-card'
 export { buildContactLink, parseContactLink } from '../../src/lib/federation'
 
 export { mergeCards } from '../../src/lib/guestcard-vault'
+
+// Where a sign-in may return to. Pure, and pinned by cli/test/login-return.mjs
+// because a mistake in it is an open redirect on the login screen.
+export { safeReturnPath } from '../../src/lib/login-return'

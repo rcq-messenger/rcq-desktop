@@ -155,6 +155,7 @@ export const en: Record<string, string> = {
   'add.ci.closed_island': 'This island is closed. To write to somebody there you need a link from them: a shared contact, or a message they sent you first.',
   'add.ci.no_user': 'No account {uin} on {host}.',
   'login.create.invite_placeholder': 'the code from the island',
+  'login.create.invited_by': 'Invited by {uin}. Once the account is created, you are in each other\'s contacts.',
   'login.create.invite_hint': 'This island is closed. Its operator hands out access codes: to people they invite, with residency, or however they choose.',
   'login.create.invite_hint_paid': 'This island sells residency. If you have already paid, or somebody gave you a code, paste it here. Leave it empty to join without one.',
   // The door to the operator's till, next to the box its code goes into.

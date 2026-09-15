@@ -1,4 +1,5 @@
-import { Navigate, Route, BrowserRouter as Router, Routes } from 'react-router-dom'
+import { useEffect } from 'react'
+import { Navigate, Route, BrowserRouter as Router, Routes, useLocation } from 'react-router-dom'
 import { I18nProvider } from './lib/i18n-context'
 import { IdentityProvider, useIdentity } from './lib/identity-context'
 import { ThemeProvider } from './lib/theme-context'
@@ -22,6 +23,7 @@ import { Settings } from './pages/Settings'
 import { PendingRequests } from './pages/PendingRequests'
 import { AddContact } from './pages/AddContact'
 import { ContactLink } from './pages/ContactLink'
+import { ReferralLink } from './pages/ReferralLink'
 import { Profile } from './pages/Profile'
 import { GroupInfo } from './pages/GroupInfo'
 import { HowItWorks } from './pages/HowItWorks'
@@ -32,16 +34,35 @@ import { MyReports } from './pages/MyReports'
 import { Privacy } from './pages/Privacy'
 import { Market } from './pages/Market'
 import { defaultHome } from './lib/routing'
+import { forgetReturnTo, peekReturnTo, rememberReturnTo } from './lib/login-return'
 
 function Authed({ children }: { children: JSX.Element }) {
   const { identity } = useIdentity()
-  if (!identity) return <Navigate to="/" replace />
+  const { pathname, search } = useLocation()
+  const signedIn = identity != null
+  const here = pathname + search
+  // ⚠ A shared contact link reaches this gate as `/add?q=…` (ContactLink), and
+  // a logged-out visitor used to be bounced to "/" with the errand forgotten:
+  // after signing in they landed on an empty contact list. The note only takes
+  // the app's own contact screens (login-return.ts), so every other guarded
+  // page still lands at home, and the hash (a guest card) is never part of it.
+  // ⚠ Primitive deps only: `identity` is a fresh object on every token refresh.
+  useEffect(() => {
+    if (!signedIn) rememberReturnTo(here)
+  }, [signedIn, here])
+  if (!signedIn) return <Navigate to="/" replace />
   return children
 }
 
 function RootEntry() {
   const { identity } = useIdentity()
-  if (identity) return <Navigate to={defaultHome()} replace />
+  // Read in render, forgotten in the effect: under StrictMode the render runs
+  // twice, and a read that also deleted would hand the second one nothing.
+  const returnTo = identity ? peekReturnTo() : null
+  useEffect(() => {
+    if (returnTo) forgetReturnTo()
+  }, [returnTo])
+  if (identity) return <Navigate to={returnTo ?? defaultHome()} replace />
   return <Login />
 }
 
@@ -96,6 +117,10 @@ export default function App() {
                   an app, which on desktop IS this app. The guest card in the
                   fragment therefore reached the phones and never the web. */}
               <Route path="/u/:uin" element={<ContactLink />} />
+              {/* A referral, `https://rcq.app/r/<uin>`. Not behind Authed: a
+                  logged-out visitor is exactly who it is for, and the inviter
+                  has to be noted before the login screen can use it. */}
+              <Route path="/r/:uin" element={<ReferralLink />} />
               <Route
                 path="/contacts"
                 element={

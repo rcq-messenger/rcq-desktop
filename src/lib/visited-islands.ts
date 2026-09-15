@@ -25,6 +25,7 @@ import {
 } from './multihome'
 
 import { scopedKey } from './account-scope'
+import { isBurning } from './burn-cascade'
 import { drainGroupLog, islandHasGroupLog, type GroupLogRequest } from './group-log'
 
 export interface VisitedIsland {
@@ -82,6 +83,9 @@ export async function ensureGuestOn(identity: WebIdentity, hostInput: string): P
   const host = normalizeIslandHost(hostInput)
   if (!host) throw new Error('invalid host')
   if (host === hostOfApiBase(identity.apiBase)) throw new Error('own island')
+  // A burn is deleting every copy this browser knows of; a new one registered
+  // meanwhile would be a copy nobody deletes (spec 2026-09-15, F2).
+  if (isBurning()) throw new Error('burning')
   const existing = listVisitedIslands().find((v) => v.host === host)
   if (existing) return existing
   const cred = (await recoverOnIsland(host, identity)) ?? (await registerOnIsland(host, identity))
@@ -94,6 +98,24 @@ export async function ensureGuestOn(identity: WebIdentity, hostInput: string): P
   // on, or fail over, a cosmetic.
   void pushOwnNicknameTo(identity, host)
   return v
+}
+
+/// Forget the guest copy on `host` locally: the entry and its token. For a
+/// copy the island confirmed it deleted while the account itself stays (a
+/// burn cancelled halfway, spec 2026-09-15, F2). Kept, the entry would make
+/// `ensureGuestOn` hand back a copy that no longer exists, and every join on
+/// that island would fail at the recover that follows.
+///
+/// ⚠ The group aliases stay. They are allocated by list position, so dropping
+/// one would let the next room reuse a live alias id; and a copy registered
+/// again later maps the same (host, room) to the same alias, which keeps that
+/// room's history where it was.
+export function forgetVisitedIsland(hostInput: string): void {
+  const host = normalizeIslandHost(hostInput) ?? hostInput.trim().toLowerCase()
+  const list = listVisitedIslands()
+  const next = list.filter((v) => v.host !== host)
+  tokens.delete(host)
+  if (next.length !== list.length) saveVisited(next)
 }
 
 /// #985(2), first half: our nickname as the residents of `host` see it.

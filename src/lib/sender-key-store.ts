@@ -233,6 +233,21 @@ export function deriveInbound(ownUin: number, kid: string, e: number, i: number)
   return { mk, spub: c.spub, senderUin: c.senderUin }
 }
 
+/// The signing keys `senderUin`'s inbound chains in rooms `gids` were handed
+/// under, unique. For the prior-key check on a request that came through an
+/// island's own list (spec 2026-09-15, F1): a key this device already saw that
+/// person sign group traffic with, before the island served a card for them.
+export function inboundSigningKeys(ownUin: number, senderUin: number, gids: number[]): string[] {
+  if (gids.length === 0) return []
+  const want = new Set(gids)
+  const prefix = `${ownUin}:`
+  const out = new Set<string>()
+  for (const [k, c] of Object.entries(load().in)) {
+    if (k.startsWith(prefix) && c.senderUin === senderUin && want.has(c.gid) && c.spub) out.add(c.spub)
+  }
+  return [...out]
+}
+
 export function knowsKid(ownUin: number, kid: string): boolean {
   return !!load().in[inKey(ownUin, kid)]
 }

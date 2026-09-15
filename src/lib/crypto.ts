@@ -266,6 +266,10 @@ export interface CIAckEnvelope {
     gender?: string | null
     status?: string | null
   }
+  /// The island row the answer settled, when the request came through that
+  /// island's own request list (spec 2026-09-15, F1): my other devices mark it
+  /// answered so their poll does not show it again.
+  srv?: { host: string; id: number }
 }
 
 /// Group poll announcement (iOS/Android kind "poll"). Terse wire keys to

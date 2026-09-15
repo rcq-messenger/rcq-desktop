@@ -103,6 +103,12 @@ export interface ServerCapabilities {
   /// to FALSE like the other stage flags: the contact list is kept on the
   /// device and in the vault only where the island can hold it.
   vault: boolean
+  /// The island serves DELETE /contacts/pending/{id} (spec 2026-09-15, F1):
+  /// the addressee clears a pending request without answering it there.
+  /// ⚠⚠ Defaults to FALSE, and an island that lacks it must NOT be sent
+  /// `respond(false)` instead: that is a "declined" row the requester reads
+  /// for 180 days. Without it the request is only hidden on this device.
+  contact_pending_withdraw: boolean
 }
 
 export interface ServerInfo {
@@ -170,6 +176,7 @@ export const DEFAULT_CAPABILITIES: ServerCapabilities = {
   deposit_auth: false,
   group_log: false,
   vault: false,
+  contact_pending_withdraw: false,
 }
 
 /// How long one GET /server/info may take before it reads as no answer.
@@ -194,6 +201,7 @@ type BoolCapability =
   | 'deposit_auth'
   | 'group_log'
   | 'vault'
+  | 'contact_pending_withdraw'
 
 /// Bounded before it is believed. This text is drawn beside a contact's name,
 /// and it comes from an island we may only be PROBING, so an operator must not
@@ -267,6 +275,7 @@ function normalize(raw: unknown): ServerInfo | null {
       deposit_auth: bool('deposit_auth'),
       group_log: bool('group_log'),
       vault: bool('vault'),
+      contact_pending_withdraw: bool('contact_pending_withdraw'),
     },
   }
 }

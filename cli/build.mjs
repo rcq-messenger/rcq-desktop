@@ -62,6 +62,8 @@ await build({ ...common, entryPoints: [path.join(cli, 'src', 'island-trust-entry
 await build({ ...common, entryPoints: [path.join(cli, 'src', 'member-name-entry.ts')], outfile: path.join(dist, 'member-name.mjs') })
 await build({ ...common, entryPoints: [path.join(cli, 'src', 'crossisland-gate-entry.ts')], outfile: path.join(dist, 'crossisland-gate.mjs') })
 await build({ ...common, entryPoints: [path.join(cli, 'src', 'carbon-gate-entry.ts')], outfile: path.join(dist, 'carbon-gate.mjs') })
+await build({ ...common, entryPoints: [path.join(cli, 'src', 'pending-poll-entry.ts')], outfile: path.join(dist, 'pending-poll.mjs') })
+await build({ ...common, entryPoints: [path.join(cli, 'src', 'burn-cascade-entry.ts')], outfile: path.join(dist, 'burn-cascade.mjs') })
 
 // The node glue + its .wasm, next to the bundles (see the header comment).
 fs.cpSync(path.join(root, 'crypto-wasm-spike', 'signal-wasm', 'pkg-node'), path.join(dist, 'pkg-node'), {

@@ -15,7 +15,8 @@
 import { Api, peerBundleFrom } from './api'
 import { encryptV1, bytesToB64, type CarbonEnvelope, type CIAckEnvelope, type WebIdentity } from './crypto'
 import { saveCrossIsland, getCrossIsland } from './crossisland-store'
-import { clearRequest, blockRequest } from './crossisland-requests'
+import { ackServerRef } from './crossisland-pending'
+import { clearRequest, blockRequest, getRequest, markAnswered } from './crossisland-requests'
 import { allowStranger } from './stranger-requests'
 
 export interface CIAckCard {
@@ -36,9 +37,12 @@ export async function sendRequestAck(
   host: string,
   act: 'accept' | 'decline' | 'block',
   card?: CIAckCard,
+  /// The island row the answer settled (spec 2026-09-15, F1), so my other
+  /// devices mark it answered instead of polling it back into their list.
+  srv?: { host: string; id: number },
 ): Promise<void> {
   try {
-    const inner: CIAckEnvelope = { kind: 'ciack', uin, host, act, ...(card ? { card } : {}) }
+    const inner: CIAckEnvelope = { kind: 'ciack', uin, host, act, ...(card ? { card } : {}), ...(srv ? { srv } : {}) }
     // ⚠⚠ `to` is MY OWN uin, not null, and that is a compatibility decision
     // rather than a meaning: this answer belongs to no thread and names its
     // subject in its own fields. But a client that predates `ciack` resolves
@@ -74,6 +78,7 @@ export function applyRequestAck(ack: {
   host?: unknown
   act?: unknown
   card?: unknown
+  srv?: unknown
 }): boolean {
   const uin = typeof ack.uin === 'number' ? ack.uin : null
   const host = typeof ack.host === 'string' ? ack.host : null
@@ -82,11 +87,28 @@ export function applyRequestAck(ack: {
   if (act !== 'accept' && act !== 'decline' && act !== 'block') return false
 
   if (act === 'block') {
+    const blocked = ackServerRef(ack.srv, host)
+    if (blocked) markAnswered(blocked.host, blocked.id)
     blockRequest(uin, host)
     return true
   }
+
+  // ⚠⚠ This device holds an accept for this person that has not reached them
+  // yet (crossisland-pending.ts, `srvAcceptTries`). That row is what the retry
+  // hangs on: clearing it, or marking its island row answered, is what once
+  // turned "island B is unreachable" into a withdraw of the requester's row
+  // with the accept never delivered. Current builds send an ack for an island
+  // row only after the answer landed, so this is for an older sender, and for
+  // two devices giving two answers: the undelivered accept here wins, and the
+  // poll clears the row once it lands or the island stops listing it.
+  if (getRequest(uin, host)?.srvAcceptTries) return false
+
+  // Whatever the answer was, the island row it settled is answered here too.
+  // Only a row on the island this ack is about (ackServerRef).
+  const srv = ackServerRef(ack.srv, host)
+  if (srv) markAnswered(srv.host, srv.id)
   if (act === 'decline') {
-    return clearRequest(uin, host) != null
+    return clearRequest(uin, host) != null || srv != null
   }
 
   // Accept. A same-island stranger (host '') has no card and no §5f request:

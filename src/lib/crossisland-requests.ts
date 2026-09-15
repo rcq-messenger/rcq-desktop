@@ -13,6 +13,13 @@
 import type { Envelope } from './crypto'
 
 import { scopedKey } from './account-scope'
+import {
+  answeredKey,
+  mergeServerRequest,
+  reconcileServerRequests as reconcileServerRows,
+  type ServerPendingRow,
+  type ServerRequestRef,
+} from './crossisland-pending'
 import { isSealed, openLocal, sealLocal } from './local-seal'
 
 const KEY = () => scopedKey('ci-requests.v1')
@@ -47,6 +54,13 @@ export interface CrossIslandRequest {
   /// We already hold a contact at this address and these envelopes were NOT
   /// sealed with the key pinned for them. Shown on the row, never merged.
   keyMismatch?: boolean
+  /// The row also stands for a request in the island's own list on `host`,
+  /// addressed to our guest copy there (spec 2026-09-15, F1). Answering it
+  /// clears that row too. See crossisland-pending.ts.
+  server?: ServerRequestRef
+  /// Deposits of our accept so far that did not reach the requester. The
+  /// visited poll tries again up to three in all, then the row says so.
+  srvAcceptTries?: number
 }
 
 /// What the receive path proved about who sealed an envelope it is holding.
@@ -324,4 +338,139 @@ export function blockRequest(uin: number, host: string): void {
   const b = loadBlocked()
   b[reqKey(uin, host)] = true
   localStorage.setItem(BLOCKED_KEY(), JSON.stringify(b))
+}
+
+// -----------------------------------------------------------
+// Requests from an island's own list (spec 2026-09-15, F1)
+// -----------------------------------------------------------
+
+/// The row for (uin, host), or null. Null too while the store is still
+/// opening: the poll that asks awaits `ensureRequestsLoaded` first.
+export function getRequest(uin: number, host: string): CrossIslandRequest | null {
+  return loadAll()[reqKey(uin, host)] ?? null
+}
+
+/// File one live row of `host`'s request list, addressed to our number there
+/// (`guestUin`). No-op for a blocked sender. Merges into a §5f row for the same
+/// person and never moves `firstAt` (crossisland-pending.ts).
+export function upsertServerRequest(host: string, guestUin: number, row: ServerPendingRow): boolean {
+  if (isBlocked(row.from_uin, host)) return false
+  whenLoaded(() => {
+    const map = loadAll()
+    if (mergeServerRequest(map, host, guestUin, row, Date.now(), MAX_PENDING)) saveAll(map)
+  })
+  return true
+}
+
+/// Forget rows on `host` the island no longer lists (withdrawn by the
+/// requester, expired, or answered from another device).
+export function reconcileServerRequests(host: string, liveIds: number[]): void {
+  whenLoaded(() => {
+    const map = loadAll()
+    if (reconcileServerRows(map, host, liveIds)) saveAll(map)
+  })
+}
+
+/// An accept for this row was pinned here but its deposit did not reach the
+/// requester. The row stays, without its held messages (they were released by
+/// the accept), and the poll deposits again. Returns the tries so far.
+export function noteAcceptUndelivered(uin: number, host: string): number {
+  const map = loadAll()
+  const r = map[reqKey(uin, host)]
+  if (!r) return 0
+  r.srvAcceptTries = (r.srvAcceptTries ?? 0) + 1
+  r.msgs = []
+  saveAll(map)
+  return r.srvAcceptTries
+}
+
+// The island rows already answered on this device (or on another of ours, via
+// a `ciack` carbon), so a poll never shows one twice. Plain and unsealed, like
+// the block list next door: host and row id, no words. Scoped by account, so a
+// UIN move carries it with every other `rcq.web.<uin>.` key (move-carry.ts).
+const ANSWERED_KEY = () => scopedKey('ci-answered.v1')
+/// Oldest entries fall off first. An island forgets a row it withdrew, so an
+/// entry this old is one nobody will be shown again anyway.
+const MAX_ANSWERED = 500
+
+function loadAnswered(): string[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(ANSWERED_KEY()) || '[]') as unknown
+    return Array.isArray(raw) ? raw.filter((k): k is string => typeof k === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+export function markAnswered(host: string, id: number): void {
+  const k = answeredKey(host, id)
+  // An answer that settled the row also settles a decline still waiting for
+  // the island to take it.
+  dropDeclining((list) => list.filter((x) => x !== k))
+  const list = loadAnswered()
+  if (list.includes(k)) return
+  list.push(k)
+  try {
+    localStorage.setItem(ANSWERED_KEY(), JSON.stringify(list.slice(-MAX_ANSWERED)))
+  } catch {
+    /* quota: the row may be shown again, and answering it again is harmless */
+  }
+}
+
+export function isAnswered(host: string, id: number): boolean {
+  return loadAnswered().includes(answeredKey(host, id))
+}
+
+// Island rows a person declined here whose `respond(false)` the island has not
+// taken yet (lost to the network, a 429, a 401 that could not be re-proved).
+// The row is NOT answered until the island has it: the visited poll sends the
+// same decline again, never a withdraw, because the spec's decline is an
+// honest "no" the requester reads from that island. Same shape and scope as
+// the answered set.
+const DECLINING_KEY = () => scopedKey('ci-declining.v1')
+const MAX_DECLINING = 200
+
+function loadDeclining(): string[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(DECLINING_KEY()) || '[]') as unknown
+    return Array.isArray(raw) ? raw.filter((k): k is string => typeof k === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+function dropDeclining(edit: (list: string[]) => string[]): void {
+  const list = loadDeclining()
+  if (list.length === 0) return
+  const next = edit(list)
+  if (next.length === list.length) return
+  try {
+    localStorage.setItem(DECLINING_KEY(), JSON.stringify(next))
+  } catch {
+    /* quota: the poll sends a decline that already landed, and the island answers it idempotently */
+  }
+}
+
+export function markDeclinePending(host: string, id: number): void {
+  const k = answeredKey(host, id)
+  const list = loadDeclining()
+  if (list.includes(k)) return
+  list.push(k)
+  try {
+    localStorage.setItem(DECLINING_KEY(), JSON.stringify(list.slice(-MAX_DECLINING)))
+  } catch {
+    /* quota: the decline is still sent now, only not retried */
+  }
+}
+
+export function isDeclinePending(host: string, id: number): boolean {
+  return loadDeclining().includes(answeredKey(host, id))
+}
+
+/// Forget waiting declines on `host` for rows the island no longer lists
+/// (the requester withdrew, or the row expired): nothing left to answer.
+export function pruneDeclinePending(host: string, liveIds: number[]): void {
+  const prefix = `${host.toLowerCase()}#`
+  const live = new Set(liveIds.map((id) => answeredKey(host, id)))
+  dropDeclining((list) => list.filter((k) => !k.startsWith(prefix) || live.has(k)))
 }

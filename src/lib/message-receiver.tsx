@@ -23,6 +23,8 @@ import { getCrossIsland, getVerifiedCrossIsland } from './crossisland-store'
 import { carbonIsOwn, crossIslandGateVerdict, foreignRoomBroadcastDropped, sameSigningKey } from './crossisland-gate'
 import type { GuestRoom } from './held-gmsg'
 import { applyRequestAck } from './crossisland-ack'
+import { isBurning } from './burn-cascade'
+import { pollVisitedPending } from './crossisland-pending-poll'
 import { ensureRequestsLoaded, holdRequestMessage, isBlocked } from './crossisland-requests'
 import { isContact, shouldQuarantineStranger } from './stranger-requests'
 import { handleContactReq } from './crossisland-contactreq'
@@ -979,7 +981,9 @@ export function MessageReceiver() {
     const tick = async () => {
       // Single-flight: a tick that outlives the interval (a slow island, a
       // deep log) must not have the next one fetch the same page beside it.
-      if (cancelled || running || listBackupHomes().length === 0) return
+      // A burn in progress stops this loop before it can re-prove the key on
+      // an island the burn is deleting from (spec 2026-09-15, F2).
+      if (cancelled || running || isBurning() || listBackupHomes().length === 0) return
       running = true
       try {
         await ensureHydrated(identity.uin) // dedup needs the seen-set first
@@ -1046,7 +1050,7 @@ export function MessageReceiver() {
       route(got.senderUIN, got.senderHost, got.envelope, gid, identity.uin, hostOf(identity.apiBase), got.senderSigningKey, identity, serverStampMs(row.received_at))
     }
     const tick = async () => {
-      if (cancelled || running || listVisitedIslands().length === 0) return
+      if (cancelled || running || isBurning() || listVisitedIslands().length === 0) return
       running = true
       try {
         await ensureHydrated(identity.uin) // dedup needs the seen-set first
@@ -1061,6 +1065,13 @@ export function MessageReceiver() {
           persisted: flushHistory,
         })
         if (catchingUp) endCatchUp()
+        // F1 (spec 2026-09-15): the contact requests addressed to our guest
+        // copies. Due at most once per island per five minutes, so most ticks
+        // send nothing; the schedule inside decides. ⚠ Started, not awaited:
+        // the poll talks to islands that are somebody else's, and a slow one
+        // must not hold `running` and stop this drain. It is single-flight
+        // and bounded by its own pass deadline.
+        if (!cancelled && !isBurning()) void pollVisitedPending(identity)
       } finally {
         running = false
       }

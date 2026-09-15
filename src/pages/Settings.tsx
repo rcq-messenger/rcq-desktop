@@ -7,7 +7,7 @@
 
 import { SettingsSectionIcon } from '../components/SettingsSectionIcon'
 import { BadgeMark } from '../components/BadgeMark'
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { currentRecoveryPhrase, forgetRecoverySeed, revokedAccounts } from '../lib/auth'
 import { myAccountDevices, myDeviceId, splitToOwnSlot } from '../lib/signal-device'
@@ -23,7 +23,11 @@ import { hostnameOf, normaliseIsland } from '../lib/island-choice'
 import { isCaOnlyHost, prePinIsland } from '../lib/island-trust'
 import { useIslandCard } from '../lib/use-server-info'
 import { MyQRCode } from '../components/MyQRCode'
-import { Api, REPORT_TAG, reportTextLimit } from '../lib/api'
+import { Api, ApiError, REPORT_TAG, reportTextLimit } from '../lib/api'
+import { burnResultOk, runRemote, type IslandBurnResult } from '../lib/burn-cascade'
+import { createBurnFlow, type BurnFlow, type BurnRows, type BurnStage } from '../lib/burn-flow'
+import { fetchBurnTransport, planBurn } from '../lib/burn-plan'
+import { forgetVisitedIsland, listVisitedIslands } from '../lib/visited-islands'
 import {
   appVersion,
   bypassStatus,
@@ -84,7 +88,7 @@ const SETTINGS_GROUPS: SettingsGroup[] = [
 ]
 
 export function Settings() {
-  const { identity, accounts, switchAccount, addAccount, signOutAccount, signOut } = useIdentity()
+  const { identity, accounts, switchAccount, addAccount, signOutAccount, signOut, signOutAfterBurn } = useIdentity()
   const [revoked] = useState<number[]>(() => revokedAccounts())
   const { t } = useI18n()
   // Who this island says it is, and which surfaces it runs. Permissive while
@@ -154,7 +158,22 @@ export function Settings() {
   const navigate = useNavigate()
   const [confirming, setConfirming] = useState(false)
   const [burnTyped, setBurnTyped] = useState('')
-  const [burning, setBurning] = useState(false)
+  /// Where a burn is (spec 2026-09-15, F2): deleting the copies on other
+  /// islands, waiting on the person after some of them failed, deleting at
+  /// home, done. Mirrored from the flow (burn-flow.ts), which holds the plan
+  /// the burn started with: retry and "burn anyway" finish THAT plan, not a
+  /// fresh read of stores the burn itself is emptying.
+  const [burnStage, setBurnStage] = useState<BurnStage>('idle')
+  const [burnResults, setBurnResults] = useState<BurnRows>([])
+  const burnFlowRef = useRef<BurnFlow | null>(null)
+  const burning = burnStage !== 'idle'
+  // ⚠⚠ Leaving the screen ends the flow wherever no delete is in flight.
+  // Its module flags pause the drains, the pending poll and new guest copies;
+  // left on, they would stay on until a reload. Cleanup only, no state set.
+  useEffect(() => () => burnFlowRef.current?.detach(), [])
+  /// What the confirm says will be deleted. Read from the stores when the
+  /// confirm opens; nothing here fetches.
+  const burnPreview = useMemo(() => (confirming && identity ? planBurn(identity) : null), [confirming, identity])
   const { toast } = useToast()
   const [soundOn, setSoundOnState] = useState<boolean>(() => isSoundEnabled())
   const [animAvatars, setAnimAvatars] = useState(() => animatedAvatarsEnabled())
@@ -547,16 +566,88 @@ export function Settings() {
     }
   }
 
+  // Burn (spec 2026-09-15, F2). The copies on other islands go FIRST, while
+  // this browser still holds the keys that prove them, then the account at
+  // home, then the local wipe. If any island failed the person decides: try
+  // again, burn anyway (those copies stay, and the phrase is the only way to
+  // them afterwards), or cancel (what was deleted stays deleted).
+  //
+  // ⚠ The order, the one retry at home and the module flags live in the flow
+  // (burn-flow.ts), proven offline in cli/test/burn-cascade.mjs. This screen
+  // only supplies the network, the stores and the words.
+
+  /// The account stays and these islands no longer hold a copy of it: forget
+  /// them here, so a later join registers a fresh copy instead of recovering
+  /// one that is gone, and the home record stops naming a dead backup.
+  function forgetBurnedCopies(hosts: string[]) {
+    const gone = new Set(hosts.map((h) => h.toLowerCase()))
+    for (const v of listVisitedIslands()) {
+      if (gone.has(v.host.toLowerCase())) forgetVisitedIsland(v.host)
+    }
+    const deadBackups = listBackupHomes().filter((h) => gone.has(h.host.toLowerCase()))
+    if (deadBackups.length === 0) return
+    for (const h of deadBackups) removeBackupIsland(h.host)
+    setBackups(listBackupHomes())
+    if (identity) {
+      void publishHomeIslandRecord(identity)
+      void pushHomeRecordToContacts(identity)
+    }
+  }
+
   async function burn() {
-    setBurning(true)
-    try {
-      await Api.burnAccount(identity!)
-      signOut()
-      navigate('/', { replace: true })
-    } catch (e) {
-      toast(e instanceof Error ? e.message : t('settings.danger.error'), 'error')
-    } finally {
-      setBurning(false)
+    if (!identity || burnFlowRef.current) return
+    const me = identity
+    const flow = createBurnFlow(planBurn(me), {
+      runRemote: (targets) => runRemote(targets, fetchBurnTransport()),
+      async deleteHome() {
+        try {
+          await Api.burnAccount(me)
+          return { ok: true }
+        } catch (e) {
+          // Only what a retry can fix is retried: a refusal by the island
+          // (4xx other than a rate limit) will say the same thing again.
+          const refused = e instanceof ApiError && e.status >= 400 && e.status < 500 && e.status !== 429
+          return { ok: false, retryable: !refused }
+        }
+      },
+      finish(siblings, rows) {
+        // The local wipe reloads the page; with copies deleted elsewhere the
+        // result is worth a moment on screen first.
+        const n = rows.filter(([, r]) => burnResultOk(r)).length
+        window.setTimeout(() => signOutAfterBurn(siblings), n > 0 ? 1500 : 0)
+      },
+      forgetCopies: forgetBurnedCopies,
+      onChange(stage, rows) {
+        setBurnStage(stage)
+        setBurnResults(rows)
+        if (stage === 'idle') burnFlowRef.current = null
+      },
+      onCancelled(deleted) {
+        setConfirming(false)
+        setBurnTyped('')
+        if (deleted.length > 0) toast(t('burn.cancel.partial', { hosts: deleted.join(', ') }))
+      },
+      onHomeFailed(remoteDeleted) {
+        toast(
+          remoteDeleted ? `${t('settings.danger.error')} ${t('burn.home_failed.partial')}` : t('settings.danger.error'),
+          'error',
+        )
+      },
+    })
+    burnFlowRef.current = flow
+    await flow.start()
+  }
+
+  function burnRowText(r: IslandBurnResult): string {
+    switch (r.kind) {
+      case 'confirmed':
+        return t('burn.row.confirmed')
+      case 'already_gone':
+        return t('burn.row.already_gone')
+      case 'not_tried':
+        return t('burn.row.not_tried')
+      case 'failed':
+        return t(`burn.row.${r.reason}`)
     }
   }
 
@@ -1687,8 +1778,86 @@ export function Settings() {
             >
               {t('settings.danger.cta')}
             </button>
+          ) : burnStage !== 'idle' ? (
+            <div className="space-y-2">
+              {burnStage === 'working' && (
+                <p className="text-xs text-fg-secondary">{t('burn.progress')}</p>
+              )}
+              {burnStage === 'home' && (
+                <p className="text-xs text-fg-secondary">{t('settings.danger.busy')}</p>
+              )}
+              {burnStage === 'done' && (
+                <p className="text-xs text-fg-secondary">
+                  {burnResults.some(([, r]) => burnResultOk(r))
+                    ? t('burn.done', { n: burnResults.filter(([, r]) => burnResultOk(r)).length })
+                    : t('settings.danger.busy')}
+                </p>
+              )}
+              {burnStage === 'failures' && (
+                <p className="text-sm font-medium">{t('burn.failures.title')}</p>
+              )}
+              {(burnStage === 'failures' || burnStage === 'done') && burnResults.length > 0 && (
+                // The island's own claim, per island, in its words: "confirmed
+                // deletion", never "deleted" (an operator can say 204 and keep
+                // the row).
+                <ul className="space-y-1">
+                  {burnResults.map(([host, r]) => (
+                    <li key={host} className="text-xs break-words">
+                      <span className="font-medium break-all">{host}</span>
+                      <span className={burnResultOk(r) ? 'text-fg-dim' : 'text-amber-600'}>
+                        {' · '}
+                        {burnRowText(r)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {burnStage === 'failures' && (
+                <>
+                  <p className="text-xs text-fg-dim">{t('burn.anyway.hint')}</p>
+                  <button
+                    onClick={() => void burnFlowRef.current?.retry()}
+                    className="w-full h-10 rounded-md bg-field text-sm font-medium hover:bg-line/50 transition-colors"
+                  >
+                    {t('burn.retry')}
+                  </button>
+                  <button
+                    onClick={() => void burnFlowRef.current?.anyway()}
+                    className="w-full h-10 rounded-md bg-red-600 hover:bg-red-700 text-white text-sm font-semibold transition-colors"
+                  >
+                    {t('burn.anyway')}
+                  </button>
+                  <button
+                    onClick={() => burnFlowRef.current?.cancel()}
+                    className="w-full h-9 text-sm text-fg-secondary hover:text-fg-primary"
+                  >
+                    {t('common.cancel')}
+                  </button>
+                </>
+              )}
+            </div>
           ) : (
             <div className="space-y-2">
+              {/* What else goes with the account, said before the UIN is
+                  typed. Each paragraph only when it has something to name. */}
+              {burnPreview && burnPreview.islandHosts.length > 0 && (
+                <p className="text-xs text-fg-secondary break-words">
+                  {t('burn.islands.body', { hosts: burnPreview.islandHosts.join(', ') })}
+                </p>
+              )}
+              {burnPreview && burnPreview.ownedGroups.length > 0 && (
+                <p className="text-xs text-fg-secondary break-words">
+                  {t('burn.islands.owned_groups', { names: burnPreview.ownedGroups.join(', ') })}
+                </p>
+              )}
+              {burnPreview?.siblings.map((s) => (
+                <p key={`${s.uin}@${s.host}`} className="text-xs text-fg-secondary break-words">
+                  {t('burn.sibling', { uin: s.uin, host: s.host })}
+                </p>
+              ))}
+              {burnPreview && burnPreview.islandHosts.length > 0 && (
+                <p className="text-xs text-fg-dim break-words">{t('burn.not_covered')}</p>
+              )}
               {/* Anti-fat-finger: must type the literal UIN before
                   the confirm button activates. iOS doesn't gate
                   burn this way (the destructive system dialog is

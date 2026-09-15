@@ -52,6 +52,11 @@ interface IdentityCtx {
   /// Forget ONE account and stay signed in to the rest.
   signOutAccount: (uin: number) => void
   signOut: () => void
+  /// The ending of a burn this tab ran (spec 2026-09-15, F2): `signOut` without
+  /// telling the island (the account is gone there, a request would 401), and
+  /// the same-key accounts it burned along with it (`siblingUins`) dropped
+  /// from this browser first.
+  signOutAfterBurn: (siblingUins: number[]) => void
   /// Call BEFORE asking the server to change this account's UIN, and pair it
   /// with endMigration() if the request fails. It shields the browser from
   /// its own migration — see the `migrating` ref below.
@@ -662,6 +667,18 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
         clearIdentity()
         wipeLocalAccountData()
         void Promise.allSettled([done, idbClearAll(), flushVaultWriter()]).then(() => {
+          window.location.assign('/')
+        })
+      },
+      signOutAfterBurn: (siblingUins: number[]) => {
+        for (const uin of siblingUins) {
+          if (uin === identity?.uin) continue
+          removeStoredIdentity(uin)
+          clearSessionRevoked(uin)
+        }
+        clearIdentity()
+        wipeLocalAccountData()
+        void Promise.allSettled([idbClearAll(), flushVaultWriter()]).then(() => {
           window.location.assign('/')
         })
       },

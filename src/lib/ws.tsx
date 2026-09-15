@@ -28,6 +28,7 @@ import { escalateForDeadSockets, refreshFrontRouting } from './front'
 import { islandTrustRefusal, subscribeIslandTrust } from './island-trust'
 import { handleVaultChanged, handleVaultReset, sweepVaultSlots } from './vault-sync'
 import type { VaultChangedFrame } from './vault'
+import { accountBurnedSignsOut } from './burn-cascade'
 
 export type WsEvent = { type: string; [key: string]: unknown }
 type Listener = (ev: WsEvent) => void
@@ -268,7 +269,12 @@ export function WSProvider({ children }: { children: ReactNode }) {
     let cancelled = false
     const set = listenersRef.current.get('account_burned') ?? new Set<Listener>()
     const handler: Listener = () => {
-      if (cancelled) return
+      // Our OWN home delete is in flight in this tab (spec 2026-09-15, F2): it
+      // fans this out to our socket too, and signing out here would reload
+      // mid-flow. The burn screen finishes the sign-out itself. Only then: a
+      // burn from another device while this tab is still deleting copies
+      // elsewhere, or showing the failure list, signs out as always.
+      if (cancelled || !accountBurnedSignsOut()) return
       signOut()
     }
     set.add(handler)

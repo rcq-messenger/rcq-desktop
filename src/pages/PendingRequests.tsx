@@ -15,10 +15,20 @@ import {
   clearRequest,
   blockRequest,
   ensureRequestsLoaded,
+  getRequest,
+  noteAcceptUndelivered,
   onRequestsChanged,
   type CrossIslandRequest,
 } from '../lib/crossisland-requests'
-import { saveCrossIsland } from '../lib/crossisland-store'
+import { MAX_ACCEPT_TRIES } from '../lib/crossisland-pending'
+import {
+  declineServerRequest,
+  pollVisitedPending,
+  priorSigningKeys,
+  sharedGroupsOn,
+  withdrawServerRequest,
+} from '../lib/crossisland-pending-poll'
+import { getCrossIsland, saveCrossIsland } from '../lib/crossisland-store'
 import { sameSigningKey } from '../lib/crossisland-gate'
 import { sendRequestAck } from '../lib/crossisland-ack'
 import { sendContactAccept, sendContactDecline } from '../lib/crossisland-contactreq'
@@ -41,8 +51,12 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
   // by adding the sender as a cross-island contact + replaying their messages.
   const [ci, setCi] = useState<CrossIslandRequest[]>(() => listRequests())
   const [ciActing, setCiActing] = useState<string | null>(null)
+  /// The row whose card key differs from a key this device already saw for
+  /// that person in a group on the same island: the accept waits for a second,
+  /// deliberate tap (spec 2026-09-15, F1 prior-key check).
+  const [keyConfirm, setKeyConfirm] = useState<string | null>(null)
 
-  async function acceptCI(r: CrossIslandRequest) {
+  async function acceptCI(r: CrossIslandRequest, keyChangeConfirmed = false) {
     const tag = `${r.uin}@${r.host}`
     // A SAME-ISLAND stranger (host '' — the opt-in Privacy quarantine): no
     // key card to pin, no §5f dance. Accepting means "let this person talk":
@@ -62,6 +76,7 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
       return
     }
     setCiActing(tag)
+    setError(null)
     try {
       const card = await fetchPeerKeyCard(r.host, r.uin)
       if (!card) throw new Error('card')
@@ -76,24 +91,50 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
         setError(t('ci.key_mismatch_refused'))
         return
       }
-      saveCrossIsland({
-        uin: r.uin,
-        host: r.host,
-        nickname: card.nickname?.trim() || tag,
-        identityKey: card.identity_key,
-        signingKey: card.signing_key,
-        signalIdentityKey: card.signal_identity_key ?? null,
-        addedAt: Date.now(),
-        gender: card.gender ?? null,
-        statusMessage: card.status_message ?? null,
-      })
-      const held = clearRequest(r.uin, r.host)
+      // ⚠⚠ Keys are never re-pinned. An accept that is being retried (its
+      // deposit did not go out) finds the contact already saved, and a card
+      // that now says something else is refused, not written over it.
+      const pinned = getCrossIsland(r.uin, r.host)
+      if (pinned && !sameSigningKey(pinned.signingKey, card.signing_key)) {
+        setError(t('ci.key_mismatch_refused'))
+        return
+      }
+      // A row from the island's own list is vouched for by that island alone:
+      // its operator writes both the row and the card. A key this device saw
+      // the person use in a group there BEFORE is the one thing it cannot
+      // rewrite after the fact, so a card that disagrees with it waits for a
+      // person to confirm.
+      if (r.server && !keyChangeConfirmed) {
+        const prior = priorSigningKeys(identity!.uin, r.uin, r.host)
+        if (prior.some((k) => !sameSigningKey(k, card.signing_key))) {
+          setKeyConfirm(tag)
+          return
+        }
+      }
+      setKeyConfirm(null)
+      if (!pinned) {
+        saveCrossIsland({
+          uin: r.uin,
+          host: r.host,
+          nickname: card.nickname?.trim() || tag,
+          identityKey: card.identity_key,
+          signingKey: card.signing_key,
+          signalIdentityKey: card.signal_identity_key ?? null,
+          addedAt: Date.now(),
+          gender: card.gender ?? null,
+          statusMessage: card.status_message ?? null,
+        })
+      }
+      // A row that is only a §5f request or held messages goes now, as before.
+      // A row from the island's list stays until our accept has actually
+      // reached the requester: it is what the retry hangs on.
+      const heldMsgs = r.server ? (getRequest(r.uin, r.host)?.msgs ?? []) : (clearRequest(r.uin, r.host)?.msgs ?? [])
       // Held messages are a backlog being released by an explicit accept, not
       // traffic arriving now: a banner per quarantined message would fire a
       // burst at the exact moment the user is looking at the request.
       beginCatchUp()
       try {
-        held?.msgs.forEach((m) => addIncoming(r.uin, m)) // surface the held messages
+        heldMsgs.forEach((m) => addIncoming(r.uin, m)) // surface the held messages
       } finally {
         endCatchUp()
       }
@@ -106,14 +147,21 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
       // has no device id). Hand them the answer AND the card just pinned, so
       // the row disappears there instead of inviting a second accept that would
       // re-TOFU the peer and overwrite these very keys.
-      void sendRequestAck(identity!, r.uin, r.host, 'accept', {
+      const ackCard = {
         nick: card.nickname?.trim() || undefined,
         ik: card.identity_key,
         sk: card.signing_key,
         sik: card.signal_identity_key ?? null,
         gender: card.gender ?? null,
         status: card.status_message ?? null,
-      })
+      }
+      // ⚠⚠ Not yet for a row from an island's list. This device receives its
+      // own carbon back, and applying it clears the row and marks the island
+      // row answered: sent before the deposit lands, it wiped the very row a
+      // failed accept is retried on, and the next poll withdrew the
+      // requester's row with our accept never delivered. That ack goes out
+      // below once the accept landed, or from the poll's redeposit.
+      if (!r.server) void sendRequestAck(identity!, r.uin, r.host, 'accept', ackCard)
       const acked = await sendContactAccept(identity!, r.host, r.uin)
       // §5e: they hold us from this moment, with whatever name their key-card
       // fetch caught. Give them the current one now — the alternative is that
@@ -121,6 +169,21 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
       // profile, which for most people is never. Fire-and-forget, and after the
       // accept so the ordering on their side is "accepted, then named".
       void pushProfileTo(identity!, r.host, r.uin)
+      if (r.server) {
+        if (!acked) {
+          // Kept, and the visited poll deposits it again (crossisland-pending).
+          noteAcceptUndelivered(r.uin, r.host)
+          setCi(listRequests())
+          setError(t('ci.srv.retrying', { host: r.host }))
+          return
+        }
+        clearRequest(r.uin, r.host)
+        void sendRequestAck(identity!, r.uin, r.host, 'accept', ackCard, { host: r.host, id: r.server.id })
+        // Clears the row on that island where it can; where it cannot, the row
+        // is only hidden here, never declined in its place.
+        void withdrawServerRequest(identity!, r.host, r.server.id, true)
+        setCi(listRequests())
+      }
       if (!acked) {
         // Accepted here regardless (the row + pinned keys are written), but say
         // so plainly rather than implying the other side knows.
@@ -139,11 +202,20 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
   /// too instead of waiting forever. Offered only for an actual contact request
   /// — a quarantined MESSAGE has no request to answer, and replying to one would
   /// confirm to a stranger that their deposit landed in front of a human.
+  ///
+  /// A row from an island's own list is declined THERE, with an honest
+  /// `respond(false)`: the requester's app reads that answer from that island.
+  /// The row leaves this list at once; if the island does not take the answer
+  /// now, the visited poll sends the same decline again (never a withdraw),
+  /// and my other devices hear of it only once it landed.
   async function declineCI(r: CrossIslandRequest) {
     const tag = `${r.uin}@${r.host}`
     setCiActing(tag)
+    setKeyConfirm(null)
+    setError(null)
+    const srv = r.server && r.host !== '' ? { host: r.host, id: r.server.id } : undefined
     clearRequest(r.uin, r.host)
-    void sendRequestAck(identity!, r.uin, r.host, 'decline')
+    if (!srv) void sendRequestAck(identity!, r.uin, r.host, 'decline')
     setCi(listRequests())
     // Same-island quarantined rows have no §5f request to answer — dropping
     // the row is the whole of it (and telling a stranger their message was
@@ -153,15 +225,25 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
       return
     }
     try {
-      await sendContactDecline(identity!, r.host, r.uin)
+      const [landed] = await Promise.all([
+        srv ? declineServerRequest(identity!, srv.host, srv.id, r.uin, true) : Promise.resolve('done' as const),
+        r.contactReq ? sendContactDecline(identity!, r.host, r.uin) : Promise.resolve(true),
+      ])
+      if (landed !== 'done') setError(t('ci.srv.retrying', { host: r.host }))
+    } catch {
+      setError(t('pending.error'))
     } finally {
       setCiActing(null)
     }
   }
 
   function blockCI(r: CrossIslandRequest) {
+    const srv = r.server && r.host !== '' ? { host: r.host, id: r.server.id } : undefined
+    setKeyConfirm(null)
     blockRequest(r.uin, r.host)
-    void sendRequestAck(identity!, r.uin, r.host, 'block')
+    void sendRequestAck(identity!, r.uin, r.host, 'block', undefined, srv)
+    // Cleared on the island where it can be; hidden here either way.
+    if (srv) void withdrawServerRequest(identity!, srv.host, srv.id, true)
     setCi(listRequests())
   }
 
@@ -169,6 +251,10 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
     if (!identity) return
     setError(null)
     setLoading(true)
+    // The requests addressed to our guest copies on other islands too. Not
+    // awaited: the store notifies the list when rows land, and the schedule
+    // lets this through at most once a minute per island.
+    void pollVisitedPending(identity, { force: true })
     try {
       const list = await Api.pendingRequests(identity)
       setRequests(list)
@@ -248,11 +334,19 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
                 // render a plain #uin, not a dangling "@".
                 const tag = r.host === '' ? `${r.uin}` : `${r.uin}@${r.host}`
                 const firstText = r.msgs.find((m) => m.kind === 'text') as { text?: string } | undefined
+                const fromIsland = !!r.server && r.host !== ''
                 // A §5f contact request says what it wants and who is asking;
+                // a request from the island's own list says where it was made;
                 // a quarantined message row keeps showing its first message.
                 const subtitle = r.contactReq
                   ? r.note || t('ci.wants_contact')
-                  : firstText?.text || t('ci.wants', { n: r.msgs.length })
+                  : fromIsland
+                    ? t('ci.srv.subtitle', { host: r.host })
+                    : firstText?.text || t('ci.wants', { n: r.msgs.length })
+                // Read from what this device already holds, no fetch: the
+                // roster snapshot of our rooms on that island.
+                const shared = fromIsland ? sharedGroupsOn(identity.uin, r.uin, r.host) : null
+                const tries = r.srvAcceptTries ?? 0
                 return (
                   // ⚠ Stacked, not a single row. Three actions plus a name plus
                   // an island tag do not fit side by side: the buttons are
@@ -276,37 +370,84 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
                           <div className="text-sm break-all">{tag}</div>
                         )}
                         <div className="text-xs text-fg-dim break-words line-clamp-2">{subtitle}</div>
+                        {shared && shared.names.length > 0 && (
+                          <div className="text-xs text-fg-dim break-words">
+                            {shared.names.length === 1
+                              ? t('ci.srv.via_group', { name: shared.names[0] })
+                              : t('ci.srv.via_groups', { name: shared.names[0], n: shared.names.length - 1 })}
+                          </div>
+                        )}
+                        {shared && shared.names.length === 0 && shared.rosterKnown && (
+                          <div className="text-xs text-fg-dim break-words">{t('ci.srv.no_group')}</div>
+                        )}
                         {/* We hold a contact at this address and these were
                             sealed under another key. Said out loud: the row
                             looks like the contact, and must not pass as them. */}
                         {r.keyMismatch && (
                           <div className="mt-1 text-xs text-amber-600 break-words">{t('ci.key_mismatch')}</div>
                         )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => blockCI(r)}
-                          className="flex-1 h-9 rounded-md bg-field text-sm font-medium hover:bg-line/50 transition-colors"
-                        >
-                          {t('ci.block')}
-                        </button>
-                        {r.contactReq && (
-                          <button
-                            onClick={() => void declineCI(r)}
-                            disabled={ciActing === tag}
-                            className="flex-1 h-9 rounded-md bg-field text-sm font-medium hover:bg-line/50 disabled:opacity-40 transition-colors"
-                          >
-                            {t('pending.decline')}
-                          </button>
+                        {fromIsland && tries > 0 && (
+                          <div className="mt-1 text-xs text-amber-600 break-words">
+                            {tries >= MAX_ACCEPT_TRIES
+                              ? t('ci.srv.gave_up', { host: r.host })
+                              : t('ci.srv.retrying', { host: r.host })}
+                          </div>
                         )}
-                        <button
-                          onClick={() => void acceptCI(r)}
-                          disabled={ciActing === tag}
-                          className="flex-1 h-9 rounded-md bg-accent hover:bg-accent-dim text-white text-sm font-semibold disabled:opacity-40 transition-colors"
-                        >
-                          {t('pending.accept')}
-                        </button>
+                        {/* Who vouches for this person, said before the tap
+                            that discloses our home number. */}
+                        {fromIsland && tries === 0 && (
+                          <div className="mt-1 text-xs text-fg-secondary break-words">
+                            {t('ci.srv.accept_hint', { host: r.host })}
+                          </div>
+                        )}
+                        {keyConfirm === tag && (
+                          <div className="mt-1 text-xs text-amber-600 break-words">
+                            {t('ci.srv.key_differs', { host: r.host })}
+                          </div>
+                        )}
                       </div>
+                      {keyConfirm === tag ? (
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setKeyConfirm(null)}
+                            className="flex-1 h-9 rounded-md bg-field text-sm font-medium hover:bg-line/50 transition-colors"
+                          >
+                            {t('common.cancel')}
+                          </button>
+                          <button
+                            onClick={() => void acceptCI(r, true)}
+                            disabled={ciActing === tag}
+                            className="flex-1 h-9 rounded-md bg-accent hover:bg-accent-dim text-white text-sm font-semibold disabled:opacity-40 transition-colors"
+                          >
+                            {t('pending.accept')}
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => blockCI(r)}
+                            className="flex-1 h-9 rounded-md bg-field text-sm font-medium hover:bg-line/50 transition-colors"
+                          >
+                            {t('ci.block')}
+                          </button>
+                          {(r.contactReq || fromIsland) && (
+                            <button
+                              onClick={() => void declineCI(r)}
+                              disabled={ciActing === tag}
+                              className="flex-1 h-9 rounded-md bg-field text-sm font-medium hover:bg-line/50 disabled:opacity-40 transition-colors"
+                            >
+                              {t('pending.decline')}
+                            </button>
+                          )}
+                          <button
+                            onClick={() => void acceptCI(r)}
+                            disabled={ciActing === tag}
+                            className="flex-1 h-9 rounded-md bg-accent hover:bg-accent-dim text-white text-sm font-semibold disabled:opacity-40 transition-colors"
+                          >
+                            {t('pending.accept')}
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </li>
                 )

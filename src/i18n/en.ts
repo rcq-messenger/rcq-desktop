@@ -1448,4 +1448,37 @@ export const en: Record<string, string> = {
   // deleted on this path either; the new phrase is the only way on.
   'auth.rotated_elsewhere': "This account's keys were changed on another device. Enter the new recovery phrase to continue.",
   'auth.rotated_elsewhere.enter': "Enter new phrase",
+  // A contact request made through a visited island's own list, addressed to
+  // our guest copy there (spec 2026-09-15, F1).
+  'ci.srv.subtitle': 'Contact request on island {host}',
+  'ci.srv.via_group': 'via group «{name}»',
+  'ci.srv.via_groups': 'via group «{name}» and {n} more',
+  'ci.srv.no_group': 'Not in your groups on this island',
+  'ci.srv.accept_hint': 'If you accept, they will see your home number. Only island {host} vouches for who they are.',
+  'ci.srv.key_differs': "This person's key on island {host} differs from the one you saw in a group. Check with them before accepting.",
+  'ci.srv.retrying': "Couldn't reach island {host}. We'll try again.",
+  'ci.srv.gave_up': "Island {host} didn't take the answer. Try again later.",
+  // Burn across islands (spec 2026-09-15, F2). Counts are kept out of the
+  // sentences: this dictionary has no plural forms.
+  'burn.islands.body': 'This account also has copies on other islands, where you joined groups or keep a backup address: {hosts}. They are deleted first, then the account on your island.',
+  'burn.islands.owned_groups': 'Groups you created there will be deleted for all their members: {names}.',
+  'burn.sibling': 'The account {uin} on {host} on this device uses the same keys and will be burned too.',
+  'burn.not_covered': 'Copies made by your other devices, or added to a group by its owner on an island this device never opened, are not deleted from here.',
+  'burn.progress': 'Deleting copies on other islands…',
+  'burn.row.confirmed': 'Island confirmed deletion',
+  'burn.row.already_gone': 'Island reports no copy',
+  'burn.row.offline': 'No connection',
+  'burn.row.timeout': 'The island did not answer in time',
+  'burn.row.suspended': 'The account is blocked on this island and cannot be deleted',
+  'burn.row.too_old': 'This island is too old to delete a copy',
+  'burn.row.limit': 'More copies than expected, some may remain',
+  'burn.row.not_tried': 'Not tried, time ran out',
+  'burn.row.server': 'The island answered with an error',
+  'burn.failures.title': 'Could not delete on these islands',
+  'burn.retry': 'Try again',
+  'burn.anyway': 'Burn anyway',
+  'burn.anyway.hint': 'The copies on these islands stay. After your keys are gone they can only be deleted with your recovery phrase.',
+  'burn.cancel.partial': 'The account stays. Copies already deleted on {hosts} do not come back.',
+  'burn.home_failed.partial': 'Could not reach your island, so the account there is untouched. Copies on other islands were already deleted. Try again when you have a connection.',
+  'burn.done': 'Account burned on your island and on other islands ({n}).',
 }

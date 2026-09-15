@@ -1,0 +1,21 @@
+Компьютер 0.3.84. Группы с людьми с других островов. Перестали сами появляться заявки на переписку: служебные сообщения участников группы превращались в заявки. После смены номера на своём острове группы на других островах больше не пропадают: раньше приложение после переезда не находило список посещённых островов и переставало их проверять. Групповые рассылки в комнатах на другом острове больше не теряются.
+
+Профиль участника группы с другого острова теперь открывается на его острове. Раньше приложение искало тот же номер на вашем острове, и визит или заявка уходили постороннему человеку с таким же номером. Смена ника теперь доходит и до групп на других островах.
+
+И защита: контакт с другого острова считается собой, только если сообщение подписано его ключом. Раньше достаточно было знать его номер и остров, чтобы написать в ваш чат от его имени. Если ключ не совпадает, сообщение придёт как заявка с пометкой о смене ключа.
+
+---
+
+Desktop 0.3.84. Groups with people from other islands. Contact requests no longer appear by themselves: control messages from group members were turning into requests. After a number change on your own island, groups on other islands no longer vanish: after the move the app used to lose the list of visited islands and stop checking them. Group broadcasts in rooms on another island are no longer lost.
+
+The profile of a group member from another island now opens on their island. Before, the app looked up the same number on your own island, so a visit or a request went to a stranger who happened to hold that number. A nickname change now reaches groups on other islands too.
+
+And a protection: a contact from another island counts as that contact only when the message is signed with their key. Before, knowing their number and island was enough to write into your chat as them. When the key does not match, the message arrives as a request marked as a key change.
+
+---
+
+桌面版 0.3.84。与其他岛屿用户的群组。不再凭空出现聊天请求：群成员的控制消息曾被当成请求。在自己岛屿更换号码后，其他岛屿上的群组不再消失：此前应用在迁移后会丢失已访问岛屿的列表，不再检查它们。其他岛屿上房间的群发消息不再丢失。
+
+来自其他岛屿的群成员资料现在会在对方的岛屿上打开。以前应用会在你的岛屿上查找相同号码，访问记录或请求会发给恰好持有该号码的陌生人。昵称的修改现在也会同步到其他岛屿上的群组。
+
+另外一项保护：来自其他岛屿的联系人，只有当消息由其密钥签名时才被视为本人。以前只要知道对方的号码和岛屿，就能以对方身份在你们的聊天里发消息。密钥不匹配时，消息会作为带有密钥变更提示的请求出现。

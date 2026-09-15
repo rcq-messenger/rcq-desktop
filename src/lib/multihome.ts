@@ -31,6 +31,15 @@ import { verifySigned } from './signing-keys'
 import { scopedKey } from './account-scope'
 import { isFrontHost } from './front'
 import { drainGroupLog, islandHasGroupLog, type GroupLogRequest } from './group-log'
+import {
+  INFO_BODY_CAP,
+  hostVerdict,
+  pickBackupIsland,
+  probePassed,
+  readCappedText,
+  type HostVerdict,
+  type ProbeAnswer,
+} from './backup-pick'
 
 // ⚠⚠ SCOPED, and it was not until now. A flat key is readable by every account
 // in this browser, and this one carried a BEARER TOKEN per backup island: sign
@@ -220,7 +229,17 @@ export async function registerOnIsland(host: string, identity: WebIdentity): Pro
     }),
   })
   const text = await res.text()
-  if (!res.ok) throw new Error(text || `register: HTTP ${res.status}`)
+  if (!res.ok) {
+    // The status and the island's body ride on the error, so `doorRefusalOf`
+    // can tell a door (403 with `detail.code` `entry_required` /
+    // `invite_required`, #988) from any other failure. The message stays the
+    // body for the callers that already read it; screens must not print it
+    // (it is JSON).
+    const err = new Error(text || `register: HTTP ${res.status}`) as Error & { status: number; body: string }
+    err.status = res.status
+    err.body = text
+    throw err
+  }
   return JSON.parse(text) as IslandCredentials
 }
 
@@ -233,6 +252,31 @@ export async function addBackupIsland(
   hostInput: string,
   opts?: { auto?: boolean },
 ): Promise<BackupHome> {
+  const { host, existing } = newBackupHost(identity, hostInput)
+  // Recover-first: registering twice would mint a SECOND uin for the same key
+  // on that island (no server-side uniqueness on keys — deliberately).
+  const cred = (await recoverOnIsland(host, identity)) ?? (await registerOnIsland(host, identity))
+  return saveNewBackupHome(existing, host, cred, opts)
+}
+
+/// Take back a copy this account ALREADY has on `hostInput`, without ever
+/// registering: null when the identity is not on that island. The auto-pick
+/// uses it for islands whose door is shut (#988), where a new mailbox is not
+/// ours to make but an old one still answers `/auth/recover`. Throws on the
+/// same exclusions as `addBackupIsland` and on network errors.
+export async function recoverBackupIsland(
+  identity: WebIdentity,
+  hostInput: string,
+  opts?: { auto?: boolean },
+): Promise<BackupHome | null> {
+  const { host, existing } = newBackupHost(identity, hostInput)
+  const cred = await recoverOnIsland(host, identity)
+  return cred ? saveNewBackupHome(existing, host, cred, opts) : null
+}
+
+/// The host a new backup home would live on, plus the list it joins. Throws
+/// the refusals the add form maps to sentences.
+function newBackupHost(identity: WebIdentity, hostInput: string): { host: string; existing: BackupHome[] } {
   const host = normalizeIslandHost(hostInput)
   if (!host) throw new Error('invalid host')
   // The front is the flagship by another road: "adding" it registers a second
@@ -241,10 +285,15 @@ export async function addBackupIsland(
   if (host === hostOfApiBase(identity.apiBase) || isFrontHost(host)) throw new Error('primary island')
   const existing = listBackupHomes()
   if (existing.some((h) => h.host === host)) throw new Error('already added')
+  return { host, existing }
+}
 
-  // Recover-first: registering twice would mint a SECOND uin for the same key
-  // on that island (no server-side uniqueness on keys — deliberately).
-  const cred = (await recoverOnIsland(host, identity)) ?? (await registerOnIsland(host, identity))
+function saveNewBackupHome(
+  existing: BackupHome[],
+  host: string,
+  cred: IslandCredentials,
+  opts?: { auto?: boolean },
+): BackupHome {
   const home: BackupHome = {
     host,
     uin: cred.uin,
@@ -291,18 +340,6 @@ export function hasAutoBackup(): boolean {
   return listBackupHomes().some((h) => h.auto || h.adopted)
 }
 
-async function islandHealthy(host: string): Promise<boolean> {
-  try {
-    const ctl = new AbortController()
-    const t = setTimeout(() => ctl.abort(), 6000)
-    const res = await fetch(`https://${host}/health`, { signal: ctl.signal, cache: 'no-store' })
-    clearTimeout(t)
-    return res.ok
-  } catch {
-    return false
-  }
-}
-
 /// One source: the list plus its detached signature, verified over the EXACT
 /// bytes that were served. Null when this source cannot be used at all —
 /// unreachable, a 404 that a static host answered with its index page, or a
@@ -337,45 +374,114 @@ async function fetchSignedAutoIslands(): Promise<string[]> {
   throw new Error('no catalogue')
 }
 
-/// Pick a backup island from the SIGNED list, minus our primary island and
-/// anything already added. Candidates are health-checked in parallel, then the
-/// FIRST healthy one in list order wins (the order is the project's
-/// preference). Throws 'no island' when the list can't be verified or no
-/// candidate responds.
-export async function autoPickBackupIsland(identity: WebIdentity): Promise<string> {
+/// The OVERALL deadline of each auto-pick probe GET: connect, headers and the
+/// /server/info body all inside it (the abort also breaks off a body that is
+/// still streaming). Same 6 s as the direct pass on Android and iOS; this
+/// client has no relay pass, so the 15 s relay deadline does not apply.
+const AUTO_PICK_PROBE_TIMEOUT_MS = 6000
+
+/// One probe GET for the auto-pick (R1 in backup-pick.ts), or null on a timeout
+/// or a network error.
+///
+/// ⚠ Redirects are NOT followed (`redirect: 'manual'` hands back an opaque
+/// redirect, which the rule reads as SILENT): a catalogue island that sends us
+/// somewhere else is not the island the signed list named.
+///
+/// ⚠ UNCACHED on purpose, and deliberately not `fetchServerInfo`, which keeps a
+/// successful answer for the whole run: an island that shut its door (or
+/// turned `closed_island` on) after this tab first asked would still read as
+/// open, and the server does not refuse registration on a closed island, so no
+/// door refusal would ever arrive to correct it. `loadServerInfo` is not used
+/// either: it normalises a malformed field to its permissive default, and the
+/// rule reads a malformed door field as SHUT, so the raw body is handed over.
+async function probeGet(url: string, readBody: boolean): Promise<ProbeAnswer | null> {
+  const ctl = new AbortController()
+  const timer = setTimeout(() => ctl.abort(), AUTO_PICK_PROBE_TIMEOUT_MS)
+  try {
+    const res = await fetch(url, { signal: ctl.signal, cache: 'no-store', redirect: 'manual' })
+    const answer: ProbeAnswer = {
+      status: res.status,
+      redirect: res.type === 'opaqueredirect' || res.redirected,
+    }
+    if (readBody && res.ok && !answer.redirect) {
+      answer.body = await readCappedText(res, INFO_BODY_CAP)
+    } else {
+      void res.body?.cancel().catch(() => {})
+    }
+    return answer
+  } catch {
+    return null
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/// SILENT, OPEN or SHUT for one catalogue island, asked fresh (R1, R2).
+/// ⚠ #988: /health alone picked the flagship after it started selling entry,
+/// and registration there answered 403 `entry_required`. The door lives on
+/// /server/info.
+///
+/// ⚠ D3: /server/info is asked only once /health passed. A host that is down,
+/// redirects or answers non-2xx is SILENT on the first GET alone.
+async function probeBackupHost(host: string): Promise<HostVerdict> {
+  const health = await probeGet(`https://${host}/health`, false)
+  if (!probePassed(health)) return 'silent'
+  const info = await probeGet(`https://${host}/server/info`, true)
+  return hostVerdict(health, info)
+}
+
+/// The auto-pick candidates: the SIGNED list, in its order (the project's
+/// preference), minus our primary island, anything already added and fronts.
+async function autoPickCandidates(identity: WebIdentity): Promise<string[]> {
   const own = hostOfApiBase(identity.apiBase)
   const existing = new Set(listBackupHomes().map((h) => h.host))
-  const candidates = (await fetchSignedAutoIslands())
+  return (await fetchSignedAutoIslands())
     .map((u) => normalizeIslandHost(u))
     .filter((h): h is string => !!h && h !== own && !existing.has(h) && !isFrontHost(h))
-  const health = await Promise.all(candidates.map(islandHealthy))
-  const picked = candidates.find((_, i) => health[i])
-  if (!picked) throw new Error('no island')
-  return picked
 }
 
 /// How far along `enableAutoBackup` is. ⚠ #605: switching the toggle on is a
-/// long errand — a signed catalogue from up to two sources, a health probe of
-/// every candidate (6s ceiling each), then a recover-or-register handshake on
-/// the winner — and it used to report none of it, so the screen sat silent for
-/// ten-plus seconds and only then produced a number. The stage is reported so
-/// the caller can name what is taking the time.
+/// long errand (a signed catalogue from up to two sources, a health and door
+/// probe of the candidates one at a time with a 6s ceiling per GET, then a
+/// recover-or-register handshake) and it used to report none of it, so the screen
+/// sat silent for ten-plus seconds and only then produced a number. The stage
+/// is reported so the caller can name what is taking the time.
 export type AutoBackupStage =
   | { kind: 'picking' }
   | { kind: 'connecting'; host: string }
 
 /// Add a catalogue-picked backup home (the toggle's ON action). Returns the
 /// chosen host; the caller republishes the home-island record.
+///
+/// ⚠ #988: the rule is `pickBackupIsland` in backup-pick.ts, the same on every
+/// client. Islands are probed one at a time in catalogue order. An OPEN island
+/// gets recover-or-register as before, and a 403 door refusal there just moves
+/// on (its recover already ran, D4); a SHUT one is only asked once for a copy
+/// this account already has there, never registered on; a SILENT one gets
+/// nothing. Throws `NO_ISLAND_REACHABLE` when no island
+/// answered or the signed list did not arrive or verify, `NO_OPEN_ISLAND` when
+/// some island answered and none took a copy, or the verified list had no
+/// candidate left.
 export async function enableAutoBackup(
   identity: WebIdentity,
   onStage?: (stage: AutoBackupStage) => void,
 ): Promise<string> {
   onStage?.({ kind: 'picking' })
-  const host = await autoPickBackupIsland(identity)
-  // The pick is the first half; registering on it is the second, and naming the
-  // island is the difference between "still working" and "stuck".
-  onStage?.({ kind: 'connecting', host })
-  await addBackupIsland(identity, host, { auto: true })
+  const { host } = await pickBackupIsland({
+    direct: {
+      // Throws 'no catalogue' when no source verified: the rule reads that as
+      // every island SILENT (D2).
+      candidates: () => autoPickCandidates(identity),
+      probe: probeBackupHost,
+      register: (h) => addBackupIsland(identity, h, { auto: true }),
+      recover: (h) => recoverBackupIsland(identity, h, { auto: true }),
+    },
+    // No relay pass (D10): the desktop bypass tunnel is process-wide and already carries the direct pass.
+    relay: null,
+    // The pick is the first half; registering on it is the second, and naming
+    // the island is the difference between "still working" and "stuck".
+    onTrying: (h) => onStage?.({ kind: 'connecting', host: h }),
+  })
   return host
 }
 

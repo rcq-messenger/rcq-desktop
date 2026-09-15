@@ -71,6 +71,7 @@ import {
   scrubFrontAliasHomes,
   type BackupHome,
 } from '../lib/multihome'
+import { NO_ISLAND_REACHABLE, NO_OPEN_ISLAND, doorRefusalOf } from '../lib/backup-pick'
 import { publishHomeIslandRecord } from '../lib/federation-publish'
 import { pushHomeRecordToContacts } from '../lib/federation-gossip'
 import { DEFAULT_CAPABILITIES } from '../lib/server-info'
@@ -196,6 +197,10 @@ export function Settings() {
   const [mhHost, setMhHost] = useState('')
   const [mhBusy, setMhBusy] = useState(false)
   const [mhError, setMhError] = useState<string | null>(null)
+  // What the toggle could not do, shown right under the toggle rather than at
+  // the bottom of the section: "no open island" says "add an island by hand
+  // below", so it has to sit ABOVE the manual block (#988, D7).
+  const [mhAutoError, setMhAutoError] = useState<string | null>(null)
   const [mhAutoBusy, setMhAutoBusy] = useState(false)
   // What the toggle is doing right now, so a ten-second errand does not look
   // like a dead switch (#605). null while idle.
@@ -437,6 +442,7 @@ export function Settings() {
   async function addBackup() {
     setMhBusy(true)
     setMhError(null)
+    setMhAutoError(null)
     // The address may carry the island's certificate fingerprint after a `#`
     // (docs/island-fingerprint-design.md §3). It is split off here, because
     // the host normaliser underneath drops a fragment without a word, and a
@@ -475,7 +481,19 @@ export function Settings() {
         'primary island': 'settings.multihome.error.primary',
         'already added': 'settings.multihome.error.already',
       }
-      setMhError(known[msg] ? t(known[msg]) : `${t('settings.multihome.error.generic')}${msg ? ` (${msg})` : ''}`)
+      // ⚠ #988: a registration refusal carries the island's JSON body as its
+      // message, and the generic branch used to print it in brackets. A door
+      // gets its own sentence; anything else gets the generic one, no body.
+      const door = doorRefusalOf(e)
+      setMhError(
+        door === 'entry'
+          ? t('settings.multihome.error.entry_required')
+          : door === 'invite'
+            ? t('settings.multihome.error.invite_required')
+            : known[msg]
+              ? t(known[msg])
+              : t('settings.multihome.error.generic'),
+      )
     } finally {
       setMhBusy(false)
     }
@@ -497,6 +515,7 @@ export function Settings() {
     if (!window.confirm(t('settings.multihome.promote_confirm', { host }))) return
     setPromoteBusy(host)
     setMhError(null)
+    setMhAutoError(null)
     try {
       const next = await promoteBackupToPrimary(identity!, host)
       await publishHomeIslandRecord(next)
@@ -508,20 +527,31 @@ export function Settings() {
       await flushVaultWriter()
       window.location.reload()
     } catch (e) {
-      const msg = String((e as Error).message || e)
-      const known: Record<string, string> = {
-        'target island unreachable': 'settings.multihome.promote_unreachable',
-      }
-      setMhError(known[msg] ? t(known[msg]) : `${t('settings.multihome.error.generic')}${msg ? ` (${msg})` : ''}`)
+      // ⚠ #988, D8: one sentence for every failure, the same on all clients:
+      // the switch did not happen and nothing changed (the promote aborts
+      // before it writes anything). No message in brackets and no code: what
+      // reaches here is `recover: HTTP 403`, `Failed to fetch` and the like.
+      // Only a door refusal has a sentence of its own.
+      const door = doorRefusalOf(e)
+      setMhError(
+        door === 'entry'
+          ? t('settings.multihome.error.entry_required')
+          : door === 'invite'
+            ? t('settings.multihome.error.invite_required')
+            : t('settings.multihome.error.switch_not_done'),
+      )
       setPromoteBusy(null)
     }
   }
 
-  // The toggle: ON auto-picks a healthy catalogue island and registers there;
+  // The toggle: ON auto-picks a catalogue island that answers and whose door is
+  // open (#988: not paid, not invite-only, not closed) and registers there, or
+  // takes back a copy the account already has on a shut one;
   // OFF disconnects the auto-picked island(s). Manual islands are untouched.
   async function toggleAutoBackup(on: boolean) {
     setMhAutoBusy(true)
     setMhError(null)
+    setMhAutoError(null)
     // ⚠ #605: "switching the backup on in the web takes a long time, but then
     // it does give the right number". It is a catalogue fetch, a health probe
     // of every candidate island and a registration handshake — ten seconds and
@@ -547,19 +577,20 @@ export function Settings() {
       void pushHomeRecordToContacts(identity!)
     } catch (e) {
       const msg = e instanceof Error ? e.message : ''
-      // Three different failures, and telling them apart is the whole point:
-      // "the list did not arrive" is usually a blocked network and has nothing
-      // to do with any island, which is how #579 came in as an island being
-      // down when GitHub was simply unreachable from there.
+      // ⚠ #988: the same outcome sentences on every client (R5 in
+      // backup-pick.ts). Nothing answered, or the signed list did not arrive
+      // or verify: "no island reachable". Something answered and nothing took
+      // a copy (the flagship sells entry), or the verified list had nobody
+      // left: "no open island", which points at the manual add below.
+      // Anything else is the generic sentence alone, never the island's body:
+      // that was raw JSON on the screen.
       const known: Record<string, string> = {
-        'no catalogue': 'settings.multihome.error.catalogue',
-        'no island': 'settings.multihome.error.none',
+        [NO_ISLAND_REACHABLE]: 'settings.multihome.error.none',
+        [NO_OPEN_ISLAND]: 'settings.multihome.error.no_open_island',
       }
-      setMhError(
-        known[msg]
-          ? t(known[msg])
-          : `${t('settings.multihome.error.generic')}${msg ? ` (${msg})` : ''}`,
-      )
+      // D7: the sentence says the manual add is below, so open it.
+      if (msg === NO_OPEN_ISLAND) setMhAdvanced(true)
+      setMhAutoError(known[msg] ? t(known[msg]) : t('settings.multihome.error.generic'))
     } finally {
       setMhAutoBusy(false)
       setMhStage(null)
@@ -1069,6 +1100,9 @@ export function Settings() {
               it is one more grey line, not an answer to "is it doing anything"
               (#605). */}
           {mhStage && <div className="text-xs text-fg-secondary">{mhStage}</div>}
+          {mhAutoError && (
+            <div className="text-sm text-red-600 bg-red-500/5 rounded-md p-2">{mhAutoError}</div>
+          )}
           {backups
             .filter((h) => h.auto || h.adopted)
             .map((h) => (

@@ -762,6 +762,8 @@ export const ru: Record<string, string> = {
   'settings.multihome.advanced': 'Дополнительно: добавить остров вручную',
   'settings.multihome.error.none':
     'Сейчас нет доступного резервного острова. Попробуйте позже или добавьте вручную.',
+  'settings.multihome.error.no_open_island':
+    'Сейчас ни один открытый остров из каталога не может принять резерв. Можно добавить остров вручную ниже.',
   'settings.multihome.add': 'Добавить резервный остров',
   'settings.multihome.placeholder': 'адрес острова, напр. is2.rcq.app',
   'settings.multihome.confirm': 'Подключить',
@@ -779,6 +781,9 @@ export const ru: Record<string, string> = {
   'settings.multihome.error.primary': 'Это уже ваш основной остров.',
   'settings.multihome.error.already': 'Этот остров уже добавлен.',
   'settings.multihome.error.generic': 'Не удалось подключиться к острову.',
+  'settings.multihome.error.entry_required': 'Этот остров впускает только по коду входа. Попробуйте другой остров.',
+  'settings.multihome.error.invite_required': 'Этот остров впускает только по приглашению. Попробуйте другой остров.',
+  'settings.multihome.error.switch_not_done': 'Переключение не состоялось. Ничего не изменено.',
   'settings.section.danger': 'Сжечь аккаунт',
   'settings.danger.body':
     'Удаляет ваш аккаунт на острове, стирает контакты и сообщения на всех устройствах и начинает всё заново с новым UIN. Номер, под которым вы отвечаете, вернётся в общий пул, купленные номера исчезнут вместе с аккаунтом, а группы, которые вы создали, пропадут у всех участников. Отменить нельзя.',

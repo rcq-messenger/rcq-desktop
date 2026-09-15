@@ -770,6 +770,8 @@ export const en: Record<string, string> = {
   'settings.multihome.advanced': 'Advanced: add an island manually',
   'settings.multihome.error.none':
     'No reachable backup island right now. Try again later, or add one manually.',
+  'settings.multihome.error.no_open_island':
+    'No open island in the catalogue can take a backup right now. You can add an island by hand below.',
   'settings.multihome.add': 'Add backup island',
   'settings.multihome.placeholder': 'island host, e.g. is2.rcq.app',
   'settings.multihome.confirm': 'Connect',
@@ -787,6 +789,9 @@ export const en: Record<string, string> = {
   'settings.multihome.error.primary': 'That is already your primary island.',
   'settings.multihome.error.already': 'This island is already added.',
   'settings.multihome.error.generic': 'Could not connect to the island.',
+  'settings.multihome.error.entry_required': 'This island only lets people in with an entry code. Try another island.',
+  'settings.multihome.error.invite_required': 'This island only lets people in by invite. Try another island.',
+  'settings.multihome.error.switch_not_done': 'The switch did not happen. Nothing changed.',
   'settings.section.danger': 'Burn account',
   'settings.danger.body':
     'Deletes your account on the island, wipes contacts and messages on every device, and starts you over with a new UIN. The number you answer as goes back into the pool for anybody to take, numbers you bought are destroyed with the account, and groups you own disappear for everyone in them. This cannot be undone.',

@@ -819,6 +819,10 @@ export const en: Record<string, string> = {
   'ci.wants_contact': 'wants to add you as a contact',
   'ci.accept_undelivered':
     'Accepted here. Their island did not take the reply, so they will not see you as a contact until it can be reached.',
+  'ci.key_mismatch':
+    'Sealed with a different key than the one saved for this contact. It may be someone else using their address.',
+  'ci.key_mismatch_refused':
+    'Not added: this sender signed with a key their island does not publish for this address.',
   'add.ci.undelivered':
     'Added on this device. Their island did not take the request, so they will not see it until it can be reached.',
 

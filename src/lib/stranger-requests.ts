@@ -12,11 +12,11 @@
 import { scopedKey } from './account-scope'
 import { snapshotFor, contactsCache } from './contacts-cache'
 import { loadPersisted, storageKey } from './outgoing-store'
-
-/// Envelope kinds a stranger's quarantine holds. Control traffic (reactions,
-/// receipts, edits of nothing we show, visits) from an unknown sender is
-/// dropped, not held — there is no message for it to belong to.
-const CONTENT_KINDS = new Set(['text', 'photo', 'video', 'file', 'voice', 'location'])
+// Envelope kinds a stranger's quarantine holds. Control traffic (reactions,
+// receipts, edits of nothing we show, visits) from an unknown sender is
+// dropped, not held — there is no message for it to belong to. One set for
+// this gate and the cross-island one (#985(1)), so the two cannot drift.
+import { CONTENT_KINDS } from './crossisland-gate'
 
 const SETTING = () => scopedKey('strangers.quarantine')
 const ALLOWED = () => scopedKey('strangers.allowed')

@@ -28,6 +28,7 @@ import { migrateFlatDataInto, setAccountScope } from './account-scope'
 import { backfillRememberedIslands, touchRememberedIsland } from './remembered-islands'
 import { showTransitionVeil } from './transition-veil'
 import { flushVaultWriter } from './pin-gate'
+import { carrySealKeyOnMove } from './local-seal'
 import { defaultHome } from './routing'
 import { Api, setTokenRefresher, setUnauthorizedHandler , clearGroupPreviewCache } from './api'
 import { clearRandomPeers } from './random-peers'
@@ -128,9 +129,23 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
         // account out, which is the wrong ending for an account that is alive
         // and one number over.
         clearSessionRevoked(stored.uin)
-        setIdentity(adoptMigratedUin(stored, mint.movedTo, mint.token))
-        setAccounts(listStoredIdentities())
-        setHydrated(true)
+        const moved = adoptMigratedUin(stored, mint.movedTo, mint.token)
+        // The sealed request list was copied above; its seal key lives in the
+        // old number's database and has to arrive BEFORE the children mount
+        // and the request store opens under the new number, or that store
+        // mints a fresh key and flushes an empty list over the copy.
+        void carrySealKeyOnMove(stored.uin, moved.uin).finally(() => {
+          if (cancelled) return
+          // No reload on this path, and the scope was set to the OLD number a
+          // moment ago. Children mount on the render this state change causes,
+          // and their effects run before this provider's scope effect does, so
+          // a store opened in between would resolve its key under the number
+          // this account just left. Point the scope at the new one now.
+          setAccountScope(moved.uin)
+          setIdentity(moved)
+          setAccounts(listStoredIdentities())
+          setHydrated(true)
+        })
         return
       }
       if (mint.token) {
@@ -197,7 +212,11 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
     // its new number for good.
     clearSessionRevoked(target.uin)
     setIdentity(adoptMigratedUin(target, movedTo, token))
-    void flushVaultWriter().finally(() => window.location.assign('/'))
+    // The request list's seal key goes along before the reload opens the new
+    // number's stores (carrySealKeyOnMove; bounded, never throws).
+    void carrySealKeyOnMove(target.uin, movedTo)
+      .then(() => flushVaultWriter())
+      .finally(() => window.location.assign('/'))
   }
 
   // One in-flight mint at a time. A page that wakes up with an expired token
@@ -579,10 +598,14 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
       adoptMigration: (newUin: number, token: string, to = '/') => {
         if (!identity) return
         migrating.current = true
+        const oldUin = identity.uin
         setIdentity(adoptMigratedUin(identity, newUin, token))
         // Hard reload, not a route change: every module-level cache is keyed
         // by the old uin/jwt (ws socket, libsignal device, incoming store).
-        void flushVaultWriter().finally(() => window.location.assign(to))
+        // The request list's seal key goes along first (carrySealKeyOnMove).
+        void carrySealKeyOnMove(oldUin, newUin)
+          .then(() => flushVaultWriter())
+          .finally(() => window.location.assign(to))
       },
     }),
     // `movedStranded` is in here so the notice appears (and its button stops

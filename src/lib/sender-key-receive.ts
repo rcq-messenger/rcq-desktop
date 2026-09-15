@@ -4,7 +4,7 @@
 
 import { Api, type RCQGroup } from './api'
 import { b64ToBytes, encryptV1, type Envelope, type WebIdentity } from './crypto'
-import { holdGmsg, takeHeldForKid } from './held-gmsg'
+import { holdGmsg, takeHeldForKid, type GuestRoom } from './held-gmsg'
 import { openGmsg, type GmsgWire } from './sender-keys'
 import {
   acceptSkdm,
@@ -101,12 +101,23 @@ export interface DecodedGmsg {
 /// `gid`. Returns the inner envelope + real sender to route, or null when the
 /// message is mine (carbon handles it), a replay, unverifiable, or pending an
 /// SKDM (a NACK is fired in that last case).
+///
+/// `room` is for a broadcast out of a guest mailbox on ANOTHER island (§5c),
+/// and then `gid` is that island's own id for the room (the AEAD binds it).
+/// The chain is still looked up under `identity.uin`, the home account: that
+/// is where the key messages for these rooms are filed today, because the
+/// guest drains route them under the home identity (keying foreign rooms by
+/// host and guest number instead is the planned follow-up). What the room
+/// changes is everything that talks to the network, which has to happen on
+/// the room's island under our guest identity there, and our own-echo check,
+/// which must also know the kids we post under as a guest.
 export async function handleGmsg(
   identity: WebIdentity,
   payloadB64: string,
   gid: number,
+  room?: GuestRoom,
 ): Promise<RoutedGmsg | null> {
-  return (await decodeGmsg(identity, payloadB64, gid)).routed
+  return (await decodeGmsg(identity, payloadB64, gid, room)).routed
 }
 
 /// handleGmsg with the hold made visible (see DecodedGmsg).
@@ -114,6 +125,7 @@ export async function decodeGmsg(
   identity: WebIdentity,
   payloadB64: string,
   gid: number,
+  room?: GuestRoom,
 ): Promise<DecodedGmsg> {
   const dropped: DecodedGmsg = { routed: null, held: false }
   let wire: GmsgWire
@@ -129,6 +141,11 @@ export async function decodeGmsg(
   // Scoped to THIS account: the sibling account in the same browser owns its
   // kids under its own uin and must still read ours as ordinary inbound.
   if (ownsKid(identity.uin, wire.kid)) return dropped
+  // In a room on another island we post as our guest number there, so the
+  // chain we own for it is filed under that number (Chat sends with the guest
+  // identity). Missing this read our own echo as an unknown kid: held, and a
+  // re-send request fanned out to the whole room about our own message.
+  if (room && ownsKid(room.ident.uin, wire.kid)) return dropped
 
   const key = deriveInbound(identity.uin, wire.kid, wire.e, wire.i)
   if (!key) {
@@ -138,8 +155,12 @@ export async function decodeGmsg(
       // fire ONE recovery request. Holding adds no NACK of its own: this
       // branch stays the only NACK site, and the per-kid debounce above
       // already collapses the burst a missed SKDM produces.
-      holdGmsg(identity.uin, { kid: wire.kid, gid, payloadB64, e: wire.e, i: wire.i })
-      void sendNack(identity, gid, wire.kid)
+      holdGmsg(identity.uin, { kid: wire.kid, gid, payloadB64, e: wire.e, i: wire.i, room })
+      // ⚠ A foreign room's roster and its re-send request live on ITS island:
+      // asked of the home island under the home identity, this read the
+      // roster of whatever local room shares the number and sealed the
+      // request to its members.
+      void sendNack(room ? room.ident : identity, gid, wire.kid)
       return { routed: null, held: true }
     }
     return dropped // replay / epoch mismatch / too-far-ahead, silently dropped
@@ -175,6 +196,10 @@ export function handleSkdm(
 
 export interface ReplayedGmsg extends RoutedGmsg {
   gid: number
+  /// The room's island, when the broadcast came out of a guest mailbox on
+  /// another island. The caller must route it as that island's traffic, never
+  /// as the home island's (see routeForeignRoomBroadcast).
+  host?: string
 }
 
 /// Replay the broadcasts held for `kid` once its SKDM was accepted: each raw
@@ -190,8 +215,10 @@ export async function replayHeldGmsg(identity: WebIdentity, kid: string): Promis
   const held = takeHeldForKid(identity.uin, kid)
   const out: ReplayedGmsg[] = []
   for (const h of held) {
-    const got = await handleGmsg(identity, h.payloadB64, h.gid)
-    if (got) out.push({ ...got, gid: h.gid })
+    const got = await handleGmsg(identity, h.payloadB64, h.gid, h.room)
+    // A foreign room's broadcast is decoded under its island's id but FILED
+    // under the local alias, like every other row out of a guest mailbox.
+    if (got) out.push(h.room ? { ...got, gid: h.room.aliasGid, host: h.room.host } : { ...got, gid: h.gid })
   }
   return out
 }

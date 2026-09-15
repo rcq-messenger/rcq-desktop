@@ -26,7 +26,8 @@
 // message request is a worse outcome than storing it the old way, and the
 // "what is in this browser" screen tells the truth about which one happened.
 
-import { idbGet, idbSet } from './signal-persist'
+import { dbNameForUin } from './account-scope'
+import { idbCarryKey, idbGet, idbSet } from './signal-persist'
 
 const KEY_ID = 'local-seal.v1'
 const PREFIX = 's1:'
@@ -55,6 +56,43 @@ function sealKey(): Promise<CryptoKey | null> {
     }
   })()
   return keyPromise
+}
+
+/// #986(a): take this account's sealing key along on a UIN move.
+///
+/// The move copies every `rcq.web.<old>.*` key to the new number
+/// (move-carry.ts), and one of them, the cross-island request list, is a blob
+/// SEALED under the key kept in the old number's database. Copied without its
+/// key, the new number minted a fresh one, could not open the list, started it
+/// empty and flushed that empty list over the copy: every pending request, and
+/// the messages held in it, gone for good.
+///
+/// Copies, never overwrites: a number this browser already held has its own
+/// key, and its own list sealed under it (which the no-overwrite copy leaves
+/// alone for the same reason). The key never leaves the browser and never
+/// becomes bytes; the same origin could already use it.
+///
+/// ⚠⚠ ONLY on an island-proven move (the migrate response, or `moved_from`
+/// from /auth/refresh), from the same callers as adoptMigratedUin, and awaited
+/// BEFORE anything opens the new number's stores. Never on a socket frame.
+///
+/// Bounded: this runs in front of a reload, and a database that never answers
+/// must not strand the page. Past the bound the move goes on without the key,
+/// which loses the requests and nothing else. Never throws.
+export async function carrySealKeyOnMove(oldUin: number, newUin: number, timeoutMs = 3_000): Promise<void> {
+  const valid = (n: number) => Number.isSafeInteger(n) && n > 0
+  if (!valid(oldUin) || !valid(newUin) || oldUin === newUin) return
+  if (typeof indexedDB === 'undefined') return
+  const carry = idbCarryKey(dbNameForUin(oldUin), dbNameForUin(newUin), KEY_ID).then(
+    () => undefined,
+    () => undefined,
+  )
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const cap = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, timeoutMs)
+  })
+  await Promise.race([carry, cap])
+  clearTimeout(timer)
 }
 
 /// Is sealing available at all in this browser? For the storage screen, which

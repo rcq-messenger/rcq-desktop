@@ -127,3 +127,60 @@ export async function idbClearAll(): Promise<void> {
     /* nothing persisted yet / IDB unavailable */
   }
 }
+
+function openNamed(name: string): Promise<IDBDatabase> {
+  return new Promise<IDBDatabase>((resolve, reject) => {
+    const req = indexedDB.open(name, 1)
+    req.onupgradeneeded = () => {
+      const d = req.result
+      if (!d.objectStoreNames.contains(STORE)) d.createObjectStore(STORE)
+    }
+    req.onsuccess = () => resolve(req.result)
+    req.onerror = () => reject(req.error)
+  })
+}
+
+/// Copy one value from database `fromDb` to database `toDb`, by NAME and
+/// regardless of the current scope, unless `toDb` already holds that key.
+/// Returns whether it wrote. Opens its own connections and closes them, so it
+/// never pins this page's cached connection (`db()`) to either database.
+///
+/// The check and the write share one readwrite transaction: a store in the
+/// target database that is minting the same key at the same moment is
+/// serialised against it, so whichever lands first wins and nothing is
+/// overwritten. Values are structured clones, which is what lets a
+/// non-extractable CryptoKey travel without ever becoming bytes.
+export async function idbCarryKey(fromDb: string, toDb: string, key: string): Promise<boolean> {
+  if (fromDb === toDb) return false
+  const src = await openNamed(fromDb)
+  let val: unknown
+  try {
+    val = await new Promise<unknown>((resolve, reject) => {
+      const req = src.transaction(STORE, 'readonly').objectStore(STORE).get(key)
+      req.onsuccess = () => resolve(req.result)
+      req.onerror = () => reject(req.error)
+    })
+  } finally {
+    src.close()
+  }
+  if (val === undefined) return false
+  const dst = await openNamed(toDb)
+  try {
+    return await new Promise<boolean>((resolve, reject) => {
+      const tx = dst.transaction(STORE, 'readwrite')
+      const store = tx.objectStore(STORE)
+      let wrote = false
+      const probe = store.get(key)
+      probe.onsuccess = () => {
+        if (probe.result === undefined) {
+          store.put(val, key)
+          wrote = true
+        }
+      }
+      tx.oncomplete = () => resolve(wrote)
+      tx.onerror = () => reject(tx.error)
+    })
+  } finally {
+    dst.close()
+  }
+}

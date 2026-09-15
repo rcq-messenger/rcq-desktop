@@ -24,6 +24,7 @@ import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
 import { getCrossIsland } from '../lib/crossisland-store'
 import { pushProfileToCrossIslandContacts } from '../lib/crossisland-profile'
+import { pushNicknameToGuestCopies } from '../lib/guest-nickname'
 import { useContactAliases } from '../lib/local-store'
 import { lookupContactName, snapshotFor } from '../lib/contacts-cache'
 import { AddContactModal } from '../components/AddContactModal'
@@ -172,6 +173,7 @@ export function Profile() {
     setSaving(true)
     setError(null)
     try {
+      const nicknameBefore = info?.nickname
       const updated = await Api.updateProfile(identity!, {
         nickname: draft.nickname,
         first_name: draft.first_name ?? null,
@@ -194,6 +196,14 @@ export function Profile() {
       // profile save must not wait on, or fail because of, someone else's
       // island.
       void pushProfileToCrossIslandContacts(identity!)
+      // #985(2): and our OWN copies on other islands (the group islands we
+      // joined, the backup islands) are separate rows that this island cannot
+      // reach either, so the members of a group there kept reading the old
+      // name. We hold a token for each copy; rename it there too. The name
+      // only, and fire-and-forget for the same reason as the push above.
+      if (updated.nickname && updated.nickname !== nicknameBefore) {
+        void pushNicknameToGuestCopies(identity!, updated.nickname)
+      }
       // The form stays on screen (it IS the page now), so say the save landed
       // instead of leaving the person looking at an unchanged screen.
       toast(t('profile.saved'))
@@ -448,7 +458,15 @@ function ReadView({
           </div>
         )}
         {adding && info && (
-          <AddContactModal initialQuery={`#${info.uin}`} onClose={() => setAdding(false)} />
+          // #985(2): a cross-island profile adds `uin@host`, which the add
+          // screen takes through the §5f cross-island request (card from THAT
+          // island, keys pinned, request deposited there). `#uin` searched
+          // our own island and sent the request to a stranger with the same
+          // number.
+          <AddContactModal
+            initialQuery={crossIslandHost ? `${info.uin}@${crossIslandHost}` : `#${info.uin}`}
+            onClose={() => setAdding(false)}
+          />
         )}
       </section>
 

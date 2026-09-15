@@ -15,6 +15,7 @@
 // get a stable NEGATIVE local alias id, mapped here; the boundary translates
 // alias ↔ (host, remoteId). Server ids are positive, so no collision.
 
+import { Api, ApiError } from './api'
 import { type WebIdentity } from './crypto'
 import {
   normalizeIslandHost,
@@ -86,7 +87,57 @@ export async function ensureGuestOn(identity: WebIdentity, hostInput: string): P
   const cred = (await recoverOnIsland(host, identity)) ?? (await registerOnIsland(host, identity))
   const v: VisitedIsland = { host, uin: cred.uin, jwt: cred.token, addedAt: Date.now() }
   saveVisited([...listVisitedIslands(), v])
+  // #985(2): the row there was named by registration (a suggested name, not
+  // ours) or by whoever added us to a group there, and has never heard the
+  // name we actually use. Say it once, now, so a stale name corrects itself
+  // without waiting for our next rename. Not awaited: a join must not wait
+  // on, or fail over, a cosmetic.
+  void pushOwnNicknameTo(identity, host)
   return v
+}
+
+/// #985(2), first half: our nickname as the residents of `host` see it.
+///
+/// A guest copy is a row of its own on that island, and `PUT /users/me` on the
+/// home island updates the home row only: nothing on either island carries a
+/// rename across, by design (§5c, islands do not talk). This client holds the
+/// guest token, so it is the only party that can repeat the rename there.
+///
+/// Only the nickname travels. That island already shows a name to the group's
+/// members, so nothing new is disclosed, and no other profile field has any
+/// business going with it. Only to islands in this account's own store, never
+/// to one learned from a peer. Best effort: false on any failure, with one
+/// recover-and-retry on a 401 (tokens are memory-only and expire).
+export async function pushNicknameToVisited(identity: WebIdentity, host: string, nickname: string): Promise<boolean> {
+  const name = nickname.trim()
+  if (!name) return false
+  const ident = await ensureGuestAuth(identity, host).catch(() => null)
+  if (!ident) return false
+  try {
+    await Api.updateProfile(ident, { nickname: name })
+    return true
+  } catch (e) {
+    if (!(e instanceof ApiError) || e.status !== 401) return false
+  }
+  if (!(await refreshGuestAuth(identity, host))) return false
+  const fresh = guestIdentityFor(identity, host)
+  if (!fresh) return false
+  try {
+    await Api.updateProfile(fresh, { nickname: name })
+    return true
+  } catch {
+    return false
+  }
+}
+
+/// The name the HOME island holds for us, pushed to our copy on `host`.
+async function pushOwnNicknameTo(identity: WebIdentity, host: string): Promise<void> {
+  try {
+    const me = await Api.myInfo(identity)
+    if (me.nickname) await pushNicknameToVisited(identity, host, me.nickname)
+  } catch {
+    /* the next rename pushes it again */
+  }
 }
 
 /// Refresh an expired guest jwt via the recover handshake (we still hold the

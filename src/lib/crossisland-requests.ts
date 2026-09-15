@@ -37,6 +37,36 @@ export interface CrossIslandRequest {
   /// by the keys pinned at accept-time, never by these.
   nickname?: string
   note?: string
+  /// The signing keys the held envelopes on this row were sealed with, as the
+  /// seal verified them (unique, capped). Accept compares them with the key
+  /// the sender's island publishes for this address and refuses on a
+  /// difference: `from`/`from_host` are unsigned in v=1, so without this an
+  /// accept would pin the real person's keys and then replay somebody else's
+  /// words into that person's thread.
+  spubs?: string[]
+  /// We already hold a contact at this address and these envelopes were NOT
+  /// sealed with the key pinned for them. Shown on the row, never merged.
+  keyMismatch?: boolean
+}
+
+/// What the receive path proved about who sealed an envelope it is holding.
+export interface HeldSenderProof {
+  spub?: string
+  keyMismatch?: boolean
+}
+
+const MAX_SPUBS = 4
+
+/// Note the proof on a row. The mismatch flag is sticky: once any envelope at
+/// this address came under a key that is not the pinned one, the row keeps
+/// saying so until the user decides.
+function noteProof(row: CrossIslandRequest, proof?: HeldSenderProof): void {
+  if (!proof) return
+  if (proof.keyMismatch) row.keyMismatch = true
+  const spub = typeof proof.spub === 'string' ? proof.spub : ''
+  if (!spub) return
+  const list = row.spubs ?? []
+  if (!list.includes(spub)) row.spubs = [...list, spub].slice(-MAX_SPUBS)
 }
 
 function reqKey(uin: number, host: string): string {
@@ -171,7 +201,7 @@ export function isBlocked(uin: number, host: string): boolean {
 /// Quarantine one decrypted envelope from an un-accepted cross-island sender.
 /// No-op if they're blocked. Returns true if it was held (caller then skips the
 /// normal ingest), false if blocked (caller drops it).
-export function holdRequestMessage(uin: number, host: string, env: Envelope): boolean {
+export function holdRequestMessage(uin: number, host: string, env: Envelope, proof?: HeldSenderProof): boolean {
   if (isBlocked(uin, host)) return false
   // ⚠ Deferred if the store is still opening: the queue drain starts the
   // moment the socket connects and can beat the key out of IndexedDB by a few
@@ -181,6 +211,7 @@ export function holdRequestMessage(uin: number, host: string, env: Envelope): bo
     const map = loadAll()
     const k = reqKey(uin, host)
     const existing = map[k] ?? { uin, host, firstAt: Date.now(), msgs: [] }
+    noteProof(existing, proof)
     // Dedup by envelope id so a re-drained queue row doesn't pile up.
     if (!existing.msgs.some((m) => (m as { id?: string }).id === (env as { id?: string }).id)) {
       existing.msgs.push(env)
@@ -201,7 +232,13 @@ export function holdRequestMessage(uin: number, host: string, env: Envelope): bo
 /// and for a sender who already has a row: a repeat `request` never creates a
 /// second entry, which is also the client-side per-sender rate limit. Returns
 /// true when a pending row now exists for them.
-export function addContactRequest(uin: number, host: string, nickname?: string, note?: string): boolean {
+export function addContactRequest(
+  uin: number,
+  host: string,
+  nickname?: string,
+  note?: string,
+  proof?: HeldSenderProof,
+): boolean {
   if (isBlocked(uin, host)) return false
   whenLoaded(() => {
     const map = loadAll()
@@ -211,10 +248,16 @@ export function addContactRequest(uin: number, host: string, nickname?: string, 
       // Already pending — promote a message-quarantine row to also being a
       // contact request (they asked properly), but never duplicate the row and
       // never move `firstAt`, so a flood cannot bump itself to the top.
+      const before = JSON.stringify([existing.contactReq, existing.spubs, existing.keyMismatch])
       if (!existing.contactReq) {
         existing.contactReq = true
         if (nickname) existing.nickname = nickname
         if (note) existing.note = note
+      }
+      // A repeat still records who sealed it: the accept check needs every key
+      // this row's envelopes arrived under, not only the first one.
+      noteProof(existing, proof)
+      if (JSON.stringify([existing.contactReq, existing.spubs, existing.keyMismatch]) !== before) {
         map[k] = existing
         saveAll(map)
       }
@@ -224,7 +267,7 @@ export function addContactRequest(uin: number, host: string, nickname?: string, 
       const oldest = Object.values(map).sort((a, b) => a.firstAt - b.firstAt)[0]
       if (oldest) delete map[reqKey(oldest.uin, oldest.host)]
     }
-    map[k] = {
+    const row: CrossIslandRequest = {
       uin,
       host,
       firstAt: Date.now(),
@@ -233,6 +276,8 @@ export function addContactRequest(uin: number, host: string, nickname?: string, 
       nickname: nickname || undefined,
       note: note || undefined,
     }
+    noteProof(row, proof)
+    map[k] = row
     saveAll(map)
   })
   return true

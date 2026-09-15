@@ -17,6 +17,8 @@
 import { ed25519 } from '@noble/curves/ed25519'
 import { b64ToBytes, bytesToB64, type WebIdentity } from './crypto'
 import { decodePhrase, deriveKeysFromSeed, encodeSeed, newSeed, parsePhrase } from './recovery'
+import { copyScopedKeys } from './move-carry'
+import { rekeySenderKeysOnMove } from './sender-key-store'
 
 const STORAGE_KEY = 'rcq.web.identity.v1'
 /// Every account this browser holds. The ACTIVE one stays in STORAGE_KEY as
@@ -1076,7 +1078,35 @@ export function clearIdentity() {
 /// device keyed by the old uin, incoming store) is rebuilt — the next
 /// provision republishes a clean bundle under the new uin (the server
 /// reset libsignal material on migrate, so peers re-handshake anyway).
+///
+/// ⚠⚠ Every caller holds an ISLAND-PROVEN move: the migrate response, or a
+/// token minted by /auth/refresh that names the old number in `moved_from`.
+/// That proof is what makes the carry below safe, and it is why the carry
+/// lives here and not in the socket listener: a frame saying "you moved" can
+/// never be the reason one number's local state is poured into another's.
 export function adoptMigratedUin(current: WebIdentity, newUin: number, newToken: string): WebIdentity {
+  if (newUin !== current.uin) {
+    // #986(a): every local store is scoped by UIN, so without this the reload
+    // opened the new number onto empty visited islands, foreign-group
+    // aliases, backup islands, cross-island contacts and requests, and the
+    // rooms on other islands were never drained again. Copied, never
+    // overwriting (move-carry.ts). The per-UIN libsignal database is not
+    // carried: the island resets libsignal material on a move (see above).
+    try {
+      copyScopedKeys(localStorage, current.uin, newUin)
+    } catch {
+      /* storage unavailable: nothing to carry, and nothing to lose either */
+    }
+    // The sender-key chains are one shared store keyed "<uin>:", not scoped
+    // storage, so they are re-filed separately. Without it every broadcast in
+    // a room on another island arrived under a kid this number "did not
+    // know", and those rooms went dark for hours. Own outbound chains are
+    // dropped instead: members bound them to the old number (move-carry.ts).
+    // The sealed request list needs its seal key too, which lives in the
+    // per-UIN database: see carrySealKeyOnMove, awaited by every caller
+    // before the new number's stores open.
+    rekeySenderKeysOnMove(current.uin, newUin)
+  }
   const next: WebIdentity = { ...current, uin: newUin, jwt: newToken }
   persistIdentity(next)
   return next

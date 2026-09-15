@@ -7,6 +7,7 @@
 // disk; the ratchet runs in memory.
 
 import { b64ToBytes, bytesToB64 } from './crypto'
+import { rekeySenderKeyMaps } from './move-carry'
 import { deriveMessageKey, nextChainKey, newKid, MAX_SKIP } from './sender-keys'
 
 // v3: the OWN side is keyed by account now too. v2 scoped only the inbound
@@ -242,6 +243,20 @@ export function knowsKid(ownUin: number, kid: string): boolean {
 /// must NOT treat my kid as its own echo, that is how it went deaf.
 export function ownsKid(ownUin: number, kid: string): boolean {
   return load().owned.includes(ownedKey(ownUin, kid))
+}
+
+/// Re-file the inbound chains and own kids of `oldUin` under `newUin` after an
+/// ISLAND-PROVEN move, and drop its own outbound chains so the next post
+/// rotates and announces the new number (see move-carry.ts for why, why moved
+/// rather than copied, and why never on a socket frame). Best effort: an
+/// unreadable store has nothing to carry.
+export function rekeySenderKeysOnMove(oldUin: number, newUin: number): void {
+  try {
+    if (!localStorage.getItem(STORE_KEY) && !localStorage.getItem(V2_STORE_KEY)) return
+  } catch {
+    return
+  }
+  save(rekeySenderKeyMaps(load(), oldUin, newUin) as StoreJSON)
 }
 
 /// The kid this account currently owns for a group (for answering a NACK).

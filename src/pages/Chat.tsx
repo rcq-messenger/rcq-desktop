@@ -2687,8 +2687,8 @@ export function Chat() {
   /// into every bubble on the thread and made the memoised rows below
   /// pointless. The context is stable now; `aliasSig` is what carries the news
   /// that a name changed.
-  const mentionLiveRef = useRef({ aliasFor: peerAliasFor, group, isGroup, navigate })
-  mentionLiveRef.current = { aliasFor: peerAliasFor, group, isGroup, navigate }
+  const mentionLiveRef = useRef({ aliasFor: peerAliasFor, group, isGroup, navigate, memberHost: gctx?.host ?? null })
+  mentionLiveRef.current = { aliasFor: peerAliasFor, group, isGroup, navigate, memberHost: gctx?.host ?? null }
   const mentionCtx = useMemo<MentionContext | undefined>(() => {
     if (!identity) return undefined
     return {
@@ -2705,7 +2705,10 @@ export function Chat() {
           null
         )
       },
-      onOpen: (uin: number) => mentionLiveRef.current.navigate(`/profile/${uin}`),
+      onOpen: (uin: number) => {
+        const live = mentionLiveRef.current
+        live.navigate(memberProfilePath(uin, live.isGroup ? live.memberHost : null))
+      },
       meUin: identity.uin,
     }
   }, [identity, mentionRoster])
@@ -3826,6 +3829,7 @@ export function Chat() {
 
       {isGroup && group?.pinned_text && (
         <PinnedBanner
+          memberHost={gctx?.host ?? null}
           text={group.pinned_text}
           group={group}
           expanded={pinExpanded}
@@ -4080,6 +4084,7 @@ export function Chat() {
                     downloadPct={downloadingRowId === m.id ? downloadPct : null}
                     downloadSaved={savedRowId === m.id}
                     senderName={senderName}
+                    senderHost={isGroup ? gctx?.host ?? null : null}
                     senderBadge={senderMember?.badge ?? null}
                     senderAvatarId={senderMember?.avatar_media_id}
                     senderAvatarKey={senderMember?.avatar_media_key}
@@ -5075,6 +5080,9 @@ interface IncomingRowProps extends CommonRowProps {
   canModerate: boolean
   senderName: string | null
   senderBadge?: string | null
+  /// The island a group sender's number belongs to, when the room lives on
+  /// another island; null for a room on ours. Rides on their profile link.
+  senderHost?: string | null
   senderAvatarId: string | null | undefined
   senderAvatarKey: string | null | undefined
   replyAuthor: string
@@ -5353,6 +5361,7 @@ const IncomingMessageRow = memo(function IncomingMessageRow({
   canModerate,
   senderName,
   senderBadge = null,
+  senderHost = null,
   senderAvatarId,
   senderAvatarKey,
   replyAuthor,
@@ -5395,7 +5404,7 @@ const IncomingMessageRow = memo(function IncomingMessageRow({
       <div className="relative max-w-[80%] flex flex-col items-start gap-1">
         {senderName && !cont && (
           <Link
-            to={`/profile/${m.from}`}
+            to={memberProfilePath(m.from, senderHost)}
             // ⚠ 0.75rem and `text-fg-secondary`, up from 0.625rem and
             // `text-fg-dim`. In a group the only thing that says WHO is
             // talking was 10px of the dimmest colour in the palette: "так
@@ -6760,7 +6769,7 @@ function pinPreview(text: string): string {
 /// most of the conversation, which is the "открывается на весь экран" in the
 /// report. A dialog capped at `80vh` cannot outgrow the window whatever the
 /// text size, and it is the same surface every other overlay in the app uses.
-function PinnedBanner({ text, group, expanded, onToggle, linksAllowed = true }: { text: string; group: RCQGroup; expanded: boolean; onToggle: () => void; linksAllowed?: boolean }) {
+function PinnedBanner({ text, group, expanded, onToggle, linksAllowed = true, memberHost = null }: { text: string; group: RCQGroup; expanded: boolean; onToggle: () => void; linksAllowed?: boolean; memberHost?: string | null }) {
   const { t } = useI18n()
   return (
     // Same treatment as the header (see `.rcq-header`): the pin is a bar that
@@ -6827,7 +6836,7 @@ function PinnedBanner({ text, group, expanded, onToggle, linksAllowed = true }: 
                 </button>
               </header>
               <div className="flex-1 overflow-y-auto px-4 pb-4 text-[0.8125rem] text-fg-secondary">
-                <PinnedRichText text={text} group={group} linksAllowed={linksAllowed} />
+                <PinnedRichText text={text} group={group} linksAllowed={linksAllowed} memberHost={memberHost} />
               </div>
             </motion.div>
           </motion.div>
@@ -6915,11 +6924,19 @@ function ExpiryMark({ expiresAt, t }: { expiresAt: number; t: Translate }) {
   )
 }
 
+/// A group member's profile link (#985(2)). In a room on another island the
+/// number is that island's, so the host rides along as `?i=`: without it the
+/// profile page read the number as one of OURS and showed, visited and offered
+/// to add whoever holds the same digits here, a different person.
+function memberProfilePath(uin: number, host: string | null | undefined): string {
+  return host ? `/profile/${uin}?i=${encodeURIComponent(host)}` : `/profile/${uin}`
+}
+
 /// Renders the pinned announcement the way the native apps do (#pin-native):
 /// group-invite links become join CARDS, #UIN mentions become clickable nicks,
 /// plain URLs become clickable links, everything else is plain text. Whitespace
 /// preserved so multi-line pins keep their shape.
-function PinnedRichText({ text, group, linksAllowed = true }: { text: string; group: RCQGroup; linksAllowed?: boolean }) {
+function PinnedRichText({ text, group, linksAllowed = true, memberHost = null }: { text: string; group: RCQGroup; linksAllowed?: boolean; memberHost?: string | null }) {
   const nodes: ReactNode[] = []
   // group-invite link | generic URL | #UIN mention
   const re = /((?:https?:\/\/)?(?:www\.|chat\.)?rcq\.app\/g\/\d+(?:@[a-z0-9.-]+)?|rcq:\/\/group\/\d+(?:@[a-z0-9.-]+)?)|(https?:\/\/[^\s]+)|#(\d{3,})/gi
@@ -6942,7 +6959,7 @@ function PinnedRichText({ text, group, linksAllowed = true }: { text: string; gr
       if (i > from) nodes.push(<span key={key++}>{s.slice(from, i)}</span>)
       const label = s.slice(i, i + 1 + hit.length)
       nodes.push(
-        <Link key={key++} to={`/profile/${hit.uin}`} className="text-accent hover:text-accent-dim transition-colors">{label}</Link>,
+        <Link key={key++} to={memberProfilePath(hit.uin, memberHost)} className="text-accent hover:text-accent-dim transition-colors">{label}</Link>,
       )
       i += hit.length
       from = i + 1
@@ -6989,7 +7006,7 @@ function PinnedRichText({ text, group, linksAllowed = true }: { text: string; gr
       const uin = Number(m[3])
       const nick = contactAlias(uin) ?? group.members.find((x) => x.uin === uin)?.nickname
       nodes.push(
-        <Link key={key++} to={`/profile/${uin}`} className="text-accent hover:text-accent-dim transition-colors">{nick ?? `${uin}`}</Link>,
+        <Link key={key++} to={memberProfilePath(uin, memberHost)} className="text-accent hover:text-accent-dim transition-colors">{nick ?? `${uin}`}</Link>,
       )
     }
   }

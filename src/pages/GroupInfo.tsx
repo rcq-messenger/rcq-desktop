@@ -435,7 +435,19 @@ export function GroupInfo() {
                   <li key={m.uin}>
                     <div className="relative">
                     <Link
-                      to={m.uin === identity.uin ? '/profile' : `/profile/${m.uin}`}
+                      // #985(2): in a room on another island the number is
+                      // THAT island's, so the host rides along. Without it the
+                      // profile, and its Add button, went to whoever holds the
+                      // same digits on our own island: a different person, who
+                      // then got the visit and the request. `isMe` compares
+                      // with our number there for the same reason.
+                      to={
+                        isMe
+                          ? '/profile'
+                          : gctx?.host
+                            ? `/profile/${m.uin}?i=${encodeURIComponent(gctx.host)}`
+                            : `/profile/${m.uin}`
+                      }
                       className="flex items-center gap-3 px-4 py-2.5 hover:bg-field"
                     >
                       {/* A member's picture rides with the roster, gated by

@@ -10,6 +10,7 @@
 // via federation-send so a moved peer still gets reached.
 
 import { scopedKey } from './account-scope'
+import { sameSigningKey } from './crossisland-gate'
 
 export interface CrossIslandContact {
   uin: number
@@ -88,6 +89,25 @@ function saveAll(map: Record<string, CrossIslandContact>): void {
 
 export function getCrossIsland(uin: number, host: string): CrossIslandContact | null {
   return loadAll()[ciKey(uin, host)] ?? null
+}
+
+/// The contact at (uin, host), but ONLY when `senderSigningKey` (the key a
+/// received seal verified under) is the key pinned for them. Null otherwise.
+///
+/// ⚠⚠ Every receive-path trust decision about a cross-island contact goes
+/// through this, not `getCrossIsland`. In a v=1 seal `from` and `from_host`
+/// are outside the signature, so the address alone is a claim anyone can
+/// write; the signing key is the part the seal proves. Anyone who knew one of
+/// our accepted contacts' `uin@host`, and fetched our open key card, could
+/// otherwise have sealed a message that skipped the quarantine and landed in
+/// that contact's thread, or renamed them with a §5e profile.
+export function getVerifiedCrossIsland(
+  uin: number,
+  host: string,
+  senderSigningKey: string | null | undefined,
+): CrossIslandContact | null {
+  const c = getCrossIsland(uin, host)
+  return c && sameSigningKey(c.signingKey, senderSigningKey) ? c : null
 }
 
 export function saveCrossIsland(c: CrossIslandContact): void {

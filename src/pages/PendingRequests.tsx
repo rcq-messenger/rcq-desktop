@@ -19,6 +19,7 @@ import {
   type CrossIslandRequest,
 } from '../lib/crossisland-requests'
 import { saveCrossIsland } from '../lib/crossisland-store'
+import { sameSigningKey } from '../lib/crossisland-gate'
 import { sendRequestAck } from '../lib/crossisland-ack'
 import { sendContactAccept, sendContactDecline } from '../lib/crossisland-contactreq'
 import { pushProfileTo } from '../lib/crossisland-profile'
@@ -64,6 +65,17 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
     try {
       const card = await fetchPeerKeyCard(r.host, r.uin)
       if (!card) throw new Error('card')
+      // ⚠⚠ The address on these envelopes is unsigned (v=1), the key they were
+      // sealed with is not. Accepting pins the key THAT ISLAND publishes for
+      // the address and then replays the held messages into that person's
+      // thread, so a sender whose key is not the published one would have
+      // their words shown as someone else's. Refuse instead, and say why. A
+      // genuine key rotation passes: the island publishes the new key, and it
+      // is the one the envelopes carry.
+      if ((r.spubs ?? []).some((k) => !sameSigningKey(k, card.signing_key))) {
+        setError(t('ci.key_mismatch_refused'))
+        return
+      }
       saveCrossIsland({
         uin: r.uin,
         host: r.host,
@@ -264,6 +276,12 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
                           <div className="text-sm break-all">{tag}</div>
                         )}
                         <div className="text-xs text-fg-dim break-words line-clamp-2">{subtitle}</div>
+                        {/* We hold a contact at this address and these were
+                            sealed under another key. Said out loud: the row
+                            looks like the contact, and must not pass as them. */}
+                        {r.keyMismatch && (
+                          <div className="mt-1 text-xs text-amber-600 break-words">{t('ci.key_mismatch')}</div>
+                        )}
                       </div>
                       <div className="flex items-center gap-2">
                         <button

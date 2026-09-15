@@ -17,9 +17,11 @@ import { answerKeyAsk, loadRoomKeys, putRoomKey } from './group-state'
 import { handleProfileKeyEnvelope, loadProfileKeys } from './profile-key'
 import { snapshotFor } from './contacts-cache'
 import { isRandomTraffic, randomEnded, randomMatched } from './random-peers'
-import { adoptHomesFromOwnRecord, applyPushedRecord, drainBackupQueues, listBackupHomes, scrubFrontAliasHomes } from './multihome'
-import { aliasFor, drainVisitedQueues, listVisitedIslands } from './visited-islands'
-import { getCrossIsland } from './crossisland-store'
+import { adoptHomesFromOwnRecord, applyPushedRecord, backupIdentityFor, drainBackupQueues, listBackupHomes, scrubFrontAliasHomes } from './multihome'
+import { aliasFor, drainVisitedQueues, guestIdentityFor, listVisitedIslands } from './visited-islands'
+import { getCrossIsland, getVerifiedCrossIsland } from './crossisland-store'
+import { carbonIsOwn, crossIslandGateVerdict, foreignRoomBroadcastDropped, sameSigningKey } from './crossisland-gate'
+import type { GuestRoom } from './held-gmsg'
 import { applyRequestAck } from './crossisland-ack'
 import { ensureRequestsLoaded, holdRequestMessage, isBlocked } from './crossisland-requests'
 import { isContact, shouldQuarantineStranger } from './stranger-requests'
@@ -31,7 +33,7 @@ import { handleProfile, pushProfileTo } from './crossisland-profile'
 import { decodeGmsg, handleGmsg, handleSkdm, handleSknack, replayHeldGmsg } from './sender-key-receive'
 import { ackLiveGroupRow, drainGroupLog, forgetVouched, islandHasGroupLog, type GroupLogRequest } from './group-log'
 import { Api, peerBundleFrom } from './api'
-import { encryptV1 } from './crypto'
+import { bytesToB64, encryptV1 } from './crypto'
 import type { CallEnvelope, ContactReqEnvelope, Envelope, ProfileEnvelope, WebIdentity } from './crypto'
 
 // Hydrate the incoming store once per account per app load. Both receive paths
@@ -74,9 +76,18 @@ function ensureHydrated(uin: number): Promise<void> {
 /// peer felt like depositing. A throw would abort the whole queue drain (which
 /// catches per BATCH, not per row) — every drain, forever — so each field is
 /// coerced rather than trusted, exactly as §5f does.
-function handleCallSignal(senderUin: number, senderHost: string, env: CallEnvelope): void {
+function handleCallSignal(senderUin: number, senderHost: string, env: CallEnvelope, senderSigningKey?: string): void {
   if (isBlocked(senderUin, senderHost)) return
-  if (!getCrossIsland(senderUin, senderHost)) return
+  // Gate 2 asks for the pinned ADDRESS and the pinned KEY. `from`/`from_host`
+  // are unsigned in v=1, so the address alone would let anyone who knows one
+  // of our contacts ring us as them. Under another key the sender is a
+  // stranger, and a stranger's signal is dropped like any other.
+  if (!getVerifiedCrossIsland(senderUin, senderHost, senderSigningKey)) {
+    if (getCrossIsland(senderUin, senderHost)) {
+      console.warn('[crossisland] call signal under a key that is not the pinned one; dropped', { senderUin, senderHost })
+    }
+    return
+  }
   const sig = typeof env.sig === 'string' ? env.sig : ''
   // Only the signals this wire defines. Anything else is a NEWER client than
   // this one: ignore it, the way iOS (`default: break`) and Android already do.
@@ -206,8 +217,15 @@ function route(
       rememberTheirCard(senderUIN, senderHost && senderHost !== ownHost ? senderHost : null, card)
     }
   }
+  // Our own signing key, for the two places that ask "did WE seal this": the
+  // carbon branch here and the own-number exemption at the cross-island gate.
+  const ownSigningKey = identity ? bytesToB64(identity.signingPub) : null
   if (envelope.kind === 'carbon') {
-    if (senderUIN === myUin) {
+    // ⚠⚠ Not on `from` alone: that field is unsigned in v=1, and a carbon's
+    // `ciack` pins contact keys, so a forged one would let a stranger pin
+    // their own key for a contact of ours and pass every pinned-key check
+    // after it. The whole rule is carbonIsOwn (crossisland-gate.ts).
+    if (carbonIsOwn(senderUIN, myUin, senderHost, ownHost, senderSigningKey, ownSigningKey, typeof groupId === 'number')) {
       // Control carbons first: an edit/delete made on another of our devices
       // targets a row we already have — filing it as a NEW row (the content
       // path below) would be wrong twice over.
@@ -309,7 +327,12 @@ function route(
       if (accepted && typeof skdm.kid === 'string') {
         void replayHeldGmsg(identity, skdm.kid)
           .then((msgs) => {
-            for (const m of msgs) route(m.senderUIN, undefined, m.envelope, m.gid, myUin, ownHost, undefined, identity)
+            for (const m of msgs) {
+              // A held broadcast from a room on another island goes through
+              // the same door as a live one (routeForeignRoomBroadcast).
+              if (m.host) routeForeignRoomBroadcast(m.senderUIN, m.envelope, m.host, m.gid, identity, undefined)
+              else route(m.senderUIN, undefined, m.envelope, m.gid, myUin, ownHost, undefined, identity)
+            }
           })
           .catch(() => {})
       }
@@ -340,7 +363,7 @@ function route(
   if ((envelope as { kind?: string }).kind === 'call') {
     if (senderUIN !== myUin) {
       if (senderHost && senderHost !== ownHost) {
-        handleCallSignal(senderUIN, senderHost, envelope as unknown as CallEnvelope)
+        handleCallSignal(senderUIN, senderHost, envelope as unknown as CallEnvelope, senderSigningKey)
       } else {
         handleSameIslandCallEnvelope(myUin, senderUIN, envelope as unknown as CallEnvelope)
       }
@@ -355,7 +378,7 @@ function route(
   // Same-island senders are ignored here; they have the server's /contacts flow.
   if ((envelope as { kind?: string }).kind === 'contactreq') {
     if (senderHost && senderHost !== ownHost && senderUIN !== myUin) {
-      handleContactReq(senderUIN, senderHost, envelope as ContactReqEnvelope)
+      handleContactReq(senderUIN, senderHost, envelope as ContactReqEnvelope, senderSigningKey)
       // §5e: they just accepted us, so from this moment they HOLD us — and all
       // they hold is whatever their key-card fetch caught at add time. Hand
       // them our current name and picture now rather than making them wait for
@@ -363,7 +386,9 @@ function route(
       if (
         identity &&
         (envelope as ContactReqEnvelope).act === 'accept' &&
-        getCrossIsland(senderUIN, senderHost)
+        // Only the pinned key's accept: our profile goes to the person we
+        // pinned, never on the say-so of an unsigned address.
+        getVerifiedCrossIsland(senderUIN, senderHost, senderSigningKey)
       ) {
         void pushProfileTo(identity, senderHost, senderUIN)
       }
@@ -377,7 +402,7 @@ function route(
   // someone we do not hold as an accepted contact is dropped on the floor.
   if ((envelope as { kind?: string }).kind === 'profile') {
     if (senderHost && senderHost !== ownHost && senderUIN !== myUin) {
-      handleProfile(senderUIN, senderHost, envelope as ProfileEnvelope)
+      handleProfile(senderUIN, senderHost, envelope as ProfileEnvelope, senderSigningKey)
     }
     return
   }
@@ -388,10 +413,49 @@ function route(
   // Variant A consent: a message from an un-accepted CROSS-ISLAND sender is
   // quarantined as a "request" instead of landing in the chat list. Accepted
   // (we proactively added them) → normal ingest. Blocked → holdRequestMessage
-  // drops it and returns false.
-  if (senderHost && senderHost !== ownHost && senderUIN !== myUin) {
-    if (!getCrossIsland(senderUIN, senderHost)) {
-      holdRequestMessage(senderUIN, senderHost, envelope)
+  // drops it and returns false. The rule itself is crossisland-gate.ts.
+  //
+  // ⚠⚠ #985(1): CONTENT only is held. Everyone on a group's island stamps that
+  // island as `from_host`, so a co-member's control traffic to our guest copy
+  // there (a `visit` from opening a profile, and the like) was held too and
+  // surfaced as a request with nothing in it. Every other kind from an
+  // unaccepted sender is DROPPED: not held, and never applied, because a
+  // `delete`, `edit` or `secscreen` from a stranger reaching the stores below
+  // would be the worse bug. The key, contactreq, profile, homerec and call
+  // branches above keep their own gates and never get here.
+  //
+  // ⚠⚠ "Accepted" is the pinned address AND the pinned signing key. The
+  // address on a v=1 seal is unsigned; the key it verified under is not. A
+  // pinned address under another key is handled as a stranger and the request
+  // row says so (`keyMismatch`), so it is never merged into the contact's
+  // thread in silence.
+  //
+  // Our own number is exempt only when the seal is really ours. The number is
+  // per-island: somebody on another island can hold the same digits, and the
+  // old `senderUIN !== myUin` exemption let exactly that stranger past the
+  // gate with any kind at all.
+  const ownSeal = senderUIN === myUin && sameSigningKey(senderSigningKey, ownSigningKey)
+  if (senderHost && senderHost !== ownHost && !ownSeal) {
+    const kind = (envelope as { kind?: string }).kind ?? ''
+    const pinned = getCrossIsland(senderUIN, senderHost)
+    const verdict = crossIslandGateVerdict(kind, pinned?.signingKey ?? null, senderSigningKey)
+    if (verdict.action === 'hold') {
+      // Returning skips the delivered receipt below, as for every held row:
+      // a held message must not confirm to a stranger that it landed.
+      holdRequestMessage(senderUIN, senderHost, envelope, {
+        spub: senderSigningKey,
+        keyMismatch: verdict.keyMismatch,
+      })
+      return
+    }
+    if (verdict.action === 'drop') {
+      if (verdict.keyMismatch) {
+        console.warn('[crossisland] control envelope under a key that is not the pinned one; dropped', {
+          senderUIN,
+          senderHost,
+          kind,
+        })
+      }
       return
     }
   }
@@ -698,6 +762,57 @@ async function drainRoomLog(identity: WebIdentity, myDev: number): Promise<void>
   }
 }
 
+/// One `gmsg` row out of a guest mailbox on another island (visited or
+/// backup), decoded the way the primary drain decodes its own (see
+/// ingestPrimaryRow), with the room's island in the picture: the AEAD binds
+/// that island's own id for the room, a re-send request goes to that island
+/// under our guest identity there, and the result is filed under the local
+/// alias like every other row from there.
+///
+/// Acking follows the primary drain exactly. A broadcast that decoded, one that
+/// was dropped and one held for a missing chain all RETURN, which the room-log
+/// drain acks: the hold re-arms from the next copy and the NACK is out. Only a
+/// throw leaves the row in front of the cursor. The legacy guest queue is the
+/// ack-less fetch, so there (`swallow`) a throw is caught instead of losing the
+/// rows behind this one.
+async function ingestGuestGmsg(
+  identity: WebIdentity,
+  room: GuestRoom,
+  payloadB64: string,
+  remoteGid: number,
+  srvAt: number | undefined,
+  swallow: boolean,
+): Promise<void> {
+  const got = swallow
+    ? await handleGmsg(identity, payloadB64, remoteGid, room).catch(() => null)
+    : await handleGmsg(identity, payloadB64, remoteGid, room)
+  if (!got) return
+  routeForeignRoomBroadcast(got.senderUIN, got.envelope, room.host, room.aliasGid, identity, srvAt)
+}
+
+/// A decoded broadcast from a room on ANOTHER island, into route().
+///
+/// ⚠⚠ With the room's island as the sender's host, and with every inner kind
+/// route() would resolve in the HOME namespace dropped first
+/// (foreignRoomBroadcastDropped). Routed with no host, as it first was, the
+/// broadcast read as same-island traffic from the home island: a `pkeyask`
+/// from member 4242 there looked 4242 up HERE and sealed our profile key to
+/// an unrelated person, a `call` filed a missed call from them, a `card` was
+/// filed under the home number. The host also files a card under (uin, host).
+/// The sender's key is not passed: a broadcast carries none of its own, its
+/// chain vouches only for the number it was handed under.
+function routeForeignRoomBroadcast(
+  senderUIN: number,
+  envelope: Envelope,
+  host: string,
+  aliasGid: number,
+  identity: WebIdentity,
+  srvAt: number | undefined,
+): void {
+  if (foreignRoomBroadcastDropped((envelope as { kind?: unknown }).kind)) return
+  route(senderUIN, host, envelope, aliasGid, identity.uin, hostOf(identity.apiBase), undefined, identity, srvAt)
+}
+
 export function MessageReceiver() {
   const { identity } = useIdentity()
   const { on, connected } = useWS()
@@ -821,8 +936,17 @@ export function MessageReceiver() {
     // THROW so the row stays in front of the cursor and is re-served, and
     // the strike ledger in group-log.ts acks past it only once it has failed
     // the same way on several drains.
-    const ingest = async (row: { payload: string; group_id: number | null; received_at?: string }, host: string, swallow: boolean) => {
+    const ingest = async (row: { envelope_type: string; payload: string; group_id: number | null; received_at?: string }, host: string, swallow: boolean) => {
       if (cancelled) return
+      // A sender-keys broadcast for a room this backup island hosts. Not a
+      // sealed envelope: see ingestGuestGmsg.
+      if (row.envelope_type === 'gmsg' && typeof row.group_id === 'number') {
+        const ident = backupIdentityFor(identity, host)
+        if (!ident) return
+        const room: GuestRoom = { ident, host, aliasGid: aliasFor(host, row.group_id) }
+        await ingestGuestGmsg(identity, room, row.payload, row.group_id, serverStampMs(row.received_at), swallow)
+        return
+      }
       const got = swallow
         ? await decryptIncoming(identity, row.payload).catch(() => null)
         : await decryptIncoming(identity, row.payload)
@@ -878,8 +1002,22 @@ export function MessageReceiver() {
     // Same split as the backup poller: the legacy guest queue swallows (the
     // ack-less fetch), the room log throws on a transient failure so the
     // cursor stays in front of the row.
-    const ingest = async (row: { payload: string; group_id: number | null; received_at?: string }, host: string, swallow: boolean) => {
+    const ingest = async (row: { envelope_type: string; payload: string; group_id: number | null; received_at?: string }, host: string, swallow: boolean) => {
       if (cancelled) return
+      // #986(a): a sender-keys broadcast. Once our guest number on that
+      // island advertises sender keys (signing in there with the phrase does
+      // it, and the capability is per number, not per device), its members
+      // stop sealing a copy per member and post ONE broadcast instead. This
+      // path sent every row to the per-member decryptor, which cannot open a
+      // broadcast, so the room went silent while the primary drain, which
+      // routes `gmsg`, kept working for the account signed in there.
+      if (row.envelope_type === 'gmsg' && typeof row.group_id === 'number') {
+        const ident = guestIdentityFor(identity, host)
+        if (!ident) return
+        const room: GuestRoom = { ident, host, aliasGid: aliasFor(host, row.group_id) }
+        await ingestGuestGmsg(identity, room, row.payload, row.group_id, serverStampMs(row.received_at), swallow)
+        return
+      }
       const got = swallow
         ? await decryptIncoming(identity, row.payload).catch(() => null)
         : await decryptIncoming(identity, row.payload)

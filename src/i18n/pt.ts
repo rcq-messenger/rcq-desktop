@@ -736,6 +736,10 @@ export const pt: Record<string, string> = {
   'ci.wants_contact': 'quer te adicionar aos contatos',
   'ci.accept_undelivered':
     'Aceito aqui. A ilha dessa pessoa não recebeu a resposta, então ela não vai te ver como contato até dar para alcançar a ilha.',
+  'ci.key_mismatch':
+    'Assinado com uma chave diferente da que está salva para este contato. Pode ser outra pessoa usando o endereço dele.',
+  'ci.key_mismatch_refused':
+    'Não adicionado: quem enviou assinou com uma chave que a ilha dessa pessoa não publica para este endereço.',
   'add.ci.undelivered':
     'Adicionado neste dispositivo. A ilha dessa pessoa não recebeu o pedido, então ela não vai ver o pedido até dar para alcançar a ilha.',
   // Add contact

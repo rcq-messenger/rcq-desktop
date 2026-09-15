@@ -23,7 +23,7 @@ import { Api } from './api'
 import { contactsCache } from './contacts-cache'
 import { newUUIDv4, type ContactReqEnvelope, type WebIdentity } from './crypto'
 import { addContactRequest, clearRequest, isBlocked } from './crossisland-requests'
-import { getCrossIsland } from './crossisland-store'
+import { getCrossIsland, getVerifiedCrossIsland } from './crossisland-store'
 import { depositSealedToPrimary } from './federation-send'
 
 export type ContactReqAct = ContactReqEnvelope['act']
@@ -110,13 +110,26 @@ export function sendContactDecline(identity: WebIdentity, host: string, uin: num
 ///
 /// Deliberately synchronous and network-free: nothing here fetches a card, so
 /// nothing here can write a pinned key.
-export function handleContactReq(senderUin: number, senderHost: string, env: ContactReqEnvelope): void {
+export function handleContactReq(
+  senderUin: number,
+  senderHost: string,
+  env: ContactReqEnvelope,
+  /// The key the seal verified under (decryptV1's `spub`).
+  senderSigningKey?: string,
+): void {
   // Same-island rule, unchanged: a blocked sender's request is dropped
   // silently. (A removed sender is simply not in the store, so `request`
   // below files them as pending again — the same as any stranger.)
   if (isBlocked(senderUin, senderHost)) return
 
-  const accepted = getCrossIsland(senderUin, senderHost) != null
+  // ⚠⚠ "Accepted" means the address is pinned AND this envelope was sealed by
+  // the key pinned for it. The address is unsigned in v=1; the key is not. A
+  // sender at a pinned address under another key is a stranger here, and the
+  // row they get says so (`keyMismatch`), rather than being a silent no-op
+  // that let them pass as the contact.
+  const pinned = getCrossIsland(senderUin, senderHost)
+  const accepted = getVerifiedCrossIsland(senderUin, senderHost, senderSigningKey) != null
+  const proof = { spub: senderSigningKey, keyMismatch: pinned != null && !accepted }
   // ⚠ Nothing has type-checked this envelope: the receive path is
   // `JSON.parse(...) as Envelope`, so `nickname` can be an object, a number or
   // absent, from a peer who simply wants it to be. `.trim()` on a non-string
@@ -131,6 +144,11 @@ export function handleContactReq(senderUin: number, senderHost: string, env: Con
     // Silently: they said no, and telling the user "you were declined" is a
     // hostile-peer amplifier, not information. Our local row for them (the
     // pinned keys, any chat) is untouched — only the pending ask goes.
+    //
+    // Not from a key that is not the pinned one: the only row at a pinned
+    // address is the one a mismatched key filed, and the notice on it must not
+    // be dismissable by the very sender it warns about.
+    if (proof.keyMismatch) return
     clearRequest(senderUin, senderHost)
     return
   }
@@ -144,7 +162,7 @@ export function handleContactReq(senderUin: number, senderHost: string, env: Con
     // the roster: that would let any stranger self-add. Degrade it to the
     // pending list, where the user decides.
     if (accepted) return
-    addContactRequest(senderUin, senderHost, nickname, note)
+    addContactRequest(senderUin, senderHost, nickname, note, proof)
     return
   }
 
@@ -158,5 +176,5 @@ export function handleContactReq(senderUin: number, senderHost: string, env: Con
 
   // act === "request". Already accepted → a no-op, not a second row.
   if (accepted) return
-  addContactRequest(senderUin, senderHost, nickname, note)
+  addContactRequest(senderUin, senderHost, nickname, note, proof)
 }

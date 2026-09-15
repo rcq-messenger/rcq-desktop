@@ -11,14 +11,34 @@
 // NACK debounce state persisted too to be worth it; Android holds in memory
 // as well.
 
+import type { WebIdentity } from './crypto'
+
 /// One held broadcast, exactly as it arrived off the wire (replay re-decodes
 /// it through the normal path). `e`/`i` are kept only for the dedup below.
 export interface HeldGmsg {
   kid: string
+  /// The group id the broadcast was sealed under: the island's own id, which
+  /// is what the AEAD binds. For a room on another island that is the REMOTE
+  /// id, and `room` below says where it lives.
   gid: number
   payloadB64: string
   e: number
   i: number
+  /// Set when the broadcast came out of a guest mailbox on another island.
+  /// Replay needs it twice over: the room is filed under its local alias, not
+  /// the remote id, and a re-send request has to go to that island under the
+  /// guest identity. Memory only, like the whole buffer, so the token in it
+  /// never reaches disk.
+  room?: GuestRoom
+}
+
+/// A room on another island, as the guest drains see it.
+export interface GuestRoom {
+  /// This identity as a resident of that island (guest uin + token).
+  ident: WebIdentity
+  host: string
+  /// The stable negative local id the room is filed under here.
+  aliasGid: number
 }
 
 /// Oldest entries are dropped past this. Fifty unreadable messages per

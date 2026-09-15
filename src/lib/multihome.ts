@@ -521,6 +521,34 @@ function updateStoredJwt(host: string, cred: IslandCredentials): void {
   )
 }
 
+/// This identity as a resident of backup island `host` (its uin and token
+/// there), so every Api.* call works against that island unchanged, the way
+/// `guestIdentityFor` does for visited islands. Null when `host` is not one of
+/// this account's backup homes. The token can be '' after a restart; callers
+/// that are not already inside a drain use `refreshBackupAuth` on a 401.
+///
+/// `guest: true` is not decoration: it keeps a 401 from that island away from
+/// the session's own unauthorized handler, which would otherwise sign out the
+/// ACTIVE account whenever our number there happens to equal our number here
+/// (registration asks for the same number, so it often does).
+export function backupIdentityFor(identity: WebIdentity, host: string): WebIdentity | null {
+  const h = listBackupHomes().find((x) => x.host === host)
+  if (!h || isFrontHost(h.host)) return null
+  return { ...identity, apiBase: `https://${h.host}`, uin: h.uin, jwt: h.jwt, guest: true }
+}
+
+/// Re-mint the token for backup island `host` through the recover handshake.
+export async function refreshBackupAuth(identity: WebIdentity, host: string): Promise<WebIdentity | null> {
+  try {
+    const cred = await recoverOnIsland(host, identity)
+    if (!cred) return null
+    updateStoredJwt(host, cred)
+    return backupIdentityFor(identity, host)
+  } catch {
+    return null
+  }
+}
+
 // -----------------------------------------------------------
 // Record assembly + publishing the record to backup homes
 // -----------------------------------------------------------

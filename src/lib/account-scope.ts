@@ -37,7 +37,14 @@ export function scopedKey(suffix: string): string {
 /// Per-account IndexedDB. A database name cannot be changed after opening, so
 /// this is read once when the connection is first made.
 export function scopedDbName(): string {
-  return _uin == null ? 'rcq-web' : `rcq-web-${_uin}`
+  return _uin == null ? 'rcq-web' : dbNameForUin(_uin)
+}
+
+/// The database `scopedDbName` resolves to while `uin` is active. For the one
+/// caller that has to name ANOTHER number's database: the seal-key carry on an
+/// island-proven move (local-seal.ts), which runs before the new scope opens.
+export function dbNameForUin(uin: number): string {
+  return `rcq-web-${uin}`
 }
 
 // ⚠ v2, not v1: the first wave (outgoing logs only) already ran in most

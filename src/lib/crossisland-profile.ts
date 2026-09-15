@@ -37,7 +37,13 @@ import { Api } from './api'
 import { contactsCache } from './contacts-cache'
 import { newUUIDv4, type ProfileEnvelope, type WebIdentity } from './crypto'
 import { isBlocked } from './crossisland-requests'
-import { applyCrossIslandProfile, getCrossIsland, listCrossIsland, type CrossIslandContact } from './crossisland-store'
+import {
+  applyCrossIslandProfile,
+  getCrossIsland,
+  getVerifiedCrossIsland,
+  listCrossIsland,
+  type CrossIslandContact,
+} from './crossisland-store'
 import { depositSealedToPrimary } from './federation-send'
 import { depositEncryptedBlob, fetchEncryptedBlob } from './media'
 import { myProfileKey } from './profile-key'
@@ -174,9 +180,26 @@ export async function pushProfileTo(identity: WebIdentity, host: string, uin: nu
 ///
 /// Deliberately synchronous and network-free — nothing here fetches a card, so
 /// nothing here can write a pinned key.
-export function handleProfile(senderUin: number, senderHost: string, env: ProfileEnvelope): void {
+export function handleProfile(
+  senderUin: number,
+  senderHost: string,
+  env: ProfileEnvelope,
+  /// The key the seal verified under (decryptV1's `spub`).
+  senderSigningKey?: string,
+): void {
   // Same-island rule, unchanged: a blocked sender is dropped silently.
   if (isBlocked(senderUin, senderHost)) return
+
+  // ⚠⚠ Only the pinned contact may rename the pinned contact. The address on a
+  // v=1 seal is unsigned, so a `profile` claiming to be `uin@host` is applied
+  // only when it was sealed by the key we pinned for that address. Anyone else
+  // is a stranger, and a stranger's profile is dropped (below, same as ever).
+  // Said in the console rather than on screen: nothing was merged, and a
+  // notice for a rename that did not happen would only alarm.
+  if (getCrossIsland(senderUin, senderHost) && !getVerifiedCrossIsland(senderUin, senderHost, senderSigningKey)) {
+    console.warn('[crossisland] profile under a key that is not the pinned one; dropped', { senderUin, senderHost })
+    return
+  }
 
   // ⚠ Nothing has type-checked this envelope: the receive path is
   // `JSON.parse(...) as Envelope`, so `nickname` can be an object, a number or

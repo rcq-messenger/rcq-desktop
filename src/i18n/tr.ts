@@ -736,6 +736,10 @@ export const tr: Record<string, string> = {
   'ci.wants_contact': 'seni kişilerine eklemek istiyor',
   'ci.accept_undelivered':
     'Burada kabul edildi. Karşı tarafın adası yanıtı almadı, adaya ulaşılana kadar seni kişilerinde göremeyecek.',
+  'ci.key_mismatch':
+    'Bu kişi için kayıtlı olandan farklı bir anahtarla imzalanmış. Adresini kullanan başka biri olabilir.',
+  'ci.key_mismatch_refused':
+    'Eklenmedi: gönderen, adasının bu adres için yayımlamadığı bir anahtarla imzalamış.',
   'add.ci.undelivered':
     'Bu cihaza eklendi. Karşı tarafın adası isteği almadı, adaya ulaşılana kadar isteği göremeyecek.',
   // Add contact

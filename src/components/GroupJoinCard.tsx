@@ -23,6 +23,9 @@ import { snapshotFor } from '../lib/contacts-cache'
 import { useI18n } from '../lib/i18n-context'
 import { hostOfApiBase } from '../lib/multihome'
 import { aliasFor, ensureGuestAuth, ensureGuestOn } from '../lib/visited-islands'
+import { doorRefusalOf } from '../lib/backup-pick'
+import { guestJoinErrorKey, rotatedElsewhereRefusal } from '../lib/guest-path'
+import { GuestJoinError } from '../lib/guest-register'
 import { GroupAvatar } from './GroupAvatar'
 import { compactCount } from '../lib/format-count'
 
@@ -135,6 +138,37 @@ export function GroupJoinCard({ groupId, host, compact = false, menuSpace = fals
     return foreignHost ? `/chat/g/${aliasFor(foreignHost, groupId)}` : `/chat/g/${groupId}`
   }
 
+  /// The island's `detail.code` from whatever the join threw: the guest paths
+  /// raise `GuestJoinError` with it, the `/join` behind them an `ApiError`
+  /// carrying the island's body.
+  function refusalCodeOf(e: unknown): string | null {
+    if (e instanceof GuestJoinError) return e.code
+    if (e instanceof ApiError) return parseErrorCode(e.body)
+    return null
+  }
+
+  /// One sentence per refusal, read by `detail.code` (spec 2026-09-15, 12.5):
+  ///   * a door on the LEGACY path (an island too old for guests) says the
+  ///     island cannot take people from other islands yet, not "buy entry";
+  ///   * a refused guest join and a refused `/join` share one table;
+  ///   * a retired key never reaches here at all (F2, see `join`), and nothing
+  ///     here ever wipes anything on it.
+  function joinErrorText(e: unknown): string {
+    const host = foreignHost ?? ''
+    const door = doorRefusalOf(e)
+    if (door) return t(door === 'entry' ? 'guest.join.old_paid' : 'guest.join.old_invite', { host })
+    if (e instanceof GuestJoinError) {
+      const key = guestJoinErrorKey(e.code, e.status)
+      return key ? t(key, { host }) : t('group_join.error.generic')
+    }
+    if (e instanceof ApiError) {
+      const key = guestJoinErrorKey(parseErrorCode(e.body), e.status)
+      if (key) return t(key, { host })
+      if (e.status === 404) return t('group_join.gone')
+    }
+    return t('group_join.error.generic')
+  }
+
   async function join() {
     if (!identity || joining) return
     setJoining(true)
@@ -142,9 +176,11 @@ export function GroupJoinCard({ groupId, host, compact = false, menuSpace = fals
     try {
       let ident = identity
       if (foreignHost) {
-        // First touch of the island happens HERE, on the explicit Join tap:
-        // recover-first guest registration with our own keys.
-        await ensureGuestOn(identity, foreignHost)
+        // First touch of the island happens HERE, on the explicit Join tap.
+        // The room id goes along: an island that admits guests makes the copy
+        // together with this room (spec 2026-09-15, 4); any other island gets
+        // the recover-first registration it always did.
+        await ensureGuestOn(identity, foreignHost, { groupId })
         const guest = await ensureGuestAuth(identity, foreignHost)
         if (!guest) throw new Error('guest registration failed')
         ident = guest
@@ -154,14 +190,16 @@ export function GroupJoinCard({ groupId, host, compact = false, menuSpace = fals
       _myGroupIds.get(cacheKey)?.add(groupId)
       navigate(chatPath())
     } catch (e) {
-      let msg = t('group_join.error.generic')
-      if (e instanceof ApiError) {
-        const code = parseErrorCode(e.body)
-        if (code === 'group_closed') msg = t('group_join.closed_hint')
-        else if (code === 'blocked') msg = t('group_join.error.blocked')
-        else if (e.status === 404) msg = t('group_join.gone')
-      }
-      setActionError(msg)
+      // D2, and F2 as every client now has it: a retired key already raised the
+      // rotated-elsewhere notice over the whole app (ensureGuestOn announces
+      // it), which says what happened and what to do. A second, smaller
+      // sentence on the card would only compete with it. Read from the CODE,
+      // whatever shape the error arrived in: the guest paths throw
+      // `GuestJoinError`, and a `/join` that meets the same answer throws an
+      // `ApiError`, which used to slip past this and print a sentence beside
+      // the notice.
+      if (rotatedElsewhereRefusal(refusalCodeOf(e))) return
+      setActionError(joinErrorText(e))
     } finally {
       setJoining(false)
     }

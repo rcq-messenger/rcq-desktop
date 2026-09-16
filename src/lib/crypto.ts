@@ -513,6 +513,56 @@ export type Envelope =
   | ContactReqEnvelope
   | ProfileEnvelope
 
+/// Every inner `kind` that can come out of this client's decoder: the ones the
+/// union above declares (which `envelopeToObject` also writes), plus three that
+/// only the phones compose and this client merely receives.
+///
+/// The decode path is `JSON.parse(...) as Envelope`, so nothing in the type
+/// system holds a kind NAME to anything. That is how a rule written against the
+/// prose of a spec rather than the wire ended up listing `screenshot` and
+/// `secure-screen`, two names no client has ever sent, in the group-frame drop
+/// (crossisland-gate.ts). This set is the list of names that exist, and the
+/// offline test holds the drop list to it.
+///
+/// The three this client receives but never sends, with the encoder that writes
+/// each: `visit`, the profile-view ping (Android crypto/Envelope.kt:445, iOS
+/// CryptoService.swift `case .visit`); `secscreen`, the per-chat secure-screen
+/// toggle (Envelope.kt:458, CryptoService `case .secureScreen`); and `shot`,
+/// the "took a screenshot" notice (Envelope.kt:462, CryptoService
+/// `case .screenshotTaken`). ⚠ `shot` is the wire name on BOTH phones; the
+/// spec's prose calls it the screenshot notice, and the wire does not.
+export const WIRE_KINDS: ReadonlySet<string> = new Set([
+  'text',
+  'reaction',
+  'photo',
+  'video',
+  'file',
+  'voice',
+  'location',
+  'poll',
+  'edit',
+  'delete',
+  'read',
+  'delivered',
+  'carbon',
+  'readmark',
+  'ciack',
+  'homerec',
+  'skdm',
+  'sknack',
+  'gskey',
+  'gsknack',
+  'pkey',
+  'pkeyask',
+  'call',
+  'contactreq',
+  'profile',
+  // Received only (see above).
+  'visit',
+  'secscreen',
+  'shot',
+])
+
 /// Identity material a web session needs to send v=1 envelopes.
 /// Bundled by the iOS app and shipped via the linking QR. Web reads
 /// it once on link, persists in IndexedDB, never echoes the privs

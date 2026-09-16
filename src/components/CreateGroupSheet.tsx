@@ -4,7 +4,9 @@
 
 import { useState } from 'react'
 import { Api, type Contact } from '../lib/api'
-import { groupInviteLink, uinForContactOnIsland } from '../lib/crossisland-groupadd'
+import { addForeignContactToGroup, groupInviteLink } from '../lib/crossisland-groupadd'
+import type { GuestPath } from '../lib/guest-path'
+import { islandGuestPath } from '../lib/guest-register'
 import { listCrossIsland, type CrossIslandContact } from '../lib/crossisland-store'
 import { deliverCrossIsland } from '../lib/federation-send'
 import { newUUIDv4 } from '../lib/crypto'
@@ -40,22 +42,26 @@ export function CreateGroupSheet({ contacts, onClose, onCreated }: Props) {
       const localPicks = [...picked].filter((u) => !crossByUin.has(u))
       const g = await Api.createGroup(identity, name.trim(), localPicks)
       const notInvited: string[] = []
+      // Our island is asked once which add it takes (spec 2026-09-15, 5):
+      // `/groups/{id}/guests` where it advertises `guest_accounts_v1`, the
+      // legacy resolve-or-mint everywhere else.
+      let pathP: Promise<GuestPath> | null = null
       for (const u of picked) {
         const ci = crossByUin.get(u)
         if (!ci) continue
-        const there = await uinForContactOnIsland(ownHost, {
-          identityKey: ci.identityKey,
-          signingKey: ci.signingKey,
-          nickname: ci.nickname,
-          uin: ci.uin,
-        })
-        if (there == null) {
-          notInvited.push(ci.nickname || `${ci.uin}`)
-          continue
-        }
-        try {
-          await Api.addGroupMember(identity, g.id, there)
-        } catch {
+        const out = await addForeignContactToGroup(
+          identity,
+          g.id,
+          {
+            uin: ci.uin,
+            host: ci.host,
+            identityKey: ci.identityKey,
+            signingKey: ci.signingKey,
+            nickname: ci.nickname,
+          },
+          { path: await (pathP ??= islandGuestPath(identity.apiBase)) },
+        )
+        if (!out.ok) {
           notInvited.push(ci.nickname || `${ci.uin}`)
           continue
         }

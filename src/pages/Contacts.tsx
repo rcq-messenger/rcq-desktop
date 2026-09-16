@@ -94,6 +94,10 @@ import {
 } from '../lib/sections'
 import { bytesToB64 } from '../lib/crypto'
 import { useIdentity } from '../lib/identity-context'
+import { usePrimaryGuest } from '../lib/use-guest-copy'
+import { notePrimaryGuest } from '../lib/guest-copy'
+import { hostOfApiBase } from '../lib/multihome'
+import { GuestSettleBox } from '../components/GuestSettleBox'
 import { useToast } from '../lib/toast'
 import { buildContactLink } from '../lib/federation'
 import {
@@ -170,7 +174,11 @@ export {
 let rosterKept: { uin: number; etag: string | null; list: Contact[] | null } = { uin: 0, etag: null, list: null }
 
 export function Contacts() {
-  const { identity } = useIdentity()
+  const { identity, refreshSession } = useIdentity()
+  // The account itself is a guest copy on this island (spec 2026-09-15, 12.1):
+  // rooms only, so no contact search, no add, no rooms of its own, no audio
+  // rooms, no sites. A banner says what this account is.
+  const primaryGuest = usePrimaryGuest(identity)
   const { t } = useI18n()
   const ws = useWS()
   const navigate = useNavigate()
@@ -908,12 +916,15 @@ export function Contacts() {
             count={normalGroups.length}
             unread={groupSectionUnread(normalGroups)}
             rightAction={
-              <button
-                onClick={() => setShowCreateGroup(true)}
-                className="text-xs text-accent hover:text-accent-dim font-semibold px-2 py-1"
-              >
-                {t('section.groups.create')}
-              </button>
+              // A guest copy creates no rooms: the island refuses POST /groups.
+              primaryGuest ? undefined : (
+                <button
+                  onClick={() => setShowCreateGroup(true)}
+                  className="text-xs text-accent hover:text-accent-dim font-semibold px-2 py-1"
+                >
+                  {t('section.groups.create')}
+                </button>
+              )
             }
           >
             {normalGroups.length === 0 ? (
@@ -1070,15 +1081,17 @@ export function Contacts() {
                 <path d="M20 20l-3.5-3.5" />
               </svg>
             </button>
-            <button
-              type="button"
-              onClick={() => setShowAdd(true)}
-              className="text-fg-secondary hover:text-fg-primary p-2 rounded-md hover:bg-field"
-              title={t('contacts.add')}
-              aria-label={t('contacts.add')}
-            >
-              <PlusIcon />
-            </button>
+            {!primaryGuest && (
+              <button
+                type="button"
+                onClick={() => setShowAdd(true)}
+                className="text-fg-secondary hover:text-fg-primary p-2 rounded-md hover:bg-field"
+                title={t('contacts.add')}
+                aria-label={t('contacts.add')}
+              >
+                <PlusIcon />
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setShowRequests(true)}
@@ -1099,28 +1112,32 @@ export function Contacts() {
                 operator's announcements. */}
             {/* Audio rooms: the phones have had them since 0.9x and the web
                 had no door at all, which made a room half a product. */}
-            <Link
-              to="/rooms"
-              className="text-fg-secondary hover:text-fg-primary p-2 rounded-md hover:bg-surface-dim"
-              title={t('rooms.title')}
-              aria-label={t('rooms.title')}
-            >
-              <MicIcon />
-            </Link>
+            {!primaryGuest && (
+              <Link
+                to="/rooms"
+                className="text-fg-secondary hover:text-fg-primary p-2 rounded-md hover:bg-surface-dim"
+                title={t('rooms.title')}
+                aria-label={t('rooms.title')}
+              >
+                <MicIcon />
+              </Link>
+            )}
             {/* `.rcq` sites. A door of its own rather than a row in Settings:
                 it is a place you go to, not a preference you set. */}
-            <Link
-              to="/sites"
-              className="text-fg-secondary hover:text-fg-primary p-2 rounded-md hover:bg-surface-dim max-[519px]:hidden"
-              title={t('sites.nav')}
-              aria-label={t('sites.nav')}
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <circle cx="12" cy="12" r="9" />
-                <path d="M3 12h18" />
-                <path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18" />
-              </svg>
-            </Link>
+            {!primaryGuest && (
+              <Link
+                to="/sites"
+                className="text-fg-secondary hover:text-fg-primary p-2 rounded-md hover:bg-surface-dim max-[519px]:hidden"
+                title={t('sites.nav')}
+                aria-label={t('sites.nav')}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="M3 12h18" />
+                  <path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18" />
+                </svg>
+              </Link>
+            )}
             {/* A narrow window keeps only the doors the founder named (21.08):
                 lock, settings, rooms, requests, add — the update pill shrinks
                 to a square icon. News goes first, being the reads-later kind
@@ -1150,6 +1167,25 @@ export function Contacts() {
       )}
 
       <main className="flex-1 min-h-0 overflow-y-auto overscroll-contain w-full max-w-2xl mx-auto px-4 py-4 pt-[calc(3.5rem+1rem)] space-y-4">
+        {/* Signed in as a guest copy (spec 2026-09-15, 12.1): say what this
+            account is, and offer to settle on this island. */}
+        {primaryGuest && (
+          <section className="bg-surface rounded-lg p-3 space-y-2">
+            <p className="text-sm text-fg-secondary">
+              {t('guest.copy.banner', { host: hostOfApiBase(identity.apiBase) })}
+            </p>
+            <GuestSettleBox
+              ident={identity}
+              host={hostOfApiBase(identity.apiBase)}
+              onSettled={() => {
+                // D7: the guest state goes now, and a fresh session from the
+                // island restates it (and keeps it gone) on its answer.
+                notePrimaryGuest(identity.apiBase, identity.uin, false)
+                refreshSession()
+              }}
+            />
+          </section>
+        )}
         {loading && contacts.length === 0 && (
           <div className="text-center text-sm text-fg-secondary py-12">{t('contacts.loading')}</div>
         )}

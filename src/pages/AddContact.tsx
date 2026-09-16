@@ -18,11 +18,37 @@ import { resolvePeerHomes } from '../lib/federation-resolve'
 import { fetchPeerKeyCard } from '../lib/federation-send'
 import { saveCrossIsland } from '../lib/crossisland-store'
 import { sendContactRequest } from '../lib/crossisland-contactreq'
+import { usePrimaryGuest } from '../lib/use-guest-copy'
+import { hostOfApiBase } from '../lib/multihome'
 
 /// [embedded] drops the page chrome so the same body can live inside a modal.
 /// The founder's rule for the desktop: fewer full-page detours, more windows
 /// over the list you were already looking at.
-export function AddContact({
+///
+/// Signed in as a guest copy (spec 2026-09-15, D6) there is no contact search
+/// and no request to send: the island refuses both, and the account at home is
+/// where they happen. Every door here (the /add route, the modal, a shared
+/// contact link) lands on that one sentence instead.
+export function AddContact(props: { embedded?: boolean; initialQuery?: string } = {}) {
+  const { identity } = useIdentity()
+  const primaryGuest = usePrimaryGuest(identity)
+  const { t } = useI18n()
+  if (primaryGuest && identity) {
+    const line = (
+      <p className="text-sm text-fg-secondary">{t('guest.restricted', { host: hostOfApiBase(identity.apiBase) })}</p>
+    )
+    return props.embedded ? (
+      <div className="p-4">{line}</div>
+    ) : (
+      <div className="min-h-screen bg-surface-dim px-4 py-6">
+        <div className="max-w-2xl mx-auto">{line}</div>
+      </div>
+    )
+  }
+  return <AddContactForm {...props} />
+}
+
+function AddContactForm({
   embedded = false,
   initialQuery = '',
 }: { embedded?: boolean; initialQuery?: string } = {}) {

@@ -20,9 +20,11 @@ import { type WebIdentity } from './crypto'
 import {
   normalizeIslandHost,
   hostOfApiBase,
-  recoverOnIsland,
-  registerOnIsland,
+  listBackupHomes,
 } from './multihome'
+import { GuestJoinError, guestCredentialsFor, recoverGuestCopy } from './guest-register'
+import { guestProfileBody, legacyNicknameRepairBody } from './guest-path'
+import { announceRotatedElsewhere } from './rotated-signal'
 
 import { scopedKey } from './account-scope'
 import { isBurning } from './burn-cascade'
@@ -33,6 +35,9 @@ export interface VisitedIsland {
   uin: number // per-island uin of this identity (same keys as primary)
   jwt: string
   addedAt: number
+  /// The island said this copy is a GUEST (spec 2026-09-15, 2.3): rooms only.
+  /// Absent on entries older than the flag and on islands that do not say.
+  guest?: boolean
 }
 
 interface ForeignGroupRef {
@@ -77,9 +82,19 @@ function saveVisited(list: VisitedIsland[]): void {
   localStorage.setItem(VISITED_KEY(), JSON.stringify(onDisk))
 }
 
-/// Guest credentials for `hostInput`, registering (recover-first) on first
-/// use. Throws with a human-readable message on failure.
-export async function ensureGuestOn(identity: WebIdentity, hostInput: string): Promise<VisitedIsland> {
+/// Guest credentials for `hostInput`, made on first use.
+///
+/// Spec 2026-09-15, 12.1: an island that advertises `guest_accounts_v1` gets
+/// `POST /auth/guest` with a proof bound to the room `opts.groupId` (its id
+/// THERE), which works through a paid door and claims a seat an owner put us
+/// in. Every other island keeps today's recover-first registration, without
+/// `desired_uin`. A door refusal on that legacy path still throws the shape
+/// `doorRefusalOf` reads; a refusal on the guest path throws `GuestJoinError`.
+export async function ensureGuestOn(
+  identity: WebIdentity,
+  hostInput: string,
+  opts?: { groupId?: number },
+): Promise<VisitedIsland> {
   const host = normalizeIslandHost(hostInput)
   if (!host) throw new Error('invalid host')
   if (host === hostOfApiBase(identity.apiBase)) throw new Error('own island')
@@ -88,15 +103,33 @@ export async function ensureGuestOn(identity: WebIdentity, hostInput: string): P
   if (isBurning()) throw new Error('burning')
   const existing = listVisitedIslands().find((v) => v.host === host)
   if (existing) return existing
-  const cred = (await recoverOnIsland(host, identity)) ?? (await registerOnIsland(host, identity))
-  const v: VisitedIsland = { host, uin: cred.uin, jwt: cred.token, addedAt: Date.now() }
+  let cred
+  try {
+    cred = await guestCredentialsFor(host, identity, opts?.groupId)
+  } catch (e) {
+    // D2: the key was retired by a rotation. The account's rotated-elsewhere
+    // notice, never a wipe and never a generic join error; rethrown so the
+    // caller stops.
+    if (e instanceof GuestJoinError && e.code === 'identity_rotated') announceRotatedElsewhere(identity.uin)
+    throw e
+  }
+  const v: VisitedIsland = {
+    host,
+    uin: cred.uin,
+    jwt: cred.token,
+    addedAt: Date.now(),
+    ...(cred.guest ? { guest: true } : {}),
+  }
   saveVisited([...listVisitedIslands(), v])
   // #985(2): the row there was named by registration (a suggested name, not
   // ours) or by whoever added us to a group there, and has never heard the
   // name we actually use. Say it once, now, so a stale name corrects itself
   // without waiting for our next rename. Not awaited: a join must not wait
   // on, or fail over, a cosmetic.
-  void pushOwnNicknameTo(identity, host)
+  // E6 runs after it, never beside it: the repair reads the name the island
+  // holds, and reading it before this push landed would mean repairing a name
+  // that is about to be replaced anyway.
+  void pushOwnNicknameTo(identity, host).then(() => repairLegacyNicknameOn(identity, host))
   return v
 }
 
@@ -131,12 +164,32 @@ export function forgetVisitedIsland(hostInput: string): void {
 /// to one learned from a peer. Best effort: false on any failure, with one
 /// recover-and-retry on a 401 (tokens are memory-only and expire).
 export async function pushNicknameToVisited(identity: WebIdentity, host: string, nickname: string): Promise<boolean> {
-  const name = nickname.trim()
-  if (!name) return false
+  // ⚠⚠ D1: a rename to another island is a request to a foreign island like
+  // any other, and may not carry our home number. A name that IS a number
+  // (`user-1234`, the minted default) or that holds our home number goes as the
+  // neutral word instead (guestProfileBody).
+  const body = guestProfileBody(nickname, identity.uin)
+  if (!body) return false
+  // E6: the legacy-name repair reads the copy's name and may write the neutral
+  // word over it. While a rename of ours is in flight it stands aside, or a
+  // real name pushed here would lose the race to "Guest".
+  renaming.add(host)
+  try {
+    return await pushNicknameNow(identity, host, body)
+  } finally {
+    renaming.delete(host)
+  }
+}
+
+async function pushNicknameNow(
+  identity: WebIdentity,
+  host: string,
+  body: { nickname: string },
+): Promise<boolean> {
   const ident = await ensureGuestAuth(identity, host).catch(() => null)
   if (!ident) return false
   try {
-    await Api.updateProfile(ident, { nickname: name })
+    await Api.updateProfile(ident, body)
     return true
   } catch (e) {
     if (!(e instanceof ApiError) || e.status !== 401) return false
@@ -145,7 +198,7 @@ export async function pushNicknameToVisited(identity: WebIdentity, host: string,
   const fresh = guestIdentityFor(identity, host)
   if (!fresh) return false
   try {
-    await Api.updateProfile(fresh, { nickname: name })
+    await Api.updateProfile(fresh, body)
     return true
   } catch {
     return false
@@ -162,21 +215,102 @@ async function pushOwnNicknameTo(identity: WebIdentity, host: string): Promise<v
   }
 }
 
+/// Hosts with a rename of our copy in flight right now (see pushNickname...).
+const renaming = new Set<string>()
+
+/// Islands whose copy has already been looked at by the repair below. A list of
+/// hosts, not a credential and not a secret, so the ordinary account-scoped
+/// key; a browser that cannot write it simply does the read again next time,
+/// and the repair is idempotent.
+const NAME_FIX_KEY = () => scopedKey('guest-name-fix.v1')
+
+function nameFixedHosts(): string[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(NAME_FIX_KEY()) || '[]') as unknown
+    return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+function markNameFixed(host: string): void {
+  const list = nameFixedHosts()
+  if (list.includes(host)) return
+  try {
+    localStorage.setItem(NAME_FIX_KEY(), JSON.stringify([...list, host]))
+  } catch {
+    /* storage full or blocked: it runs again, and it changes nothing twice */
+  }
+}
+
+/// E6: take our HOME NUMBER off the copy we hold on `host`, once.
+///
+/// Every copy this client made before D1 was minted or renamed with the
+/// `user-<uin>` fallback, and the digits in it are our number at home: the one
+/// fact a guest copy exists not to hand the island it lives on. No island
+/// carries a rename across (§5c), so nothing but this client can take it off,
+/// and it stays there until we do. So on the next sign-in to that island the
+/// name the island holds is read, and a name that really spells our own number
+/// is replaced with the neutral word every client uses.
+///
+/// ⚠⚠ Never a backup home. There the number is in the signed island record on
+/// purpose, which is what a backup home IS; the hosts are told apart by the
+/// backup store, not by how the copy looks.
+///
+/// Best effort and silent: an island that does not answer, a token that aged
+/// out, a refusal - the host is left unmarked and the next sign-in tries again.
+export async function repairLegacyNicknameOn(identity: WebIdentity, host: string): Promise<void> {
+  if (renaming.has(host) || nameFixedHosts().includes(host)) return
+  if (listBackupHomes().some((h) => h.host === host)) return
+  const ident = guestIdentityFor(identity, host)
+  if (!ident?.jwt) return
+  try {
+    const me = await Api.userInfo(ident, ident.uin)
+    // ⚠ `identity.uin` is our number AT HOME, which is what may not be there.
+    // `ident.uin` is the copy's own number on that island, which is that
+    // island's own business and never a leak.
+    const body = legacyNicknameRepairBody(me.nickname, identity.uin)
+    if (body) await Api.updateProfile(ident, body)
+    markNameFixed(host)
+  } catch {
+    /* unreachable or refused: not marked, so the next sign-in asks again */
+  }
+}
+
 /// Refresh an expired guest jwt via the recover handshake (we still hold the
 /// signing key). Returns the updated entry, or null when recovery fails.
 export async function refreshGuestAuth(identity: WebIdentity, host: string): Promise<VisitedIsland | null> {
   try {
-    const cred = await recoverOnIsland(host, identity)
+    const cred = await recoverGuestCopy(host, identity)
     if (!cred) return null
     const list = listVisitedIslands()
     const i = list.findIndex((v) => v.host === host)
     if (i < 0) return null
-    list[i] = { ...list[i], uin: cred.uin, jwt: cred.token }
+    // `guest` follows the island's latest answer: a recover can claim a seat
+    // (guest from then on), and a settle elsewhere makes the row native.
+    list[i] = { ...list[i], uin: cred.uin, jwt: cred.token, guest: cred.guest === true }
     saveVisited(list)
+    // A recover IS a sign-in to that island (E6): the one moment this client is
+    // holding a live token there and can take an old `user-<home uin>` name off
+    // the copy. Not awaited, and it stands aside while a rename is in flight.
+    void repairLegacyNicknameOn(identity, host)
     return list[i]
-  } catch {
+  } catch (e) {
+    // D2: the recover inside the guest flow met a retired key.
+    if (e instanceof GuestJoinError && e.code === 'identity_rotated') announceRotatedElsewhere(identity.uin)
     return null
   }
+}
+
+/// Record that the copy on `host` is (no longer) a guest, after a settle on
+/// that island (spec 2026-09-15, 9.1). No-op for an island this account never
+/// visited.
+export function setVisitedGuest(host: string, guest: boolean): void {
+  const list = listVisitedIslands()
+  const i = list.findIndex((v) => v.host === host)
+  if (i < 0 || (list[i].guest === true) === guest) return
+  list[i] = { ...list[i], guest }
+  saveVisited(list)
 }
 
 /// A guest identity that is guaranteed to carry a token, minting one when this

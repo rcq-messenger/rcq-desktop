@@ -109,6 +109,12 @@ export interface ServerCapabilities {
   /// `respond(false)` instead: that is a "declined" row the requester reads
   /// for 180 days. Without it the request is only hidden on this device.
   contact_pending_withdraw: boolean
+  /// The island serves POST /auth/guest/challenge, /auth/guest,
+  /// /auth/guest/settle and /groups/{id}/guests AND admits new guests right
+  /// now (spec 2026-09-15, 3.3). ⚠⚠ Defaults to FALSE: absent or false, the
+  /// join and add paths stay the legacy recover-first/register ones, which is
+  /// exactly what old islands, open islands and is2 must keep getting.
+  guest_accounts_v1: boolean
 }
 
 export interface ServerInfo {
@@ -177,6 +183,7 @@ export const DEFAULT_CAPABILITIES: ServerCapabilities = {
   group_log: false,
   vault: false,
   contact_pending_withdraw: false,
+  guest_accounts_v1: false,
 }
 
 /// How long one GET /server/info may take before it reads as no answer.
@@ -202,6 +209,7 @@ type BoolCapability =
   | 'group_log'
   | 'vault'
   | 'contact_pending_withdraw'
+  | 'guest_accounts_v1'
 
 /// Bounded before it is believed. This text is drawn beside a contact's name,
 /// and it comes from an island we may only be PROBING, so an operator must not
@@ -276,6 +284,7 @@ function normalize(raw: unknown): ServerInfo | null {
       group_log: bool('group_log'),
       vault: bool('vault'),
       contact_pending_withdraw: bool('contact_pending_withdraw'),
+      guest_accounts_v1: bool('guest_accounts_v1'),
     },
   }
 }

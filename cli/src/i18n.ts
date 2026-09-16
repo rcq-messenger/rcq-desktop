@@ -102,7 +102,7 @@ for scripts and one-shots (stdout is data, status goes to stderr):
   rcq remove (rm) <uin> [--yes]             drop a contact on both sides
   rcq groups (g)                            list your rooms (id, name, members, rules)
   rcq join (j) <id>[@<host>] | <link>       join an open group, here or on another island
-  rcq leave (lv) <id>                       leave a room
+  rcq leave (lv) <id> [--yes]               leave a room
   rcq create (cr) "NAME" [uin ...]          make a room with these people
   rcq invite (inv) <id> <uin>               add somebody to a room you are in
   rcq log (l) [<uin>|g<id>] [n]             last n lines of a thread from the history file
@@ -149,7 +149,7 @@ RCQ_VERBOSE=1 shows protocol detail; NO_COLOR strips colour.
   rcq remove (rm) <uin> [--yes]             удалить контакт у обоих
   rcq groups (g)                            список ваших комнат (id, имя, участники, правила)
   rcq join (j) <id>[@<host>] | <link>       вступить в открытую группу, здесь или на другом острове
-  rcq leave (lv) <id>                       выйти из комнаты
+  rcq leave (lv) <id> [--yes]               выйти из комнаты
   rcq create (cr) "ИМЯ" [uin ...]           создать комнату с этими людьми
   rcq invite (inv) <id> <uin>               добавить человека в вашу комнату
   rcq log (l) [<uin>|g<id>] [n]             последние n строк переписки из файла истории
@@ -196,7 +196,7 @@ para scripts y comandos únicos (stdout son datos, el estado va a stderr):
   rcq remove (rm) <uin> [--yes]             quitar un contacto de ambos lados
   rcq groups (g)                            listar tus salas (id, nombre, miembros, reglas)
   rcq join (j) <id>[@<host>] | <link>       unirte a un grupo abierto, aquí o en otra isla
-  rcq leave (lv) <id>                       salir de una sala
+  rcq leave (lv) <id> [--yes]               salir de una sala
   rcq create (cr) "NOMBRE" [uin ...]        crear una sala con estas personas
   rcq invite (inv) <id> <uin>               agregar a alguien a una sala en la que estás
   rcq log (l) [<uin>|g<id>] [n]             últimas n líneas de un hilo del archivo de historial
@@ -243,7 +243,7 @@ para scripts e comandos avulsos (stdout são dados, o status vai para stderr):
   rcq remove (rm) <uin> [--yes]             remover um contato dos dois lados
   rcq groups (g)                            listar suas salas (id, nome, membros, regras)
   rcq join (j) <id>[@<host>] | <link>       entrar em um grupo aberto, aqui ou em outra ilha
-  rcq leave (lv) <id>                       sair de uma sala
+  rcq leave (lv) <id> [--yes]               sair de uma sala
   rcq create (cr) "NOME" [uin ...]          criar uma sala com estas pessoas
   rcq invite (inv) <id> <uin>               adicionar alguém a uma sala em que você está
   rcq log (l) [<uin>|g<id>] [n]             últimas n linhas de uma conversa do arquivo de histórico
@@ -290,7 +290,7 @@ betikler ve tek seferlik komutlar için (stdout veridir, durum stderr'e gider):
   rcq remove (rm) <uin> [--yes]             bir kişiyi iki taraftan da sil
   rcq groups (g)                            odalarını listele (id, ad, üyeler, kurallar)
   rcq join (j) <id>[@<host>] | <link>       açık bir gruba katıl, burada ya da başka bir adada
-  rcq leave (lv) <id>                       bir odadan ayrıl
+  rcq leave (lv) <id> [--yes]               bir odadan ayrıl
   rcq create (cr) "AD" [uin ...]            bu kişilerle bir oda kur
   rcq invite (inv) <id> <uin>              içinde olduğun bir odaya birini ekle
   rcq log (l) [<uin>|g<id>] [n]             geçmiş dosyasından bir konuşmanın son n satırı
@@ -337,7 +337,7 @@ RCQ_VERBOSE=1 protokol ayrıntısını gösterir; NO_COLOR rengi kaldırır.
   rcq remove (rm) <uin> [--yes]             видалити контакт з обох боків
   rcq groups (g)                            список ваших кімнат (id, назва, учасники, правила)
   rcq join (j) <id>[@<host>] | <link>       приєднатися до відкритої групи, тут або на іншому острові
-  rcq leave (lv) <id>                       вийти з кімнати
+  rcq leave (lv) <id> [--yes]               вийти з кімнати
   rcq create (cr) "ІМʼЯ" [uin ...]          створити кімнату з цими людьми
   rcq invite (inv) <id> <uin>               додати людину до вашої кімнати
   rcq log (l) [<uin>|g<id>] [n]             останні n рядків розмови з файлу історії
@@ -384,7 +384,7 @@ RCQ_VERBOSE=1 показує деталі протоколу; NO_COLOR приб�
   rcq remove (rm) <uin> [--yes]             双向删除一个联系人
   rcq groups (g)                            列出你的群 (id, 名称, 成员, 规则)
   rcq join (j) <id>[@<host>] | <link>       加入一个开放的群, 本服务器或其他服务器
-  rcq leave (lv) <id>                       退出一个群
+  rcq leave (lv) <id> [--yes]               退出一个群
   rcq create (cr) "名称" [uin ...]          用这些人创建一个群
   rcq invite (inv) <id> <uin>               把某人加入你所在的群
   rcq log (l) [<uin>|g<id>] [n]             历史文件里某个会话的最后 n 行
@@ -2185,6 +2185,36 @@ RCQ_VERBOSE=1 显示协议细节; NO_COLOR 去掉颜色。
     tr: 'leave bir grup id ister (ya da içinde olduğun odada /leave)',
     uk: 'leave чекає id групи (або /leave у відкритій кімнаті)',
     'zh-Hans': 'leave 需要一个群 id (或在所在群里用 /leave)',
+  },
+  // D8 (spec 2026-09-15, 12.1): the last member who lives on the room's island
+  // takes the room with them, so the console asks before the removal the way
+  // the apps do. On a TTY it is a question; a script says --yes up front.
+  'leave.confirmLast': {
+    en: 'you are the last member who lives on {host}. If you leave, the group will be deleted for everyone. Leave anyway? [y/N] ',
+    ru: 'вы последний участник, который живёт на острове {host}. Если вы выйдете, группа удалится у всех. Всё равно выйти? [y/N] ',
+    es: 'sos el último miembro que vive en la isla {host}. Si salís, el grupo se borrará para todos. ¿Salir igual? [y/N] ',
+    pt: 'você é o último membro que mora na ilha {host}. Se sair, o grupo será apagado para todos. Sair mesmo assim? [y/N] ',
+    tr: '{host} adasında yaşayan son üye sensin. Ayrılırsan grup herkes için silinir. Yine de ayrılmak ister misin? [y/N] ',
+    uk: 'ви останній учасник, який живе на острові {host}. Якщо ви вийдете, група видалиться в усіх. Усе одно вийти? [y/N] ',
+    'zh-Hans': '你是最后一位住在 {host} 岛上的成员。如果你退出, 群组将为所有人删除。仍要退出吗? [y/N] ',
+  },
+  'leave.needsYes': {
+    en: 'not left: you are the last member who lives on {host}, so the group would be deleted for everyone. Add --yes to leave anyway',
+    ru: 'не вышли: вы последний участник, который живёт на острове {host}, и группа удалится у всех. Добавьте --yes, чтобы всё равно выйти',
+    es: 'no saliste: sos el último miembro que vive en la isla {host}, así que el grupo se borraría para todos. Agregá --yes para salir igual',
+    pt: 'não saiu: você é o último membro que mora na ilha {host}, então o grupo seria apagado para todos. Adicione --yes para sair mesmo assim',
+    tr: 'ayrılmadın: {host} adasında yaşayan son üye sensin, grup herkes için silinirdi. Yine de ayrılmak için --yes ekle',
+    uk: 'не вийшли: ви останній учасник, який живе на острові {host}, і група видалиться в усіх. Додайте --yes, щоб усе одно вийти',
+    'zh-Hans': '未退出: 你是最后一位住在 {host} 岛上的成员, 群组会为所有人删除。加 --yes 才会退出',
+  },
+  'leave.cancelled': {
+    en: 'still in the room',
+    ru: 'вы остались в комнате',
+    es: 'seguís en la sala',
+    pt: 'você continua na sala',
+    tr: 'odada kaldın',
+    uk: 'ви залишилися в кімнаті',
+    'zh-Hans': '你仍在群里',
   },
   'leave.done': {
     en: 'you left "{name}"',

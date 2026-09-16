@@ -843,6 +843,9 @@ export const en: Record<string, string> = {
   // clients answer the identical question identically (#603).
   'add.already': 'already in contacts',
   'add.error': 'Could not search.',
+  // The request D5 sends straight from a guest copy's card, which is the one
+  // add this screen cannot do: the island keeps guest rows out of its search.
+  'add.request_failed': 'Could not send the request. Try again.',
 
   // Profile
   'profile.title.self': 'Your profile',
@@ -1196,6 +1199,7 @@ export const en: Record<string, string> = {
   'group.transfer.err.rate_limited_in': 'Too many attempts. Try again in {s} s.',
   'group.transfer.err.rate_limited': 'Too many attempts. Try again later.',
   'group.transfer.err.failed': 'Could not hand the group over.',
+  'group.transfer.err.target_guest': "A member from another island can't own this group.",
   'group.info.you': 'you',
   'group.info.leave': 'Leave group',
   'group.info.delete': 'Delete group',
@@ -1487,4 +1491,29 @@ export const en: Record<string, string> = {
   'burn.cancel.partial': 'The account stays. Copies already deleted on {hosts} do not come back.',
   'burn.home_failed.partial': 'Could not reach your island, so the account there is untouched. Copies on other islands were already deleted. Try again when you have a connection.',
   'burn.done': 'Account burned on your island and on other islands ({n}).',
+  // Guest copies on paid and invite islands (spec 2026-09-15, 12.5).
+  'guest.join.closed': "{host} doesn't let in people from other islands.",
+  'guest.join.room_closed': "The owner of this group doesn't let in people from other islands.",
+  'guest.join.room_full': "This group is too big to take people from other islands.",
+  'guest.join.room_limit': "Too many people from other islands joined this group today. Try again tomorrow.",
+  'guest.join.rate': "Too many attempts. Try again in an hour.",
+  'guest.join.group_limit': "You're in too many groups on {host}. Leave one to join this one.",
+  'guest.join.old_paid': "Only paying residents can get into {host}, and its server can't take people from other islands yet.",
+  'guest.join.old_invite': "{host} is invite-only, and its server can't take people from other islands yet.",
+  'guest.unavailable': "{host} can't take guests right now. Try again later.",
+  'guest.restricted': "You're a guest on {host}: you can take part in its groups, but personal chats, calls and everything else work from your home island.",
+  'guest.restricted.contacts': "Answer this request from your home account.",
+  'guest.copy.banner': "This is your guest copy for groups on {host}.",
+  'group.add.foreign.limit': "Too many people from other islands were added today. Try again tomorrow.",
+  'group.add.foreign.seat_limit': "This person has already been invited to several groups and hasn't accepted any invite yet.",
+  'group.add.foreign.stale_key': "This contact has new keys. Ask for a fresh contact link.",
+  'group.add.foreign.guest_adder': "You're a guest in this group, so you can't add people to it.",
+  'group.member.guest': "From another island",
+  'group.member.invited': "Invited, hasn't joined yet",
+  'group.settings.allow_guests': "Let in people from other islands",
+  'group.leave.last_resident': "You're the last member who lives on {host}. If you leave, the group will be deleted for everyone.",
+  'guest.settle.action': "Become a resident of {host}",
+  'guest.settle.done': "You now live on {host}.",
+  'guest.settle.number_invite': "This invite comes with its own number and can't be used on a guest copy. Ask for an invite without a number.",
+  'backup.is_guest_copy': "Your account on {host} is a guest copy, so it can't be a backup island.",
 }

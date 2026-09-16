@@ -20,7 +20,7 @@ import { isRandomTraffic, randomEnded, randomMatched } from './random-peers'
 import { adoptHomesFromOwnRecord, applyPushedRecord, backupIdentityFor, drainBackupQueues, listBackupHomes, scrubFrontAliasHomes } from './multihome'
 import { aliasFor, drainVisitedQueues, guestIdentityFor, listVisitedIslands } from './visited-islands'
 import { getCrossIsland, getVerifiedCrossIsland } from './crossisland-store'
-import { carbonIsOwn, crossIslandGateVerdict, foreignRoomBroadcastDropped, sameSigningKey } from './crossisland-gate'
+import { carbonIsOwn, crossIslandGateVerdict, foreignRoomBroadcastDropped, groupFrameDropped, sameSigningKey } from './crossisland-gate'
 import type { GuestRoom } from './held-gmsg'
 import { applyRequestAck } from './crossisland-ack'
 import { isBurning } from './burn-cascade'
@@ -202,6 +202,14 @@ function route(
   // Before the guest card below on purpose: a card from somebody whose traffic
   // we are about to drop is a card we have no use for.
   if (isRandomTraffic(senderUIN, isContact(myUin, senderUIN))) return
+
+  // ⚠⚠ A GROUP FRAME NEVER REACHES A 1:1 HANDLER (spec 2026-09-15, section 7).
+  // The island stores a group-sealed payload for any subset of a room's members
+  // without checking the sender, so one member can address exactly one other
+  // through the room. A contact request, a call, a profile push, a key ask, a
+  // visit or a carbon riding such a frame is dropped here, before any branch
+  // below could act on it; content keeps rendering in its group's thread only.
+  if (typeof groupId === 'number' && groupFrameDropped((envelope as { kind?: unknown }).kind)) return
 
   // ⚠⚠ A GUEST CARD the sender handed us, on a closed island. Read FIRST, and
   // before any decision about whether we want this message: it is what makes

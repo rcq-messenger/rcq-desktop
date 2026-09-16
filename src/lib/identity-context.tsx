@@ -35,6 +35,7 @@ import { Api, setTokenRefresher, setUnauthorizedHandler , clearGroupPreviewCache
 import { clearRandomPeers } from './random-peers'
 import { idbClearAll } from './signal-persist'
 import { bootAction } from './session-verdict'
+import { ROTATED_ELSEWHERE_EVENT, rotatedUinOf } from './rotated-signal'
 
 interface IdentityCtx {
   identity: WebIdentity | null
@@ -92,6 +93,11 @@ interface IdentityCtx {
   /// The way on from that state: the login screen, to enter the new phrase,
   /// with every local store untouched. Same call as [leaveMovedAccount].
   leaveRotatedAccount: () => void
+  /// Ask the island for a fresh session for the active account and adopt it,
+  /// through the same single-flight mint a 401 uses. After a guest copy settles
+  /// (spec 2026-09-15, D7): the answer restates `guest`, which clears the
+  /// guest-copy state for good.
+  refreshSession: () => void
 }
 
 const Ctx = createContext<IdentityCtx | undefined>(undefined)
@@ -117,6 +123,20 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
     rotatedRef.current = true
     setRotatedElsewhere({ uin })
   }
+  // The same notice when a GUEST path met the retired key first (spec
+  // 2026-09-15, D2: a join or a recover on another island). Only for the
+  // account signed in here. ⚠ Subscribed once, reading the uin through a ref,
+  // so no identity object ever feeds this effect's dependencies.
+  const activeUinRef = useRef<number | null>(null)
+  useEffect(() => {
+    const onRotated = (e: Event) => {
+      const uin = rotatedUinOf(e)
+      if (uin != null && uin === activeUinRef.current) showRotatedElsewhere(uin)
+    }
+    window.addEventListener(ROTATED_ELSEWHERE_EVENT, onRotated)
+    return () => window.removeEventListener(ROTATED_ELSEWHERE_EVENT, onRotated)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     const stored = loadStoredIdentity()
@@ -599,6 +619,9 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
       // The same call again, for the same reason: the account is alive under
       // new keys, and the only history of it on this machine is right here.
       leaveRotatedAccount: openLoginScreen,
+      refreshSession: () => {
+        if (identity) void mintOnce(identity)
+      },
       signOutAccount: (uin: number) => {
         // Tell the ACCOUNT BEING SIGNED OUT that this session is gone, not
         // whichever one happens to be active — otherwise leaving account B

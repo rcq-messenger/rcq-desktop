@@ -54,8 +54,10 @@ import {
 } from '../lib/incoming-store'
 import { PartialFanOutError, sendV2 } from '../lib/signal-device'
 import { getCrossIsland } from '../lib/crossisland-store'
+import { usePrimaryGuest } from '../lib/use-guest-copy'
+import { memberMarkOf, memberProfileHref, type MemberMark } from '../lib/guest-path'
 import { deliverCrossIsland } from '../lib/federation-send'
-import { depositToExtraHomes } from '../lib/multihome'
+import { depositToExtraHomes, hostOfApiBase } from '../lib/multihome'
 import {
   encryptV1,
   bytesToB64,
@@ -196,6 +198,9 @@ const SELECTION_MAX = 50
 
 export function Chat() {
   const { identity } = useIdentity()
+  // An account that is a guest copy on its island places no calls: the island
+  // drops every call frame to and from a guest (spec 2026-09-15, 6.2).
+  const primaryGuest = usePrimaryGuest(identity)
   const { t, lang } = useI18n()
   const { toast } = useToast()
   const call = useCall()
@@ -216,6 +221,10 @@ export function Chat() {
   // (mirrors iOS). #3. (A cross-island thread is never "self".)
 
   const isSelf = !isGroup && !islandHost && identity != null && peerUIN === identity.uin
+  // A guest copy opens no 1:1 (spec 2026-09-15, 0(b) and 12.1): the composer
+  // of a personal thread stays shut, with the reason in it. Notes to self are
+  // local and stay open; groups are what the copy is for.
+  const guestNoDirect = !isGroup && !isSelf && primaryGuest
 
   // Cross-island groups (§5c): a NEGATIVE route id is a local alias for a
   // group on another island. gctx resolves (identity, server-side id, host)
@@ -248,7 +257,8 @@ export function Chat() {
   // A greyed-out field with the reason in its placeholder also says the same
   // thing in the place the user is already looking.
   const readOnlyHere =
-    isGroup && group?.post_policy === 'owner_only' && identity != null && group.owner_uin !== identity.uin
+    (isGroup && group?.post_policy === 'owner_only' && identity != null && group.owner_uin !== identity.uin) ||
+    guestNoDirect
   /// This thread's disappearing-message timer, in seconds, or null when it is
   /// off (founder item 20). Per thread and per DEVICE: it decides what the rows
   /// this browser composes ask their recipients to do, and it never travels to
@@ -2707,7 +2717,13 @@ export function Chat() {
       },
       onOpen: (uin: number) => {
         const live = mentionLiveRef.current
-        live.navigate(memberProfilePath(uin, live.isGroup ? live.memberHost : null))
+        live.navigate(
+          memberProfilePath(
+            uin,
+            live.isGroup ? live.memberHost : null,
+            live.isGroup ? memberMarkOf(live.group?.members.find((m) => m.uin === uin)) : null,
+          ),
+        )
       },
       meUin: identity.uin,
     }
@@ -2924,6 +2940,9 @@ export function Chat() {
   /// Names come from wherever this thread knows them: the group roster in a
   /// group, the peer in a 1:1, and my own profile for my own reaction. My alias
   /// for someone wins over their nick, same rule as everywhere else.
+  // The room's island for member links in the sheet below, as a primitive: gctx
+  // itself is a fresh object on every render and must not feed a memo.
+  const roomLinkHost = isGroup ? gctx?.host ?? null : null
   const reactionAuthors: ReactionAuthor[] = useMemo(() => {
     if (!reactionAuthorsFor || !identity) return []
     const map = reactionsForTarget(reactionAuthorsFor)
@@ -2951,7 +2970,9 @@ export function Chat() {
       // has to: the enforcement that counts is the island refusing to serve the
       // card, and until that exists a link that quietly stopped working would
       // read as a broken screen rather than as a setting.
-      const host = uin === peerUIN ? peer?.host ?? islandHost : null
+      // In a room the number is the ROOM's island's (#985(2)), and the roster's
+      // guest / unclaimed-seat mark rides along (D5).
+      const host = isGroup ? roomLinkHost : uin === peerUIN ? peer?.host ?? islandHost : null
       const openable = canOpenProfileCard(
         { uin, profile_openable: uin === peerUIN ? peer?.profile_openable : undefined },
         { myUin: identity.uin, isContact: uin === peerUIN },
@@ -2960,9 +2981,7 @@ export function Chat() {
         ? null
         : mine
           ? '/profile'
-          : host
-            ? `/profile/${uin}?i=${encodeURIComponent(host)}`
-            : `/profile/${uin}`
+          : memberProfilePath(uin, host, isGroup ? memberMarkOf(member) : null)
       return {
         uin,
         asset,
@@ -2990,7 +3009,7 @@ export function Chat() {
       }
     })
     // `reactionsVersion` is what makes this recompute when a reaction lands.
-  }, [reactionAuthorsFor, identity, isGroup, group, peer, peerUIN, islandHost, myNickname, peerAliasFor, reactionsVersion, groupWireName])
+  }, [reactionAuthorsFor, identity, isGroup, group, peer, peerUIN, islandHost, roomLinkHost, myNickname, peerAliasFor, reactionsVersion, groupWireName])
   const headerName = isGroup
     ? group?.name ?? `${groupId}`
     : isSelf
@@ -3715,7 +3734,7 @@ export function Chat() {
               ours, where a bare `to_uin` used to resolve as a LOCAL number and
               ring a stranger who shared the digits. The buttons were hidden for
               exactly as long as that was true. */}
-          {!isGroup && !isSelf && peer && (peer.callable ?? true) && (
+          {!isGroup && !isSelf && !primaryGuest && peer && (peer.callable ?? true) && (
             <>
               <button
                 type="button"
@@ -3949,6 +3968,8 @@ export function Chat() {
             <div className="text-fg-secondary text-sm max-w-xs">
               {isSelf
                 ? t('chat.empty.saved')
+                : guestNoDirect && identity
+                ? t('guest.restricted', { host: hostOfApiBase(identity.apiBase) })
                 : readOnlyHere
                   ? t('chat.empty.readonly')
                   : t('chat.empty.peer', { name: headerName })}
@@ -4085,6 +4106,7 @@ export function Chat() {
                     downloadSaved={savedRowId === m.id}
                     senderName={senderName}
                     senderHost={isGroup ? gctx?.host ?? null : null}
+                    senderMark={isGroup ? memberMarkOf(senderMember) : null}
                     senderBadge={senderMember?.badge ?? null}
                     senderAvatarId={senderMember?.avatar_media_id}
                     senderAvatarKey={senderMember?.avatar_media_key}
@@ -4695,7 +4717,9 @@ export function Chat() {
                 // of the screen; repeating it in the field said nothing and
                 // made the field's own line jump around with the name's length
                 // (founder, 02.09). One sentence for every chat.
-                readOnlyHere
+                guestNoDirect && identity
+                  ? t('guest.restricted', { host: hostOfApiBase(identity.apiBase) })
+                  : readOnlyHere
                   ? t('chat.owner_only.notice')
                   : isGroup && group
                     ? t('chat.placeholder')
@@ -5083,6 +5107,9 @@ interface IncomingRowProps extends CommonRowProps {
   /// The island a group sender's number belongs to, when the room lives on
   /// another island; null for a room on ours. Rides on their profile link.
   senderHost?: string | null
+  /// The roster's guest / unclaimed-seat mark for the sender (D5). A string, so
+  /// the memoised row compares it by value.
+  senderMark?: MemberMark
   senderAvatarId: string | null | undefined
   senderAvatarKey: string | null | undefined
   replyAuthor: string
@@ -5362,6 +5389,7 @@ const IncomingMessageRow = memo(function IncomingMessageRow({
   senderName,
   senderBadge = null,
   senderHost = null,
+  senderMark = null,
   senderAvatarId,
   senderAvatarKey,
   replyAuthor,
@@ -5404,7 +5432,7 @@ const IncomingMessageRow = memo(function IncomingMessageRow({
       <div className="relative max-w-[80%] flex flex-col items-start gap-1">
         {senderName && !cont && (
           <Link
-            to={memberProfilePath(m.from, senderHost)}
+            to={memberProfilePath(m.from, senderHost, senderMark)}
             // ⚠ 0.75rem and `text-fg-secondary`, up from 0.625rem and
             // `text-fg-dim`. In a group the only thing that says WHO is
             // talking was 10px of the dimmest colour in the palette: "так
@@ -6928,8 +6956,12 @@ function ExpiryMark({ expiresAt, t }: { expiresAt: number; t: Translate }) {
 /// number is that island's, so the host rides along as `?i=`: without it the
 /// profile page read the number as one of OURS and showed, visited and offered
 /// to add whoever holds the same digits here, a different person.
-function memberProfilePath(uin: number, host: string | null | undefined): string {
-  return host ? `/profile/${uin}?i=${encodeURIComponent(host)}` : `/profile/${uin}`
+///
+/// The roster's guest / unclaimed-seat mark rides along too (spec 2026-09-15,
+/// D5), from every entry point a room has: sender name, mention, pin, reactions.
+/// The profile page then offers no Message, call or visit to such a row.
+function memberProfilePath(uin: number, host: string | null | undefined, mark: MemberMark = null): string {
+  return memberProfileHref(uin, host, { guest: mark === 'guest', invited: mark === 'invited' })
 }
 
 /// Renders the pinned announcement the way the native apps do (#pin-native):
@@ -6959,7 +6991,7 @@ function PinnedRichText({ text, group, linksAllowed = true, memberHost = null }:
       if (i > from) nodes.push(<span key={key++}>{s.slice(from, i)}</span>)
       const label = s.slice(i, i + 1 + hit.length)
       nodes.push(
-        <Link key={key++} to={memberProfilePath(hit.uin, memberHost)} className="text-accent hover:text-accent-dim transition-colors">{label}</Link>,
+        <Link key={key++} to={memberProfilePath(hit.uin, memberHost, memberMarkOf(group.members.find((x) => x.uin === hit.uin)))} className="text-accent hover:text-accent-dim transition-colors">{label}</Link>,
       )
       i += hit.length
       from = i + 1
@@ -7006,7 +7038,7 @@ function PinnedRichText({ text, group, linksAllowed = true, memberHost = null }:
       const uin = Number(m[3])
       const nick = contactAlias(uin) ?? group.members.find((x) => x.uin === uin)?.nickname
       nodes.push(
-        <Link key={key++} to={memberProfilePath(uin, memberHost)} className="text-accent hover:text-accent-dim transition-colors">{nick ?? `${uin}`}</Link>,
+        <Link key={key++} to={memberProfilePath(uin, memberHost, memberMarkOf(group.members.find((x) => x.uin === uin)))} className="text-accent hover:text-accent-dim transition-colors">{nick ?? `${uin}`}</Link>,
       )
     }
   }

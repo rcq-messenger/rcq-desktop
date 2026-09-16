@@ -161,13 +161,43 @@ export function hostOfApiBase(apiBase: string): string {
 export interface IslandCredentials {
   uin: number
   token: string
+  /// The account this token opens is a GUEST copy there (spec 2026-09-15,
+  /// 2.3): it takes part in rooms and nothing else. False on every reply older
+  /// than guests. ⚠ Never adopted as a backup home (12.1, `addBackupIsland`).
+  guest?: boolean
+}
+
+/// Thrown by the backup-home paths when the only account this key has on the
+/// island is a guest copy: it can receive nothing a backup home is for. The
+/// error carries `host` for the sentence (`backup.is_guest_copy`).
+export const GUEST_COPY_NOT_BACKUP = 'guest copy'
+
+function refuseGuestCopyAsBackup(host: string, cred: IslandCredentials): void {
+  if (cred.guest === true) throw Object.assign(new Error(GUEST_COPY_NOT_BACKUP), { host })
+}
+
+/// What `recoverOnIsland({ rotatedThrows: true })` throws when the island
+/// answers 404 `identity_rotated`: this key was retired by a rotation.
+export const IDENTITY_ROTATED = 'identity_rotated'
+
+export function isIdentityRotated(e: unknown): boolean {
+  return !!e && typeof e === 'object' && (e as { code?: unknown }).code === IDENTITY_ROTATED
 }
 
 /// Re-authenticate on `host` by proving possession of our Ed25519 signing key
 /// (two-step challenge-response, same flow as seed-phrase recovery). Returns
 /// null when this identity has never registered there (404 identity_not_found);
 /// throws on network/server errors.
-export async function recoverOnIsland(host: string, identity: WebIdentity): Promise<IslandCredentials | null> {
+///
+/// `rotatedThrows`: a 404 `identity_rotated` throws (`isIdentityRotated`)
+/// instead of reading as "never registered". The guest paths ask for it (D2):
+/// a retired key must start the rotated-elsewhere flow, and must never go on to
+/// register itself as a new copy. Every other caller keeps the old answer.
+export async function recoverOnIsland(
+  host: string,
+  identity: WebIdentity,
+  opts?: { rotatedThrows?: boolean },
+): Promise<IslandCredentials | null> {
   const base = `https://${host}`
   const skB64 = bytesToB64(identity.signingPub)
   const chRes = await fetch(`${base}/auth/recover/challenge`, {
@@ -183,9 +213,26 @@ export async function recoverOnIsland(host: string, identity: WebIdentity): Prom
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ signing_key: skB64, challenge, signature: bytesToB64(signature) }),
   })
-  if (res.status === 404) return null
+  if (res.status === 404) {
+    if (opts?.rotatedThrows) {
+      let code: unknown = null
+      try {
+        const detail = ((await res.json()) as { detail?: unknown })?.detail
+        code = detail && typeof detail === 'object' ? (detail as { code?: unknown }).code : detail
+      } catch {
+        /* not JSON: a plain 404 */
+      }
+      if (code === IDENTITY_ROTATED) {
+        throw Object.assign(new Error(IDENTITY_ROTATED), { code: IDENTITY_ROTATED, status: 404 })
+      }
+    }
+    return null
+  }
   if (!res.ok) throw new Error(`recover: HTTP ${res.status}`)
-  return (await res.json()) as IslandCredentials
+  const out = (await res.json()) as { uin: number; token: string; guest?: unknown }
+  // `guest` kept from the body (spec 2026-09-15, 4.5): every caller that files
+  // these credentials somewhere has to know whether they open a guest copy.
+  return { uin: out.uin, token: out.token, guest: out.guest === true }
 }
 
 /// First-time registration of this identity on `host` — same public keys as
@@ -256,6 +303,10 @@ export async function addBackupIsland(
   // Recover-first: registering twice would mint a SECOND uin for the same key
   // on that island (no server-side uniqueness on keys — deliberately).
   const cred = (await recoverOnIsland(host, identity)) ?? (await registerOnIsland(host, identity))
+  // ⚠ A guest copy answers recover like any account, and is no mailbox for 1:1
+  // traffic: nothing wakes it, and senders there are refused its keys. The
+  // auto-pick reads this throw as "no copy here" and moves on.
+  refuseGuestCopyAsBackup(host, cred)
   return saveNewBackupHome(existing, host, cred, opts)
 }
 
@@ -271,6 +322,7 @@ export async function recoverBackupIsland(
 ): Promise<BackupHome | null> {
   const { host, existing } = newBackupHost(identity, hostInput)
   const cred = await recoverOnIsland(host, identity)
+  if (cred) refuseGuestCopyAsBackup(host, cred)
   return cred ? saveNewBackupHome(existing, host, cred, opts) : null
 }
 

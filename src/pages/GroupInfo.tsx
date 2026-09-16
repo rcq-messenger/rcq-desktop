@@ -30,7 +30,18 @@ import { roomKey, rotateRoomKey } from '../lib/group-state'
 import { useGroupChanged } from '../lib/group-events'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
-import { groupApiCtx } from '../lib/visited-islands'
+import { groupApiCtx, refreshGuestAuth, setVisitedGuest } from '../lib/visited-islands'
+import {
+  hideAddInRoom,
+  leaveWarnAfterFetch,
+  leaveWarningVerdict,
+  memberProfileHref,
+  rosterSelfIsGuest,
+  transferGuestErrorKey,
+} from '../lib/guest-path'
+import { hostOfApiBase } from '../lib/multihome'
+import { GuestSettleBox } from '../components/GuestSettleBox'
+import { usePrimaryGuest } from '../lib/use-guest-copy'
 import { forgetGroupNames, groupNamesScope } from '../lib/group-names'
 import { compactCount } from '../lib/format-count'
 
@@ -65,6 +76,11 @@ function rosterTier(m: GroupMember, ownerUin: number): number {
 
 export function GroupInfo() {
   const { identity } = useIdentity()
+  // F8: the account signed in here is itself a guest copy on its own island
+  // (signed in by phrase on the wrong island). Every room it is in is a LOCAL
+  // room, and the island refuses its adds the same way it refuses a copy's on
+  // another island.
+  const primaryGuest = usePrimaryGuest(identity)
   const { t } = useI18n()
   const navigate = useNavigate()
   const params = useParams<{ groupId: string }>()
@@ -90,10 +106,17 @@ export function GroupInfo() {
   /// it, not to everyone who reloads the screen afterwards.
   const [handedTo, setHandedTo] = useState<{ uin: number; name: string } | null>(null)
   const [transferError, setTransferError] = useState<string | null>(null)
+  /// F6: the last-resident check (E4) is in flight. Every confirmation that can
+  /// end in a walk-out - leave, delete, hand over, and the leave offered right
+  /// after a handover - stays unanswerable while this is true, so nobody can
+  /// tap through the question before the answer to it has arrived.
+  const [checkingResidency, setCheckingResidency] = useState(false)
 
   // Cross-island group: a negative route id is the local alias — resolve the
   // guest identity + server-side id for every call (local groups pass through).
   const gctx = identity ? groupApiCtx(identity, groupId) : null
+  // D8: the island the room lives on, for the last-resident sentence.
+  const roomHostName = gctx?.host ?? (identity ? hostOfApiBase(identity.apiBase) : '')
 
   async function refresh() {
     if (!identity || !gctx) return
@@ -157,6 +180,27 @@ export function GroupInfo() {
   // Foreign group: WE are our guest uin on that island.
   const myUinThere = gctx?.host ? gctx.ident.uin : identity.uin
   const isOwner = group?.owner_uin === myUinThere
+  // D8: leaving now would leave nobody who lives on the room's island, and the
+  // island deletes the room for everyone then (8.1). E4: this screen fetches
+  // the roster on open, so the verdict is read off a roster that IS loaded; a
+  // room on another island whose roster we still cannot see (hidden members, an
+  // island that would not answer) gets the warning rather than a silent walk
+  // out. `group` null is the screen before its first answer, and says nothing.
+  //
+  // F7: the room's own `member_count` rides into the verdict. A roster shorter
+  // than the room is a page of one, and "everyone else here is a guest" read
+  // off a page is how a room gets deleted without a word.
+  const leaveVerdict = group ? leaveWarningVerdict(group.members, myUinThere, group.member_count) : 'unknown'
+  const lastResidentHere = group != null && leaveWarnAfterFetch(leaveVerdict, gctx?.host != null)
+  // E5: our own copy is a guest in this room, which lives on another island.
+  // The island refuses every add from a guest (403 `guest_restricted`, section
+  // 11), so this screen offers none: the same rule Android reads through
+  // `Session.guestOnGroupIsland`. Read from the roster's own self row, under
+  // OUR number on that island, which is what `myUinThere` is.
+  //
+  // F8: and from the primary session for a room on our OWN island, where there
+  // is no foreign roster to read and the account itself may be the guest copy.
+  const meGuestHere = hideAddInRoom(gctx?.host, rosterSelfIsGuest(group?.members, myUinThere), primaryGuest)
   // The backend's own two gates: `info` edits name/description/picture/pin,
   // `members` removes people. The owner has both implicitly.
   const myRow = group?.members.find((m) => m.uin === myUinThere)
@@ -267,6 +311,10 @@ export function GroupInfo() {
       // just gave away.
       setRightsFor(null)
       setHandedTo({ uin, name })
+      // F6: the offer right below this is a leave that takes no second tap, so
+      // the check runs against the roster the island just sent back, before
+      // that button can be pressed.
+      void ensureResidencyKnown(updated)
     } catch (e) {
       setTransferError(transferErrorText(e))
     } finally {
@@ -280,6 +328,10 @@ export function GroupInfo() {
     if (e instanceof ApiError) {
       const code = parseErrorCode(e.body)
       if (code && TRANSFER_ERRORS[code]) return t(TRANSFER_ERRORS[code])
+      // 409 `target_guest`: a guest copy can never hold a room (8.1). The row's
+      // button is hidden for a roster that says so; this covers a stale one.
+      const guestKey = transferGuestErrorKey(code)
+      if (guestKey) return t(guestKey)
       if (e.status === 429 || code === 'rate_limited') {
         const wait = parseRetryAfter(e.body)
         return wait != null
@@ -307,6 +359,40 @@ export function GroupInfo() {
     } finally {
       setBusy(false)
     }
+  }
+
+  /// E4: the warning is only as good as the roster it was read from, so a
+  /// roster this screen does not have (a failed first load, a page that came
+  /// back without us in it, or F7's page of a bigger room) is asked for once
+  /// more. One request.
+  ///
+  /// F6: while it is in flight `checkingResidency` is true, and every
+  /// confirmation that can end in a walk-out is unanswerable. A question a
+  /// person can answer before its answer has arrived is a question that leaves
+  /// rooms in silence.
+  ///
+  /// `from` is a roster the caller is holding that this render has not seen yet
+  /// (the island's answer to a handover), because reading `group` there would
+  /// judge the room as it was a moment ago.
+  async function ensureResidencyKnown(from?: RCQGroup | null): Promise<void> {
+    if (!identity || !gctx) return
+    const src = from ?? group
+    if (src && leaveWarningVerdict(src.members, myUinThere, src.member_count) !== 'unknown') return
+    setCheckingResidency(true)
+    try {
+      await refresh()
+    } finally {
+      setCheckingResidency(false)
+    }
+  }
+
+  /// Open the leave / delete confirm, once the check above has an answer. The
+  /// confirm opens either way: an island that would not answer still gets the
+  /// warning in a foreign room (leaveWarnAfterFetch).
+  async function openDestroyConfirm() {
+    if (busy || checkingResidency) return
+    await ensureResidencyKnown()
+    setConfirmDestroy(true)
   }
 
   async function leaveOrDelete() {
@@ -441,13 +527,12 @@ export function GroupInfo() {
                       // same digits on our own island: a different person, who
                       // then got the visit and the request. `isMe` compares
                       // with our number there for the same reason.
-                      to={
-                        isMe
-                          ? '/profile'
-                          : gctx?.host
-                            ? `/profile/${m.uin}?i=${encodeURIComponent(gctx.host)}`
-                            : `/profile/${m.uin}`
-                      }
+                      //
+                      // A guest copy's flag rides along too (spec 2026-09-15,
+                      // 12.1 Rosters): the profile offers no Message to a copy.
+                      // A cross-island card is never fetched, so the roster is
+                      // the only place that page can learn it.
+                      to={isMe ? '/profile' : memberProfileHref(m.uin, gctx?.host, m)}
                       className="flex items-center gap-3 px-4 py-2.5 hover:bg-field"
                     >
                       {/* A member's picture rides with the roster, gated by
@@ -483,6 +568,14 @@ export function GroupInfo() {
                               {t('group.info.moderator')}
                             </span>
                           )}
+                          {/* Spec 2026-09-15, 2.3: a copy from another island,
+                              or a seat nobody has opened yet. The roster says
+                              "not from here", never which island. */}
+                          {m.invited ? (
+                            <span className="text-[0.625rem] text-fg-dim truncate">{t('group.member.invited')}</span>
+                          ) : m.guest ? (
+                            <span className="text-[0.625rem] text-fg-dim truncate">{t('group.member.guest')}</span>
+                          ) : null}
                         </div>
                       </div>
                       {isTheOwner && (
@@ -565,7 +658,11 @@ export function GroupInfo() {
                             owner can give this person, and it belongs with the
                             rest of what they may do rather than as a third
                             button crowding the row. */}
-                        <div className="pt-2 border-t border-line/60">
+                        {/* Never to a guest copy: the island answers 409
+                            `target_guest`, because a guest can never hold a
+                            room (spec 2026-09-15, 8.1). Hidden, not offered
+                            and refused. */}
+                        <div className="pt-2 border-t border-line/60" hidden={m.guest === true || m.invited === true}>
                           {transferFor !== m.uin ? (
                             <button
                               type="button"
@@ -573,6 +670,11 @@ export function GroupInfo() {
                               onClick={() => {
                                 setTransferError(null)
                                 setTransferFor(m.uin)
+                                // F6: handing over is the first half of walking
+                                // out, so the last-resident check starts with
+                                // the question and the confirm below stays
+                                // unanswerable until it lands.
+                                void ensureResidencyKnown()
                               }}
                               className="w-full h-8 rounded-md text-xs font-semibold text-red-600 hover:bg-red-500/10 disabled:opacity-40 transition-colors"
                             >
@@ -583,6 +685,19 @@ export function GroupInfo() {
                               <p className="text-xs text-fg-secondary">
                                 {t('group.transfer.confirm', { name: memberName })}
                               </p>
+                              {/* E4: handing over is the first half of walking
+                                  out, and the second half takes the room with
+                                  it when nobody who lives on this island is
+                                  left. Said here, before the irreversible tap,
+                                  as well as on the leave that follows.
+                                  F6: only once the check has landed - until
+                                  then the button below cannot be pressed, so
+                                  there is nothing to say yet. */}
+                              {!checkingResidency && lastResidentHere && (
+                                <p className="text-xs text-red-600">
+                                  {t('group.leave.last_resident', { host: roomHostName })}
+                                </p>
+                              )}
                               {transferError && (
                                 <p className="text-xs text-red-600">{transferError}</p>
                               )}
@@ -600,11 +715,11 @@ export function GroupInfo() {
                                 </button>
                                 <button
                                   type="button"
-                                  disabled={busy}
+                                  disabled={busy || checkingResidency}
                                   onClick={() => void transferOwner(m.uin, memberName)}
                                   className="flex-1 h-8 rounded-md bg-red-600 hover:bg-red-700 text-white text-xs font-semibold disabled:opacity-40 transition-colors"
                                 >
-                                  {busy ? '…' : t('group.transfer.cta')}
+                                  {busy || checkingResidency ? '…' : t('group.transfer.cta')}
                                 </button>
                               </div>
                             </div>
@@ -623,14 +738,29 @@ export function GroupInfo() {
 
             {isMember && (
               <section className="bg-surface rounded-lg p-2">
-                <button
-                  onClick={() => setShowAdd(true)}
-                  className="w-full h-11 rounded-md flex items-center justify-center gap-2 text-sm font-medium text-accent hover:bg-field transition-colors"
-                >
-                  <AddPersonIcon />
-                  {t('group.add.title')}
-                </button>
-                {/* "Поделиться группой" (#578). It was reachable only from
+                {/* E5: hidden, not offered and refused. In a room on another
+                    island where our copy is a guest the island denies
+                    `POST /groups/{id}/members` outright, so every name the
+                    sheet could list is a person walked into a 403. The sheet's
+                    own filter and its hint stay as defence in depth, for a
+                    roster that went stale while this screen was open. */}
+                {!meGuestHere ? (
+                  <button
+                    onClick={() => setShowAdd(true)}
+                    className="w-full h-11 rounded-md flex items-center justify-center gap-2 text-sm font-medium text-accent hover:bg-field transition-colors"
+                  >
+                    <AddPersonIcon />
+                    {t('group.add.title')}
+                  </button>
+                ) : (
+                  <p className="px-3 pt-1.5 pb-0.5 text-center text-xs text-fg-dim">
+                    {t('group.add.foreign.guest_adder')}
+                  </p>
+                )}
+                {/* Sharing is NOT hidden with it: the link is the sanctioned
+                    way for a guest to bring people into the room, and the one
+                    route that works for someone who is not on any roster yet.
+                    "Поделиться группой" (#578). It was reachable only from
                     inside the add-member sheet, which is the last place someone
                     looks for it: on the phones sharing a group is its own
                     action. The link is the phones' canonical one, host and all
@@ -661,6 +791,13 @@ export function GroupInfo() {
                 <p className="text-sm text-fg-secondary">
                   {t('group.transfer.done', { name: handedTo.name })}
                 </p>
+                {/* D8: the leave below takes no second tap, so the warning is
+                    here when leaving would take the room with it. F6: and the
+                    button is dead until the check that decides it has landed,
+                    so the tap cannot come first. */}
+                {!checkingResidency && lastResidentHere && (
+                  <p className="text-xs text-red-600">{t('group.leave.last_resident', { host: roomHostName })}</p>
+                )}
                 <div className="flex gap-2">
                   <button
                     type="button"
@@ -672,13 +809,34 @@ export function GroupInfo() {
                   </button>
                   <button
                     type="button"
-                    disabled={busy}
+                    disabled={busy || checkingResidency}
                     onClick={() => void leaveNow()}
                     className="flex-1 h-9 rounded-md bg-red-600 hover:bg-red-700 text-white text-sm font-semibold disabled:opacity-40 transition-colors"
                   >
-                    {busy ? '…' : t('group.info.leave')}
+                    {busy || checkingResidency ? '…' : t('group.info.leave')}
                   </button>
                 </div>
+              </section>
+            )}
+
+            {/* Our copy on the room's island is a guest (spec 2026-09-15, 12.1):
+                offer to settle there, the same row and number. Read from the
+                roster's own self row, which the island keeps current. */}
+            {group && gctx?.host && rosterSelfIsGuest(group.members, myUinThere) && (
+              <section className="bg-surface rounded-lg p-2">
+                <GuestSettleBox
+                  ident={gctx.ident}
+                  host={gctx.host}
+                  onSettled={() => {
+                    // D7: clear the guest mark, take a fresh session from the
+                    // island (its answer restates `guest`), then re-read the
+                    // roster, whose self row now says resident.
+                    const host = gctx.host
+                    if (!host || !identity) return
+                    setVisitedGuest(host, false)
+                    void refreshGuestAuth(identity, host).finally(() => void refresh())
+                  }}
+                />
               </section>
             )}
 
@@ -695,7 +853,8 @@ export function GroupInfo() {
             <section className="bg-surface rounded-lg p-2">
               {!confirmDestroy ? (
                 <button
-                  onClick={() => setConfirmDestroy(true)}
+                  onClick={() => void openDestroyConfirm()}
+                  disabled={busy || checkingResidency}
                   // Founder-picked reference: the "wipe everything" button on
                   // the storage screen — red text, translucent red hover, no
                   // solid pill in either theme.
@@ -707,7 +866,11 @@ export function GroupInfo() {
               ) : (
                 <div className="p-2 space-y-3">
                   <p className="text-xs text-fg-secondary">
-                    {isOwner ? t('group.info.delete_warn') : t('group.info.leave_warn')}
+                    {isOwner
+                      ? t('group.info.delete_warn')
+                      : lastResidentHere
+                        ? t('group.leave.last_resident', { host: roomHostName })
+                        : t('group.info.leave_warn')}
                   </p>
                   <div className="flex gap-2">
                     <button

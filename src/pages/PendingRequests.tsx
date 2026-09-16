@@ -6,7 +6,7 @@
 import { CenteredLoader } from '../components/Spinner'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Api, type PendingRequest } from '../lib/api'
+import { Api, ApiError, parseErrorCode, type PendingRequest } from '../lib/api'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
 import { useWS } from '../lib/ws'
@@ -303,6 +303,13 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
       await Api.respondToRequest(identity!, reqId, accept)
       setRequests((rs) => rs.filter((r) => r.id !== reqId))
     } catch (e) {
+      // An account that is a guest copy on this island may decline but never
+      // accept: an accept writes a contact edge (spec 2026-09-15, 6.2). Read by
+      // its code, terminal, no retry.
+      if (e instanceof ApiError && parseErrorCode(e.body) === 'guest_restricted') {
+        setError(t('guest.restricted.contacts'))
+        return
+      }
       setError(e instanceof Error ? e.message : t('pending.error'))
     } finally {
       setActing(null)

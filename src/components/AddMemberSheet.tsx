@@ -21,11 +21,14 @@ import type { WebIdentity } from '../lib/crypto'
 import { newUUIDv4 } from '../lib/crypto'
 import { contactsCache, restoreSnapshot } from '../lib/contacts-cache'
 import { listCrossIsland } from '../lib/crossisland-store'
-import { addMemberReasonKey, groupInviteLink, uinForContactOnIsland } from '../lib/crossisland-groupadd'
+import { addForeignContactToGroup, addMemberReasonOf, groupInviteLink } from '../lib/crossisland-groupadd'
+import { hideAddInRoom, rosterSelfIsGuest, type GuestPath } from '../lib/guest-path'
+import { islandGuestPath } from '../lib/guest-register'
 import { deliverCrossIsland } from '../lib/federation-send'
 import { hostOfApiBase } from '../lib/multihome'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
+import { usePrimaryGuest } from '../lib/use-guest-copy'
 import { PersonAvatar } from './PersonAvatar'
 
 interface Props {
@@ -58,6 +61,8 @@ interface Candidate {
 
 export function AddMemberSheet({ group, ident, gid, host, onAdded, onClose }: Props) {
   const { identity } = useIdentity()
+  // F8: the account signed in here is itself a guest copy on its own island.
+  const primaryGuest = usePrimaryGuest(identity)
   const { t } = useI18n()
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
@@ -93,6 +98,21 @@ export function AddMemberSheet({ group, ident, gid, host, onAdded, onClose }: Pr
   const ownHost = identity ? hostOfApiBase(identity.apiBase) : 'api.rcq.app'
   const groupHost = host ?? ownHost
   const link = groupInviteLink(gid, groupHost)
+  // Spec 2026-09-15, 12.1: in a room on another island where our own row is a
+  // guest copy, the island refuses every add from us (`guest_restricted`), so
+  // nobody from a third island is offered. The link is how a guest brings
+  // people in.
+  //
+  // E5: GroupInfo does not open this sheet at all in that room any more, and
+  // the two read ONE rule (`hideAddInRoom`, the same one Android has). This
+  // stays as defence in depth: the roster can go stale under an open screen,
+  // and a sheet that opened before the island marked us a guest must still not
+  // list a single addable name.
+  //
+  // F8: a room on OUR OWN island counts too, when the account signed in here
+  // is itself a guest copy (signed in by phrase on the wrong island). Its rooms
+  // are all local rooms, and the island refuses its adds exactly the same way.
+  const meGuestHere = hideAddInRoom(host, rosterSelfIsGuest(group.members, ident.uin), primaryGuest)
 
   const candidates = useMemo<Candidate[]>(() => {
     if (!identity) return []
@@ -136,11 +156,12 @@ export function AddMemberSheet({ group, ident, gid, host, onAdded, onClose }: Pr
     const filtered = host == null ? rows.filter((r) => r.host != null || !members.has(r.uin)) : rows
     const q = query.trim().toLowerCase()
     return filtered
+      .filter((r) => !meGuestHere || (r.host ?? ownHost).toLowerCase() === groupHost.toLowerCase())
       .filter((r) => !q || r.nickname.toLowerCase().includes(q) || String(r.uin).includes(q))
       .sort((a, b) => a.nickname.localeCompare(b.nickname))
-  }, [identity, contacts, group.members, host, query])
+  }, [identity, contacts, group.members, host, query, meGuestHere, ownHost, groupHost])
 
-  async function addOne(c: Candidate): Promise<string | null> {
+  async function addOne(c: Candidate, pathOf: () => Promise<GuestPath>): Promise<string | null> {
     // Same island as the group: the plain roster call.
     const sameIsland = (c.host ?? ownHost).toLowerCase() === groupHost.toLowerCase()
     if (sameIsland) {
@@ -157,22 +178,27 @@ export function AddMemberSheet({ group, ident, gid, host, onAdded, onClose }: Pr
         }
         return null
       } catch (e) {
-        return addMemberReasonKey(e instanceof Error ? e.message : null)
+        return addMemberReasonOf(e)
       }
     }
-    // §5c: give the group's island a uin for this person, then add THAT.
-    const there = await uinForContactOnIsland(groupHost, {
-      identityKey: c.identityKey,
-      signingKey: c.signingKey,
-      nickname: c.nickname,
-      uin: c.uin,
-    })
-    if (there == null) return 'group.add.err.unreachable'
-    try {
-      onAdded(await Api.addGroupMember(ident, gid, there))
-    } catch (e) {
-      return addMemberReasonKey(e instanceof Error ? e.message : null)
-    }
+    // §5c: the group's island gets this person by their public keys. Where it
+    // advertises `guest_accounts_v1` that is one call minting a seat (spec
+    // 2026-09-15, section 5), elsewhere the resolve-or-mint of a uin and an
+    // add of THAT. Their card is re-fetched from their home first either way.
+    const out = await addForeignContactToGroup(
+      ident,
+      gid,
+      {
+        uin: c.uin,
+        host: c.host ?? ownHost,
+        identityKey: c.identityKey,
+        signingKey: c.signingKey,
+        nickname: c.nickname,
+      },
+      { path: await pathOf() },
+    )
+    if (!out.ok) return out.reasonKey
+    onAdded(out.group)
     // Tell them, in the only channel we share: a 1:1 that renders as a join
     // card. Without it the group is on their island and nothing has said so.
     if (identity && c.host) {
@@ -196,11 +222,15 @@ export function AddMemberSheet({ group, ident, gid, host, onAdded, onClose }: Pr
     setBusy(true)
     setFailures([])
     const failed: { key: string; name: string; reason: string }[] = []
+    // The room's island is asked once per press which add it takes, and only
+    // when somebody from another island is actually being added.
+    let pathP: Promise<GuestPath> | null = null
+    const pathOf = () => (pathP ??= islandGuestPath(ident.apiBase))
     for (const key of picked) {
       const c = candidates.find((x) => x.key === key)
       if (!c) continue
-      const err = await addOne(c)
-      if (err) failed.push({ key: c.key, name: c.nickname, reason: t(err) })
+      const err = await addOne(c, pathOf)
+      if (err) failed.push({ key: c.key, name: c.nickname, reason: t(err, { host: groupHost }) })
     }
     setBusy(false)
     if (failed.length === 0) {
@@ -259,6 +289,7 @@ export function AddMemberSheet({ group, ident, gid, host, onAdded, onClose }: Pr
             placeholder={t('group.add.search')}
             className="w-full h-10 px-3 rounded-md bg-field outline-none focus:ring-1 focus:ring-accent text-sm"
           />
+          {meGuestHere && <p className="text-xs text-fg-dim">{t('group.add.foreign.guest_adder')}</p>}
         </div>
 
         <div className="flex-1 overflow-y-auto">

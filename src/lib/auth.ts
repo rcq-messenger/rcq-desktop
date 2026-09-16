@@ -20,6 +20,7 @@ import { decodePhrase, deriveKeysFromSeed, encodeSeed, newSeed, parsePhrase } fr
 import { copyScopedKeys } from './move-carry'
 import { rekeySenderKeysOnMove } from './sender-key-store'
 import { mintFromRefusal, type TokenMint } from './session-verdict'
+import { notePrimaryGuest } from './guest-copy'
 
 const STORAGE_KEY = 'rcq.web.identity.v1'
 /// Every account this browser holds. The ACTIVE one stays in STORAGE_KEY as
@@ -336,6 +337,8 @@ export function suggestNickname(): string {
 interface RegisterResponse {
   uin: number
   token: string
+  /// The account is a guest copy on that island (spec 2026-09-15, 2.3).
+  guest?: boolean
 }
 
 /// This browser's install id, minted once and kept next to the theme (a
@@ -498,6 +501,9 @@ export async function recoverFromPhrase(phrase: string, apiBase: string = DEFAUL
     const out = (await recRes.json()) as RegisterResponse
     uin = out.uin
     token = out.token
+    // A phrase typed on another island's login can land in our guest copy
+    // there (spec 2026-09-15, 12.1): the screens need to know.
+    notePrimaryGuest(apiBaseTrimmed, uin, out.guest)
   } catch (e) {
     if (e instanceof RecoverError) throw e
     throw new RecoverError('network')
@@ -889,7 +895,10 @@ export async function mintSessionToken(id: WebIdentity, deviceIdOverride?: strin
       }),
     })
     if (res.ok) {
-      const out = (await res.json()) as { uin?: number; token?: string; moved_from?: number }
+      const out = (await res.json()) as { uin?: number; token?: string; moved_from?: number; guest?: boolean }
+      // Every refresh restates whether this account is a guest copy there
+      // (spec 2026-09-15, 4.5): a seat claimed or a copy settled since.
+      if (out.token && typeof out.uin === 'number') notePrimaryGuest(id.apiBase, out.uin, out.guest)
       // A different number is only ever acceptable when the island names the
       // one we asked about as the one this account LEFT. Anything else is a
       // bug or a shared key, and adopting it would put this browser into

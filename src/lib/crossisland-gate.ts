@@ -200,6 +200,70 @@ export function foreignRoomBroadcastDropped(kind: unknown): boolean {
   return typeof kind !== 'string' || FOREIGN_ROOM_DROP.has(kind)
 }
 
+/// Inner kinds that are 1:1 by nature and never acted on out of ANY group frame
+/// (spec 2026-09-15, section 7), a room on our own island included.
+///
+/// Why a client rule: `POST /messages/group-sealed` accepts a payload for any
+/// subset of a room's members and does not check who sent it, so a member can
+/// deposit something for exactly one other member and the island cannot tell
+/// it from a group post. A guest copy has no contact edges, calls or requests
+/// on its island by design, and that design would mean nothing if a room frame
+/// could carry a contact request, a call, a profile push or a carbon into the
+/// 1:1 handlers. Content in a group frame still renders, in that group's
+/// thread and nowhere else.
+///
+/// `pkey` and `homerec` are 1:1 as well (every client seals them through
+/// `/messages/sealed`), and both file state under the sender's bare number in
+/// the HOME namespace: a profile key, and the island list our 1:1 sends to that
+/// number follow. A per-member row from a room on another island reaches
+/// route() under that island's numbering, so without these two a co-member
+/// wearing a home contact's digits could replace that contact's face or
+/// repoint where our messages to them go.
+///
+/// The rest of the list is the same one on every client (D4, 16.09):
+///   * `readmark` is a carbon's inner kind (our own read on another device),
+///     and a carbon never rides a room;
+///   * `gskey` / `gsknack` are the room STATE key and its ask-back. Every
+///     client seals them 1:1 under the outer type `skdm` / `sknack`
+///     (group-state.ts `sendKeyTo` -> `Api.sendSealed`, Android GroupState.kt,
+///     iOS CryptoService), so a queue row or a live frame carrying them never
+///     has a `group_id`, and nothing legitimate is lost by refusing them inside
+///     a room. Sender-key traffic (`skdm`, `sknack`) is NOT here: the group
+///     log path carries it and route() needs it.
+///   * `secscreen` and `shot` are the per-chat secure-screen toggle and the
+///     "took a screenshot" notice, both about a 1:1 thread. ⚠ These are the
+///     WIRE names, not the prose ones: Android encodes them as `secscreen` and
+///     `shot` (crypto/Envelope.kt) and so does iOS (CryptoService.swift), and
+///     this list once held `screenshot` and `secure-screen`, which no client
+///     has ever put on the wire, so the notice it meant to drop went through.
+///     Every name here is in `WIRE_KINDS` (crypto.ts), and the offline test
+///     holds the list to it;
+///   * every call kind: `call` and anything spelled `call_*`.
+export const GROUP_FRAME_DROP: ReadonlySet<string> = new Set([
+  'contactreq',
+  'ciack',
+  'pkeyask',
+  'pkey',
+  'profile',
+  'visit',
+  'call',
+  'carbon',
+  'readmark',
+  'homerec',
+  'gskey',
+  'gsknack',
+  'secscreen',
+  'shot',
+])
+
+/// True when a row that came in as a group frame (it carries a `group_id`) must
+/// be dropped before route() looks at it. A missing kind is left to the
+/// existing handling, so an unchanged room sees no difference.
+export function groupFrameDropped(kind: unknown): boolean {
+  if (typeof kind !== 'string') return false
+  return GROUP_FRAME_DROP.has(kind) || kind.startsWith('call_')
+}
+
 export type GateAction = 'deliver' | 'hold' | 'drop'
 
 export interface GateVerdict {

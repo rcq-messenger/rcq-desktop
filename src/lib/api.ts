@@ -226,6 +226,10 @@ export interface UserInfo {
   /// Owner-only: `voucher` | `invite` | `open`, null on a row older than the
   /// column. Carried for parity with the wire; nothing branches on it yet.
   entered_via?: string | null
+  /// A guest copy from another island (spec 2026-09-15, 2.3). The island fills
+  /// it only for yourself and for somebody who shares a room with you; false or
+  /// absent everywhere else, an island older than guests included.
+  guest?: boolean
   avatar_media_id?: string | null
   avatar_media_key?: string | null
   identity_key: string
@@ -298,6 +302,13 @@ export interface GroupMember {
   // exposes the nickname on this row.
   avatar_media_id?: string | null
   avatar_media_key?: string | null
+  /// A guest copy from another island (spec 2026-09-15, 2.3): true for a proven
+  /// guest and for an unclaimed seat. The roster says "not from here", never
+  /// which island. No Message or Call to such a row. Absent on older islands.
+  guest?: boolean
+  /// An unclaimed seat: a member put these public keys in the room and nobody
+  /// holding the private key has opened it yet. Always implies `guest`.
+  invited?: boolean
 }
 
 export interface RCQGroup {
@@ -329,6 +340,10 @@ export interface RCQGroup {
   /// declared them, so nothing on this client could show or edit either.
   description?: string | null
   is_closed?: boolean
+  /// Owner switch (spec 2026-09-15, 2.2): false = no new guest from another
+  /// island enters (self-join, or an add by a plain member); guests inside
+  /// stay. Absent on an island older than guests, where there is no switch.
+  allow_guests?: boolean
   // CLIENT-SIDE only: the island a cross-island group lives on (set at the
   // fetch boundary; never sent by a server).
   host?: string
@@ -804,6 +819,29 @@ export const Api = {
     return request<RCQGroup>(id, 'POST', `/groups/${groupId}/members`, { uin })
   },
 
+  /// Put a contact from ANOTHER island in this room by their public keys (spec
+  /// 2026-09-15, section 5). Only where the island advertises
+  /// `guest_accounts_v1`. The island resolves the key to the row it already
+  /// has, or mints an unclaimed seat with its membership; no token for anybody.
+  /// Refusals carry `detail.code` (guestRefusalOf).
+  addGuestMember(
+    id: WebIdentity,
+    groupId: number,
+    body: { identity_key: string; signing_key: string; nickname: string },
+  ): Promise<RCQGroup & { added_uin: number; created: boolean }> {
+    return request(id, 'POST', `/groups/${groupId}/guests`, body)
+  },
+
+  /// Turn this island's guest copy into a resident's account, the same row and
+  /// number (spec 2026-09-15, 9.1). `code` is an entry voucher or an invite;
+  /// without one it settles only on an open island.
+  guestSettle(
+    id: WebIdentity,
+    code?: string,
+  ): Promise<{ uin: number; resident_since: string | null; badge: string | null }> {
+    return request(id, 'POST', '/auth/guest/settle', code ? { code } : {})
+  },
+
   removeGroupMember(id: WebIdentity, groupId: number, uin: number): Promise<unknown> {
     return request<unknown>(id, 'DELETE', `/groups/${groupId}/members/${uin}`)
   },
@@ -825,6 +863,7 @@ export const Api = {
       pinned_text?: string
       post_policy?: 'all' | 'owner_only'
       is_closed?: boolean
+      allow_guests?: boolean
       members_hidden?: boolean
       links_allowed?: boolean
       in_catalog?: boolean

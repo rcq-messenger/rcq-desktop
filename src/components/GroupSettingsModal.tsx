@@ -43,6 +43,16 @@ export function GroupSettingsModal({
   const [pinned, setPinned] = useState(group.pinned_text ?? '')
   const [ownerOnly, setOwnerOnly] = useState(group.post_policy === 'owner_only')
   const [closed, setClosed] = useState(!!group.is_closed)
+  // Spec 2026-09-15, 2.2: whether new people from other islands may come in.
+  // Only an island that knows guests sends the field, and only there is the
+  // switch drawn; a stored NULL is served as true.
+  //
+  // ⚠ E1: the switch is OWNER-only on every client, and it sits inside the
+  // owner block below for that reason. The island gates `allow_guests` on
+  // ownership, so a member holding only the `info` capability (who reaches this
+  // same modal, and may edit the name, the description and the pin) would get
+  // nothing but a refusal from a switch drawn for them.
+  const [allowGuests, setAllowGuests] = useState(group.allow_guests !== false)
   const [hidden, setHidden] = useState(!!group.members_hidden)
   // Content policy + slowmode (owner-only, like the three above). The
   // toggles read as restrictions — ON means "switched off in this room" —
@@ -77,6 +87,9 @@ export function GroupSettingsModal({
           body.post_policy = ownerOnly ? 'owner_only' : 'all'
         }
         if (closed !== !!group.is_closed) body.is_closed = closed
+        if (typeof group.allow_guests === 'boolean' && allowGuests !== group.allow_guests) {
+          body.allow_guests = allowGuests
+        }
         if (hidden !== !!group.members_hidden) body.members_hidden = hidden
         if (noLinks !== (group.links_allowed === false)) body.links_allowed = !noLinks
         if (noFiles !== (group.files_allowed === false)) body.files_allowed = !noFiles
@@ -220,6 +233,13 @@ export function GroupSettingsModal({
                   on={closed}
                   onChange={setClosed}
                 />
+                {typeof group.allow_guests === 'boolean' && (
+                  <Toggle
+                    label={t('group.settings.allow_guests')}
+                    on={allowGuests}
+                    onChange={setAllowGuests}
+                  />
+                )}
                 <Toggle
                   label={t('group.settings.hide_members')}
                   hint={t('group.settings.hide_members.hint')}
@@ -337,7 +357,7 @@ function Toggle({
   onChange,
 }: {
   label: string
-  hint: string
+  hint?: string
   on: boolean
   onChange: (v: boolean) => void
 }) {
@@ -349,7 +369,7 @@ function Toggle({
     >
       <span className="min-w-0 flex-1">
         <span className="block text-sm">{label}</span>
-        <span className="block text-xs text-fg-dim">{hint}</span>
+        {hint && <span className="block text-xs text-fg-dim">{hint}</span>}
       </span>
       <span
         className={`mt-0.5 h-5 w-9 shrink-0 rounded-full transition-colors ${on ? 'bg-accent' : 'bg-line'}`}

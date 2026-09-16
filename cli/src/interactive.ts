@@ -34,6 +34,7 @@ import {
   describeGroupError,
   forgetRoster,
   joinForeignRoom,
+  leaveWarning,
   listGroups,
   rosterFor,
   ruleRefusal,
@@ -851,6 +852,15 @@ export async function runInteractive(identity: WebIdentity): Promise<void> {
         const g = arg ? findGroup(identity.uin, arg) : active?.kind === 'group' ? groupById(identity.uin, active.gid) : null
         if (!g) {
           printAbove(out.yellow(tr('leave.needsId')))
+          return
+        }
+        // D8 (spec 2026-09-15, 12.1): leaving as the last member who lives on
+        // the room's island has the island delete the room for everyone. One
+        // question, before the removal, the same one `rcq leave` asks and the
+        // same predicate behind it.
+        const warning = await leaveWarning(identity, g)
+        if (warning.warn && !isYes(await ask(tr('leave.confirmLast', { host: warning.host })))) {
+          printAbove(out.dim(tr('leave.cancelled')))
           return
         }
         try {

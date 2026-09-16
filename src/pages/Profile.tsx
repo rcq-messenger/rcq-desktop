@@ -13,13 +13,15 @@
 import type { WebIdentity } from '../lib/crypto'
 import { theirCard } from '../lib/guest-card'
 import { guestIdentityFor } from '../lib/visited-islands'
+import { usePrimaryGuest } from '../lib/use-guest-copy'
+import { peerProfileActions, profileAddMode, profileMarkOf, type MemberMark } from '../lib/guest-path'
 import { CenteredLoader } from '../components/Spinner'
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { PersonAvatar } from '../components/PersonAvatar'
 import { BadgeMark } from '../components/BadgeMark'
 import { ReportButton } from '../components/ReportButton'
-import { Api, type UserInfo } from '../lib/api'
+import { Api, ApiError, type UserInfo } from '../lib/api'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
 import { getCrossIsland } from '../lib/crossisland-store'
@@ -60,6 +62,15 @@ export function Profile() {
   const reportIdent = identity && crossIslandHost ? guestIdentityFor(identity, crossIslandHost) : null
 
   const [info, setInfo] = useState<UserInfo | null>(null)
+  // Spec 2026-09-15, 12.1. Signed in as a guest copy: no contact added and no
+  // 1:1 opened from it, whoever the card belongs to; its island refuses both
+  // anyway, and the person's home account is where they happen.
+  const primaryGuest = usePrimaryGuest(identity)
+  // The card is somebody's guest copy or an unclaimed seat (Rosters, D5): no
+  // Message, no call, no visit; a copy gets one Add (the request), a seat gets
+  // nothing. From the roster link for a card that is never fetched, and from
+  // the island, which says so to anyone sharing a room with the copy.
+  const peerMark = profileMarkOf(searchParams, info)
   /// Whether this person can actually be written to. A stranger's card opens
   /// from plenty of places (a reactions sheet, a member list, a mention), and
   /// the island answers /users/{uin}/info for anyone, so the card is real
@@ -261,6 +272,8 @@ export function Profile() {
             relationship={relationship}
             adding={adding}
             setAdding={setAdding}
+            primaryGuest={primaryGuest}
+            peerMark={peerMark}
           />
         )}
         {info && isSelf && draft && (
@@ -297,6 +310,8 @@ function ReadView({
   adding,
   setAdding,
   reportIdent,
+  primaryGuest,
+  peerMark,
 }: {
   info: UserInfo
   t: (k: string, p?: Record<string, string | number>) => string
@@ -306,11 +321,52 @@ function ReadView({
   relationship: 'contact' | 'stranger' | 'unknown'
   adding: boolean
   setAdding: (v: boolean) => void
+  /// The signed-in account is a guest copy: neither Add nor Send message.
+  primaryGuest: boolean
+  /// This card is a guest copy (Add stays, Send message goes) or an unclaimed
+  /// seat (neither).
+  peerMark: MemberMark
   /// Identity a report is filed under: the guest identity for a cross-island
   /// card, null when there is none (then no report button at all).
   reportIdent: WebIdentity | null
 }) {
   const { toast } = useToast()
+  const { identity } = useIdentity()
+  // One decision for both buttons (guest-path.ts, tested offline).
+  const actions = peerProfileActions({ primaryGuest, mark: peerMark, relationship })
+  // And one for WHERE the Add goes when it is offered. ⚠ A guest copy on our
+  // OWN island is in nobody's search results (the island filters guest rows
+  // out of /users/search whoever asks), so handing this card to the add screen
+  // as `#uin` ends on "No matches" with no request sent — the one Add D5
+  // promises a copy would be a dead end. That case is sent from here; every
+  // other card, a copy on ANOTHER island included, keeps the screen.
+  const addMode = profileAddMode({ mark: peerMark, crossIslandHost })
+  /// The request left in this session, or the island answered 409 and the two
+  /// are already contacts. Either way the button is spent, and says which.
+  const [sent, setSent] = useState<'requested' | 'already' | null>(null)
+  const [sending, setSending] = useState(false)
+
+  /// D5's Add for a guest copy here: the ordinary contact request to that
+  /// number on this island. Nothing special reaches the copy — its owner's
+  /// home client picks the request up through the pending poll (C1) and
+  /// answers from the account that actually lives there.
+  async function requestGuestCopy() {
+    if (!identity || sending) return
+    setSending(true)
+    try {
+      await Api.sendContactRequest(identity, info.uin)
+      setSent('requested')
+    } catch (e) {
+      // 409 is the island's "already in your contact list": the same true
+      // statement arriving late, since the list `relationship` was judged from
+      // can be stale. Said in place of the button, not coloured as a failure
+      // — the add screen answers the identical 409 the identical way (#603).
+      if (e instanceof ApiError && e.status === 409) setSent('already')
+      else toast(t('add.request_failed'), 'error')
+    } finally {
+      setSending(false)
+    }
+  }
   // My own name for them. Device-only, and shown alongside what they call
   // themselves so a rename never hides who you are actually talking to.
   // ⚠ Keyed WITH the host for a cross-island peer (see aliasKey): the bare-uin
@@ -379,6 +435,12 @@ function ReadView({
         >
           {info.uin}{crossIslandHost ? ` · ${crossIslandHost}` : ''}
         </button>
+        {/* Spec 2026-09-15, 2.3: "not from here", never which island. */}
+        {peerMark && (
+          <div className="text-xs text-fg-secondary">
+            {t(peerMark === 'invited' ? 'group.member.invited' : 'group.member.guest')}
+          </div>
+        )}
         {info.status_message && (
           <div className="text-sm text-fg-secondary pt-1">{info.status_message}</div>
         )}
@@ -427,18 +489,29 @@ function ReadView({
         )}
         {!isSelf && (
           <div className="mt-3">
-            {relationship === 'stranger' ? (
+            {actions.add ? (
               // ⚠ Not a disabled "Send message". The door out of this screen
               // for a stranger is adding them, and sending them into a chat
               // that greets them with "this UIN is not in your contacts" is
               // the app asking a question it already knows the answer to.
-              <button
-                onClick={() => setAdding(true)}
-                className="w-full h-10 rounded-md bg-accent hover:bg-accent-dim text-white text-sm font-semibold transition-colors"
-              >
-                {t('profile.cta.add_contact')}
-              </button>
-            ) : (
+              // For a guest copy it is the ONLY door (D5): the ordinary request
+              // to that number on the room's island, sent from here.
+              sent ? (
+                // Spent, and which way. The same two words the add screen puts
+                // in its own row, in place of a button that could only re-send.
+                <div className="w-full h-10 flex items-center justify-center text-sm text-fg-dim">
+                  {t(sent === 'already' ? 'add.already' : 'add.requested')}
+                </div>
+              ) : (
+                <button
+                  onClick={() => (addMode === 'request' ? void requestGuestCopy() : setAdding(true))}
+                  disabled={sending}
+                  className="w-full h-10 rounded-md bg-accent hover:bg-accent-dim text-white text-sm font-semibold transition-colors disabled:opacity-50"
+                >
+                  {t('profile.cta.add_contact')}
+                </button>
+              )
+            ) : !actions.message ? null : (
               <button
                 onClick={() => navigate(crossIslandHost ? `/chat/${info.uin}?i=${encodeURIComponent(crossIslandHost)}` : `/chat/${info.uin}`)}
                 className="w-full h-10 rounded-md bg-accent hover:bg-accent-dim text-white text-sm font-semibold transition-colors"
@@ -463,6 +536,9 @@ function ReadView({
           // island, keys pinned, request deposited there). `#uin` searched
           // our own island and sent the request to a stranger with the same
           // number.
+          // ⚠ A guest copy on our OWN island never opens this: it is in no
+          // search result, so `#uin` here would only ever say "No matches"
+          // (addMode, above, sends its request directly instead).
           <AddContactModal
             initialQuery={crossIslandHost ? `${info.uin}@${crossIslandHost}` : `#${info.uin}`}
             onClose={() => setAdding(false)}

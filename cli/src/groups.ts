@@ -18,7 +18,8 @@ import { Api, ApiError, type GroupMember, type RCQGroup } from '../../src/lib/ap
 import type { Envelope, TextEnvelope, WebIdentity } from '../../src/lib/crypto'
 import { buildGroupDualSend, encryptGroupEnvelope } from '../../src/lib/group-crypto'
 import { hostOfApiBase, normalizeIslandHost } from '../../src/lib/multihome'
-import { aliasFor, ensureGuestAuth, ensureGuestOn } from '../../src/lib/visited-islands'
+import { leaveWarnAfterFetch, leaveWarningVerdict, type LeaveVerdict } from '../../src/lib/guest-path'
+import { aliasFor, ensureGuestAuth, ensureGuestOn, refByAlias } from '../../src/lib/visited-islands'
 import {
   describeAddressProblem,
   describeTypedDisagreement,
@@ -111,6 +112,53 @@ export async function rosterFor(identity: WebIdentity, group: RCQGroup): Promise
   const merged = { ...group, members: full.members, member_count: full.member_count ?? full.members.length }
   rosters.set(group.id, { group: merged, at: Date.now() })
   return merged
+}
+
+/// D8 (spec 2026-09-15, 12.1 Leaving): would walking out of this room leave
+/// nobody who lives on its island, and so have the island delete the room for
+/// everyone (8.1)? The answer belongs BEFORE the removal: the leaver is the one
+/// person who can still decide not to.
+///
+/// One helper for both consoles. `rcq leave` and `/leave` took themselves off
+/// the roster the moment they were typed, with no check and no question, while
+/// the apps have asked since this spec landed; a room on another island (a
+/// negative alias id) is exactly the case the rule is written for. Two call
+/// sites reading one predicate is the only way they cannot answer differently.
+///
+/// E4 and F7: only a roster that is the WHOLE room decides. A warm snapshot row
+/// carries no members at all (the list is fetched `?members=0`) and a page of a
+/// big room is not an answer, so an `unknown` verdict spends one fetch and asks
+/// again. ⚠ The re-read goes straight to the island rather than through
+/// `rosterFor`, whose cache would hand back the very page that was too short.
+/// A room on another island whose roster still cannot be read gets the warning
+/// rather than a silent walk-out; on our own island the plain confirm stands.
+export async function leaveWarning(
+  identity: WebIdentity,
+  group: RCQGroup,
+): Promise<{ warn: boolean; host: string }> {
+  const foreign = isForeignGroupId(group.id)
+  let host = hostOfApiBase(identity.apiBase)
+  // ⚠ Everything that can fail sits inside the try, the alias lookups included,
+  // and the verdict starts at `unknown`. This runs BEFORE the removal's own
+  // error handling, so a throw escaping here would be a stack trace where the
+  // console used to print a line; and an unread room on another island is
+  // precisely the case that must still warn rather than walk out in silence.
+  let verdict: LeaveVerdict = 'unknown'
+  try {
+    if (foreign) host = refByAlias(group.id)?.host ?? host
+    // ⚠ Our number THERE, never the home one: a foreign roster, its owner field
+    // and its guest marks all speak in host-island uins.
+    verdict = leaveWarningVerdict(group.members, myUinInRoom(identity, group), group.member_count)
+    if (verdict === 'unknown') {
+      const ctx = foreign ? await foreignGroupCtx(identity, group.id) : null
+      const full = ctx ? await Api.groupInfo(ctx.ident, ctx.gid) : await Api.groupInfo(identity, group.id)
+      verdict = leaveWarningVerdict(full.members, ctx ? ctx.ident.uin : identity.uin, full.member_count)
+    }
+  } catch {
+    // An island that would not answer, a dangling alias, a refused trust gate:
+    // not evidence of anything, and the rule below decides on what we hold.
+  }
+  return { warn: leaveWarnAfterFetch(verdict, foreign), host }
 }
 
 /// Owner, admin, or a member the owner granted a capability: the exact set the
@@ -292,7 +340,9 @@ export async function joinForeignRoom(
   // The trust gate, right before the first packet: refused means nothing
   // leaves, and the gate has said why.
   if (!(await visitedTrusted(host))) throw new Error(tr('island.trust.refusedLine', { host }))
-  await ensureGuestOn(identity, host)
+  // The room id rides along: on an island that admits guests the copy is made
+  // together with its first room, through a proof bound to it (spec 2026-09-15).
+  await ensureGuestOn(identity, host, { groupId: remoteGid })
   const guest = await ensureGuestAuth(identity, host)
   if (!guest) throw new Error(tr('visited.noAuth', { host }))
   const preview = await Api.groupPreview(guest, remoteGid).catch(() => null)

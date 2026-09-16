@@ -42,6 +42,7 @@ import {
   describeGroupError,
   forgetRoster,
   joinForeignRoom,
+  leaveWarning,
   listGroups,
   rosterFor,
   ruleRefusal,
@@ -895,7 +896,13 @@ async function cmdJoin(pos: string[]): Promise<void> {
 /// Leave a room. The console could join and never leave, which the founder
 /// called a trap: leaving is removing yourself from the roster (the same call
 /// the web's group menu makes). A failure is said, not swallowed.
-async function cmdLeave(pos: string[]): Promise<void> {
+///
+/// D8 (spec 2026-09-15, 12.1 Leaving): when nobody who lives on the room's
+/// island is left behind, the island deletes the room for EVERYONE, so that is
+/// said before the removal rather than discovered after it. Asked on a TTY,
+/// and a script says `--yes` up front - the same shape as `rcq remove`, which
+/// is the other verb here with no undo.
+async function cmdLeave(pos: string[], flags: Set<string>): Promise<void> {
   const gid = Number((pos[0] ?? '').replace(/^g/i, ''))
   // Negative ids are rooms on other islands (the §5c alias); zero is a typo.
   if (!Number.isInteger(gid) || gid === 0) usageDie(tr('leave.needsId'))
@@ -903,6 +910,16 @@ async function cmdLeave(pos: string[]): Promise<void> {
   await primeDirectory(id)
   const base = groupById(id.uin, gid)
   if (!base) die(tr('group.notMember', { gid }))
+  // ⚠ Before the removal, never after: this is the only moment the answer can
+  // still change anything.
+  const warning = await leaveWarning(id, base)
+  if (warning.warn && !flags.has('--yes')) {
+    if (!process.stdin.isTTY || !process.stderr.isTTY) die(tr('leave.needsYes', { host: warning.host }))
+    const rl = readline.createInterface({ input: process.stdin, output: process.stderr })
+    const answer = await new Promise<string>((r) => rl.question(tr('leave.confirmLast', { host: warning.host }), r))
+    rl.close()
+    if (!isYes(answer)) die(tr('leave.cancelled'), 0)
+  }
   try {
     if (gid < 0) {
       // §5c: leaving a foreign room removes the GUEST uin from the roster on
@@ -1690,7 +1707,7 @@ async function main(): Promise<void> {
     case 'join':
       return cmdJoin(pos)
     case 'leave':
-      return cmdLeave(pos)
+      return cmdLeave(pos, flags)
     case 'create':
       return cmdCreate(pos)
     case 'invite':

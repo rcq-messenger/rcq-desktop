@@ -13,6 +13,8 @@ import { useArchiveGroups, useFavoriteGroups, useMutedGroups } from '../lib/loca
 import { forgetSectionMember, sectionKeyForGroup } from '../lib/sections-vault'
 import { forgetGroupNames, groupNamesScope } from '../lib/group-names'
 import { groupApiCtx } from '../lib/visited-islands'
+import { leaveWarnAfterFetch, leaveWarningVerdict } from '../lib/guest-path'
+import { hostOfApiBase } from '../lib/multihome'
 
 interface Props {
   group: RCQGroup
@@ -35,6 +37,8 @@ export function GroupActionsMenu({ group, inUserSection, onClose, onChanged, onP
   const archive = useArchiveGroups()
   const ref = useRef<HTMLDivElement | null>(null)
   const [confirmLeave, setConfirmLeave] = useState(false)
+  /// Leaving deletes the room for everyone (spec 2026-09-15, 8.1 and 12.1).
+  const [lastResident, setLastResident] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -46,13 +50,47 @@ export function GroupActionsMenu({ group, inUserSection, onClose, onChanged, onP
     return () => document.removeEventListener('mousedown', onDocClick)
   }, [onClose])
 
+  /// Open the confirm. A leaver after whom no member of the room lives on its
+  /// island (every other member a guest copy or an unclaimed seat) is told first
+  /// that the island will delete the room for everyone (12.1 Leaving, D8).
+  ///
+  /// E4: the list row is fetched WITHOUT its roster, so the island is asked for
+  /// one before the question is answered. Only after that fetch does a room on
+  /// another island whose roster we still cannot read get the warning anyway:
+  /// walking out in silence on a maybe is what this rule exists to stop.
+  async function openLeaveConfirm() {
+    if (!identity || busy) return
+    const ctx = groupApiCtx(identity, group.id)
+    const myUinThere = ctx.host ? ctx.ident.uin : identity.uin
+    // F7: the row's own count decides whether the roster on it is the whole
+    // room. A list row is fetched with `?members=0` (count, no members), and a
+    // page shorter than the room is not an answer about who is left after us.
+    let verdict = leaveWarningVerdict(group.members, myUinThere, group.member_count)
+    if (verdict === 'unknown') {
+      setBusy(true)
+      try {
+        const fresh = await Api.group(ctx.ident, ctx.gid)
+        verdict = leaveWarningVerdict(fresh.members, myUinThere, fresh.member_count)
+      } catch {
+        /* unreachable: the rule below decides on what we have */
+      } finally {
+        setBusy(false)
+      }
+    }
+    setLastResident(leaveWarnAfterFetch(verdict, ctx.host != null))
+    setConfirmLeave(true)
+  }
+
   async function leave() {
     if (!identity || busy) return
     setBusy(true)
     setError(null)
     try {
-      // Leaving a group is removing yourself from its roster.
-      await Api.removeGroupMember(identity, group.id, identity.uin)
+      // Leaving a group is removing yourself from its roster, on the room's
+      // island and under our number there (a local room resolves to our own
+      // identity and id, unchanged).
+      const ctx = groupApiCtx(identity, group.id)
+      await Api.removeGroupMember(ctx.ident, ctx.gid, ctx.host ? ctx.ident.uin : identity.uin)
       muted.remove(group.id)
       favorites.remove(group.id)
       archive.remove(group.id)
@@ -60,7 +98,6 @@ export function GroupActionsMenu({ group, inUserSection, onClose, onChanged, onP
       // with a tombstone. Nothing else prunes the slot.
       forgetSectionMember(identity, sectionKeyForGroup(group))
       // The names kept for its former members go with the room (#982).
-      const ctx = groupApiCtx(identity, group.id)
       forgetGroupNames(groupNamesScope(ctx.ident.apiBase, ctx.gid, ctx.host))
       onChanged()
       onClose()
@@ -129,11 +166,18 @@ export function GroupActionsMenu({ group, inUserSection, onClose, onChanged, onP
           icon={<LeaveIcon />}
           label={t('group_actions.leave')}
           destructive
-          onClick={() => setConfirmLeave(true)}
+          busy={busy}
+          onClick={() => void openLeaveConfirm()}
         />
       ) : (
         <div className="px-3 py-2 space-y-1">
-          <p className="text-xs text-fg-secondary">{t('group_actions.leave_confirm')}</p>
+          <p className="text-xs text-fg-secondary">
+            {lastResident && identity
+              ? t('group.leave.last_resident', {
+                  host: groupApiCtx(identity, group.id).host ?? hostOfApiBase(identity.apiBase),
+                })
+              : t('group_actions.leave_confirm')}
+          </p>
           <div className="flex gap-1">
             <button
               onClick={() => setConfirmLeave(false)}

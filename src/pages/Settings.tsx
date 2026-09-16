@@ -62,6 +62,7 @@ import {
 import { useTheme, type ThemePref } from '../lib/theme-context'
 import {
   addBackupIsland,
+  GUEST_COPY_NOT_BACKUP,
   adoptHomesFromOwnRecord,
   disableAutoBackup,
   enableAutoBackup,
@@ -72,6 +73,7 @@ import {
   type BackupHome,
 } from '../lib/multihome'
 import { NO_ISLAND_REACHABLE, NO_OPEN_ISLAND, doorRefusalOf } from '../lib/backup-pick'
+import { usePrimaryGuest } from '../lib/use-guest-copy'
 import { publishHomeIslandRecord } from '../lib/federation-publish'
 import { pushHomeRecordToContacts } from '../lib/federation-gossip'
 import { DEFAULT_CAPABILITIES } from '../lib/server-info'
@@ -90,6 +92,8 @@ const SETTINGS_GROUPS: SettingsGroup[] = [
 
 export function Settings() {
   const { identity, accounts, switchAccount, addAccount, signOutAccount, signOut, signOutAfterBurn } = useIdentity()
+  // A guest copy owns no numbers and hands out no invites (spec 2026-09-15, 12.1).
+  const primaryGuest = usePrimaryGuest(identity)
   const [revoked] = useState<number[]>(() => revokedAccounts())
   const { t } = useI18n()
   // Who this island says it is, and which surfaces it runs. Permissive while
@@ -476,6 +480,12 @@ export function Settings() {
       void pushHomeRecordToContacts(identity!)
     } catch (e) {
       const msg = e instanceof Error ? e.message : ''
+      // Our only account there is a guest copy (spec 2026-09-15, 12.1): it
+      // takes part in rooms and receives nothing a backup home is for.
+      if (msg === GUEST_COPY_NOT_BACKUP) {
+        setMhError(t('backup.is_guest_copy', { host: (e as { host?: string }).host ?? mhHost.trim() }))
+        return
+      }
       const known: Record<string, string> = {
         'invalid host': 'settings.multihome.error.invalid',
         'primary island': 'settings.multihome.error.primary',
@@ -894,6 +904,7 @@ export function Settings() {
             </div>
           </button>
 
+          {!primaryGuest && (
           <Link
             to="/market"
             className="block h-full bg-surface rounded-lg p-4 hover:bg-field transition-colors"
@@ -908,6 +919,7 @@ export function Settings() {
               <span className="text-fg-dim">→</span>
             </div>
           </Link>
+          )}
         </div>
 
         <RecoveryPhraseSection />
@@ -970,7 +982,7 @@ export function Settings() {
             host={islandHost}
             onChanged={() => setProfileTick((n) => n + 1)}
           />
-          <ResidentInvites identity={identity} tick={profileTick} />
+          {!primaryGuest && <ResidentInvites identity={identity} tick={profileTick} />}
           {islandRules && (
             <>
               <button

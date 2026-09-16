@@ -1,0 +1,15 @@
+Компьютер 0.3.87. Группы на островах с платным входом. Раньше человек с другого острова не мог войти в группу на таком острове, а владелец группы не мог добавить туда контакт с другого острова: остров просил код входа. Теперь на таком острове заводится гостевая копия аккаунта без кода. Гостевая копия участвует только в группах: без личных переписок с жителями этого острова, без звонков, без номеров и без своих групп. Если позже оплатить вход, эта же копия станет полноценным аккаунтом, для этого есть кнопка с полем для кода.
+
+Участники с других островов видны в составе группы как есть: позвонить и написать им лично с их копии нельзя, а «Добавить» отправляет обычную заявку. Владелец группы может запретить вход гостям. И предупреждение: если из комнаты уходит последний житель острова, комната удаляется, теперь приложение об этом спрашивает.
+
+---
+
+Desktop 0.3.87. Groups on islands with a paid door. A person from another island could not join a group there, and a group owner could not add a contact from another island: the island asked for an entry code. Now such an island creates a guest copy of the account without a code. A guest copy takes part in groups only: no private chats with residents of that island, no calls, no numbers, no groups of its own. Paying the entry later turns the same copy into a full account, and there is a button with a field for the code.
+
+Members from other islands are shown in the group as they are: no call and no private message from their copy, and Add sends the usual request. A group owner can refuse guests. And a warning: when the last resident of the island leaves a room, the room is deleted, so the app now asks first.
+
+---
+
+桌面版 0.3.87。在收费入岛的岛屿上的群组。以前其他岛屿的人无法加入那里的群组，群主也无法把其他岛屿的联系人加进来：岛屿会要求入岛码。现在这样的岛屿会为账号创建访客副本，无需入岛码。访客副本只能参与群组：不能与该岛居民私聊、不能通话、没有号码、也不能自己建群。之后支付入岛费用，同一个副本就会成为完整账号，并有带输入框的按钮。
+
+其他岛屿的成员在群组中按实际情况显示：不能从其副本发起通话或私聊，「添加」会发送普通请求。群主可以拒绝访客。另有提醒：当岛上最后一位居民离开房间时，房间会被删除，现在应用会先询问。

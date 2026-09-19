@@ -1171,6 +1171,7 @@ export const pt: Record<string, string> = {
   'uin_checkout.waiting': 'Aguardando a transferência · {time}',
   'uin_checkout.expired': 'Esta cobrança expirou. Uma transferência já enviada ainda conta.',
   'uin_checkout.exact': 'Envie o valor exatamente como está escrito. É o que distingue o seu pagamento do dos outros.',
+  'uin_checkout.other_coin': 'Pagar com outra moeda',
   'uin_checkout.later': 'Pagar depois',
   'uin_checkout.error.taken': 'Outra pessoa está comprando esse número agora.',
   'uin_checkout.error.unreachable': 'Não dá para falar com o serviço de pagamento. Tente daqui a pouco.',

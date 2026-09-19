@@ -1333,6 +1333,7 @@ export const ru: Record<string, string> = {
   'uin_checkout.waiting': 'Ждём перевод · {time}',
   'uin_checkout.expired': 'Счёт истёк. Уже отправленный перевод всё равно засчитается.',
   'uin_checkout.exact': 'Отправьте сумму точно как написано. Именно она отличает ваш платёж от всех остальных.',
+  'uin_checkout.other_coin': 'Заплатить другой монетой',
   'uin_checkout.later': 'Заплатить позже',
   'uin_checkout.error.taken': 'Этот номер прямо сейчас покупает кто-то другой.',
   'uin_checkout.error.unreachable': 'Не получается связаться с оплатой. Попробуйте ещё раз через минуту.',

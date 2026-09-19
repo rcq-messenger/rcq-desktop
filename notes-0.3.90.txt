@@ -1,0 +1,15 @@
+Компьютер 0.3.90. Оплата снова даёт выбрать, чем платить.
+
+Касса принимает три монеты: USDT (TRC-20), TON и USDT/USDC в Polygon. Но стоило один раз открыть счёт и закрыть окно, как приложение при следующем открытии возвращало тот же счёт, и выбора больше не было, пока он не истечёт. Теперь под таймером есть строка «Заплатить другой монетой»: она возвращает к выбору, а старый счёт не забывается, чтобы перевод, ушедший на тот адрес минутой позже, всё равно нашёл дорогу.
+
+---
+
+Desktop 0.3.90. Paying lets you choose the coin again.
+
+The till takes three: USDT (TRC-20), TON and USDT/USDC on Polygon. But once you had opened an invoice and closed the window, every later visit reopened that same invoice and there was no choice left until it expired. There is now a "pay with another coin" row under the timer: it takes you back to the picker, and the old invoice is not forgotten, so a transfer sent to that address a minute later still finds its way home.
+
+---
+
+桌面版 0.3.90。付款时又能自己选币了。
+
+收银台支持三种：USDT（TRC-20）、TON，以及 Polygon 上的 USDT/USDC。但只要开过一次账单又关掉窗口，之后每次打开都会回到那张账单，在它过期之前没有别的选择。现在计时器下面多了「换一种币支付」：点它就回到选择页，而旧账单不会被忘记，所以晚一分钟打到那个地址的转账仍然能对上。

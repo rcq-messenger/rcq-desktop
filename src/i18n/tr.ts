@@ -1171,6 +1171,7 @@ export const tr: Record<string, string> = {
   'uin_checkout.waiting': 'Transfer bekleniyor · {time}',
   'uin_checkout.expired': 'Bu fatura doldu. Zaten gönderilmiş bir transfer yine de sayılır.',
   'uin_checkout.exact': 'Tutarı yazıldığı gibi tam gönder. Ödemeni herkesinkinden ayıran şey bu.',
+  'uin_checkout.other_coin': 'Başka bir coin ile öde',
   'uin_checkout.later': 'Sonra öde',
   'uin_checkout.error.taken': 'O numarayı şu anda başka biri alıyor.',
   'uin_checkout.error.unreachable': 'Ödeme servisine ulaşılamıyor. Birazdan tekrar dene.',

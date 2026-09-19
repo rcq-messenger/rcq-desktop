@@ -1340,6 +1340,7 @@ export const en: Record<string, string> = {
   'uin_checkout.waiting': 'Waiting for the transfer · {time}',
   'uin_checkout.expired': 'This invoice has expired. A payment already sent still counts.',
   'uin_checkout.exact': 'Send the amount exactly as written. It is what tells your payment from everyone else\u2019s.',
+  'uin_checkout.other_coin': 'Pay with another coin',
   'uin_checkout.later': 'Pay later',
   'uin_checkout.error.taken': 'Someone else is buying that number right now.',
   'uin_checkout.error.unreachable': 'Cannot reach the payment service. Try again in a moment.',

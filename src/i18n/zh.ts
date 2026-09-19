@@ -1174,6 +1174,7 @@ export const zh: Record<string, string> = {
   'uin_checkout.waiting': '等待转账 · {time}',
   'uin_checkout.expired': '这张账单已过期。已经发出的转账仍然算数。',
   'uin_checkout.exact': '请完全按照所写发送金额。正是它把你的付款与别人的区分开。',
+  'uin_checkout.other_coin': '换一种币支付',
   'uin_checkout.later': '稍后付款',
   'uin_checkout.error.taken': '这个号码正被别人购买。',
   'uin_checkout.error.unreachable': '联系不上付款服务。请稍后再试。',

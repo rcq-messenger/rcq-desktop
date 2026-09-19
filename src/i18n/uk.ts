@@ -1178,6 +1178,7 @@ export const uk: Record<string, string> = {
   'uin_checkout.waiting': 'Чекаємо переказ · {time}',
   'uin_checkout.expired': 'Рахунок минув. Уже надісланий переказ усе одно зарахується.',
   'uin_checkout.exact': 'Надішліть суму точно як написано. Саме вона відрізняє ваш платіж від усіх інших.',
+  'uin_checkout.other_coin': 'Заплатити іншою монетою',
   'uin_checkout.later': 'Заплатити пізніше',
   'uin_checkout.error.taken': 'Цей номер саме зараз купує хтось інший.',
   'uin_checkout.error.unreachable': 'Не вдається зв’язатися з оплатою. Спробуйте ще раз за хвилину.',

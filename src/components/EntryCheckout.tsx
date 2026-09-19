@@ -133,8 +133,11 @@ export function EntryCheckout({
   /// `priceDisplay` is built from /server/info, read once for the run, so an
   /// operator who edits the price mid-session leaves it showing the old one.
   const [quotedCents, setQuotedCents] = useState<number | null>(null)
-  /// The stored invoice id came back from its own till as "no such invoice".
-  /// Set only by the resume effect below, and only for that answer.
+  /// Stop resuming the stored invoice and show the picker instead. Two ways
+  /// in: the till answered "no such invoice" (the resume effect below, which
+  /// also drops the row), or the person asked to pay with another coin (the
+  /// row is KEPT then: money sent to that address a minute later still has to
+  /// find its way home, and the sweep walks every remembered id).
   const [resumeGone, setResumeGone] = useState(false)
   /// ⚠⚠ WHICH TILL THIS INVOICE LIVES AT, which is not always the island's
   /// current one. An invoice id only exists at the till that wrote it, and the
@@ -402,6 +405,20 @@ export function EntryCheckout({
                 )}
               </div>
               <p className="mt-3 text-xs text-fg-dim leading-relaxed text-center">{t('uin_checkout.exact')}</p>
+              {/* This branch IS the unpaid one; the paid one returns above. */}
+              <div className="mt-3 text-center">
+                <button
+                  onClick={() => {
+                    setInvoice(null)
+                    setQr(null)
+                    setError(null)
+                    setResumeGone(true)
+                  }}
+                  className="text-sm font-medium text-accent hover:underline"
+                >
+                  {t('uin_checkout.other_coin')}
+                </button>
+              </div>
               {legal}
             </motion.div>
           )}

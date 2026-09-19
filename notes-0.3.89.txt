@@ -1,0 +1,27 @@
+Компьютер 0.3.89. Звук, когда контакт появляется в сети или уходит.
+
+Он срабатывал не к месту. Звук жил на странице контактов, поэтому на одном экране был, а на других нет; и на каждое событие острова приходился свой сигнал, так что после переподключения они шли очередью. Теперь решение одно на пачку событий: если разом изменилось четверо и больше, это сеть, а не люди, и приложение молчит; один и тот же контакт не звучит чаще раза в пять минут; участники групп, немые и убранные в архив не звучат вовсе.
+
+Сам остров тоже перестал бросаться словами: человек считался ушедшим после одного пропущенного пинга, теперь нужно три.
+
+Звук ухода был громче звука появления на 4,5 дБ, выровняли. Ползунок громкости стал слышимым: раньше вся его верхняя половина меняла громкость на шесть децибел. В настройках появился выбор «все, избранные, выкл», отдельный выключатель звука ухода и кнопки послушать оба звука.
+
+---
+
+Desktop 0.3.89. The sound for a contact coming online or leaving.
+
+It went off at the wrong moments. The chime lived on the contacts page, so the same event made a sound there and none on any other screen, and every island event got its own sound, which after a reconnect meant a queue of them. One decision per burst now: four or more at once is the network rather than people, and nothing plays; the same contact is never announced more than once in five minutes; group members, muted and archived contacts are not announced at all.
+
+The island stopped changing its mind so fast too: somebody counted as gone after one missed ping, and now it takes three.
+
+The departure sound was 4.5 dB louder than the arrival sound; they match now. The volume slider bites: its whole top half used to be worth six decibels. Settings gained everyone / favourites / off, a separate switch for the departure sound, and a button to hear each of them.
+
+---
+
+桌面版 0.3.89。联系人上线或离线时的提示音。
+
+它以前响在不该响的时候。提示音写在联系人页面里，所以只有那个页面才会响；而且每个事件都单独发声，重连之后就会连成一串。现在每一批事件只做一次判断：一次有四个及以上变化，那是网络而不是人，什么都不播；同一个联系人五分钟内最多提示一次；群成员、静音和已归档的联系人完全不提示。
+
+岛屿本身也不再轻易改口：以前漏掉一次心跳就算离线，现在需要三次。
+
+离线提示音比上线提示音响 4.5 分贝，现已拉平。音量滑块也真正起作用了：以前它的上半段只相当于六分贝。设置里新增了「全部 / 收藏 / 关闭」、单独的离线提示音开关，以及试听两种提示音的按钮。

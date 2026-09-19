@@ -1103,6 +1103,7 @@ export const en: Record<string, string> = {
 
   // Per-row actions
   'contacts.more': 'More',
+  'contact_actions.copy_uin': 'Copy number with island',
   'contact_actions.favorite': 'Add to Favorites',
   'contact_actions.unfavorite': 'Remove from Favorites',
   'contact_actions.mute': 'Mute',

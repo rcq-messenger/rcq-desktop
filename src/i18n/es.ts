@@ -953,6 +953,7 @@ export const es: Record<string, string> = {
   'rooms.inThisRoom': 'En esta sala.',
   // Per-row actions
   'contacts.more': 'Más',
+  'contact_actions.copy_uin': 'Copiar el número con la isla',
   'contact_actions.favorite': 'Añadir a Favoritos',
   'contact_actions.unfavorite': 'Quitar de Favoritos',
   'contact_actions.mute': 'Silenciar',

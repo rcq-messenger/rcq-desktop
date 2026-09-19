@@ -956,6 +956,7 @@ export const zh: Record<string, string> = {
   'rooms.inThisRoom': '在这个房间里。',
   // Per-row actions
   'contacts.more': '更多',
+  'contact_actions.copy_uin': '复制号码（含岛屿）',
   'contact_actions.favorite': '设为星标',
   'contact_actions.unfavorite': '取消星标',
   'contact_actions.mute': '静音',

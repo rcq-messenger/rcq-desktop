@@ -17,6 +17,8 @@ import {
   useMutedPeers,
 } from '../lib/local-store'
 import { peerKey } from '../lib/sections'
+import { FLAGSHIP_HOST, fullAddress, hostOfApiBase } from '../lib/federation'
+import { useToast } from '../lib/toast'
 import { forgetSectionMember } from '../lib/sections-vault'
 
 interface Props {
@@ -49,6 +51,7 @@ export function ContactActionsMenu({ contact, inUserSection, onClose, onChanged,
   // and the alias keeps the bare-uin key, but if a host-bearing row ever
   // reaches this menu, a bare-key write would rename the LOCAL person wearing
   // the same digits (see aliasKey in local-store).
+  const { toast } = useToast()
   const [name, setName] = useState(() => aliasFor(contact.uin, contact.host) ?? '')
   const [confirmRemove, setConfirmRemove] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -167,6 +170,26 @@ export function ContactActionsMenu({ contact, inUserSection, onClose, onChanged,
         />
       )}
       <Row icon={<PencilIcon />} label={t('ci.actions.rename')} onClick={() => setRenaming(true)} />
+      {/* The number, spelled out with the island it belongs to. A bare "134"
+          reaches a different person on every island, so somebody passing a
+          contact's number to a friend elsewhere had to append the island by
+          hand — and the desktop had no copy at all (#1025). */}
+      <Row
+        icon={<CopyIcon />}
+        label={t('contact_actions.copy_uin')}
+        onClick={() => {
+          // `identity` is null only before login, where this menu cannot be
+          // open; the flagship is the same fallback `parseAddress` applies to
+          // a bare number.
+          const ourHost = identity ? hostOfApiBase(identity.apiBase) : FLAGSHIP_HOST
+          const address = fullAddress(contact.uin, contact.host ?? ourHost)
+          void navigator.clipboard
+            ?.writeText(address)
+            .then(() => toast(t('settings.uin.copied')))
+            .catch(() => toast(t('contacts.error'), 'error'))
+          onClose()
+        }}
+      />
       {!inUserSection && (
         <Row
           icon={<StarIcon filled={isFav} />}
@@ -272,6 +295,15 @@ function Divider() {
 // Inline SVG icons — Lucide-style 16px, 1.5 stroke. Inline rather
 // than depending on lucide-react keeps the bundle a few KB lighter
 // for what is a tiny set of glyphs.
+function CopyIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-4 h-4">
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M5 15V5a2 2 0 0 1 2-2h10" />
+    </svg>
+  )
+}
+
 function PencilIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">

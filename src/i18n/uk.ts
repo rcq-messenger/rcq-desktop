@@ -960,6 +960,7 @@ export const uk: Record<string, string> = {
   'rooms.inThisRoom': 'У цій кімнаті.',
   // Per-row actions
   'contacts.more': 'Ще',
+  'contact_actions.copy_uin': 'Копіювати номер з островом',
   'contact_actions.favorite': 'Додати в обрані',
   'contact_actions.unfavorite': 'Прибрати з обраних',
   'contact_actions.mute': 'Без звуку',

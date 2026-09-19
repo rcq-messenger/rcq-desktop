@@ -55,6 +55,30 @@ export function formatAddress(a: RcqAddress, opts?: { showFlagship?: boolean }):
   return `${a.uin}@${a.host}`
 }
 
+/// The form that goes to the CLIPBOARD, always spelled out.
+///
+/// Display hides `@api.rcq.app` because on the flagship it is noise. A copied
+/// string is different: it leaves the island, and "134" names a different
+/// person on every island, so whoever was handing their number to somebody
+/// elsewhere had to finish it by hand with an island name that was nowhere on
+/// the screen (report #1025). The Android twin is RcqFederation.fullAddress.
+export function fullAddress(uin: number, host: string): string {
+  return formatAddress({ uin, host: host.trim().toLowerCase() }, { showFlagship: true })
+}
+
+/// The island host out of an `apiBase` ("https://api.rcq.app" -> "api.rcq.app",
+/// port kept when there is one). The identity carries a base URL; addresses
+/// carry an authority.
+export function hostOfApiBase(apiBase: string): string {
+  try {
+    const u = new URL(apiBase)
+    return u.port ? `${u.hostname}:${u.port}`.toLowerCase() : u.hostname.toLowerCase()
+  } catch {
+    // Not a URL: treat it as the authority it already is.
+    return apiBase.replace(/^https?:\/\//, '').replace(/\/.*$/, '').toLowerCase()
+  }
+}
+
 export function isFlagship(host: string): boolean {
   return host.toLowerCase() === FLAGSHIP_HOST
 }

@@ -51,6 +51,7 @@ import { snapshotFor } from '../lib/contacts-cache'
 import { PersonAvatar } from '../components/PersonAvatar'
 import { useIdentity } from '../lib/identity-context'
 import { animatedAvatarsEnabled, setAnimatedAvatarsEnabled } from '../lib/media'
+import { fullAddress, hostOfApiBase } from '../lib/federation'
 import { isPresenceLeaveSoundEnabled, isSentSoundEnabled, isSoundEnabled, previewPresenceSound, previewSoundVolume, presenceSoundMode, setPresenceLeaveSoundEnabled, setPresenceSoundMode, setSentSoundEnabled, setSoundEnabled, setSoundVolume, soundVolume, type PresenceSoundMode } from '../lib/sounds'
 import {
   FONT_SCALES,
@@ -896,7 +897,10 @@ export function Settings() {
             onClick={() => {
               // A denied clipboard (WebView2, plain-http island) says so instead
               // of a tile that promises "copy" and does nothing.
-              void navigator.clipboard?.writeText(String(identity.uin)).then(() => toast(t('settings.uin.copied'))).catch(() => toast(t('contacts.error'), 'error'))
+              // `uin@island`, not a bare number: this is the string somebody
+              // sends to a person on ANOTHER island, where a bare number names
+              // somebody else entirely (#1025).
+              void navigator.clipboard?.writeText(fullAddress(identity.uin, hostOfApiBase(identity.apiBase))).then(() => toast(t('settings.uin.copied'))).catch(() => toast(t('contacts.error'), 'error'))
             }}
             className="group text-left bg-surface rounded-lg p-4 hover:bg-field transition-colors"
           >

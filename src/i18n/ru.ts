@@ -1102,6 +1102,7 @@ export const ru: Record<string, string> = {
 
   // Меню действий над контактом
   'contacts.more': 'Ещё',
+  'contact_actions.copy_uin': 'Копировать номер с островом',
   'contact_actions.favorite': 'В избранные',
   'contact_actions.unfavorite': 'Убрать из избранных',
   'contact_actions.mute': 'Без звука',

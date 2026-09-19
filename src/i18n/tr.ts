@@ -953,6 +953,7 @@ export const tr: Record<string, string> = {
   'rooms.inThisRoom': 'Bu odada.',
   // Per-row actions
   'contacts.more': 'Daha fazla',
+  'contact_actions.copy_uin': 'Numarayı adayla birlikte kopyala',
   'contact_actions.favorite': 'Favorilere ekle',
   'contact_actions.unfavorite': 'Favorilerden çıkar',
   'contact_actions.mute': 'Sustur',

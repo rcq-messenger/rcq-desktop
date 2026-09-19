@@ -1,0 +1,9 @@
+Компьютер 0.3.88. Контакты с других островов. Если добавить или удалить такой контакт, список меняется сразу, а не после переключения аккаунта: раньше эта половина списка обновлялась только вместе с полным ответом острова, а он при неизменном списке не приходил. Профиль участника с другого острова открывается на его острове, а не ищет тот же номер у вас.
+
+---
+
+Desktop 0.3.88. Contacts from other islands. Adding or removing one now changes the list at once instead of after an account switch: that half of the list used to refresh only with a full answer from the island, which never came while the island's own list was unchanged. The profile of a member from another island opens on their island instead of looking the same number up on yours.
+
+---
+
+桌面版 0.3.88。来自其他岛屿的联系人。添加或删除这类联系人后，列表会立即更新，而不是等到切换账号之后：以前这部分列表只在岛屿返回完整响应时才刷新，而岛屿自身列表未变时不会返回。其他岛屿成员的资料现在会在对方岛屿上打开，而不是在你的岛屿上查找相同号码。

@@ -34,16 +34,28 @@ function load(): string[] {
   }
 }
 
-/// Record what the island said about the account (uin on apiBase). `guest`
-/// absent means an island older than the flag, which says nothing: the entry is
-/// left as it was rather than cleared.
+/// Record what the island said about the account (uin on apiBase).
+///
+/// ⚠⚠ ABSENT MEANS NOT A GUEST: only `guest: true` in as many words sets the
+/// entry, and every other answer — absent, null, a wrong type — clears it. This
+/// used to leave the entry as it was for an absent flag, and that direction is
+/// how a stale true becomes permanent: an island that HAS guest copies always
+/// sends the key (the server fills it explicitly false on register, recover,
+/// refresh and the self view), so the only reply that omits it comes from an
+/// island where no guest row can exist — or from one rolled back to a build
+/// before the feature, which is exactly when a stale true does damage. Here it
+/// only hides UI surfaces, because the web registers no push token at all; on
+/// iOS the same stickiness silenced push for an account permanently and
+/// invisibly. The three clients resolve it identically now: Android
+/// `Session.notePrimaryGuest` + `GuestFlagWireTest`, iOS `GuestFlag` in
+/// `CrossIslandLogic.swift`.
 export function notePrimaryGuest(apiBase: string, uin: number, guest: unknown): void {
-  if (typeof guest !== 'boolean') return
+  const isGuest = guest === true
   const entry = entryOf(apiBase, uin)
   const list = load()
   const has = list.includes(entry)
-  if (has === guest) return
-  const next = guest ? [...list, entry] : list.filter((x) => x !== entry)
+  if (has === isGuest) return
+  const next = isGuest ? [...list, entry] : list.filter((x) => x !== entry)
   try {
     localStorage.setItem(KEY, JSON.stringify(next))
   } catch {

@@ -5,6 +5,7 @@ import { IdentityProvider, useIdentity } from './lib/identity-context'
 import { ThemeProvider } from './lib/theme-context'
 import { WSProvider } from './lib/ws'
 import { MessageReceiver } from './lib/message-receiver'
+import { PresenceChimeWatcher } from './lib/presence-watch'
 import { MessageToasts } from './components/MessageToasts'
 import { IslandTrustBanner } from './components/IslandTrust'
 import { CallProvider } from './lib/call'
@@ -90,6 +91,10 @@ export default function App() {
             <CallProvider>
             <RoomsProvider>
             <MessageReceiver />
+            {/* The presence chime, once for the whole app. It used to live
+                inside the contacts page, so the same transition made a sound
+                there and none anywhere else (#1030). Renders nothing. */}
+            <PresenceChimeWatcher />
             <Router>
             <MessageToasts />
             {/* Above every route, the login screen included: a certificate

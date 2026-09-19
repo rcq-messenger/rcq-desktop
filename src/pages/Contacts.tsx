@@ -110,7 +110,6 @@ import {
   useMutedGroups,
   useMutedPeers,
 } from '../lib/local-store'
-import { isPresenceSoundEnabled, playSound } from '../lib/sounds'
 import { useWS } from '../lib/ws'
 import { listCrossIsland, type CrossIslandContact } from '../lib/crossisland-store'
 import {
@@ -484,17 +483,12 @@ export function Contacts() {
       const u = ev.uin as number | undefined
       const s = ev.status as UserStatus | undefined
       if (typeof u !== 'number' || typeof s !== 'string') return
+      // ⚠ NO SOUND HERE. The chime moved to lib/presence-watch, mounted once
+      // in App: this handler is a state updater, React may run it twice, and
+      // it only exists while /contacts is open — so the same transition was
+      // audible on one route, silent on the others, and occasionally doubled
+      // (#1030). This updater's whole job is the list.
       setContacts((prev) => {
-        const before = prev.find((c) => c.uin === u)
-        if (before && !muted.has(u) && isPresenceSoundEnabled()) {
-          // Treat away/dnd as "around" so an offline→away transition still
-          // chimes like a come-online (matches the section bucketing).
-          const around = (st: UserStatus) => st === 'online' || st === 'away' || st === 'dnd'
-          const wasAround = around(before.status)
-          const isAround = around(s)
-          if (!wasAround && isAround) playSound('contact_online')
-          else if (wasAround && !isAround) playSound('contact_offline')
-        }
         return prev.map((c) =>
           c.uin === u
             ? { ...c, status: s, status_message: (ev.status_message as string | undefined) ?? c.status_message }

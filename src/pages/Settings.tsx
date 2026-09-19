@@ -51,7 +51,7 @@ import { snapshotFor } from '../lib/contacts-cache'
 import { PersonAvatar } from '../components/PersonAvatar'
 import { useIdentity } from '../lib/identity-context'
 import { animatedAvatarsEnabled, setAnimatedAvatarsEnabled } from '../lib/media'
-import { isPresenceSoundEnabled, isSentSoundEnabled, isSoundEnabled, previewSoundVolume, setPresenceSoundEnabled, setSentSoundEnabled, setSoundEnabled, setSoundVolume, soundVolume } from '../lib/sounds'
+import { isPresenceLeaveSoundEnabled, isSentSoundEnabled, isSoundEnabled, previewPresenceSound, previewSoundVolume, presenceSoundMode, setPresenceLeaveSoundEnabled, setPresenceSoundMode, setSentSoundEnabled, setSoundEnabled, setSoundVolume, soundVolume, type PresenceSoundMode } from '../lib/sounds'
 import {
   FONT_SCALES,
   getFontScale,
@@ -182,7 +182,10 @@ export function Settings() {
   const { toast } = useToast()
   const [soundOn, setSoundOnState] = useState<boolean>(() => isSoundEnabled())
   const [animAvatars, setAnimAvatars] = useState(() => animatedAvatarsEnabled())
-  const [presenceSoundOn, setPresenceSoundOnState] = useState<boolean>(() => isPresenceSoundEnabled())
+  // The mode subsumes the old boolean; `setPresenceSoundMode` keeps that key in
+  // step underneath, for a downgrade and for anything still reading it.
+  const [presenceMode, setPresenceModeState] = useState<PresenceSoundMode>(() => presenceSoundMode())
+  const [presenceLeaveOn, setPresenceLeaveOnState] = useState<boolean>(() => isPresenceLeaveSoundEnabled())
   const [sentSoundOn, setSentSoundOnState] = useState<boolean>(() => isSentSoundEnabled())
   // Whole percent in state; the store keeps 0..1.
   const [soundLevel, setSoundLevel] = useState<number>(() => Math.round(soundVolume() * 100))
@@ -1401,22 +1404,75 @@ export function Settings() {
               className={'w-full accent-accent ' + (soundOn ? 'cursor-pointer' : 'cursor-not-allowed')}
             />
           </div>
-          {/* Separate toggle for contact online/offline chimes, like iOS.
-              Greyed out when the master switch is off. */}
-          <label className={'flex items-center justify-between pt-1 ' + (soundOn ? 'cursor-pointer' : 'opacity-40 cursor-not-allowed')}>
-            <span className="text-sm">{t('settings.sound.presence')}</span>
-            <input
-              type="checkbox"
-              checked={presenceSoundOn}
-              disabled={!soundOn}
-              onChange={(e) => {
-                setPresenceSoundEnabled(e.target.checked)
-                setPresenceSoundOnState(e.target.checked)
-              }}
-              className="w-5 h-5 accent-accent cursor-pointer"
-            />
-          </label>
-          <p className="text-xs text-fg-dim">{t('settings.sound.presence_footer')}</p>
+          {/* Who is worth a chime: the same three answers the phones give, and
+              a separate switch for the DIRECTION. One control used to govern
+              both directions, so the only way to lose the descending tone was
+              to lose the knock too — and the knock was never the complaint
+              (#1030, #1029). */}
+          <div className={'pt-1 ' + (soundOn ? '' : 'opacity-40')}>
+            <div className="text-sm">{t('settings.sound.presence')}</div>
+            <div className="mt-2 flex gap-1 rounded-full bg-bg p-1">
+              {(['all', 'favorites', 'off'] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  disabled={!soundOn}
+                  onClick={() => {
+                    setPresenceSoundMode(m)
+                    setPresenceModeState(m)
+                  }}
+                  className={
+                    'flex-1 rounded-full py-1.5 text-xs ' +
+                    (presenceMode === m ? 'bg-accent text-white' : 'text-fg-dim') +
+                    (soundOn ? ' cursor-pointer' : ' cursor-not-allowed')
+                  }
+                >
+                  {t(`settings.sound.presence_${m}`)}
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-fg-dim">{t('settings.sound.presence_footer')}</p>
+            <label
+              className={
+                'mt-2 flex items-center justify-between ' +
+                (soundOn && presenceMode !== 'off' ? 'cursor-pointer' : 'opacity-40 cursor-not-allowed')
+              }
+            >
+              <span className="text-sm">{t('settings.sound.presence_leave')}</span>
+              <input
+                type="checkbox"
+                checked={presenceLeaveOn}
+                disabled={!soundOn || presenceMode === 'off'}
+                onChange={(e) => {
+                  setPresenceLeaveSoundEnabled(e.target.checked)
+                  setPresenceLeaveOnState(e.target.checked)
+                }}
+                className="w-5 h-5 accent-accent cursor-pointer"
+              />
+            </label>
+            <p className="text-xs text-fg-dim">{t('settings.sound.presence_leave_footer')}</p>
+            {/* Hear the sound being configured. The volume slider above
+                previews the MESSAGE cue, which is mastered about 10 dB louder
+                than these two. */}
+            <div className="mt-2 flex gap-4">
+              <button
+                type="button"
+                disabled={!soundOn}
+                onClick={() => previewPresenceSound(true)}
+                className={'text-xs text-accent ' + (soundOn ? 'cursor-pointer' : 'cursor-not-allowed')}
+              >
+                {t('settings.sound.presence_try_online')}
+              </button>
+              <button
+                type="button"
+                disabled={!soundOn}
+                onClick={() => previewPresenceSound(false)}
+                className={'text-xs text-accent ' + (soundOn ? 'cursor-pointer' : 'cursor-not-allowed')}
+              >
+                {t('settings.sound.presence_try_offline')}
+              </button>
+            </div>
+          </div>
           {/* Your own send chime. It had no switch of its own, so the only
               way to silence it was the master one, which also took the
               incoming chime with it. */}

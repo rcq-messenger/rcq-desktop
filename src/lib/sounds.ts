@@ -4,6 +4,9 @@
 // HTMLAudioElement caches the buffer per cue so repeats are instant.
 // Best-effort; the caller never sees a thrown error.
 
+import type { PresenceSoundMode } from './presence-chime'
+export type { PresenceSoundMode }
+
 export type SoundCue =
   | 'app_startup'
   | 'message_incoming'
@@ -68,7 +71,7 @@ export function playSound(cue: SoundCue): void {
   const a = audioFor(cue)
   try {
     a.currentTime = 0
-    a.volume = soundVolume()
+    a.volume = toneGain(soundVolume())
     void a.play().catch(() => {
       // Format-not-supported / other transient. Sound is optional,
       // we don't surface failures.
@@ -92,6 +95,19 @@ export function setSoundEnabled(on: boolean) {
 // level of its own, and Windows only lists the WebView2 process in the mixer
 // while something is actually playing, so there was nowhere to turn it down.
 const VOLUME_KEY = 'rcq.web.sounds.volume'
+
+/// The slider position as a GAIN.
+///
+/// Loudness is roughly logarithmic while `HTMLAudioElement.volume` is linear
+/// amplitude, so passing the position straight through spends the whole top
+/// half of the travel on about 6 dB: drag it from the end to the middle and
+/// almost nothing happens. Squaring gives that travel about 12 dB. 1 is still
+/// 1 and 0 is still silence, so a slider nobody moved sounds the same.
+/// Android applies the same curve in SoundService.toneGain, deliberately.
+export function toneGain(level: number): number {
+  const clamped = Math.min(1, Math.max(0, Number.isFinite(level) ? level : 1))
+  return clamped * clamped
+}
 
 export function soundVolume(): number {
   if (typeof window === 'undefined') return 1
@@ -121,7 +137,7 @@ export function previewSoundVolume() {
   const a = audioFor('message_incoming')
   try {
     a.currentTime = 0
-    a.volume = soundVolume()
+    a.volume = toneGain(soundVolume())
     void a.play().catch(() => {})
   } catch {
     /* noop */
@@ -139,6 +155,55 @@ export function isPresenceSoundEnabled(): boolean {
 
 export function setPresenceSoundEnabled(on: boolean) {
   localStorage.setItem('rcq.web.sounds.presence', on ? '1' : '0')
+}
+
+/// Who is worth a chime, the same three answers Android offers (#1029 asked
+/// for the control; the phones have had the middle one since #552). Read
+/// through the old boolean so nobody's app changes on update: an install that
+/// turned presence off keeps it off, everyone else starts at "all".
+export function presenceSoundMode(): PresenceSoundMode {
+  if (typeof window === 'undefined') return 'all'
+  const stored = localStorage.getItem('rcq.web.sounds.presence.mode')
+  if (stored === 'all' || stored === 'favorites' || stored === 'off') return stored
+  return isPresenceSoundEnabled() ? 'all' : 'off'
+}
+
+export function setPresenceSoundMode(mode: PresenceSoundMode) {
+  localStorage.setItem('rcq.web.sounds.presence.mode', mode)
+  // The legacy boolean is kept in step, so a downgrade (or any code still
+  // reading it) sees "off" as off rather than as the default on.
+  setPresenceSoundEnabled(mode !== 'off')
+}
+
+/// Whether somebody LEAVING is worth a sound, separately from somebody
+/// arriving. One setting used to govern both, so the only way to lose the
+/// descending tone was to lose the knock as well — and the knock was never
+/// what anybody complained about (#1030). Defaults on.
+export function isPresenceLeaveSoundEnabled(): boolean {
+  if (typeof window === 'undefined') return true
+  return localStorage.getItem('rcq.web.sounds.presence.leave') !== '0'
+}
+
+export function setPresenceLeaveSoundEnabled(on: boolean) {
+  localStorage.setItem('rcq.web.sounds.presence.leave', on ? '1' : '0')
+}
+
+/// One chime of the sound being CONFIGURED, for the presence rows.
+///
+/// `previewSoundVolume` plays the message cue, which is mastered about 10 dB
+/// above these two, so somebody turning "that online-offline sound" down was
+/// judging it by a sample they never hear in that role (#1030).
+export function previewPresenceSound(online: boolean) {
+  if (typeof window === 'undefined') return
+  if (!isSoundEnabled()) return
+  const a = audioFor(online ? 'contact_online' : 'contact_offline')
+  try {
+    a.currentTime = 0
+    a.volume = toneGain(soundVolume())
+    void a.play().catch(() => {})
+  } catch {
+    /* noop */
+  }
 }
 
 // Sub-toggle: the chime on YOUR OWN outgoing message. Same shape as the

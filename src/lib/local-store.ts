@@ -172,6 +172,17 @@ export function isGroupMuted(gid: number): boolean {
   return readSet(KEYS.mutedGroups).has(gid)
 }
 
+/// Same shape, for the presence chime (lib/presence-watch.tsx): it lives
+/// outside React and has to know whether this contact is starred or put away
+/// before it makes a sound about them.
+export function isPeerFavorite(uin: number): boolean {
+  return readSet(KEYS.favorites).has(uin)
+}
+
+export function isPeerArchived(uin: number): boolean {
+  return readSet(KEYS.archive).has(uin)
+}
+
 export function useMutedGroups() {
   return useNumberSet(KEYS.mutedGroups)
 }

@@ -56,3 +56,10 @@ export { mergeCards } from '../../src/lib/guestcard-vault'
 // Where a sign-in may return to. Pure, and pinned by cli/test/login-return.mjs
 // because a mistake in it is an open redirect on the login screen.
 export { safeReturnPath } from '../../src/lib/login-return'
+
+// My own profile key and the slot it lives in. #1031: the web asked the island
+// for the slot named "pkey" instead of the 32 hex characters `slotId` makes of
+// that name, which is a 422 and therefore a failed avatar upload every single
+// time. cli/test/profile-key.mjs pins the derivation against an island model
+// that refuses a malformed slot the way FastAPI does.
+export { ensureMyProfileKey, loadProfileKeys, myProfileKey, VAULT_PKEY } from '../../src/lib/profile-key'

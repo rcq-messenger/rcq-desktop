@@ -33,6 +33,7 @@ import { carrySealKeyOnMove } from './local-seal'
 import { defaultHome } from './routing'
 import { Api, setTokenRefresher, setUnauthorizedHandler , clearGroupPreviewCache } from './api'
 import { clearRandomPeers } from './random-peers'
+import { loadProfileKeys } from './profile-key'
 import { idbClearAll } from './signal-persist'
 import { bootAction } from './session-verdict'
 import { ROTATED_ELSEWHERE_EVENT, rotatedUinOf } from './rotated-signal'
@@ -385,6 +386,14 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!hydrated) return
     setAccountScope(identity?.uin ?? null)
+    // ⚠⚠ The profile keys belong to the ACCOUNT, and until this they were
+    // hydrated by the first queue drain. Anything drawn before that drain read
+    // an empty store: your own face on your own profile stayed a flower right
+    // after you set it, and — worse — the cross-island profile SNAPSHOT went
+    // out carrying no key, which the far side reads as "I removed my picture"
+    // and acts on. The store is the account's, so it loads when the account
+    // does, not when a message happens to arrive.
+    if (identity) loadProfileKeys(identity.uin)
     setAccounts(listStoredIdentities())
   }, [identity, hydrated])
 

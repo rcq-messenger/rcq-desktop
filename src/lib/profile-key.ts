@@ -18,10 +18,27 @@
 import { Api, peerBundleFrom } from './api'
 import { theirCard } from './guest-card'
 import { encryptV1, bytesToB64, b64ToBytes, type Envelope, type WebIdentity } from './crypto'
-import { readSlot, writeSlot, VaultError } from './vault'
+import { readSlot, slotId, writeSlot, VaultError } from './vault'
 
 /// The vault slot that carries our OWN key across our own installs.
+///
+/// ⚠⚠ THIS IS THE NAME, NOT THE SLOT. The island only ever accepts a slot of
+/// 32 lower-case hex characters (`^[0-9a-f]{32}$` in its route), and the name
+/// has to go through `slotId` first — that hash is the whole reason the island
+/// cannot tell a profile key from a contact list. Sending the literal is not a
+/// slot the island ignores, it is a 422 before the handler runs: every avatar
+/// upload from the web and the desktop failed on it with a flat "could not
+/// upload the picture", while Android (which derives it) worked. Report #1031,
+/// proved on the island's own access log (`GET /vault/pkey 422`).
 export const VAULT_PKEY = 'pkey'
+
+/// The slot the island is asked for. Same 16 bytes Android derives from the
+/// same literal (crypto/Vault.kt, `Vault.PKEY`), so a phone and a browser on
+/// one account share ONE key: mint a rival and half your contacts end up
+/// holding a key that opens nothing.
+function pkeySlot(identity: WebIdentity): string {
+  return slotId(identity, VAULT_PKEY)
+}
 
 // ── stores ───────────────────────────────────────────────────────────────
 // Two of them, and they answer different questions:
@@ -94,34 +111,52 @@ export function rememberPeerKey(peer: number, keyB64: string): void {
 export async function ensureMyProfileKey(identity: WebIdentity): Promise<string> {
   if (mine) return mine
   try {
-    const slot = await readSlot(identity, VAULT_PKEY)
-    const fromVault = slot.plaintext ? new TextDecoder().decode(slot.plaintext) : null
-    if (fromVault) {
-      mine = fromVault
-      try { localStorage.setItem(mineKey(identity.uin), fromVault) } catch { /* nicety */ }
-      return fromVault
-    }
+    const slot = await readSlot(identity, pkeySlot(identity))
+    const fromVault = slot.plaintext ? new TextDecoder().decode(slot.plaintext).trim() : null
+    if (fromVault) return adopt(identity, fromVault)
   } catch (e) {
+    // ⚠ Only a vault the island does not have, or one whose blob we cannot
+    // open. Anything else (5xx, a rate limit, a dead connection) is rethrown
+    // ON PURPOSE: it means we do not KNOW whether a key is published, and
+    // minting a rival one under that doubt is permanent damage — two installs
+    // handing out different keys leaves half a person's contacts looking at a
+    // face that will never open. A retry costs one tap.
     if (!(e instanceof VaultError)) throw e
-    // An island without the vault, or a locked one: mint locally rather than
-    // refuse to set a picture. The mirror below will retry on the next change.
   }
   const raw = new Uint8Array(32)
   crypto.getRandomValues(raw)
-  const keyB64 = bytesToB64(raw)
+  const minted = bytesToB64(raw)
+  // ⚠⚠ AWAITED, and the winner is whatever is actually in the slot. This used
+  // to fire and forget: two installs minting at once both returned their own
+  // key, sealed a blob under it and fanned it out, and the merge below quietly
+  // kept only one of them. Publishing first wins, and the loser adopts.
+  return adopt(identity, await mirrorMyKey(identity, minted))
+}
+
+/// Pin `keyB64` as this install's copy of the account's key.
+function adopt(identity: WebIdentity, keyB64: string): string {
   mine = keyB64
   try { localStorage.setItem(mineKey(identity.uin), keyB64) } catch { /* nicety */ }
-  void mirrorMyKey(identity, keyB64)
   return keyB64
 }
 
-async function mirrorMyKey(identity: WebIdentity, keyB64: string): Promise<void> {
-  // The merge keeps whatever a sibling install already published: two
-  // installs minting at once must converge on ONE key, or half our contacts
-  // hold a key that opens nothing.
+/// Publish `keyB64` unless a sibling install already published one, and return
+/// whichever key the account actually has. Falls back to the minted key when
+/// the island has no vault at all: a picture only this install can open is
+/// still better than refusing to set one, and the next change retries.
+async function mirrorMyKey(identity: WebIdentity, keyB64: string): Promise<string> {
+  let published: string | null = null
   try {
-    await writeSlot(identity, VAULT_PKEY, (remote) => (remote ? null : new TextEncoder().encode(keyB64)))
+    await writeSlot(identity, pkeySlot(identity), (remote) => {
+      const found = remote ? new TextDecoder().decode(remote).trim() : ''
+      if (found) {
+        published = found
+        return null
+      }
+      return new TextEncoder().encode(keyB64)
+    })
   } catch { /* best effort */ }
+  return published ?? keyB64
 }
 
 // ── distribution ─────────────────────────────────────────────────────────
@@ -188,8 +223,8 @@ export async function handleProfileKeyEnvelope(
     let k = mine
     if (!k) {
       try {
-        const slot = await readSlot(identity, VAULT_PKEY)
-        k = slot.plaintext ? new TextDecoder().decode(slot.plaintext) : null
+        const slot = await readSlot(identity, pkeySlot(identity))
+        k = (slot.plaintext ? new TextDecoder().decode(slot.plaintext).trim() : '') || null
         if (k) {
           mine = k
           try { localStorage.setItem(mineKey(identity.uin), k) } catch { /* nicety */ }

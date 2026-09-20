@@ -31,7 +31,7 @@ import { useContactAliases } from '../lib/local-store'
 import { lookupContactName, snapshotFor } from '../lib/contacts-cache'
 import { AddContactModal } from '../components/AddContactModal'
 import { uploadImageUnderKey } from '../lib/media'
-import { ensureMyProfileKey, fanOutMyProfileKey } from '../lib/profile-key'
+import { ensureMyProfileKey, fanOutMyProfileKey, myProfileKey } from '../lib/profile-key'
 import { useToast } from '../lib/toast'
 
 const GENDER_OPTIONS: { value: string; key: string }[] = [
@@ -389,12 +389,21 @@ function ReadView({
       <section className="bg-surface rounded-lg p-4 space-y-1">
         <div className="flex items-center gap-2">
           {/* Cross-island: presence doesn't cross islands → gray flower, and
-              the picture lives on their island, so it stays a flower too. */}
+              the picture lives on their island, so it stays a flower too.
+              ⚠ The island holds no key for a picture set under the profile-key
+              model, so `avatar_media_key` is null and the real key is the one
+              its owner sealed to us. The contact list and the chat header have
+              always passed `uinForKey`/`askPeer`; this page never did, so the
+              same person had a face in the list and a flower on their profile.
+              Same-island only: the key store is keyed by number alone, and a
+              cross-island card carries its own key. */}
           <PersonAvatar
             status={info.status}
             size={44}
             mediaId={info.avatar_media_id}
             mediaKey={info.avatar_media_key}
+            uinForKey={crossIslandHost ? undefined : info.uin}
+            askPeer={crossIslandHost ? undefined : info}
             crossIsland={!!crossIslandHost}
           />
           <div className="min-w-0">
@@ -699,11 +708,17 @@ function EditView({
     <div className="space-y-4">
       <section className="bg-surface rounded-lg p-4 space-y-3">
         <div className="flex items-center gap-3">
+          {/* ⚠⚠ MY OWN picture, and the island is not allowed to hold its key
+              either: `avatar_media_key` comes back null forever after the
+              first change. Without the fallback the one screen where you set a
+              picture is the one screen that never shows it — you pick a file,
+              the upload succeeds, the flower stays, and that reads as "it did
+              not upload". */}
           <PersonAvatar
             status={draft.status}
             size={56}
             mediaId={draft.avatar_media_id}
-            mediaKey={draft.avatar_media_key}
+            mediaKey={draft.avatar_media_key ?? myProfileKey()}
           />
           <div className="flex flex-col gap-1">
             {/* Your own number. It used to be on the read-only page this

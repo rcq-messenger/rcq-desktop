@@ -27,6 +27,7 @@ import { flushVaultWriter } from '../lib/pin-gate'
 import { isTauri } from '../lib/desktop'
 import { defaultHome } from '../lib/routing'
 import { forgetInviter, inviterFor, takeReturnTo } from '../lib/login-return'
+import { inviteCodeOf } from '../lib/invite-code'
 import { clientLabel } from '../lib/client-name'
 import { bytesToB64, newLinkEphemeral, openLinkSeal, type WebIdentity } from '../lib/crypto'
 import { IslandPickerModal } from '../components/IslandPickerModal'
@@ -667,7 +668,10 @@ function CreatePane({ onDone }: { onDone: (id: WebIdentity) => void }) {
   async function submit() {
     setBusy(true)
     try {
-      const id = await createNewAccount(nickname, island, invite, inviterFor(islandHostname))
+      // ⚠ The field says "access code" and the apps hand out a LINK: take
+      // either, or the person pastes what they were given and is told the code
+      // is used up (#1034).
+      const id = await createNewAccount(nickname, island, inviteCodeOf(invite) ?? invite, inviterFor(islandHostname))
       // Reached, so remembered: the picker offers this island again on this
       // profile, whichever account is active later (founder, 12.09).
       rememberReachedIsland(island, 'created')

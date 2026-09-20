@@ -12,7 +12,7 @@
     "desktop:dev": "tauri dev",
     "desktop:build": "tauri build",
     "cli:build": "node cli/build.mjs",
-    "cli:test": "node cli/build.mjs && node cli/test/roundtrip.mjs && node cli/test/group-roundtrip.mjs && node cli/test/group-log.mjs && node cli/test/blind-token.mjs && node cli/test/vault.mjs && node cli/test/sections.mjs && node cli/test/crossisland.mjs && node cli/test/guest-card.mjs && node cli/test/proxy.mjs && node cli/test/routes.mjs && node cli/test/seal.mjs && node cli/test/island-trust.mjs && node cli/test/member-name.mjs && node cli/test/crossisland-gate.mjs && node cli/test/carbon-gate.mjs && node cli/test/pending-poll.mjs && node cli/test/burn-cascade.mjs && node cli/test/backup-pick.mjs && node cli/test/guest-proof.mjs && node cli/test/guest-path.mjs && node cli/test/leave-warning.mjs && node cli/test/presence-chime.mjs"
+    "cli:test": "node cli/build.mjs && node cli/test/roundtrip.mjs && node cli/test/group-roundtrip.mjs && node cli/test/group-log.mjs && node cli/test/blind-token.mjs && node cli/test/vault.mjs && node cli/test/sections.mjs && node cli/test/crossisland.mjs && node cli/test/guest-card.mjs && node cli/test/proxy.mjs && node cli/test/routes.mjs && node cli/test/seal.mjs && node cli/test/island-trust.mjs && node cli/test/member-name.mjs && node cli/test/crossisland-gate.mjs && node cli/test/carbon-gate.mjs && node cli/test/pending-poll.mjs && node cli/test/burn-cascade.mjs && node cli/test/backup-pick.mjs && node cli/test/guest-proof.mjs && node cli/test/guest-path.mjs && node cli/test/leave-warning.mjs && node cli/test/presence-chime.mjs && node cli/test/invite-code.mjs"
   },
   "dependencies": {
     "@noble/ciphers": "^1.0.0",

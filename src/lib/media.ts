@@ -503,6 +503,27 @@ export async function uploadImageUnderKey(
   }
 }
 
+/// Re-seal a blob that is already on the island under a DIFFERENT key, and
+/// upload it as a new one. The bytes never leave the browser in the clear.
+///
+/// One caller: the migration off the old avatar shape, where the island holds
+/// the key and we are taking it away from it (see `migrateOwnAvatar`).
+export async function resealBlobUnderKey(
+  apiBase: string,
+  mediaId: string,
+  oldKeyB64: string,
+  newKeyB64: string,
+): Promise<string | null> {
+  try {
+    const buf = await fetchDecryptToBuffer(apiBase, mediaId, oldKeyB64)
+    if (!buf) return null
+    const combined = await sealBytesWith(newKeyB64, buf)
+    return await uploadBlob(apiBase, combined, 'photo.bin')
+  } catch {
+    return null
+  }
+}
+
 export async function uploadEncryptedImage(
   apiBase: string,
   file: File,

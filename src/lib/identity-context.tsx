@@ -34,6 +34,7 @@ import { defaultHome } from './routing'
 import { Api, setTokenRefresher, setUnauthorizedHandler , clearGroupPreviewCache } from './api'
 import { clearRandomPeers } from './random-peers'
 import { loadProfileKeys, loadPublishedProfileKey } from './profile-key'
+import { migrateOwnAvatar } from './avatar-migration'
 import { idbClearAll } from './signal-persist'
 import { bootAction } from './session-verdict'
 import { ROTATED_ELSEWHERE_EVENT, rotatedUinOf } from './rotated-signal'
@@ -404,7 +405,15 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
       // this since the model shipped (ProfileKeyVault.publishedKey).
       // Read-only on purpose: minting from a start-up path would publish a
       // rival key on any island hiccup, and a rival key cannot be taken back.
-      void loadPublishedProfileKey(identity).catch(() => { /* asked again later */ })
+      void loadPublishedProfileKey(identity)
+        .catch(() => { /* asked again later */ })
+        // And then, once, move a picture that is still in the old shape off the
+        // island's key (docs/profile-key-design.md, migration phase 3). It is a
+        // no-op for every account that has none or has already moved, it never
+        // touches anything until it has the bytes in hand, and the old picture
+        // keeps working until the very last step. See avatar-migration.ts.
+        .then(() => migrateOwnAvatar(identity))
+        .catch(() => { /* tomorrow */ })
     }
     setAccounts(listStoredIdentities())
   }, [identity, hydrated])

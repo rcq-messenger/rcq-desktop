@@ -23,7 +23,7 @@ import { Api } from './api'
 import { contactsCache } from './contacts-cache'
 import { newUUIDv4, type ContactReqEnvelope, type WebIdentity } from './crypto'
 import { addContactRequest, clearRequest, isBlocked } from './crossisland-requests'
-import { getCrossIsland, getVerifiedCrossIsland } from './crossisland-store'
+import { getCrossIsland, getVerifiedCrossIsland, removeCrossIsland } from './crossisland-store'
 import { depositSealedToPrimary } from './federation-send'
 
 export type ContactReqAct = ContactReqEnvelope['act']
@@ -150,6 +150,16 @@ export function handleContactReq(
     // be dismissable by the very sender it warns about.
     if (proof.keyMismatch) return
     clearRequest(senderUin, senderHost)
+    // ⚠⚠ AND THE CONTACT ROW. It used to be left alone, reasoned as "our local
+    // row for them is untouched" — which made receiving a refusal a complete
+    // no-op, because the side that ASKED holds no pending row to clear. So
+    // somebody who explicitly said no stayed in the contact list for ever,
+    // looking exactly like somebody who had said yes. That is the thing behind
+    // #1032: cross-island has no "waiting" state to hide a row in, so the only
+    // honest signal it can carry is the answer, and the answer was being thrown
+    // away. The row is a local record, so removing it is ours to do; §5d then
+    // stops treating them as mutual, which is what a refusal means.
+    if (getCrossIsland(senderUin, senderHost)) removeCrossIsland(senderUin, senderHost)
     return
   }
 

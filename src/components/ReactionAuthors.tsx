@@ -130,6 +130,12 @@ export function ReactionAuthors({
                             size={28}
                             mediaId={a.avatarMediaId}
                             mediaKey={a.avatarMediaKey}
+                            // Same-island rows only: the key store is keyed by
+                            // bare number, and a cross-island row wearing the
+                            // same digits is a different person. Their key
+                            // came with the card they deposited, so it is
+                            // already in mediaKey.
+                            uinForKey={a.crossIsland ? undefined : a.uin}
                             crossIsland={a.crossIsland}
                           />
                           <div className="min-w-0 flex-1">

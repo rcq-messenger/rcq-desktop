@@ -46,7 +46,7 @@ import {
 } from './crossisland-store'
 import { depositSealedToPrimary } from './federation-send'
 import { depositEncryptedBlob, fetchEncryptedBlob } from './media'
-import { myProfileKey } from './profile-key'
+import { loadPublishedProfileKey, myProfileKey } from './profile-key'
 
 const NICKNAME_MAX = 64
 // A media id is a client-chosen uuid4 hex (32 chars) or an island-assigned id.
@@ -74,16 +74,21 @@ interface OwnProfile {
 /// see. The warm snapshot is the fallback so a flaky moment still refreshes
 /// the name.
 async function readOwnProfile(identity: WebIdentity): Promise<OwnProfile | null> {
+  // ⚠⚠ Fall back to the key WE published, and go to the VAULT for it when this
+  // install has no local copy. The island no longer returns the key (profile-key
+  // model), and this snapshot is what the far side applies wholesale: naming a
+  // picture with no key reads there as "I removed mine" and deletes our face for
+  // every cross-island contact. `myProfileKey()` alone was not enough — it is
+  // empty on any install that never PICKED a picture (a browser linked from a
+  // phone, a second browser, the desktop after a fresh install), and an edit to
+  // the nickname from such an install was enough to wipe our face everywhere.
+  const ownKey = async () => myProfileKey() ?? (await loadPublishedProfileKey(identity))
   try {
     const me = await Api.myInfo(identity)
     return {
       nickname: (me.nickname || `${identity.uin}`).slice(0, NICKNAME_MAX),
       avatarMediaId: me.avatar_media_id ?? null,
-      // ⚠⚠ Fall back to the key WE published. The island no longer returns it
-      // (profile-key model), and this snapshot is what the far side applies
-      // wholesale: naming no picture reads there as "I removed mine" and
-      // deletes our face for every cross-island contact.
-      avatarMediaKey: me.avatar_media_key ?? myProfileKey(),
+      avatarMediaKey: me.avatar_media_key ?? (await ownKey()),
     }
   } catch {
     const cached = contactsCache.get(identity.uin)?.me
@@ -91,7 +96,7 @@ async function readOwnProfile(identity: WebIdentity): Promise<OwnProfile | null>
     return {
       nickname: (cached.nickname || `${identity.uin}`).slice(0, NICKNAME_MAX),
       avatarMediaId: cached.avatar_media_id ?? null,
-      avatarMediaKey: cached.avatar_media_key ?? myProfileKey(),
+      avatarMediaKey: cached.avatar_media_key ?? (await ownKey()),
     }
   }
 }
@@ -122,6 +127,14 @@ async function depositProfile(
   p: OwnProfile,
   blob: Uint8Array | null,
 ): Promise<boolean> {
+  // ⚠⚠ A picture we cannot name a key for is NOT a picture we may announce as
+  // gone. The guard below used to read `id && key`, so the one case that
+  // actually happens — an id from the island and a key this install never
+  // learned — walked straight past it and sent a snapshot the far side applies
+  // as a removal. Same rule as the blob that will not land: when we know there
+  // IS a face and cannot deliver it whole, send nothing and let the next change
+  // carry it.
+  if (p.avatarMediaId && !p.avatarMediaKey) return false
   if (p.avatarMediaId && p.avatarMediaKey) {
     if (!blob) return false
     const stored = await depositEncryptedBlob(peer.host, p.avatarMediaId, blob)

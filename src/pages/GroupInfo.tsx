@@ -20,6 +20,7 @@ import { ReportButton } from '../components/ReportButton'
 import { BadgeMark } from '../components/BadgeMark'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { PersonAvatar } from '../components/PersonAvatar'
+import { myProfileKey } from '../lib/profile-key'
 import { AddMemberSheet } from '../components/AddMemberSheet'
 import { GroupSettingsModal } from '../components/GroupSettingsModal'
 import { GroupAvatar } from '../components/GroupAvatar'
@@ -540,12 +541,21 @@ export function GroupInfo() {
                           so the screen is unchanged for everyone who never set
                           one. Presence stays on it as the badge, this being a
                           list of people, which is exactly where it means
-                          something. */}
+                          something.
+                          ⚠ The roster's key is the ISLAND's, and the island
+                          holds none for a picture set under the profile-key
+                          model, so this row drew a flower over a face we could
+                          open. Mine comes from my own key; a member's from what
+                          they sealed to me. Same-island rooms only: the key
+                          store is keyed by bare number and a roster on another
+                          island is a different numbering space. */}
                       <PersonAvatar
                         status={m.status}
                         size={18}
                         mediaId={m.avatar_media_id}
-                        mediaKey={m.avatar_media_key}
+                        mediaKey={m.avatar_media_key ?? (m.uin === identity?.uin ? myProfileKey() : null)}
+                        uinForKey={gctx?.host ? undefined : m.uin}
+                        askPeer={gctx?.host ? undefined : m}
                       />
                       <div className="flex-1 min-w-0">
                         <div className="font-medium text-sm truncate">

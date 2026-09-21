@@ -123,6 +123,8 @@ function Portrait({ subtitle }: { subtitle: string }) {
             className="absolute inset-0"
             mediaId={avatar.mediaId}
             mediaKey={avatar.mediaKey}
+            uinForKey={avatar.peer?.uin}
+            askPeer={avatar.peer ?? undefined}
           />
         )}
       </div>

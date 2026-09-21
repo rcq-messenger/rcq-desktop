@@ -822,6 +822,8 @@ export function Contacts() {
         title: ciAliasFor(c.uin, c.host) || c.nickname || `${c.uin}`,
         subtitle: c.host ? `${c.uin} · ${c.host}` : `${c.uin}`,
         kind: 'peer',
+        // Same-island only: the key store is keyed by bare number.
+        uin: c.host ? undefined : c.uin,
         status: c.status,
         crossIsland: !!c.host,
         avatarMediaId: c.avatar_media_id,

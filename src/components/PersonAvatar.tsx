@@ -11,11 +11,11 @@
 // (lib/media.ts), like a group avatar. A miss, a failed decrypt or a slow load
 // all fall back to the status icon rather than a broken image.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { UserStatus } from '../lib/api'
 import { useIdentity } from '../lib/identity-context'
 import { loadEncryptedAvatar } from '../lib/media'
-import { askForProfileKey, peerProfileKey } from '../lib/profile-key'
+import { askForProfileKey, peerProfileKey, profileKeysVersion, subscribeProfileKeys } from '../lib/profile-key'
 import { StatusIcon } from './StatusIcon'
 
 interface Props {
@@ -75,6 +75,14 @@ export function PersonAvatar({
 }: Props) {
   const { identity } = useIdentity()
   const [url, setUrl] = useState<string | null>(null)
+  // ⚠⚠ THE KEY CAN ARRIVE AFTER THIS DREW. The effect below asks the owner for
+  // their key when we hold none; the answer lands in a plain module Map a
+  // second later, and without a subscription every avatar already on screen
+  // kept its stale deps and never looked again. The face appeared only if the
+  // component happened to remount, so the ask-back path the whole design
+  // leans on did nothing inside a session. This version changes whenever any
+  // key is filed, adopted or reloaded, and it is in the effect's deps.
+  const keysVersion = useSyncExternalStore(subscribeProfileKeys, profileKeysVersion, profileKeysVersion)
 
   useEffect(() => {
     setUrl(null)
@@ -98,7 +106,7 @@ export function PersonAvatar({
     return () => {
       alive = false
     }
-  }, [apiBase, identity?.apiBase, mediaId, mediaKey, uinForKey])
+  }, [apiBase, identity?.apiBase, mediaId, mediaKey, uinForKey, keysVersion])
 
   if (!url) {
     // Nothing to draw: no picture, and presence deliberately suppressed.

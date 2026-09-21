@@ -97,9 +97,19 @@ export function lookupContactStatus(viewerUin: number, uin: number): UserStatus 
 export function lookupContactAvatar(
   viewerUin: number,
   uin: number,
-): { mediaId?: string | null; mediaKey?: string | null } | null {
+): {
+  mediaId?: string | null
+  mediaKey?: string | null
+  /// ⚠ Set only for a SAME-ISLAND contact. The island holds no key for a
+  /// picture set under the profile-key model, so `mediaKey` is null there and
+  /// the caller has to resolve it from what its owner sealed to us — which
+  /// needs the number, and the identity key to ask with. A cross-island row
+  /// carries its own key in the card it deposited and must keep going through
+  /// `mediaKey`, because the two numbering spaces are different people.
+  peer?: { uin: number; identity_key?: string | null; signing_key?: string | null } | null
+} | null {
   const c = contactsCache.get(viewerUin)?.contacts.find((x) => x.uin === uin)
-  if (c) return { mediaId: c.avatar_media_id, mediaKey: c.avatar_media_key }
+  if (c) return { mediaId: c.avatar_media_id, mediaKey: c.avatar_media_key, peer: c.host ? null : c }
   // §5e: a cross-island peer's picture was DEPOSITED to our island under the
   // same id, so it renders from our own apiBase like any other — same fallback
   // reason as the name above.

@@ -62,4 +62,17 @@ export { safeReturnPath } from '../../src/lib/login-return'
 // that name, which is a 422 and therefore a failed avatar upload every single
 // time. cli/test/profile-key.mjs pins the derivation against an island model
 // that refuses a malformed slot the way FastAPI does.
-export { ensureMyProfileKey, loadProfileKeys, myProfileKey, VAULT_PKEY } from '../../src/lib/profile-key'
+export {
+  ensureMyProfileKey,
+  loadProfileKeys,
+  loadPublishedProfileKey,
+  myProfileKey,
+  profileKeyOfAccount,
+  entitledToMyProfileKey,
+  fanOutMyProfileKey,
+  VAULT_PKEY,
+} from '../../src/lib/profile-key'
+// The roster the entitlement rule reads. Seeded directly in the test: the
+// question "did I accept them" is answered from this device's list, not from
+// the island.
+export { contactsCache } from '../../src/lib/contacts-cache'

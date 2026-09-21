@@ -33,7 +33,7 @@ import { carrySealKeyOnMove } from './local-seal'
 import { defaultHome } from './routing'
 import { Api, setTokenRefresher, setUnauthorizedHandler , clearGroupPreviewCache } from './api'
 import { clearRandomPeers } from './random-peers'
-import { loadProfileKeys } from './profile-key'
+import { loadProfileKeys, loadPublishedProfileKey } from './profile-key'
 import { idbClearAll } from './signal-persist'
 import { bootAction } from './session-verdict'
 import { ROTATED_ELSEWHERE_EVENT, rotatedUinOf } from './rotated-signal'
@@ -393,7 +393,19 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
     // out carrying no key, which the far side reads as "I removed my picture"
     // and acts on. The store is the account's, so it loads when the account
     // does, not when a message happens to arrive.
-    if (identity) loadProfileKeys(identity.uin)
+    if (identity) {
+      loadProfileKeys(identity.uin)
+      // ⚠⚠ And then the VAULT, read-only. The line above reads localStorage,
+      // which is empty on every install that never PICKED a picture itself: a
+      // browser linked from a phone, a second browser, the desktop after a
+      // fresh install, any reinstall. On those the account's own face stayed a
+      // flower, and a save of the nickname published a cross-island snapshot
+      // that reads on the far side as "I removed my picture". Android has done
+      // this since the model shipped (ProfileKeyVault.publishedKey).
+      // Read-only on purpose: minting from a start-up path would publish a
+      // rival key on any island hiccup, and a rival key cannot be taken back.
+      void loadPublishedProfileKey(identity).catch(() => { /* asked again later */ })
+    }
     setAccounts(listStoredIdentities())
   }, [identity, hydrated])
 

@@ -165,6 +165,8 @@ export function GlobalSearchOverlay({
                       size={28}
                       mediaId={h.c?.avatar_media_id}
                       mediaKey={h.c?.avatar_media_key}
+                      uinForKey={h.c && !h.c.host ? h.c.uin : undefined}
+                      askPeer={h.c && !h.c.host ? h.c : undefined}
                     />
                   )}
                   <span className="text-sm truncate">{h.title}</span>

@@ -320,6 +320,7 @@ export function AddMemberSheet({ group, ident, gid, host, onAdded, onClose }: Pr
                       size={22}
                       mediaId={c.avatarMediaId}
                       mediaKey={c.avatarMediaKey}
+                      uinForKey={c.host != null ? undefined : c.uin}
                     />
                     <span className="flex-1 min-w-0">
                       <span className="block truncate text-sm">{c.nickname}</span>

@@ -16,6 +16,7 @@
 /// `pkey`. Own devices read the key from the vault slot, same as room keys.
 
 import { Api, peerBundleFrom } from './api'
+import { contactsCache, snapshotFor } from './contacts-cache'
 import { theirCard } from './guest-card'
 import { encryptV1, bytesToB64, b64ToBytes, type Envelope, type WebIdentity } from './crypto'
 import { readSlot, slotId, writeSlot, VaultError } from './vault'
@@ -67,6 +68,7 @@ export function loadProfileKeys(uin: number): void {
   } catch {
     /* a browser with storage switched off still runs, it just re-asks */
   }
+  bump()
 }
 
 function persistTheirs(): void {
@@ -97,10 +99,57 @@ export function myProfileKey(): string | null {
   return mine
 }
 
+/// The own key of ANY account this browser holds, by number.
+///
+/// One screen needs it: the account switcher, whose rows belong to accounts
+/// that are not the active one. They are the only own-face rows in the app that
+/// cannot go through `myProfileKey()`, and without this they drew a flower over
+/// a picture that is perfectly openable. The key is already stored per account
+/// under `rcq.web.pkey.<uin>` — this only reads it.
+export function profileKeyOfAccount(uin: number): string | null {
+  if (_uin === uin && mine) return mine
+  try {
+    return localStorage.getItem(mineKey(uin))
+  } catch {
+    return null
+  }
+}
+
 export function rememberPeerKey(peer: number, keyB64: string): void {
   if (!keyB64 || theirs.get(peer) === keyB64) return
   theirs.set(peer, keyB64)
   persistTheirs()
+  bump()
+}
+
+// ── who is watching ──────────────────────────────────────────────────────
+//
+// ⚠⚠ THE STORES ABOVE ARE PLAIN MAPS AND NOTHING WAS SUBSCRIBED TO THEM. An
+// avatar with no key draws the lettered tile and asks its owner for one; the
+// answer arrives a second later, `rememberPeerKey` files it, and every avatar
+// already on screen keeps its stale effect deps and never looks again. The
+// face appeared only when the component happened to remount, so the ask-back
+// path the whole design leans on did nothing within a session. The counter is
+// what a caller puts in its deps (or reads through useSyncExternalStore) so a
+// key that arrives repaints the tile it was asked for.
+
+let version = 0
+const watchers = new Set<() => void>()
+
+function bump(): void {
+  version += 1
+  watchers.forEach((w) => { try { w() } catch { /* one bad listener is not the others' problem */ } })
+}
+
+/// Subscribe to "some profile key changed". Returns the unsubscribe.
+export function subscribeProfileKeys(fn: () => void): () => void {
+  watchers.add(fn)
+  return () => { watchers.delete(fn) }
+}
+
+/// The current version, for `useSyncExternalStore` or an effect dep.
+export function profileKeysVersion(): number {
+  return version
 }
 
 // ── my own key ───────────────────────────────────────────────────────────
@@ -133,10 +182,41 @@ export async function ensureMyProfileKey(identity: WebIdentity): Promise<string>
   return adopt(identity, await mirrorMyKey(identity, minted))
 }
 
+/// The account's key as it is ALREADY PUBLISHED, read only: never mints, never
+/// writes to the vault.
+///
+/// ⚠⚠ Why a read-only twin exists, and why it runs at sign-in. `mine` was only
+/// ever filled by `ensureMyProfileKey`, which runs when somebody PICKS a
+/// picture. An install that never picked one has nothing on disk: a browser
+/// linked from a phone, a second browser, the desktop after a fresh install, a
+/// reinstall. On those the account's own face stayed a flower — and worse, the
+/// cross-island profile SNAPSHOT went out naming an avatar id with no key,
+/// which the far side reads as "I removed my picture" and acts on. Android has
+/// carried the same read-only twin since the model shipped
+/// (data/ProfileKeyVault.publishedKey).
+///
+/// ⚠ It must NEVER mint. Minting from a start-up path would publish a rival
+/// key on any island hiccup, and a rival key is permanent damage: half a
+/// person's contacts end up holding one that opens nothing.
+export async function loadPublishedProfileKey(identity: WebIdentity): Promise<string | null> {
+  if (mine) return mine
+  try {
+    const slot = await readSlot(identity, pkeySlot(identity))
+    const found = (slot.plaintext ? new TextDecoder().decode(slot.plaintext).trim() : '') || null
+    return found ? adopt(identity, found) : null
+  } catch {
+    // No vault on this island, a blob we cannot open, or the island did not
+    // answer. Nothing to adopt and nothing to mint: the next attempt asks again.
+    return null
+  }
+}
+
 /// Pin `keyB64` as this install's copy of the account's key.
 function adopt(identity: WebIdentity, keyB64: string): string {
+  if (mine === keyB64) return keyB64
   mine = keyB64
   try { localStorage.setItem(mineKey(identity.uin), keyB64) } catch { /* nicety */ }
+  bump()
   return keyB64
 }
 
@@ -183,13 +263,21 @@ export async function sendMyProfileKeyTo(
 /// not cost everyone else their copy.
 export async function fanOutMyProfileKey(
   identity: WebIdentity,
-  contacts: Array<{ uin: number; identity_key?: string | null; signing_key?: string | null }>,
+  contacts: Array<{ uin: number; identity_key?: string | null; signing_key?: string | null; blocked?: boolean; host?: string | null }>,
   keyB64: string,
 ): Promise<number> {
   let sent = 0
   for (let i = 0; i < contacts.length; i++) {
     const c = contacts[i]
     if (!c.identity_key) continue
+    // ⚠ Blocked is not an audience. The key never rotates, so one fan-out to
+    // somebody blocked hands them every picture the account will ever publish.
+    if (c.blocked) continue
+    // ⚠ A row with a host belongs to ANOTHER island's numbering space, and
+    // `sendSealed` addresses OUR island — the same digits there are a
+    // different person. Cross-island contacts get the key in the §5e profile
+    // envelope deposited to their island, not from here.
+    if (c.host) continue
     try {
       await sendMyProfileKeyTo(identity, { uin: c.uin, identity_key: c.identity_key, signing_key: c.signing_key }, keyB64)
       sent += 1
@@ -200,6 +288,33 @@ export async function fanOutMyProfileKey(
 }
 
 // ── receiving, and asking ────────────────────────────────────────────────
+
+/// One answer per asker per six hours, the same window Android keeps. A
+/// question that costs us a vault read and a sealed send is a question worth
+/// rate-limiting even from somebody entitled to the answer.
+const ANSWER_THROTTLE_MS = 6 * 60 * 60 * 1000
+const answeredAt = new Map<number, number>()
+
+/// May `asker` be handed the key to my face?
+///
+/// Accepted contacts on THIS island, and nobody else. Read from the roster this
+/// device already holds rather than from the island: the question is "did I
+/// accept them", and the island is not the authority on that under stage 4 —
+/// the roster is. A device with no roster yet answers no, which is the safe
+/// half of a wrong answer.
+///
+/// ⚠ Same-island rows only. The key store is keyed by bare number, and a
+/// cross-island contact wearing the same digits as a local one is a different
+/// person; `host` set means the row is not about the number that just asked.
+///
+/// ⚠ And not somebody blocked. Blocking is "I want nothing more from you", and
+/// handing over the key that opens every future picture is the opposite of it.
+export function entitledToMyProfileKey(ownUin: number, asker: number): boolean {
+  const roster = contactsCache.get(ownUin)?.contacts ?? snapshotFor(ownUin)?.contacts
+  if (!roster || !roster.length) return false
+  return roster.some((c) => c.uin === asker && !c.host && !c.blocked)
+}
+
 
 /// Handle an inbound `pkey`/`pkeyask`. Returns true when it was ours to eat.
 /// ⚠ `from` is the SEALED sender identity the envelope was verified under, not
@@ -220,17 +335,22 @@ export async function handleProfileKeyEnvelope(
     // Without it only the install that happened to mint the key could answer,
     // and a contact asking while you are at a terminal would simply never get
     // a face. The key is ours either way - the vault slot is our own.
-    let k = mine
-    if (!k) {
-      try {
-        const slot = await readSlot(identity, pkeySlot(identity))
-        k = (slot.plaintext ? new TextDecoder().decode(slot.plaintext).trim() : '') || null
-        if (k) {
-          mine = k
-          try { localStorage.setItem(mineKey(identity.uin), k) } catch { /* nicety */ }
-        }
-      } catch { /* no vault on this island: nothing to answer with */ }
-    }
+    // ⚠⚠ ONLY AN ACCEPTED CONTACT. This branch used to answer whoever asked.
+    // The key is account-wide and deliberately never rotates, so one sealed
+    // question from any account that knows my number bought the key to every
+    // picture I will ever publish — and removing or blocking that person took
+    // nothing back, because they already hold it. The design doc is not vague
+    // about this: "Every accepted contact ... Nobody else. That IS the
+    // visibility rule, enforced by key possession rather than by a server
+    // check." iOS enforced it; the web did not.
+    //
+    // ⚠ Fail CLOSED. No roster on this device yet is not a reason to hand out
+    // a key; they ask again after the throttle, and by then the roster is in.
+    if (!entitledToMyProfileKey(identity.uin, from)) return true
+    const nowAsk = Date.now()
+    if (nowAsk - (answeredAt.get(from) ?? 0) < ANSWER_THROTTLE_MS) return true
+    answeredAt.set(from, nowAsk)
+    const k = mine ?? (await loadPublishedProfileKey(identity))
     if (!k) return true
     try {
       const info = await Api.userInfo(identity, from, theirCard(from))

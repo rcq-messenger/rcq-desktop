@@ -31,6 +31,7 @@ import { ReactionAuthors, type ReactionAuthor } from '../components/ReactionAuth
 import { ReactionPicker } from '../components/ReactionPicker'
 import { PersonAvatar } from '../components/PersonAvatar'
 import { SenderAvatar } from '../components/SenderAvatar'
+import { myProfileKey } from '../lib/profile-key'
 import { Api, peerBundleFrom, type Contact, type RCQGroup, type UserInfo } from '../lib/api'
 import { applySealedState, askForRoomKey } from '../lib/group-state'
 import { isTauri, openExternal } from '../lib/desktop'
@@ -3002,8 +3003,19 @@ export function Chat() {
               ?? (uin === peerUIN ? peer?.status : undefined)
               ?? 'offline'
         ) as ReactionAuthor['status'],
-        avatarMediaId: member?.avatar_media_id ?? (uin === peerUIN ? peer?.avatar_media_id : undefined),
-        avatarMediaKey: member?.avatar_media_key ?? (uin === peerUIN ? peer?.avatar_media_key : undefined),
+        // ⚠ My own row came from neither branch in a 1:1 chat (I am not a
+        // group member and I am not the peer), so my reaction was the one row
+        // in the sheet with no face at all.
+        avatarMediaId: mine
+          ? myInfo?.avatar_media_id
+          : member?.avatar_media_id ?? (uin === peerUIN ? peer?.avatar_media_id : undefined),
+        // ⚠ The island holds no key for a picture set under the profile-key
+        // model, so both branches give null and the real key is mine, or what
+        // its owner sealed to us. ReactionAuthors resolves the peer case from
+        // the number below.
+        avatarMediaKey: mine
+          ? (myInfo?.avatar_media_key ?? myProfileKey())
+          : member?.avatar_media_key ?? (uin === peerUIN ? peer?.avatar_media_key : undefined),
         crossIsland: uin === peerUIN ? !!peer?.host : false,
         profileTo,
       }
@@ -4110,6 +4122,8 @@ export function Chat() {
                     senderBadge={senderMember?.badge ?? null}
                     senderAvatarId={senderMember?.avatar_media_id}
                     senderAvatarKey={senderMember?.avatar_media_key}
+                    senderAvatarUin={isGroup && !gctx?.host ? senderMember?.uin : undefined}
+                    senderAvatarPeer={isGroup && !gctx?.host ? senderMember : undefined}
                     replyAuthor={replyAuthor}
                     mention={mentionCtx}
                     mediaBase={groupMediaBase}
@@ -5112,6 +5126,11 @@ interface IncomingRowProps extends CommonRowProps {
   senderMark?: MemberMark
   senderAvatarId: string | null | undefined
   senderAvatarKey: string | null | undefined
+  /// The island holds no key for a picture set under the profile-key model, so
+  /// the roster's key is null and the real one is what its owner sealed to us.
+  /// Same-island rooms only: the key store is keyed by bare number.
+  senderAvatarUin?: number
+  senderAvatarPeer?: { uin: number; identity_key?: string | null; signing_key?: string | null }
   replyAuthor: string
 }
 
@@ -5392,6 +5411,8 @@ const IncomingMessageRow = memo(function IncomingMessageRow({
   senderMark = null,
   senderAvatarId,
   senderAvatarKey,
+  senderAvatarUin,
+  senderAvatarPeer,
   replyAuthor,
 }: IncomingRowProps) {
   const invite = parseGroupInvite(m.text)
@@ -5444,7 +5465,13 @@ const IncomingMessageRow = memo(function IncomingMessageRow({
           >
             {/* Beside the nick, never instead of it, and only
                 when there is a picture. */}
-            <SenderAvatar mediaId={senderAvatarId} mediaKey={senderAvatarKey} size={16} />
+            <SenderAvatar
+              mediaId={senderAvatarId}
+              mediaKey={senderAvatarKey}
+              uin={senderAvatarUin}
+              askPeer={senderAvatarPeer}
+              size={16}
+            />
             {senderName}
             {/* The island's badge, to the right of the name, the same mark as
                 the roster and the header (founder, 05.09). */}

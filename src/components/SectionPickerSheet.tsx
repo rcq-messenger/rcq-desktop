@@ -24,6 +24,9 @@ export interface SectionCandidate {
   title: string
   subtitle: string
   kind: 'peer' | 'group'
+  /// The person's number on OUR island, for the profile-key lookup. Absent for
+  /// a group and for a cross-island row (a different numbering space).
+  uin?: number
   status?: UserStatus
   crossIsland?: boolean
   avatarMediaId?: string | null
@@ -122,6 +125,7 @@ export function SectionPickerSheet({ sectionName, candidates, selected, onClose,
                         crossIsland={c.crossIsland}
                         mediaId={c.avatarMediaId}
                         mediaKey={c.avatarMediaKey}
+                        uinForKey={c.crossIsland ? undefined : c.uin}
                       />
                     )}
                     <span className="flex-1 min-w-0">

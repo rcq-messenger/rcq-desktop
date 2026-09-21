@@ -82,7 +82,14 @@ export function ChatPreviewModal({
         >
           <header className="flex items-center gap-2.5 px-4 py-3 border-b border-line/40">
             {kind === 'peer' ? (
-              <PersonAvatar status={status ?? 'offline'} size={28} mediaId={avatarMediaId} mediaKey={avatarMediaKey} />
+              <PersonAvatar
+                status={status ?? 'offline'}
+                size={28}
+                mediaId={avatarMediaId}
+                mediaKey={avatarMediaKey}
+                // `id` is the peer's number on this island for kind 'peer'.
+                uinForKey={id}
+              />
             ) : (
               <GroupAvatar size={28} mediaId={avatarMediaId} mediaKey={avatarMediaKey} />
             )}

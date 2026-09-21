@@ -198,11 +198,20 @@ export function ForwardModal({
                     {/* The picture, not a bare status dot. Picking a person out
                         of a list is the one place a face beats a name, and every
                         other list in the app already shows one. */}
+                      {/* ⚠ The island holds no key for a picture set under the
+                          profile-key model, so `avatar_media_key` is null and
+                          the real key is the one its owner sealed to us. Every
+                          picker in the app read the island's null and drew a
+                          flower — exactly where a face is what you are picking
+                          by. Same-island rows only: the key store is keyed by
+                          bare number. */}
                     <PersonAvatar
                       status={c.status}
                       size={32}
                       mediaId={c.avatar_media_id}
                       mediaKey={c.avatar_media_key}
+                      uinForKey={c.host ? undefined : c.uin}
+                      askPeer={c.host ? undefined : c}
                     />
                     <div className="flex-1 min-w-0 text-left">
                       <div className="text-sm truncate">{name}</div>

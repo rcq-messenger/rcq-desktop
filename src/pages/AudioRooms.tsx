@@ -14,6 +14,7 @@ import { useI18n } from '../lib/i18n-context'
 import { useRooms, type RoomMember, type RoomSummary } from '../lib/rooms'
 import { useIdentity } from '../lib/identity-context'
 import { PersonAvatar } from '../components/PersonAvatar'
+import { myProfileKey } from '../lib/profile-key'
 import {
   CameraIcon,
   CameraOffIcon,
@@ -417,7 +418,14 @@ function MemberSheet({
                 size={44}
                 className="absolute inset-0"
                 mediaId={member.avatarMediaId}
-                mediaKey={member.avatarMediaKey}
+                // The island holds no key for a picture set under the
+                // profile-key model, so the room roster's key is null. Rooms
+                // are same-island, so the number is enough to look up what
+                // its owner sealed to us; mine comes from my own key. The
+                // roster carries no identity key, so there is nobody to ASK
+                // here — a stranger simply keeps the plain disc.
+                mediaKey={member.avatarMediaKey ?? (isSelf ? myProfileKey() : null)}
+                uinForKey={member.uin}
               />
             </div>
           </div>
@@ -503,7 +511,10 @@ function Tile({
             size={TILE_PX}
             className="absolute inset-0"
             mediaId={member.avatarMediaId}
-            mediaKey={member.avatarMediaKey}
+            // Same as the member sheet above: the island's key is null under
+            // the profile-key model, so resolve it from the key store.
+            mediaKey={member.avatarMediaKey ?? (isSelf ? myProfileKey() : null)}
+            uinForKey={member.uin}
           />
           {stream && (
             <video

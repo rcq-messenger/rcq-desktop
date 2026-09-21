@@ -49,6 +49,7 @@ import { useToast } from '../lib/toast'
 import type { UserInfo } from '../lib/api'
 import { snapshotFor } from '../lib/contacts-cache'
 import { PersonAvatar } from '../components/PersonAvatar'
+import { profileKeyOfAccount } from '../lib/profile-key'
 import { useIdentity } from '../lib/identity-context'
 import { animatedAvatarsEnabled, setAnimatedAvatarsEnabled } from '../lib/media'
 import { fullAddress, hostOfApiBase } from '../lib/federation'
@@ -807,7 +808,12 @@ export function Settings() {
                       status={who?.status ?? 'offline'}
                       size={32}
                       mediaId={who?.avatar_media_id}
-                      mediaKey={who?.avatar_media_key}
+                      // The island holds no key for a picture set under the
+                      // profile-key model, so the snapshot's key is null and
+                      // each account's own key is the one that opens it. This
+                      // was the last own-face row in the app without the
+                      // fallback, so a switcher full of faces drew flowers.
+                      mediaKey={who?.avatar_media_key ?? profileKeyOfAccount(a.uin)}
                       // THIS account's island, not the active one. Otherwise a
                       // row for an account living on another island asks the
                       // wrong server for its picture and falls back to the

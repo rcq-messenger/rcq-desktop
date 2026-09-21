@@ -16,7 +16,7 @@
 // Run: npm run cli:test   (builds first; this imports the BUILT bundle)
 
 import assert from 'node:assert/strict'
-import { newTestIdentity, seal, slotId, ensureMyProfileKey, loadProfileKeys, myProfileKey, VAULT_PKEY } from '../dist/vault.mjs'
+import { newTestIdentity, seal, slotId, ensureMyProfileKey, loadProfileKeys, loadPublishedProfileKey, myProfileKey, profileKeyOfAccount, entitledToMyProfileKey, fanOutMyProfileKey, contactsCache, VAULT_PKEY } from '../dist/vault.mjs'
 
 /// One island's vault, with the route's own slot validation in front of it.
 function island() {
@@ -123,5 +123,43 @@ await assert.rejects(() => ensureMyProfileKey(D), 'a 500 is doubt, not permissio
 isl.fail(false)
 const kD = await ensureMyProfileKey(D)
 assert.match(kD, /^[A-Za-z0-9+/]{43}=$/)
+
+// 7. WHO MAY BE HANDED THE KEY. The key is account-wide and never rotates, so
+//    one answer is every picture the account will ever publish. Both shipped
+//    clients used to answer whoever asked.
+const ME = 100001
+const contact = (uin, extra = {}) => ({ uin, nickname: `u${uin}`, status: 'offline', blocked: false, identity_key: 'ik', signing_key: 'sk', ...extra })
+contactsCache.set(ME, { contacts: [contact(555), contact(666, { blocked: true }), contact(777, { host: 'is2.test' })], groups: [], pending: [], me: null })
+assert.equal(entitledToMyProfileKey(ME, 555), true, 'an accepted contact')
+assert.equal(entitledToMyProfileKey(ME, 999), false, 'a stranger who merely knows the number')
+assert.equal(entitledToMyProfileKey(ME, 666), false, 'somebody blocked')
+assert.equal(entitledToMyProfileKey(ME, 777), false, 'the same digits on ANOTHER island is a different person')
+// ⚠ Fail CLOSED: no roster on this device is not a reason to hand out a key.
+contactsCache.delete(ME)
+assert.equal(entitledToMyProfileKey(ME, 555), false, 'no roster yet answers no')
+
+// 8. The fan-out has the same audience. Rows that must never receive it are
+//    skipped before any crypto runs, so a roster made only of them sends none.
+let sends = 0
+const noFetch = globalThis.fetch
+globalThis.fetch = async (...a) => { sends += 1; return noFetch(...a) }
+const sent = await fanOutMyProfileKey(A, [
+  contact(666, { blocked: true }),
+  contact(777, { host: 'is2.test' }),
+  { uin: 888, nickname: 'no key', status: 'offline', blocked: false, signing_key: 'sk' },
+], k1)
+globalThis.fetch = noFetch
+assert.equal(sent, 0, 'blocked, cross-island and key-less rows are not an audience')
+assert.equal(sends, 0, 'and nothing was even attempted for them')
+
+// 9. The account switcher reads an account's own key BY NUMBER. For the
+//    account currently loaded that is the in-memory copy; for another account
+//    it is that account's own localStorage row, which node does not have — so
+//    here it is null, and the point of the check is that it never hands back
+//    the WRONG account's key.
+loadProfileKeys(D.uin)
+await loadPublishedProfileKey(D)
+assert.equal(profileKeyOfAccount(D.uin), myProfileKey(), 'the loaded account reads its own')
+assert.equal(profileKeyOfAccount(A.uin), null, 'and never another account\'s')
 
 console.log('profile-key: ok')

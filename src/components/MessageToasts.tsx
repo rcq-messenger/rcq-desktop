@@ -182,6 +182,8 @@ export function MessageToasts() {
                     size={28}
                     mediaId={senderAvatar?.mediaId}
                     mediaKey={senderAvatar?.mediaKey}
+                    uinForKey={senderAvatar?.peer?.uin}
+                    askPeer={senderAvatar?.peer ?? undefined}
                   />
                 )}
               </div>

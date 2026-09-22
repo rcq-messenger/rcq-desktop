@@ -323,10 +323,14 @@ export interface DeleteEnvelope {
 /// bare `{"kind":"delivered"}`. iOS then failed to decode it (`targetIDs`
 /// missing), which means it also never ACKed the queue row — so each broken
 /// receipt was redelivered to the phone on every drain, forever.
-export interface ReceiptEnvelope {
-  kind: 'read' | 'delivered'
-  targetIDs: string[]
-}
+/// ⚠ A UNION of two one-kind shapes, not one interface carrying both. With
+/// `kind: 'read' | 'delivered'` on a single interface, TypeScript never
+/// subtracts the member from the envelope union no matter how many branches
+/// handle it, so the exhaustiveness guard in `envelopeToObject` could not see
+/// it as covered. Same fields, same name everywhere it is used.
+export type ReceiptEnvelope =
+  | { kind: 'read'; targetIDs: string[] }
+  | { kind: 'delivered'; targetIDs: string[] }
 
 /// Home-island record self-push (federation gossip B1, kind "homerec"): the
 /// sender hands a contact their own signed home-island record so the contact
@@ -708,7 +712,13 @@ export function envelopeToObject(env: Envelope): Record<string, unknown> {
     // Which thread it belongs to is the carbon's own to/gid, so nothing is
     // repeated and nothing extra is written into the ciphertext.
     obj.at = env.at
-  } else if (env.kind === 'read' || env.kind === 'delivered') {
+  } else if (env.kind === 'read') {
+    obj.targetIDs = env.targetIDs
+  } else if (env.kind === 'delivered') {
+    // ⚠ Split from 'read' rather than sharing one condition: with both kinds
+    // on ONE interface, `a || b` leaves the union member only half-narrowed
+    // and the exhaustiveness check at the bottom cannot see it as covered.
+    // Two lines here buy a compile error for every future kind.
     obj.targetIDs = env.targetIDs
   } else if (env.kind === 'homerec') {
     obj.rec = env.rec
@@ -763,6 +773,37 @@ export function envelopeToObject(env: Envelope): Record<string, unknown> {
       obj.avatar_media_id = env.avatar_media_id
       obj.avatar_media_key = env.avatar_media_key
     }
+  } else if (env.kind === 'voice') {
+    // ⚠⚠ THIS BRANCH WAS MISSING, and a missing branch is not a missing field:
+    // the builder starts from `{ kind }` and only a branch ever adds to it, so
+    // a voice message sent from here went out as `{kind:"voice"}` with no blob
+    // id, no key and no duration. The receiver drew an empty bubble it could
+    // never load. Same casing as photo/video/file — `mediaID`, not `mediaId`,
+    // which is the phones' wire spelling.
+    obj.id = env.id
+    obj.mediaID = env.mediaID
+    obj.mediaKey = env.mediaKey
+    obj.durationSec = env.durationSec
+    if (env.ttl != null) obj.ttl = env.ttl
+    if (env.ttl != null && env.ts != null) obj.ts = env.ts
+  } else if (env.kind === 'pkey') {
+    // ⚠⚠ AND THIS ONE, which is what took the faces off the app. The key IS
+    // the whole message: `{kind:"pkey"}` with no `key` decodes cleanly on every
+    // client, is filed as an empty string, stored nowhere, and acked — so the
+    // island drops the row and the contact is left looking at a flower for
+    // ever, with nothing anywhere reporting a failure. Measured on the
+    // flagship 22.09: four fan-outs from a web account, four sealed envelopes
+    // delivered and acked, zero keys stored on the receiving phone.
+    obj.key = env.key
+  } else if (env.kind === 'pkeyask') {
+    // Nothing beyond the kind: the question IS the whole message.
+  } else if (env.kind === 'poll') {
+    // ⚠ Deliberately never sent (see PollEnvelope): the ballots are not
+    // end-to-end encrypted, so this client stopped composing them on
+    // 2026-08-23 and only renders what an older peer still sends. Loud rather
+    // than silent, because silence here is exactly what cost us the two
+    // branches above.
+    throw new Error('envelopeToObject: polls are receive-only in this client')
   } else if (env.kind === 'carbon') {
     // Multi-device carbon: include only the destination that's set
     // (encodeIfPresent style, matches iOS/Android), nest the original
@@ -770,6 +811,17 @@ export function envelopeToObject(env: Envelope): Record<string, unknown> {
     if (env.to != null) obj.to = env.to
     if (env.gid != null) obj.gid = env.gid
     obj.env = envelopeToObject(env.env)
+  } else {
+    // ⚠⚠ EXHAUSTIVENESS, and it is load-bearing rather than tidy. Three kinds
+    // reached production with no branch here (`pkey`, `voice`, and `poll` by
+    // intent), because the failure mode is silent: an unhandled kind is not a
+    // type error, it just ships `{kind}` alone and every receiver decodes it
+    // happily as a message with all its fields empty. `never` turns the next
+    // one into a compile error instead of a bug report six weeks later.
+    const unhandled: never = env
+    throw new Error(
+      `envelopeToObject: no branch for kind ${String((unhandled as { kind?: string }).kind)}`,
+    )
   }
   return obj
 }

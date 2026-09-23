@@ -14,6 +14,7 @@ import { applyReceiptToOutgoing, sweepExpiredOutgoing } from './outgoing-store'
 import { isGroupMuted, isPeerMuted } from './local-store'
 import { SWEEP_INTERVAL_MS, expiryFrom, lapsed, sendAnchorMs } from './disappearing'
 import { forgetCachedImage } from './media'
+import { arrivalAnchorMs, clockOffsetMs } from './message-time'
 
 export interface IncomingRow {
   id: string // envelope UUID
@@ -93,9 +94,26 @@ export function serverStampMs(iso: unknown, now: number = Date.now()): number | 
   if (typeof iso !== 'string' || !/(?:Z|[+-]\d{2}:?\d{2})$/.test(iso.trim())) return undefined
   const ms = Date.parse(iso)
   if (!Number.isFinite(ms) || ms <= 0) return undefined
-  if (ms > now + 60_000) return undefined
+  // ⚠ "From the future" is measured against the ISLAND's now, not ours. On a
+  // computer whose clock runs behind, every honest stamp the island writes is
+  // ahead of the local clock, and refusing them left exactly the rows that
+  // needed the stamp (a night's queue) filed at the moment of the drain.
+  if (ms > now - clockOffsetMs() + 60_000) return undefined
   if (ms < now - 365 * 24 * 3600 * 1000) return undefined
   return ms
+}
+
+/// When the conversation shows this row as sent, and where it sorts: the
+/// sender's own `ts` when the envelope carried one, else the island's deposit
+/// stamp for a row that reached this device late, else the moment it was filed
+/// here. See `message-time.ts` for why `at` alone was wrong (#1039).
+///
+/// ⚠ Every place that PRINTS or ORDERS an incoming row reads this, never `at`
+/// directly: the bubble, the timeline and its day dividers, search, the
+/// preview and the backup. `at` stays what it always was, this device's
+/// ingest time, for the logic that really means "when did it get here".
+export function incomingShownAt(row: Pick<IncomingRow, 'at' | 'sentAt' | 'srvAt'>): number {
+  return row.sentAt ?? arrivalAnchorMs(row.at, row.srvAt)
 }
 
 function rowFromEnvelope(from: number, env: Envelope): IncomingRow | null {
@@ -808,7 +826,7 @@ export function mergeRestoredIncoming(
   const known = new Set(existing.map((r) => r.id))
   const fresh = rows.filter((r) => !known.has(r.id))
   if (!fresh.length) return 0
-  const merged = [...existing, ...fresh].sort((a, b) => a.at - b.at)
+  const merged = [...existing, ...fresh].sort((a, b) => incomingShownAt(a) - incomingShownAt(b))
   map.set(id, merged)
   for (const r of fresh) seen.add(`${prefix}:${id}:${r.id}`)
   persist()

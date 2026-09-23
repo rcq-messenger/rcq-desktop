@@ -13,6 +13,7 @@
 // envelope shape is known. Keeps this file decoupled from the
 // growing list of event types the backend ships.
 
+import { noteIslandClock } from './message-time'
 import {
   createContext,
   useCallback,
@@ -132,6 +133,10 @@ export function WSProvider({ children }: { children: ReactNode }) {
       // arrive in bursts on the next reconnect (felt as "slow delivery").
       // Mirror iOS: ping every 25s; the server pongs + refreshes last_seen.
       if (pingTimerRef.current) clearInterval(pingTimerRef.current)
+      // One ping straight away, not 25 seconds in: its pong is the first
+      // reading of the island's clock, and the morning's queue drain is
+      // exactly when rows are filed against it.
+      ws.send(JSON.stringify({ type: 'ping' }))
       pingTimerRef.current = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ping' }))
       }, 25_000)
@@ -139,6 +144,8 @@ export function WSProvider({ children }: { children: ReactNode }) {
     ws.addEventListener('message', (e) => {
       try {
         const data = JSON.parse(e.data)
+        // The island's clock, every 25 seconds, for free: see noteIslandClock.
+        if (data && data.type === 'pong') noteIslandClock(data.t)
         if (data && typeof data.type === 'string') dispatch(data as WsEvent)
       } catch {
         // Non-JSON frames are ignored; the backend ships only JSON

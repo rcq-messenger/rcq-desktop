@@ -11,6 +11,7 @@ import { readBackup, writeBackup } from './backup'
 import {
   applyReaction,
   exportAllIncoming,
+  incomingShownAt,
   mergeRestoredIncoming,
   reactionsForTarget,
   type IncomingRow,
@@ -44,7 +45,10 @@ function incomingToRecord(row: IncomingRow, peer: number | null, group: number |
     // In a group the sender matters; in a 1:1 it is the peer and the field is
     // left null so the record reads the same on every client.
     sender: group != null ? row.from : null,
-    sent_at: row.at,
+    // The time the conversation shows, not this device's ingest time: a
+    // restore files `sent_at` as the row's only clock, so a drain time written
+    // here would come back as the send time for good (#1039).
+    sent_at: incomingShownAt(row),
     kind: row.kind ?? 'text',
     body: row.text ?? '',
     media_id: row.mediaId ?? null,

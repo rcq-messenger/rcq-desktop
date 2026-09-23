@@ -2,7 +2,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
-import { useGroupIncoming, useIncoming, type IncomingRow } from '../lib/incoming-store'
+import { incomingShownAt, useGroupIncoming, useIncoming, type IncomingRow } from '../lib/incoming-store'
 import { loadPersisted, storageKey, type OutgoingRow } from '../lib/outgoing-store'
 import { useI18n } from '../lib/i18n-context'
 import { parseGroupInvite } from '../lib/group-invite'
@@ -44,7 +44,7 @@ export function ChatPreviewModal({
     const inc: (IncomingRow & { mine?: false })[] = kind === 'peer' ? incoming : groupIncoming
     const out: OutgoingRow[] = loadPersisted(storageKey(kind === 'group', id))
     const merged = [
-      ...inc.map((m) => ({ id: m.id, text: m.text, at: m.at, mine: false })),
+      ...inc.map((m) => ({ id: m.id, text: m.text, at: incomingShownAt(m), mine: false })),
       ...out.filter((r) => r.kind !== 'call').map((r) => ({ id: r.id, text: r.text, at: r.sentAt, mine: true })),
     ]
     merged.sort((a, b) => a.at - b.at)

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { BadgeMark } from './BadgeMark'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
-import { incomingSnapshots } from '../lib/incoming-store'
+import { incomingShownAt, incomingSnapshots } from '../lib/incoming-store'
 import { allOutgoingThreads } from '../lib/outgoing-store'
 import { useI18n } from '../lib/i18n-context'
 import { EmoticonText } from './EmoticonText'
@@ -84,8 +84,8 @@ export function GlobalSearchOverlay({
       hits.push({ isGroup, threadId, msgId, text, at, fromUin })
     }
     const snaps = incomingSnapshots()
-    for (const [uin, rows] of snaps.peers) for (const r of rows) push(false, uin, r.id, r.text, r.at, uin)
-    for (const [gid, rows] of snaps.groups) for (const r of rows) push(true, gid, r.id, r.text, r.at, r.from)
+    for (const [uin, rows] of snaps.peers) for (const r of rows) push(false, uin, r.id, r.text, incomingShownAt(r), uin)
+    for (const [gid, rows] of snaps.groups) for (const r of rows) push(true, gid, r.id, r.text, incomingShownAt(r), r.from)
     for (const th of allOutgoingThreads())
       for (const r of th.rows) if (!r.kind || r.kind === 'text') push(th.isGroup, th.id, r.id, r.text, r.sentAt, null)
     hits.sort((a, b) => b.at - a.at)

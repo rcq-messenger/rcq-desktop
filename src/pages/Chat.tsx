@@ -51,6 +51,7 @@ import {
   noteOwnEnvelope,
   sweepExpiredIncoming,
   takePendingUnreadFor,
+  incomingShownAt,
   type IncomingRow,
 } from '../lib/incoming-store'
 import { PartialFanOutError, sendV2 } from '../lib/signal-device'
@@ -3165,11 +3166,12 @@ export function Chat() {
         .map((row) => ({ at: row.sentAt, kind: 'out' as const, row })),
       ...incoming
         .filter((m) => !sentIds.has(m.id))
-        // ⚠ `sentAt` when the envelope carried one: `at` is when THIS device
-        // received the row, so a message drained after a week offline sorted to
-        // the bottom of the thread under today's date. The sender's own clock,
-        // clamped by `sendAnchorMs` where it is written.
-        .map((m) => ({ at: m.sentAt ?? m.at, kind: 'in' as const, msg: m })),
+        // ⚠ Not `at`: that is when THIS device received the row, so a message
+        // drained after a week offline sorted to the bottom of the thread under
+        // today's date. The sender's own clock when the envelope carried one,
+        // else the island's stamp on a row that arrived late (#1039). The day
+        // dividers below are cut from this same number.
+        .map((m) => ({ at: incomingShownAt(m), kind: 'in' as const, msg: m })),
     ]
       .filter((it) => !isDeleted(it.kind === 'out' ? it.row.id : it.msg.id))
       .sort((a, b) => a.at - b.at)
@@ -3442,7 +3444,7 @@ export function Chat() {
       if (it.kind === 'out' && it.row.kind === 'call') return []
       const text = it.kind === 'out' ? it.row.text : it.msg.text
       const id = it.kind === 'out' ? it.row.id : it.msg.id
-      const at = it.kind === 'out' ? it.row.sentAt : it.msg.at
+      const at = it.kind === 'out' ? it.row.sentAt : incomingShownAt(it.msg)
       if (!text || !text.toLowerCase().includes(q)) return []
       return [{
         id,
@@ -5575,7 +5577,7 @@ const IncomingMessageRow = memo(function IncomingMessageRow({
         )}
         {reactionChips(m.id, 'start', myUin, h)}
         <div className="flex items-center gap-1 text-[0.625rem] text-fg-dim">
-          {new Date(m.sentAt ?? m.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          {new Date(incomingShownAt(m)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           {m.expiresAt != null && <ExpiryMark expiresAt={m.expiresAt} t={t} />}
         </div>
         {/* ⚠ Floats, like the reaction picker right below. As an

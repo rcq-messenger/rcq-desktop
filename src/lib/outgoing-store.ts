@@ -14,6 +14,7 @@ import { isSealedText, openText, sealText } from './pin-seal'
 import type { Envelope, CarbonEnvelope, ReplyContext } from './crypto'
 import { expiryFrom, lapsed, sendAnchorMs } from './disappearing'
 import { forgetCachedImage } from './media'
+import { arrivalAnchorMs } from './message-time'
 
 export interface OutgoingRow {
   id: string
@@ -410,7 +411,10 @@ export function applyReceiptToOutgoing(peerUin: number, kind: 'delivered' | 'rea
 /// Build a `sent` outgoing row from a carbon's inner envelope. Returns null
 /// for kinds we don't surface (e.g. a nested reaction — reactions sync via
 /// their own self-echo, never as a carbon).
-function outgoingRowFromInner(inner: Envelope): OutgoingRow | null {
+///
+/// `srvAt` is the island's deposit stamp on the carbon's row, when the path
+/// that fetched it has one (`serverStampMs`).
+function outgoingRowFromInner(inner: Envelope, srvAt?: number): OutgoingRow | null {
   const now = Date.now()
   /// A message I sent from my phone with a timer on it has to carry the same
   /// deadline here, or the copy on the desktop outlives the one the timer was
@@ -427,7 +431,15 @@ function outgoingRowFromInner(inner: Envelope): OutgoingRow | null {
   // "as if I had just written it", in the words of the person who reported it.
   // `sendAnchorMs` is the same clamp the disappearing timers already use
   // against a skewed clock.
-  const when = (ts: unknown): number => sendAnchorMs(ts, now)
+  //
+  // ⚠⚠ And WITHOUT a `ts`, which is nearly always: every client puts `ts` on
+  // the wire only beside a `ttl`, so the fix above never reached an ordinary
+  // message, and a voice note sent from the phone at 23:18 carboned into the
+  // desktop at 09:40 the next morning, the minute it was started (#1039). The
+  // fallback is the island's stamp on the carbon's row when it reached us
+  // late, the same rule the received half follows (`message-time.ts`). A live
+  // carbon still falls back to `now`, exactly as before.
+  const when = (ts: unknown): number => sendAnchorMs(ts, arrivalAnchorMs(now, srvAt))
   if (inner.kind === 'text') {
     return {
       id: inner.id,
@@ -560,10 +572,14 @@ export function applyEditToOutgoing(threadKey: string, targetID: string, text: s
 /// Handle a decrypted carbon: file its inner envelope as a fromMe row in the
 /// destination thread. Idempotent by inner id (the origin device no-ops its
 /// own carbon). Called from the receive dispatch for kind==='carbon'.
-export function fileOutgoingCarbon(carbon: CarbonEnvelope): void {
+///
+/// `srvAt`: the island's stamp on the row the carbon came in, see
+/// `outgoingRowFromInner`. The dedup below keeps whichever copy was filed
+/// first, so a queued copy of a carbon already filed live never moves it.
+export function fileOutgoingCarbon(carbon: CarbonEnvelope, srvAt?: number): void {
   const threadKey = carbonThreadKey(carbon)
   if (!threadKey) return
-  const row = outgoingRowFromInner(carbon.env)
+  const row = outgoingRowFromInner(carbon.env, srvAt)
   if (!row) return
   if (_openThreadKey === threadKey && _openThreadSink) {
     _openThreadSink(row) // Chat merges into state (dedup by id) + persists

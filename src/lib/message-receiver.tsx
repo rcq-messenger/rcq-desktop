@@ -282,7 +282,9 @@ function route(
         // so it must never reach fileOutgoingCarbon below.
         applyRemoteRead(envelope.to ?? null, envelope.gid ?? null, inner.at ?? Date.now())
       } else {
-        fileOutgoingCarbon(envelope)
+        // With the row's island stamp: a carbon drained from the queue is
+        // otherwise filed at the moment of the drain (#1039).
+        fileOutgoingCarbon(envelope, srvAt)
       }
     }
     return

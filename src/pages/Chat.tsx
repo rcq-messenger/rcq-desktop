@@ -130,23 +130,12 @@ import { contactAlias, useContactAliases } from '../lib/local-store'
 import { groupNamesScope, lastKnownName, useGroupNames } from '../lib/group-names'
 import { memberName, quotedAuthorNames } from '../lib/member-name'
 import { useWS } from '../lib/ws'
+import { CARBON_KINDS, SHIPPABLE_KINDS, type ComposedEnvelope } from '../lib/ship-kinds'
 
-/// Envelope kinds `shipEnvelopeToCurrentThread` is allowed to encrypt + send.
-/// (Carbons take a separate path; this gates the in-thread sends.) `edit` was
-/// missing here, which silently rejected edit propagation to the peer.
-const SHIPPABLE_KINDS = new Set<Envelope['kind']>(['text', 'reaction', 'photo', 'video', 'file', 'edit', 'delete', 'location'])
-
-/// Message kinds we mirror to the user's other devices via a carbon
-/// (NOT reactions — those sync through their own self-echo).
-///
-/// `edit` and `delete` joined 2026-08-21: the group fan-out deliberately
-/// skips self (group-crypto), so the carbon is the ONLY road an edit or a
-/// retract has to the account's other devices — without them the founder
-/// edited a message on the desktop and the phone kept the old text forever.
-/// `voice` joined 2026-09-01: Android has always been able to file one from a
-/// carbon, and leaving it out meant a voice message sent from the desktop was
-/// the one kind that never appeared on the phone.
-const CARBON_KINDS = new Set<Envelope['kind']>(['text', 'photo', 'video', 'voice', 'file', 'location', 'edit', 'delete'])
+/// Which kinds a thread ships and which it mirrors to our other devices live in
+/// lib/ship-kinds.ts, where the offline test can reach them. They sat here as
+/// two hand-kept sets, and the voice composer went four weeks refused by the
+/// first one (#1038, #1039).
 
 /// Client-side cap on a document upload. The backend accepts up to 2 GB, but
 /// the web decrypts the whole blob into memory to download — keep that bounded.
@@ -1318,6 +1307,9 @@ export function Chat() {
   async function shipEnvelopeToCurrentThread(envelope: Envelope): Promise<{ ok: true } | { ok: false; error: string }> {
     if (!identity) return { ok: false, error: 'no identity' }
     if (!SHIPPABLE_KINDS.has(envelope.kind)) {
+      // Said out loud: this refusal happens before any request, so without
+      // the line the only trace of it is a red bubble (#1038, #1039).
+      console.error(`[ship] refused envelope kind "${envelope.kind}" before sealing`)
       return { ok: false, error: `unsupported envelope kind: ${envelope.kind}` }
     }
     // Let the optimistic paint land before the sealing starts. An async
@@ -1571,7 +1563,9 @@ export function Chat() {
   }
 
   async function attemptSendRow(row: OutgoingRow) {
-    let env: Envelope
+    // ComposedEnvelope, not Envelope: a branch below that builds a kind the
+    // ship gate does not list is a compile error rather than a red bubble.
+    let env: ComposedEnvelope
     // ⚠ A ballot from before polls were cut (founder item 14a). Nothing
     // composes one any more, but a row whose send never finished is still in
     // the log as 'failed', and the chain below has no poll branch left: it

@@ -67,6 +67,7 @@ await build({ ...common, entryPoints: [path.join(cli, 'src', 'burn-cascade-entry
 await build({ ...common, entryPoints: [path.join(cli, 'src', 'backup-pick-entry.ts')], outfile: path.join(dist, 'backup-pick.mjs') })
 await build({ ...common, entryPoints: [path.join(cli, 'src', 'guest-entry.ts')], outfile: path.join(dist, 'guest.mjs') })
 await build({ ...common, entryPoints: [path.join(cli, 'src', 'leave-entry.ts')], outfile: path.join(dist, 'leave.mjs') })
+await build({ ...common, entryPoints: [path.join(cli, 'src', 'ship-kinds-entry.ts')], outfile: path.join(dist, 'ship-kinds.mjs') })
 
 // The node glue + its .wasm, next to the bundles (see the header comment).
 fs.cpSync(path.join(root, 'crypto-wasm-spike', 'signal-wasm', 'pkg-node'), path.join(dist, 'pkg-node'), {

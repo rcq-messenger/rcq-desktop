@@ -1217,11 +1217,23 @@ export function Chat() {
     if (lastMarkerRef.current === stamp) return
     let timer = 0
     const arm = () => {
+      // ⚠ Cleared FIRST, on every event, hidden included. It used to be
+      // cleared only on the way to setting a new one, so a timer armed while
+      // the window was in front survived it going to the back, and 900 ms
+      // later claimed "read" from a window nobody was looking at.
+      window.clearTimeout(timer)
       // A hidden tab is not a reader: a chat left open behind another window
       // was not read, so nothing is claimed until it comes back to the front.
       if (document.visibilityState !== 'visible') return
-      window.clearTimeout(timer)
+      // ⚠⚠ And the "nothing new" check lives HERE, not only above. It used to
+      // run once, when the effect started, so every return of the window to
+      // the front re-armed and re-sent a marker for a thread that had not
+      // moved: one self-addressed 'read' to the island per alt-tab. Caught in
+      // a harness whose hidden pane flickered visible every couple of seconds,
+      // where it became a marker every two seconds, for ever.
+      if (lastMarkerRef.current === stamp) return
       timer = window.setTimeout(() => {
+        if (document.visibilityState !== 'visible' || lastMarkerRef.current === stamp) return
         lastMarkerRef.current = stamp
         void sendReadMarker()
       }, 900)

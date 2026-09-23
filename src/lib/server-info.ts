@@ -115,6 +115,13 @@ export interface ServerCapabilities {
   /// join and add paths stay the legacy recover-first/register ones, which is
   /// exactly what old islands, open islands and is2 must keep getting.
   guest_accounts_v1: boolean
+  /// The island takes `attachments` on `POST /reports/mine/{id}/messages`,
+  /// hands them back on the turn, and accepts an empty `body` when a picture
+  /// carries the turn. ⚠⚠ Defaults to FALSE, and the reply box shows no attach
+  /// button without it: an island that predates the field does not refuse it,
+  /// it stores the text and drops the screenshot, and the person is told the
+  /// turn went through.
+  report_turn_attachments: boolean
 }
 
 export interface ServerInfo {
@@ -184,6 +191,7 @@ export const DEFAULT_CAPABILITIES: ServerCapabilities = {
   vault: false,
   contact_pending_withdraw: false,
   guest_accounts_v1: false,
+  report_turn_attachments: false,
 }
 
 /// How long one GET /server/info may take before it reads as no answer.
@@ -210,6 +218,7 @@ type BoolCapability =
   | 'vault'
   | 'contact_pending_withdraw'
   | 'guest_accounts_v1'
+  | 'report_turn_attachments'
 
 /// Bounded before it is believed. This text is drawn beside a contact's name,
 /// and it comes from an island we may only be PROBING, so an operator must not
@@ -285,6 +294,7 @@ function normalize(raw: unknown): ServerInfo | null {
       vault: bool('vault'),
       contact_pending_withdraw: bool('contact_pending_withdraw'),
       guest_accounts_v1: bool('guest_accounts_v1'),
+      report_turn_attachments: bool('report_turn_attachments'),
     },
   }
 }

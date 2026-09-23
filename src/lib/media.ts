@@ -23,6 +23,7 @@ import {
 import { isTauri, saveBufferDesktop } from './desktop'
 import { openBuffer, sealBuffer } from './pin-seal'
 import { idbDel, idbGet, idbSet } from './signal-persist'
+import { uploadAll } from './report-attachments'
 
 // Cache the decrypted object URL per (mediaId, key) so repeated
 // renders (Contacts row + Chat header + GroupInfo) don't re-fetch,
@@ -478,6 +479,14 @@ export async function uploadReportAttachment(apiBase: string, file: File): Promi
     mime: isImage ? 'image/jpeg' : (file.type || 'application/octet-stream'),
     size: buf.byteLength,
   }
+}
+
+/// Every picked file for one report or one turn, sealed and uploaded, or
+/// `ReportAttachmentUploadError` and nothing to send. The one path both
+/// composers use (Settings for a new report, MyReports for a turn), so the two
+/// cannot drift into different shapes the admin queue then renders differently.
+export function uploadReportAttachments(apiBase: string, files: File[]): Promise<ReportAttachment[]> {
+  return uploadAll(files, (f) => uploadReportAttachment(apiBase, f))
 }
 
 /// re-encode, which would kill the animation). For a cross-island peer pass

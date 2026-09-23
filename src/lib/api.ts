@@ -4,6 +4,8 @@
 // prefixes documented in `backend/app/routers/*.py`.
 
 import type { WebIdentity, PeerBundle } from './crypto'
+import type { ReportAttachment } from './media'
+import { addTurnBody } from './report-attachments'
 import { messageClass } from './crypto'
 
 /// Told about every roster a group fetch brings back (#982: the last-known
@@ -530,10 +532,17 @@ export interface ReportTurn {
   from_admin: boolean
   body: string
   created_at: string
+  /// What the reporter attached to this turn. Absent on every island that
+  /// predates `report_turn_attachments`, and on every operator turn.
+  attachments?: ReportAttachment[]
 }
 
 export interface MyReport {
   id: number
+  /// Whether a turn on this report may carry pictures: true only on a bug
+  /// report. Absent on an island that predates turn attachments, which the
+  /// reply box reads as no.
+  attachments_allowed?: boolean
   /// The number the operator sees in the admin queue, so the reporter can
   /// quote it back. The admin console renders `#{id}` and always has, so `id`
   /// IS that number today; these two are the names a dedicated field could
@@ -551,6 +560,10 @@ export interface MyReport {
   /// The whole exchange, oldest first. Absent on an island that predates the
   /// ticket thread, which is why the screen falls back to `reply`.
   thread?: ReportTurn[]
+  /// What the reporter attached when they filed it (#934). The island has
+  /// handed these back since then and Android draws them; this screen did not,
+  /// so a screenshot sent from here was invisible to the person who sent it.
+  attachments?: ReportAttachment[]
 }
 
 /// The platform tag glued to the front of a bug report so the admin queue can
@@ -1070,7 +1083,7 @@ export const Api = {
   sendReport(
     id: WebIdentity,
     text: string,
-    attachments: { media_id: string; key: string; mime: string; size: number }[] = [],
+    attachments: ReportAttachment[] = [],
     tag: string = REPORT_TAG,
   ): Promise<{ id: number }> {
     return request<{ id: number }>(id, 'POST', '/reports', {
@@ -1106,8 +1119,22 @@ export const Api = {
 
   /// Write back on your own report — the half that did not exist, so people
   /// answered a question by filing a second report. 409 when it is closed.
-  addToReport(id: WebIdentity, reportId: number, body: string): Promise<ReportTurn> {
-    return request<ReportTurn>(id, 'POST', `/reports/mine/${reportId}/messages`, { body })
+  ///
+  /// `attachments` only on an island that advertises `report_turn_attachments`:
+  /// one that does not would store the text and drop the pictures without a
+  /// word (see `attachmentsKept`). With none, the body is exactly `{ body }`.
+  addToReport(
+    id: WebIdentity,
+    reportId: number,
+    body: string,
+    attachments: ReportAttachment[] = [],
+  ): Promise<ReportTurn> {
+    return request<ReportTurn>(
+      id,
+      'POST',
+      `/reports/mine/${reportId}/messages`,
+      addTurnBody(body, attachments),
+    )
   },
 
   /// Rewrite your own report while nobody has answered it (founder item 26).

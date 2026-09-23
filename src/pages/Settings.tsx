@@ -41,7 +41,9 @@ import {
   setRelayKey,
   type RelayKeyStatus,
 } from '../lib/desktop'
-import { uploadReportAttachment } from '../lib/media'
+import { uploadReportAttachments } from '../lib/media'
+import { addPicked, filesFromClipboard, ReportAttachmentUploadError } from '../lib/report-attachments'
+import { ReportAttachmentPicker } from '../components/ReportAttachments'
 import { useI18n } from '../lib/i18n-context'
 import { PinSettings } from '../components/PinSettings'
 import { flushVaultWriter } from '../lib/pin-gate'
@@ -429,9 +431,10 @@ export function Settings() {
     setReportBusy(true)
     setReportError(null)
     try {
-      const atts = (await Promise.all(
-        reportFiles.map((f) => uploadReportAttachment(identity!.apiBase, f)),
-      )).filter((a): a is NonNullable<typeof a> => a != null)
+      // All or nothing: a failed upload stops the send and keeps the text and
+      // the picked files (see ReportAttachmentUploadError for why this is no
+      // longer a silent drop).
+      const atts = await uploadReportAttachments(identity!.apiBase, reportFiles)
       await Api.sendReport(identity!, reportText.trim(), atts, reportTag)
       setReportSent(true)
       setReportText('')
@@ -441,7 +444,11 @@ export function Settings() {
       // 429 = the server's per-uin rate limit on the reports channel
       // (20/hr for bug reports; the 5/hr budget is for abuse reports).
       setReportError(
-        msg.includes('429') ? t('settings.report.rate_limited') : t('settings.report.error'),
+        e instanceof ReportAttachmentUploadError
+          ? t('report.attach.error')
+          : msg.includes('429')
+            ? t('settings.report.rate_limited')
+            : t('settings.report.error'),
       )
     } finally {
       setReportBusy(false)
@@ -1588,38 +1595,19 @@ export function Settings() {
                 // for a report the network delivered perfectly.
                 maxLength={reportTextLimit(reportTag)}
                 disabled={reportBusy}
+                onPaste={(e) => {
+                  // A screenshot pasted straight in (Win+Shift+S, Ctrl+V).
+                  // Text in the same paste still goes into the box.
+                  const pics = filesFromClipboard(e.clipboardData)
+                  if (pics.length) setReportFiles((prev) => addPicked(prev, pics))
+                }}
                 className="w-full px-3 py-2 rounded-md bg-field outline-none focus:ring-1 focus:ring-accent text-sm resize-y"
               />
-              <div className="flex items-center gap-2 flex-wrap">
-                {reportFiles.map((f, i) => (
-                  <div key={i} className="relative">
-                    {f.type.startsWith('image/') ? (
-                      <img src={URL.createObjectURL(f)} alt="" className="w-12 h-12 rounded-md object-cover" />
-                    ) : (
-                      <div className="w-12 h-12 rounded-md bg-field flex items-center justify-center text-fg-secondary text-xs">▶</div>
-                    )}
-                    <button
-                      onClick={() => setReportFiles(reportFiles.filter((_, j) => j !== i))}
-                      className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-black/60 text-white text-[0.625rem] leading-none"
-                    >×</button>
-                  </div>
-                ))}
-                {reportFiles.length < 3 && !reportBusy && (
-                  <label className="w-12 h-12 rounded-md bg-field flex items-center justify-center text-accent text-xl cursor-pointer hover:bg-accent/5">
-                    +
-                    <input
-                      type="file"
-                      accept="image/*,video/*"
-                      className="hidden"
-                      onChange={(e) => {
-                        const f = e.target.files?.[0]
-                        if (f) setReportFiles((prev) => [...prev, f].slice(0, 3))
-                        e.target.value = ''
-                      }}
-                    />
-                  </label>
-                )}
-              </div>
+              <ReportAttachmentPicker
+                files={reportFiles}
+                onChange={setReportFiles}
+                disabled={reportBusy}
+              />
               <button
                 onClick={() => void submitReport()}
                 disabled={reportBusy || !reportText.trim()}

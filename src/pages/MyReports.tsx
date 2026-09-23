@@ -19,6 +19,12 @@
 // row the other clients carry (copy / edit / delete), added a copy for the
 // ANSWER as well as the report, and put the report NUMBER on the row so the
 // reporter can quote the same number the operator reads off the queue.
+//
+// #1039: "Write back" could only carry text, so a person who wanted to add a
+// screenshot to their own open report filed a new report for one picture. The
+// reply box now has the same picker as the new-report form, on an island that
+// says it keeps attachments on a turn (`report_turn_attachments`); and what was
+// attached, to the report or to a turn, is drawn back under it.
 
 import { CenteredLoader } from '../components/Spinner'
 import { useEffect, useState } from 'react'
@@ -33,7 +39,17 @@ import {
 } from '../lib/api'
 import { useI18n } from '../lib/i18n-context'
 import { useIdentity } from '../lib/identity-context'
+import { uploadReportAttachments } from '../lib/media'
+import {
+  addPicked,
+  attachmentsKept,
+  canSendTurn,
+  filesFromClipboard,
+  ReportAttachmentUploadError,
+} from '../lib/report-attachments'
+import { useServerCapabilities } from '../lib/use-server-info'
 import { useToast } from '../lib/toast'
+import { ReportAttachmentList, ReportAttachmentPicker } from '../components/ReportAttachments'
 
 const KNOWN_STATUSES = new Set(['resolved', 'dismissed', 'duplicate'])
 
@@ -134,7 +150,20 @@ export function MyReports() {
   /// time: this is a queue of tickets, not a chat list.
   const [replyTo, setReplyTo] = useState<number | null>(null)
   const [draft, setDraft] = useState('')
+  /// Pictures picked for the open reply box. Cleared with the draft: they
+  /// belong to that one box, not to the screen.
+  const [draftFiles, setDraftFiles] = useState<File[]>([])
   const [sending, setSending] = useState(false)
+  /// Whether this island keeps attachments on a turn. Without it the reply box
+  /// stays text-only, exactly as before: see `report_turn_attachments`.
+  const islandCanAttach = useServerCapabilities(identity?.apiBase).report_turn_attachments
+  /// ⚠ AND whether THIS report takes them. The island keeps pictures only on a
+  /// bug report — a report about a person drops them, at filing and on every
+  /// turn after (backend reports.py, the filing rule) — so a button on that
+  /// report would upload a screenshot the island then throws away while the
+  /// turn reads as sent. Only one reply box is open at a time, so the open
+  /// report decides. Absent on an island that predates the field: false.
+  const canAttach = islandCanAttach && items?.find((x) => x.id === replyTo)?.attachments_allowed === true
   /// Which report is being rewritten, and the text so far. Same one-at-a-time
   /// rule as the reply box, and the two are mutually exclusive.
   const [editing, setEditing] = useState<number | null>(null)
@@ -145,25 +174,36 @@ export function MyReports() {
   /// it was typed instead of after a refresh nobody triggers.
   async function send(reportId: number) {
     const text = draft.trim()
-    if (!identity || !text || sending) return
+    const files = canAttach ? draftFiles : []
+    if (!identity || sending || !canSendTurn(text, files.length, canAttach)) return
     setSending(true)
     setActionError(null)
     try {
-      const turn = await Api.addToReport(identity, reportId, text)
+      // Uploaded first, all or nothing: if a picture does not make it, no
+      // turn is written and the box keeps both the text and the files.
+      const atts = files.length > 0 ? await uploadReportAttachments(identity.apiBase, files) : []
+      const turn = await Api.addToReport(identity, reportId, text, atts)
       setItems((rows) =>
         (rows ?? []).map((r) =>
           r.id === reportId ? { ...r, thread: [...(r.thread ?? []), turn] } : r,
         ),
       )
       setDraft('')
+      setDraftFiles([])
       setReplyTo(null)
+      // The text is in, the picture is not: say so rather than let the turn
+      // read as complete. Only an island that claims the capability and then
+      // does not keep the field gets here.
+      if (!attachmentsKept(atts.length, turn)) setActionError(t('myreports.attach_dropped'))
     } catch (e) {
       // A closed ticket is the one refusal worth naming: it is not a failure,
       // it is an answer.
       setActionError(
-        e instanceof ApiError && e.status === 409
-          ? t('myreports.closed')
-          : t('myreports.send_error'),
+        e instanceof ReportAttachmentUploadError
+          ? t('report.attach.error')
+          : e instanceof ApiError && e.status === 409
+            ? t('myreports.closed')
+            : t('myreports.send_error'),
       )
     } finally {
       setSending(false)
@@ -379,6 +419,7 @@ export function MyReports() {
                       onClick={() => {
                         setActionError(null)
                         setReplyTo(null)
+                        setDraftFiles([])
                         setEditing(isEditing ? null : r.id)
                         setEditDraft(reason)
                       }}
@@ -432,6 +473,10 @@ export function MyReports() {
                 </div>
               )}
 
+              {/* What was attached when it was filed, right under the words
+                  it belongs to (#934 on Android). */}
+              <ReportAttachmentList items={r.attachments} />
+
               {/* The exchange, oldest first, as ONE conversation: see
                   `timelineOf`. */}
               {turns.map((turn) => (
@@ -462,9 +507,14 @@ export function MyReports() {
                       </IconButton>
                     )}
                   </div>
-                  <div className="text-sm whitespace-pre-wrap break-words rcq-selectable">
-                    {turn.body}
-                  </div>
+                  {/* A turn can be a picture alone, and an empty line above
+                      it would read as text that failed to load. */}
+                  {turn.body && (
+                    <div className="text-sm whitespace-pre-wrap break-words rcq-selectable">
+                      {turn.body}
+                    </div>
+                  )}
+                  <ReportAttachmentList items={turn.attachments} />
                 </div>
               ))}
 
@@ -481,21 +531,37 @@ export function MyReports() {
                       rows={3}
                       value={draft}
                       onChange={(e) => setDraft(e.target.value)}
+                      onPaste={(e) => {
+                        // A screenshot pasted straight in (Win+Shift+S,
+                        // Ctrl+V), where the island keeps it. Text in the
+                        // same paste still goes into the box.
+                        if (!canAttach) return
+                        const pics = filesFromClipboard(e.clipboardData)
+                        if (pics.length) setDraftFiles((prev) => addPicked(prev, pics))
+                      }}
                       placeholder={t('myreports.reply.placeholder')}
                       className="w-full rounded-md bg-field px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-accent/60 rcq-selectable"
                     />
+                    {canAttach && (
+                      <ReportAttachmentPicker
+                        files={draftFiles}
+                        onChange={setDraftFiles}
+                        disabled={sending}
+                      />
+                    )}
                     <div className="flex gap-2">
                       <button
                         onClick={() => {
                           setReplyTo(null)
                           setDraft('')
+                          setDraftFiles([])
                         }}
                         className="flex-1 h-9 rounded-md bg-field text-sm font-medium hover:bg-line/40 transition-colors"
                       >
                         {t('common.cancel')}
                       </button>
                       <button
-                        disabled={sending || !draft.trim()}
+                        disabled={sending || !canSendTurn(draft, draftFiles.length, canAttach)}
                         onClick={() => void send(r.id)}
                         className="flex-1 h-9 rounded-md bg-accent text-ink-black text-sm font-semibold disabled:opacity-40 transition-opacity"
                       >
@@ -509,6 +575,7 @@ export function MyReports() {
                       setEditing(null)
                       setReplyTo(r.id)
                       setDraft('')
+                      setDraftFiles([])
                     }}
                     className="w-full h-9 rounded-md bg-field text-sm font-medium hover:bg-line/40 transition-colors"
                   >

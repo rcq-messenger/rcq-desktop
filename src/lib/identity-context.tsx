@@ -140,6 +140,14 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  /// Whether this page has already proved the island will mint for the active
+  /// account. Read by the one-time probe further down, set here too: see the
+  /// ⚠ at the boot mint.
+  const probedRef = useRef(false)
+  /// The cool-down between failed mints; see the ⚠ at `mintOnce`. Up here
+  /// because the boot mint sets it too.
+  const mintBackoffRef = useRef({ until: 0, delayMs: 5_000 })
+
   useEffect(() => {
     const stored = loadStoredIdentity()
     // There is an account again, so whatever "add account" was in flight is
@@ -172,6 +180,16 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
     // A tokenless account holds NOTHING to authenticate with between sessions,
     // so the session begins by minting a token from the signing key. One round
     // trip before the first paint.
+    //
+    // ⚠⚠ ONE. The probe below exists for an account whose token was read off
+    // disk, and it recognised that account by "has a token" - which is also
+    // what this mint leaves behind. So every page load minted twice, reopened
+    // the socket for the second token and fetched everything over again, and a
+    // phone that reloaded the page a few dozen times in an hour spent the
+    // island's whole /auth/refresh budget for its address. From there every
+    // call went out with no token at all and came back "Остров это не принял"
+    // (#1041). This mint IS the proof the probe was going to ask for.
+    probedRef.current = true
     let cancelled = false
     void mintSessionToken(stored).then((mint) => {
       if (cancelled) return
@@ -234,6 +252,11 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
       } else {
         // Offline, or an island having a bad minute. Keep the account and open
         // the app on its stored history — `tokenWaiting` below keeps trying.
+        // Out of mint budget is the same story with a known end: the retries
+        // hold off until the island said they may ask again (#1041).
+        if (mint.retryAfterS) {
+          mintBackoffRef.current = { until: Date.now() + mint.retryAfterS * 1000, delayMs: 5_000 }
+        }
         setIdentity(stored)
       }
       setHydrated(true)
@@ -307,7 +330,6 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
   // arms a doubling cool-down (5s up to 5min) during which mintOnce answers
   // null without touching the network; any success clears it.
   const mintingRef = useRef<Promise<string | null> | null>(null)
-  const mintBackoffRef = useRef({ until: 0, delayMs: 5_000 })
   const mintOnce = (target: WebIdentity): Promise<string | null> => {
     if (mintingRef.current) return mintingRef.current
     if (Date.now() < mintBackoffRef.current.until) return Promise.resolve(null)
@@ -333,8 +355,11 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
             setMovedStranded({ from: target.uin, busy: false })
           }
           const b = mintBackoffRef.current
+          // The island's own "not before" wins over our guess when it gave
+          // one: asking again inside it only ever earns the same 429 (#1041).
+          const wait = mint.retryAfterS ? Math.max(b.delayMs, mint.retryAfterS * 1000) : b.delayMs
           mintBackoffRef.current = {
-            until: Date.now() + b.delayMs,
+            until: Date.now() + wait,
             delayMs: Math.min(b.delayMs * 2, 300_000),
           }
         }
@@ -355,7 +380,6 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
   // First start after the update: the token is still on disk. Prove the island
   // will hand out another one, then stop storing it. Nothing user-visible —
   // on failure the account simply goes on keeping its token.
-  const probedRef = useRef(false)
   useEffect(() => {
     if (!hydrated || !identity || !identity.jwt || probedRef.current) return
     probedRef.current = true

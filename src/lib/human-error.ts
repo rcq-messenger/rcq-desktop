@@ -19,13 +19,15 @@
 // request never reached anyone, which is the ordinary case on a phone in a
 // lift, and it must not read as "the island is broken".
 
-import { ApiError } from './api'
+import { ApiError, NoSessionError } from './api'
 
 type T = (key: string, vars?: Record<string, string | number>) => string
 
 /// The i18n key for a failure, or null when the error already carries a
 /// sentence somebody wrote on purpose (a thrown `new Error(t(...))`).
 function keyFor(e: unknown): string | null {
+  // Before the ApiError branch: it IS one, a 401, and must not read as one.
+  if (e instanceof NoSessionError) return 'err.no_session'
   if (e instanceof ApiError) {
     // 429 arrives with its own retry-after handling upstream; if it reaches
     // here, say the same thing without a number rather than invent one.

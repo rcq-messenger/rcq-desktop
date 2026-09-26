@@ -224,6 +224,7 @@ export const pt: Record<string, string> = {
   'err.no_connection': 'Sem conexão. Sua mensagem foi guardada e vai sair quando você voltar.',
   'err.busy_rate': 'Rápido demais. Espere alguns segundos.',
   'err.not_allowed': 'A ilha não aceitou isso.',
+  'err.no_session': 'Ainda entrando na ilha. Espere um pouco, vai terminar sozinho.',
   'err.too_big': 'Grande demais para enviar.',
   'err.gone': 'Isso não está mais lá.',
   'err.rejected': 'A ilha recusou.',

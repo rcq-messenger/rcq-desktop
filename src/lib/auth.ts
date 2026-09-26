@@ -926,6 +926,21 @@ export async function mintSessionToken(id: WebIdentity, deviceIdOverride?: strin
     if (res.status === 401 || res.status === 404 || res.status === 405) {
       return mintFromRefusal(res.status, await res.text(), hasPendingRotation(id.uin))
     }
+    // Out of budget for this address. Carry the island's own number back, so
+    // the caller waits that long instead of asking every few seconds into a
+    // refusal (#1041).
+    if (res.status === 429) {
+      let wait = Number(res.headers.get('Retry-After'))
+      if (!(wait > 0)) {
+        try {
+          const body = (await res.json()) as { detail?: { retry_after?: unknown } }
+          wait = Number(body.detail?.retry_after)
+        } catch {
+          /* no body worth reading: fall back to the caller's own backoff */
+        }
+      }
+      return wait > 0 ? { ...miss, retryAfterS: Math.ceil(wait) } : miss
+    }
     return miss
   } catch {
     // Offline. Says nothing about the account.

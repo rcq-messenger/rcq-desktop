@@ -224,6 +224,7 @@ export const tr: Record<string, string> = {
   'err.no_connection': 'Bağlantı yok. Mesajın saklandı, ağ dönünce gidecek.',
   'err.busy_rate': 'Çok hızlı. Birkaç saniye bekle.',
   'err.not_allowed': 'Ada bunu kabul etmedi.',
+  'err.no_session': 'Adaya hâlâ giriş yapılıyor. Biraz bekleyin, kendiliğinden tamamlanacak.',
   'err.too_big': 'Göndermek için çok büyük.',
   'err.gone': 'Artık orada değil.',
   'err.rejected': 'Ada reddetti.',

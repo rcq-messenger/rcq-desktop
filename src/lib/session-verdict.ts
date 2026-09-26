@@ -56,6 +56,10 @@ export interface TokenMint {
   ambiguous?: boolean
   /// The number the island named alongside `identity_rotated`, when it did.
   uin?: number
+  /// Seconds the island asked us to wait before minting again (429 on
+  /// /auth/refresh). Says nothing about the account: the budget is per
+  /// address, and it refills on its own (#1041).
+  retryAfterS?: number
 }
 
 /// The refusal code out of an error body, in either shape the island answers

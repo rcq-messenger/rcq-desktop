@@ -37,6 +37,12 @@ export class ApiError extends Error {
   }
 }
 
+/// A 401 for a call that went out with NO token: this browser has not minted
+/// one yet (offline at start, or out of /auth/refresh budget for its address).
+/// Nothing was refused on the account's merits, so it must not read as the
+/// island saying no - that sentence under every screen for an hour was #1041.
+export class NoSessionError extends ApiError {}
+
 // A 401 on a Bearer-authed request means the JWT is dead — the device was
 // unlinked/revoked on the phone, or the token expired. The session can't
 // recover, so rather than surface a raw "401: device revoked" error with a
@@ -108,6 +114,7 @@ async function request<T>(
       // would sign people out of live accounts every time the network is down
       // at the wrong moment.
       if (identity.jwt) unauthorizedHandler?.(identity.uin)
+      else throw new NoSessionError(res.status, text)
     }
     throw new ApiError(res.status, text)
   }

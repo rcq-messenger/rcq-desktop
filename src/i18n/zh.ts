@@ -222,6 +222,7 @@ export const zh: Record<string, string> = {
   'err.no_connection': '没有网络。消息已保存，联网后会自动发出。',
   'err.busy_rate': '太快了，请等几秒。',
   'err.not_allowed': '岛屿没有接受。',
+  'err.no_session': '仍在登录岛屿。请稍候，会自动完成。',
   'err.too_big': '太大，无法发送。',
   'err.gone': '它已经不在了。',
   'err.rejected': '岛屿拒绝了。',

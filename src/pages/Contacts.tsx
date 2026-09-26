@@ -172,8 +172,8 @@ export {
 /// list to render. Keyed by account so a switch never folds the wrong roster.
 let rosterKept: { uin: number; etag: string | null; list: Contact[] | null } = { uin: 0, etag: null, list: null }
 
-/// How long the window has to sit untouched before the Online/Offline split is
-/// re-decided under it (#1043, see where it is used).
+/// How long the window has to sit untouched before the Online/Offline split
+/// stops being held and follows presence live (#1043, see watchingRef).
 const PLACEMENT_IDLE_MS = 2 * 60_000
 
 export function Contacts() {
@@ -254,6 +254,8 @@ export function Contacts() {
   /// freezes (the cache is then all there is, and a live presence event must
   /// still not carry a row out from under the reader).
   const placementReadyRef = useRef(false)
+  /// Last `hiddenBySection` handed to search, see there.
+  const hiddenKeptRef = useRef<{ key: string; value: { uins: Set<number>; gids: Set<number> } } | null>(null)
   /// ⚠⚠ #1043: the hold above protects the person LOOKING at the list, and
   /// "for as long as this list is mounted" was read on a phone, where the list
   /// is mounted for a minute. The desktop mounts it once in the morning. By
@@ -261,34 +263,43 @@ export function Contacts() {
   /// window opened, red flowers under it, and nobody was looking at the rows
   /// that would have moved.
   ///
-  /// So the sections are re-decided at the moments nobody can see them move:
-  /// the window goes to the background or loses focus, or nothing has been
-  /// touched in it for a couple of minutes. A presence event on its own still
-  /// never carries a row, which is the whole of what the founder asked for.
+  /// So the hold only applies while somebody is watching: the window visible,
+  /// focused, and touched in the last couple of minutes. The rest of the time
+  /// the sections follow presence live, and the moment the person comes back
+  /// the hold is taken again on what is ALREADY on screen, so returning moves
+  /// nothing. (The first cut of this re-decided once on leaving and froze
+  /// again, which only moved the stale moment from the morning to the blur.)
+  const watchingRef = useRef(!document.hidden && document.hasFocus())
   const [, rePlace] = useReducer((n: number) => n + 1, 0)
   useEffect(() => {
-    const drop = () => {
-      if (!placementReadyRef.current || placedRef.current.size === 0) return
+    const watching = (w: boolean) => {
+      if (watchingRef.current === w) return
+      watchingRef.current = w
+      // Either way the holds go: unwatched, the render below draws the live
+      // split; watched again, the render below records exactly that split.
       placedRef.current.clear()
       rePlace()
     }
-    const onVisibility = () => {
-      if (document.hidden) drop()
-    }
-    let idle = window.setTimeout(drop, PLACEMENT_IDLE_MS)
+    let idle = window.setTimeout(() => watching(false), PLACEMENT_IDLE_MS)
     const touched = () => {
       window.clearTimeout(idle)
-      idle = window.setTimeout(drop, PLACEMENT_IDLE_MS)
+      idle = window.setTimeout(() => watching(false), PLACEMENT_IDLE_MS)
+      if (!document.hidden) watching(true)
     }
-    const inputs = ['pointermove', 'pointerdown', 'keydown', 'wheel', 'scroll', 'touchstart'] as const
+    const onVisibility = () => {
+      if (document.hidden) watching(false)
+      else if (document.hasFocus()) touched()
+    }
+    const onBlur = () => watching(false)
+    const inputs = ['pointermove', 'pointerdown', 'keydown', 'wheel', 'scroll', 'touchstart', 'focus'] as const
     document.addEventListener('visibilitychange', onVisibility)
-    window.addEventListener('blur', drop)
+    window.addEventListener('blur', onBlur)
     // Capture, so a scroll inside the list (which does not bubble) counts too.
     for (const ev of inputs) window.addEventListener(ev, touched, { capture: true, passive: true })
     return () => {
       window.clearTimeout(idle)
       document.removeEventListener('visibilitychange', onVisibility)
-      window.removeEventListener('blur', drop)
+      window.removeEventListener('blur', onBlur)
       for (const ev of inputs) window.removeEventListener(ev, touched, { capture: true })
     }
   }, [])
@@ -635,7 +646,8 @@ export function Contacts() {
     const held = placedRef.current.get(k)
     if (held !== undefined) return held
     const now = isAround(c.status)
-    if (placementReadyRef.current) placedRef.current.set(k, now)
+    // Held only while somebody is watching (#1043, see watchingRef).
+    if (placementReadyRef.current && watchingRef.current) placedRef.current.set(k, now)
     return now
   }
 
@@ -822,7 +834,11 @@ export function Contacts() {
         default: add([...(filedContacts.get(rec.id) ?? []), ...(filedCross.get(rec.id) ?? [])], filedGroups.get(rec.id) ?? [])
       }
     }
-    return { uins, gids }
+    // The same object while the same people are hidden, so the open search
+    // does not recount every message on each presence event.
+    const key = `${[...uins].sort().join(',')}|${[...gids].sort().join(',')}`
+    if (hiddenKeptRef.current?.key !== key) hiddenKeptRef.current = { key, value: { uins, gids } }
+    return hiddenKeptRef.current.value
   })()
   /// Everything a section header needs that is not its title or its rows.
   function chrome(rec: SectionRecord, at: number) {

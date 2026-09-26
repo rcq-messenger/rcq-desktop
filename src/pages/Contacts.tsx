@@ -26,7 +26,7 @@ import { AltText } from '../components/AltText'
 import { applySealedStateAll, loadRoomKeys } from '../lib/group-state'
 import { loadProfileKeys, myProfileKey } from '../lib/profile-key'
 import { AnimatePresence } from 'framer-motion'
-import { useEffect, useState, useRef, type ReactNode } from 'react'
+import { useEffect, useReducer, useState, useRef, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { BypassShield } from '../components/BypassShield'
 import { ChatPreviewModal } from '../components/ChatPreviewModal'
@@ -172,6 +172,10 @@ export {
 /// list to render. Keyed by account so a switch never folds the wrong roster.
 let rosterKept: { uin: number; etag: string | null; list: Contact[] | null } = { uin: 0, etag: null, list: null }
 
+/// How long the window has to sit untouched before the Online/Offline split is
+/// re-decided under it (#1043, see where it is used).
+const PLACEMENT_IDLE_MS = 2 * 60_000
+
 export function Contacts() {
   const { identity, refreshSession } = useIdentity()
   // The account itself is a guest copy on this island (spec 2026-09-15, 12.1):
@@ -250,6 +254,44 @@ export function Contacts() {
   /// freezes (the cache is then all there is, and a live presence event must
   /// still not carry a row out from under the reader).
   const placementReadyRef = useRef(false)
+  /// ⚠⚠ #1043: the hold above protects the person LOOKING at the list, and
+  /// "for as long as this list is mounted" was read on a phone, where the list
+  /// is mounted for a minute. The desktop mounts it once in the morning. By
+  /// evening the Online heading was a record of who had been around when the
+  /// window opened, red flowers under it, and nobody was looking at the rows
+  /// that would have moved.
+  ///
+  /// So the sections are re-decided at the moments nobody can see them move:
+  /// the window goes to the background or loses focus, or nothing has been
+  /// touched in it for a couple of minutes. A presence event on its own still
+  /// never carries a row, which is the whole of what the founder asked for.
+  const [, rePlace] = useReducer((n: number) => n + 1, 0)
+  useEffect(() => {
+    const drop = () => {
+      if (!placementReadyRef.current || placedRef.current.size === 0) return
+      placedRef.current.clear()
+      rePlace()
+    }
+    const onVisibility = () => {
+      if (document.hidden) drop()
+    }
+    let idle = window.setTimeout(drop, PLACEMENT_IDLE_MS)
+    const touched = () => {
+      window.clearTimeout(idle)
+      idle = window.setTimeout(drop, PLACEMENT_IDLE_MS)
+    }
+    const inputs = ['pointermove', 'pointerdown', 'keydown', 'wheel', 'scroll', 'touchstart'] as const
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('blur', drop)
+    // Capture, so a scroll inside the list (which does not bubble) counts too.
+    for (const ev of inputs) window.addEventListener(ev, touched, { capture: true, passive: true })
+    return () => {
+      window.clearTimeout(idle)
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('blur', drop)
+      for (const ev of inputs) window.removeEventListener(ev, touched, { capture: true })
+    }
+  }, [])
   const [groups, setGroups] = useState<RCQGroup[]>(() => _cachedAtMount?.groups ?? [])
   const [pending, setPending] = useState<PendingRequest[]>(() => _cachedAtMount?.pending ?? [])
   const [me, setMe] = useState<UserInfo | null>(() => _cachedAtMount?.me ?? null)

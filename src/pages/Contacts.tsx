@@ -798,6 +798,32 @@ export function Contacts() {
   }
 
   const isLocked = (rec: SectionRecord) => rec.p === 1 && !unlocked.has(rec.id)
+  /// ⚠⚠ Who is behind a section's PIN right now. The section hides them from
+  /// this list, and the global search used to find them anyway: their names
+  /// by name, and the text of their messages under the chat's title, with no
+  /// PIN asked (#1045, found on the phones first). Search reads this and leaves
+  /// them out until the section is opened.
+  const hiddenBySection = (() => {
+    const uins = new Set<number>()
+    const gids = new Set<number>()
+    const add = (cs: { uin: number }[], gs: RCQGroup[] = []) => {
+      for (const c of cs) uins.add(c.uin)
+      for (const g of gs) gids.add(g.id)
+    }
+    for (const rec of rendered) {
+      if (!isLocked(rec)) continue
+      switch (rec.id) {
+        case SYS_FAV: add(fav, favGroups); break
+        case SYS_CI: add(crossLoose); break
+        case SYS_GROUPS: add([], normalGroups); break
+        case SYS_ONLINE: add(online); break
+        case SYS_OFFLINE: add(offline); break
+        case SYS_ARCHIVE: add(archived, archivedGroups); break
+        default: add([...(filedContacts.get(rec.id) ?? []), ...(filedCross.get(rec.id) ?? [])], filedGroups.get(rec.id) ?? [])
+      }
+    }
+    return { uins, gids }
+  })()
   /// Everything a section header needs that is not its title or its rows.
   function chrome(rec: SectionRecord, at: number) {
     return {
@@ -1201,7 +1227,12 @@ export function Contacts() {
           portal, so its place in this tree is cosmetic; it lives here for
           the page's contacts/groups scope. */}
       {showGlobalSearch && (
-        <GlobalSearchOverlay contacts={contacts} groups={groups} onClose={() => setShowGlobalSearch(false)} />
+        <GlobalSearchOverlay
+          contacts={contacts}
+          groups={groups}
+          hidden={hiddenBySection}
+          onClose={() => setShowGlobalSearch(false)}
+        />
       )}
 
       <main className="flex-1 min-h-0 overflow-y-auto overscroll-contain w-full max-w-2xl mx-auto px-4 py-4 pt-[calc(3.5rem+1rem)] space-y-4">

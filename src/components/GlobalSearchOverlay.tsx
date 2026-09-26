@@ -35,10 +35,14 @@ const MAX_HITS = 100
 export function GlobalSearchOverlay({
   contacts,
   groups,
+  hidden,
   onClose,
 }: {
   contacts: Contact[]
   groups: RCQGroup[]
+  /// Chats behind a section's PIN that has not been entered. Never found
+  /// here, by name or by what was said in them (#1045).
+  hidden?: { uins: Set<number>; gids: Set<number> }
   onClose: () => void
 }) {
   const { t, lang } = useI18n()
@@ -64,15 +68,17 @@ export function GlobalSearchOverlay({
   const chatHits = useMemo(() => {
     if (!query) return []
     const cs = contacts
+      .filter((c) => !hidden?.uins.has(c.uin))
       .filter((c) => (c.nickname || '').toLowerCase().includes(query) || String(c.uin).includes(query))
       .slice(0, 6)
       .map((c) => ({ isGroup: false as const, id: c.uin, title: c.nickname || `${c.uin}`, c, g: null as RCQGroup | null }))
     const gs = groups
+      .filter((g) => !hidden?.gids.has(g.id))
       .filter((g) => (g.name || '').toLowerCase().includes(query))
       .slice(0, 6)
       .map((g) => ({ isGroup: true as const, id: g.id, title: g.name, c: null as Contact | null, g }))
     return [...cs, ...gs]
-  }, [query, contacts, groups])
+  }, [query, contacts, groups, hidden])
 
   // Messages by text, both directions, every thread, newest first.
   const msgHits = useMemo<MsgHit[]>(() => {
@@ -80,6 +86,7 @@ export function GlobalSearchOverlay({
     const hits: MsgHit[] = []
     const push = (isGroup: boolean, threadId: number, msgId: string, text: string | undefined, at: number, fromUin: number | null) => {
       if (!text) return
+      if (isGroup ? hidden?.gids.has(threadId) : hidden?.uins.has(threadId)) return
       if (!text.toLowerCase().includes(query)) return
       hits.push({ isGroup, threadId, msgId, text, at, fromUin })
     }
@@ -90,7 +97,7 @@ export function GlobalSearchOverlay({
       for (const r of th.rows) if (!r.kind || r.kind === 'text') push(th.isGroup, th.id, r.id, r.text, r.sentAt, null)
     hits.sort((a, b) => b.at - a.at)
     return hits.slice(0, MAX_HITS)
-  }, [query])
+  }, [query, hidden])
 
   const threadTitle = (h: MsgHit): string =>
     h.isGroup ? groupById.get(h.threadId)?.name ?? `${h.threadId}` : contactByUin.get(h.threadId)?.nickname ?? `${h.threadId}`

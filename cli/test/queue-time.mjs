@@ -259,6 +259,24 @@ check('the smallest reading wins, and a stale one ages out', () => {
 })
 
 S.endCatchUp()
+// #1048, the web half: Android 0.207 sends the quote on voice and location.
+// Both the received row and our own carbon from the phone must keep it, and a
+// malformed quote must not become one.
+check('a voice note and a location sent as answers keep their quotes here', () => {
+  const Q = { id: 'CCCCCCCC-1111-4222-8333-444444444444', snippet: 'hi', authorName: 'Bo' }
+  S.addIncoming(PEER, voice('q-voice', { reply: Q }))
+  assert.deepEqual(rowOf('q-voice').replyTo, Q)
+  S.addIncoming(PEER, { kind: 'location', id: 'q-loc', lat: 1, lng: 2, reply: Q })
+  assert.deepEqual(rowOf('q-loc').replyTo, Q)
+  S.addIncoming(PEER, { kind: 'location', id: 'q-bad', lat: 1, lng: 2, reply: 'nonsense' })
+  assert.equal(rowOf('q-bad').replyTo, undefined, 'a quote that is not an object is no quote')
+  S.fileOutgoingCarbon({ kind: 'carbon', to: PEER, env: voice('q-own-voice', { reply: Q }) })
+  S.fileOutgoingCarbon({ kind: 'carbon', to: PEER, env: { kind: 'location', id: 'q-own-loc', lat: 1, lng: 2, reply: Q } })
+  const own = S.loadPersisted(S.storageKey(false, PEER))
+  assert.deepEqual(own.find((r) => r.id === 'q-own-voice').replyTo, Q)
+  assert.deepEqual(own.find((r) => r.id === 'q-own-loc').replyTo, Q)
+})
+
 console.log(`queue-time: ${n} checks passed`)
 // The history store schedules a coalesced write; nothing here needs it.
 process.exit(0)

@@ -9,6 +9,7 @@
 // deduped by the inner message's id (so the origin device — which already has
 // the row — no-ops its own carbon).
 
+import { quoteOf } from './quote'
 import { scopedKey } from './account-scope'
 import { isSealedText, openText, sealText } from './pin-seal'
 import type { Envelope, CarbonEnvelope, ReplyContext } from './crypto'
@@ -515,13 +516,14 @@ function outgoingRowFromInner(inner: Envelope, srvAt?: number): OutgoingRow | nu
       mediaId: inner.mediaID,
       mediaKey: inner.mediaKey,
       durationSec: typeof inner.durationSec === 'number' ? Math.round(inner.durationSec) : undefined,
+      ...(inner.reply ? { replyTo: inner.reply } : {}),
       ...dying(inner.ttl, inner.ts),
     }
   }
   // A still-unsupported media kind sent from another device (location).
   // The web can't render these, but show a placeholder so the user sees that
   // they sent something here rather than a silent gap.
-  const loose = inner as { kind?: string; id?: string; caption?: string; ttl?: unknown; ts?: unknown }
+  const loose = inner as { kind?: string; id?: string; caption?: string; ttl?: unknown; ts?: unknown; reply?: unknown }
   if (loose.id && (loose.kind === 'voice' || loose.kind === 'location')) {
     const geo = loose as { lat?: number; lng?: number }
     return {
@@ -532,6 +534,9 @@ function outgoingRowFromInner(inner: Envelope, srvAt?: number): OutgoingRow | nu
       kind: 'other',
       mediaKind: loose.kind,
       ...(geo.lat != null && geo.lng != null ? { lat: geo.lat, lng: geo.lng } : {}),
+      // A location sent as an answer from the phone keeps its quote here too
+      // (#1048). Same guard as the received half.
+      ...(quoteOf(loose.reply) ?? {}),
       ...dying(loose.ttl, loose.ts),
     }
   }

@@ -1641,6 +1641,7 @@ export function Chat() {
         mediaKey: row.mediaKey,
         durationSec: row.durationSec ?? 0,
         ...dying,
+        ...(row.replyTo ? { reply: row.replyTo } : {}),
       }
     } else if (row.kind === 'other' && row.mediaKind === 'location' && row.lat != null && row.lng != null) {
       env = {
@@ -2124,6 +2125,10 @@ export function Chat() {
     const r = rec
     if (!r || !identity) return
     setRec(null)
+    // The quote the voice note answers, taken now: the recording ends here,
+    // and anything the person does while it uploads belongs to the next
+    // message, not this one (#1048, the web half).
+    const answering = replyTo
     const durationSec = Math.max(1, Math.round((Date.now() - r.startedAt) / 1000))
     const chunks: BlobPart[] = []
     const done = new Promise<Blob>((resolve) => {
@@ -2153,9 +2158,11 @@ export function Chat() {
         mediaId: up.mediaId,
         mediaKey: up.keyB64,
         durationSec,
+        ...(answering ? { replyTo: answering } : {}),
         ...dyingNow(sentAt),
       }
       setOutgoing((rows) => [...rows, row])
+      if (answering) setReplyTo((cur) => (cur === answering ? null : cur))
       stickToBottom()
       await attemptSendRow(row)
     } finally {

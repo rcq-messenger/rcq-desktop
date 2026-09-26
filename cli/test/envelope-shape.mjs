@@ -73,6 +73,21 @@ assert.equal(voice.mediaID, 'm-1234567890abcdef', 'a voice note without its blob
 assert.equal(voice.mediaKey, KEY, 'a voice note without its key can never be played')
 assert.equal(voice.durationSec, 7.5)
 
+// #1048: a voice note sent as an answer keeps its quote on the wire, as the
+// phones' do. It used to be dropped at the builder.
+const QUOTE = { id: 'BBBBBBBB-1111-4222-8333-444444444444', snippet: 'where are you?', authorName: 'Ann' }
+const voiceReply = trip({
+  kind: 'voice',
+  id: 'AAAAAAAA-1111-4222-8333-555555555555',
+  mediaID: 'm-2',
+  mediaKey: KEY,
+  durationSec: 3,
+  reply: QUOTE,
+})
+assert.deepEqual(voiceReply.reply, QUOTE, 'a voice answer must carry what it answers')
+const locReply = trip({ kind: 'location', id: 'AAAAAAAA-1111-4222-8333-666666666666', lat: 1.5, lng: 2.5, reply: QUOTE })
+assert.deepEqual(locReply.reply, QUOTE, 'so must a location')
+
 // ── refused out loud, not shipped hollow ─────────────────────────────────
 assert.throws(
   () => encryptV1({ kind: 'poll', id: 'X', poll: 1, q: 'q', opts: ['a'], sc: true, anon: false }, sender, bundle),

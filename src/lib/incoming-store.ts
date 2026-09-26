@@ -5,6 +5,7 @@
 
 import { useSyncExternalStore } from 'react'
 import type { Envelope, ReplyContext } from './crypto'
+import { quoteOf } from './quote'
 import { idbGet, idbSet } from './signal-persist'
 import { openValue, pinSealActive, sealExistingHistory, sealValue } from './pin-seal'
 import { playSound } from './sounds'
@@ -200,10 +201,13 @@ function rowFromEnvelope(from: number, env: Envelope): IncomingRow | null {
       mediaId: env.mediaID,
       mediaKey: env.mediaKey,
       durationSec: typeof env.durationSec === 'number' ? Math.round(env.durationSec) : undefined,
+      // #1048: Android 0.207 sends the quote on voice and location too, as
+      // iOS always has. It was dropped here and the bubble answered nothing.
+      ...(quoteOf(env.reply) ?? {}),
       ...dying(env.ttl, env.ts), ...sent(env.ts),
     }
   }
-  const loose = env as { kind?: string; id?: string; caption?: string; ttl?: unknown; ts?: unknown }
+  const loose = env as { kind?: string; id?: string; caption?: string; ttl?: unknown; ts?: unknown; reply?: unknown }
   if (loose.id && (loose.kind === 'voice' || loose.kind === 'location')) {
     const geo = loose as { lat?: number; lng?: number }
     return {
@@ -214,6 +218,7 @@ function rowFromEnvelope(from: number, env: Envelope): IncomingRow | null {
       kind: 'other',
       mediaKind: loose.kind,
       ...(geo.lat != null && geo.lng != null ? { lat: geo.lat, lng: geo.lng } : {}),
+      ...(quoteOf(loose.reply) ?? {}),
       ...dying(loose.ttl, loose.ts), ...sent(loose.ts),
     }
   }

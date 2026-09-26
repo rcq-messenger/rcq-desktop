@@ -184,6 +184,11 @@ export interface VoiceEnvelope {
   durationSec: number
   ttl?: number
   ts?: number
+  /// A voice note sent as an answer. The phones have always read it (iOS
+  /// decodes `reply` on every media kind, Android from 0.207), and a quote the
+  /// sender saw and the reader here did not is a conversation with a hole in
+  /// it (#1048, the web half).
+  reply?: ReplyContext
 }
 
 export interface FileEnvelope {
@@ -786,6 +791,7 @@ export function envelopeToObject(env: Envelope): Record<string, unknown> {
     obj.durationSec = env.durationSec
     if (env.ttl != null) obj.ttl = env.ttl
     if (env.ttl != null && env.ts != null) obj.ts = env.ts
+    if (env.reply != null) obj.reply = env.reply
   } else if (env.kind === 'pkey') {
     // ⚠⚠ AND THIS ONE, which is what took the faces off the app. The key IS
     // the whole message: `{kind:"pkey"}` with no `key` decodes cleanly on every

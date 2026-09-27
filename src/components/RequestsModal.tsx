@@ -136,7 +136,13 @@ function OutgoingList() {
             <div className="truncate text-sm font-medium">{r.nickname || `${r.to_uin}`}</div>
             <div className="truncate text-[0.6875rem] text-fg-dim">
               {r.to_uin} ·{' '}
-              {r.state === 'declined' ? t('pending.outgoing.declined') : t('pending.outgoing.waiting')}
+              {r.home
+                ? // Sent to a backup copy before the island refused those
+                  // (#1054): it will never be read, so do not call it waiting.
+                  t('pending.outgoing.backup', { home: `${r.home.uin}@${r.home.host}` })
+                : r.state === 'declined'
+                  ? t('pending.outgoing.declined')
+                  : t('pending.outgoing.waiting')}
             </div>
           </div>
           <button

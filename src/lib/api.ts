@@ -270,6 +270,32 @@ export interface UserInfo {
   profile_card_policy?: string | null
   hof_opt_in?: boolean | null
   hof_avatar?: string | null
+  /// Set when this account is somebody's BACKUP mailbox (federation §5a,
+  /// #1054): the person lives at `home`, and a request to this number would
+  /// never be read. Absent on an island older than the field.
+  home?: HomeRef | null
+}
+
+/// Where the person behind a backup copy lives (#1054).
+export interface HomeRef {
+  host: string
+  uin: number
+}
+
+/// The home address when the island refused a contact request because the
+/// number is a backup copy (403 `backup_copy`, #1054), else null. Codes, never
+/// substrings: the body also carries an English sentence for older clients.
+export function backupCopyHome(e: unknown): HomeRef | null {
+  if (!(e instanceof ApiError) || e.status !== 403) return null
+  try {
+    const d = (JSON.parse(e.body) as { detail?: unknown }).detail as Record<string, unknown> | undefined
+    if (!d || d.code !== 'backup_copy') return null
+    const host = typeof d.home_host === 'string' ? d.home_host.trim().toLowerCase() : ''
+    const uin = typeof d.home_uin === 'number' && Number.isInteger(d.home_uin) ? d.home_uin : 0
+    return host && uin > 0 ? { host, uin } : null
+  } catch {
+    return null
+  }
 }
 
 export interface OutgoingRequest {
@@ -279,6 +305,9 @@ export interface OutgoingRequest {
   /// pending — they have not answered; declined — they said no and this row is
   /// how you find out.
   state: 'pending' | 'declined'
+  /// The number is a backup copy, so this request will never be read; the
+  /// person lives here (#1054). Only rows sent before the island refused them.
+  home?: HomeRef | null
 }
 
 export interface PendingRequest {

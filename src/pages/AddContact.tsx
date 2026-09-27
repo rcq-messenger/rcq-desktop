@@ -8,7 +8,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { BadgeMark } from '../components/BadgeMark'
 import { Link, useNavigate } from 'react-router-dom'
-import { Api, ApiError, type UserInfo } from '../lib/api'
+import { Api, ApiError, backupCopyHome, type HomeRef, type UserInfo } from '../lib/api'
 import { useI18n } from '../lib/i18n-context'
 import { DiscoverGroupsStrip } from '../components/DiscoverGroupsStrip'
 import { fetchServerInfo } from '../lib/server-info'
@@ -79,6 +79,12 @@ function AddContactForm({
   /// visible BEFORE the tap. Same here.
   const [known, setKnown] = useState<Set<number>>(new Set())
   const [ciBusy, setCiBusy] = useState(false)
+  /// The backup copy (#1054) whose real address is now in the field, with the
+  /// key it carries. The home card is checked against that key before
+  /// anything is added: a copy's record is signed by the copy's own key, and
+  /// nothing stops somebody from signing "my home is 134@api" about a person
+  /// who is not them.
+  const [copyOf, setCopyOf] = useState<{ uin: number; home: HomeRef; signingKey: string } | null>(null)
 
   // Federation (F2): if the query is an explicit `uin@host` whose host is NOT
   // our OWN island, offer to add it as a local cross-island contact. Compared
@@ -100,6 +106,20 @@ function AddContactForm({
     return null
   }
 
+  /// A backup copy is a mailbox, not a person (#1054): take its real address
+  /// into the field, where the cross-island card below shows who that is and
+  /// adds them the way any `uin@host` is added.
+  function goHome(u: UserInfo, home: HomeRef) {
+    setCopyOf({ uin: u.uin, home, signingKey: u.signing_key || '' })
+    setError(null)
+    setQuery(`${home.uin}@${home.host}`)
+  }
+
+  const viaCopy =
+    copyOf && crossIsland && copyOf.home.uin === crossIsland.uin && copyOf.home.host === crossIsland.host
+      ? copyOf
+      : null
+
   async function addCrossIsland() {
     if (!crossIsland) return
     setCiBusy(true)
@@ -119,6 +139,11 @@ function AddContactForm({
             ? t('add.ci.closed_island')
             : t('add.ci.no_user', { uin: String(crossIsland.uin), host: crossIsland.host }),
         )
+      }
+      // Reached from a backup copy: the person at home must hold the copy's
+      // key, or the copy named somebody else as its home.
+      if (viaCopy?.signingKey && card.signing_key !== viaCopy.signingKey) {
+        throw new Error(t('add.backup.key_mismatch'))
       }
       // Best-effort: confirm their island routing record verifies (not fatal).
       const resolved = await resolvePeerHomes(crossIsland.host, crossIsland.uin)
@@ -198,6 +223,14 @@ function AddContactForm({
       await Api.sendContactRequest(identity!, u.uin)
       setRequested((s) => new Set(s).add(u.uin))
     } catch (e) {
+      // A backup copy the search did not mark (an island older than `home`
+      // on the row, or a record published a moment ago): the island says
+      // where the person lives, so go there instead of showing its sentence.
+      const home = backupCopyHome(e)
+      if (home) {
+        goHome(u, home)
+        return
+      }
       // 409 = they are already in the list. The list we fetched at open can be
       // stale (added on the phone a minute ago, accepted in another tab), so
       // this is the same true statement arriving late — say it in the row, the
@@ -245,7 +278,9 @@ function AddContactForm({
           <div className="bg-surface rounded-lg p-4 flex items-center gap-3">
             <div className="flex-1 min-w-0">
               <div className="font-medium truncate">{crossIsland.uin}<span className="text-fg-dim">@{crossIsland.host}</span></div>
-              <div className="text-xs text-fg-dim">Cross-island contact (another RCQ island)</div>
+              <div className="text-xs text-fg-dim">
+                {viaCopy ? t('add.backup.via', { uin: String(viaCopy.uin) }) : 'Cross-island contact (another RCQ island)'}
+              </div>
             </div>
             <button
               onClick={() => void addCrossIsland()}
@@ -313,12 +348,26 @@ function AddContactForm({
                 {u.city && (
                   <div className="text-xs text-fg-dim truncate">{u.city}{u.country ? `, ${u.country}` : ''}</div>
                 )}
+                {u.home && (
+                  <div className="text-xs text-fg-dim">
+                    {t('add.backup.note', { home: `${u.home.uin}@${u.home.host}` })}
+                  </div>
+                )}
               </div>
               {/* Already a contact → the same quiet line the phones show, and
                   no Add button: there is nothing to send, and the row that
                   offers it can only end in the 409 from #603. */}
               {known.has(u.uin) ? (
                 <span className="text-xs text-fg-dim px-3 py-1.5">{t('add.already')}</span>
+              ) : u.home ? (
+                // A request to a backup copy is never read (#1054). The button
+                // goes to the person instead.
+                <button
+                  onClick={() => goHome(u, u.home!)}
+                  className="px-3 h-9 rounded-md bg-accent hover:bg-accent-dim text-white text-sm font-semibold transition-colors"
+                >
+                  {t('add.backup.cta')}
+                </button>
               ) : requested.has(u.uin) ? (
                 <span className="text-xs text-fg-dim px-3 py-1.5">{t('add.requested')}</span>
               ) : (

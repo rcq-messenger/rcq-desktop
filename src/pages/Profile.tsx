@@ -528,6 +528,13 @@ function ReadView({
                 {t('profile.cta.send_message')}
               </button>
             )}
+            {!crossIslandHost && info.home && (
+              // A backup copy (#1054): Add above opens the add screen on this
+              // number, where the row offers the real address instead.
+              <div className="pt-2 text-center text-xs text-fg-dim">
+                {t('add.backup.note', { home: `${info.home.uin}@${info.home.host}` })}
+              </div>
+            )}
             {info && !isSelf && (!crossIslandHost || reportIdent) && (
               <div className="pt-2 text-center">
                 {/* A cross-island card is reported to ITS island under the

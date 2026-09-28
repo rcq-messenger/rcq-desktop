@@ -20,6 +20,20 @@ import { saveCrossIsland } from '../lib/crossisland-store'
 import { sendContactRequest } from '../lib/crossisland-contactreq'
 import { usePrimaryGuest } from '../lib/use-guest-copy'
 import { hostOfApiBase } from '../lib/multihome'
+import { b64ToBytes } from '../lib/crypto'
+
+/// Two base64 spellings of one key are the same key: a client that padded and
+/// one that did not wrote the same 32 bytes (#1054 review). Compared by bytes,
+/// so a real person is never refused over an '='.
+function sameKey(a: string, b: string): boolean {
+  try {
+    const x = b64ToBytes(a.trim())
+    const y = b64ToBytes(b.trim())
+    return x.length > 0 && x.length === y.length && x.every((v, i) => v === y[i])
+  } catch {
+    return false
+  }
+}
 
 /// [embedded] drops the page chrome so the same body can live inside a modal.
 /// The founder's rule for the desktop: fewer full-page detours, more windows
@@ -142,7 +156,7 @@ function AddContactForm({
       }
       // Reached from a backup copy: the person at home must hold the copy's
       // key, or the copy named somebody else as its home.
-      if (viaCopy?.signingKey && card.signing_key !== viaCopy.signingKey) {
+      if (viaCopy?.signingKey && !sameKey(card.signing_key, viaCopy.signingKey)) {
         throw new Error(t('add.backup.key_mismatch'))
       }
       // Best-effort: confirm their island routing record verifies (not fatal).

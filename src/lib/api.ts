@@ -76,7 +76,14 @@ async function request<T>(
   method: string,
   path: string,
   body?: unknown,
-  opts?: { headers?: Record<string, string>; onResponse?: (res: Response) => void; allow304?: boolean },
+  opts?: {
+    headers?: Record<string, string>
+    onResponse?: (res: Response) => void
+    allow304?: boolean
+    /// Ends the call, body included. Handed on to the one retry after a
+    /// token refresh, so a caller's deadline covers both attempts.
+    signal?: AbortSignal
+  },
   retried = false,
 ): Promise<T> {
   const headers: Record<string, string> = {
@@ -92,6 +99,7 @@ async function request<T>(
     method,
     headers,
     body: payload,
+    signal: opts?.signal,
   })
   opts?.onResponse?.(res)
   // A conditional read the island answered with "nothing changed": no body,
@@ -637,6 +645,133 @@ export function clearGroupPreviewCache() {
   previewCache.clear()
 }
 
+// -----------------------------------------------------------
+// Per-peer lookups, at most PEER_LOOKUP_PARALLEL in flight per island.
+//
+// ⚠⚠ A BURST OF THESE TOOK THE ISLAND DOWN (28.09). A card read
+// (`/users/{uin}/info`) holds one of the island's database connections while
+// it waits for a second one, so twenty-odd of them arriving in the same second
+// exhausted the whole pool and every worker stalled for minutes: 24 times in
+// 30 days. The phones' room-roster asks were the usual trigger; on 24.09 it was
+// a browser or the desktop, thirty card reads behind their CORS preflights.
+// Every per-peer read this client makes against one island (a card, a device
+// list, a bundle) queues here, so no loop over people can do that again, and a
+// lone lookup never waits. Android has the same gate (net/PeerLookups.kt).
+//
+// Queued, never dropped; one queue per island host, so a visited island does
+// not wait behind ours.
+//
+// ⚠ Two kinds share the four slots, and a send never waits behind a card:
+//   - 'key': a device list or a bundle, read on the way to sealing a message
+//     or a receipt (signal-device resolveTargets). Let in first whenever a slot
+//     frees, and allowed all four.
+//   - 'card': a profile card, for a face, a name or a v=1 fallback. At most
+//     PEER_CARD_SLOTS at once, so one slot is always a key read's, and each
+//     read is cut off at PEER_CARD_TIMEOUT_MS (see Api.userInfo).
+// Without both, four card reads the network silently dropped (`request` has no
+// timeout of its own) would hold the whole lane, and every v2 send and receipt
+// whose device list had expired would sit in "sending" behind them until the
+// OS gave up on those sockets, minutes to hours later.
+export const PEER_LOOKUP_PARALLEL = 4
+export const PEER_CARD_SLOTS = PEER_LOOKUP_PARALLEL - 1
+/// The same ceiling the send path's own reads have (signal-device
+/// fetchWithTimeout), so a card never holds a slot longer than a key read can.
+export const PEER_CARD_TIMEOUT_MS = 15_000
+/// The longest any lookup may hold a lane slot (see limitPeerLookup). Above
+/// fetchWithTimeout's 15 s, so it only ever catches a read that stopped
+/// listening to its own timer.
+export const PEER_SLOT_CEILING_MS = 25_000
+
+export type PeerLookupKind = 'key' | 'card'
+
+interface PeerLane {
+  active: number
+  cards: number
+  keys: Array<() => void>
+  cardQueue: Array<() => void>
+}
+
+const peerLanes = new Map<string, PeerLane>()
+
+function peerLane(apiBase: string): PeerLane {
+  let host = apiBase
+  try {
+    host = new URL(apiBase).host.toLowerCase()
+  } catch { /* not a URL: the string itself is the lane */ }
+  let lane = peerLanes.get(host)
+  if (!lane) {
+    lane = { active: 0, cards: 0, keys: [], cardQueue: [] }
+    peerLanes.set(host, lane)
+  }
+  return lane
+}
+
+/// Take a slot for `kind` if the rules allow one right now.
+function admit(lane: PeerLane, kind: PeerLookupKind): boolean {
+  if (lane.active >= PEER_LOOKUP_PARALLEL) return false
+  if (kind === 'card' && lane.cards >= PEER_CARD_SLOTS) return false
+  lane.active += 1
+  if (kind === 'card') lane.cards += 1
+  return true
+}
+
+/// Hand every slot that is free to the next in line, key reads first. The slot
+/// is counted here, before the waiter wakes, so a lookup that arrives in
+/// between cannot take it from somebody who has been queuing.
+function pump(lane: PeerLane): void {
+  for (;;) {
+    if (lane.keys.length > 0 && admit(lane, 'key')) lane.keys.shift()!()
+    else if (lane.cardQueue.length > 0 && admit(lane, 'card')) lane.cardQueue.shift()!()
+    else return
+  }
+}
+
+export async function limitPeerLookup<T>(apiBase: string, kind: PeerLookupKind, run: () => Promise<T>): Promise<T> {
+  const lane = peerLane(apiBase)
+  const queue = kind === 'key' ? lane.keys : lane.cardQueue
+  // Behind anyone of the same kind already waiting, never past them.
+  if (queue.length > 0 || !admit(lane, kind)) await new Promise<void>((resolve) => queue.push(resolve))
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    // ⚠ A hard ceiling on the SLOT, whatever the lookup does. The card read
+    // has its own cut-off, but a key read trusts fetchWithTimeout, whose timer
+    // stops once the headers are in: a body that never arrives, or a deposit
+    // token mint behind a bundle read, would hold the slot for ever, and four
+    // of those shut the lane for every send and receipt to this island. Past
+    // the ceiling the caller gets an error (a send treats it like any failed
+    // lookup) and the slot goes to whoever is waiting. The abandoned read may
+    // still finish; nobody is waiting on it any more.
+    const ceiling = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`peer lookup: no answer in ${PEER_SLOT_CEILING_MS} ms`)), PEER_SLOT_CEILING_MS)
+    })
+    return await Promise.race([run(), ceiling])
+  } finally {
+    clearTimeout(timer)
+    // A failed lookup frees its slot exactly like a good one.
+    lane.active -= 1
+    if (kind === 'card') lane.cards -= 1
+    pump(lane)
+  }
+}
+
+/// Run a card read with a signal that is aborted after `ms`, and give up on it
+/// then even if it does not listen: its slot in the lane is released on time
+/// either way. Plain AbortController and a timer, like signal-device fetchWithTimeout:
+/// AbortSignal.timeout is still missing from older webviews this page runs in.
+function withCutoff<T>(ms: number, read: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const ctl = new AbortController()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const expired = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      ctl.abort()
+      // No number in the message: it ends up in logs, and whose card it
+      // was is nobody's business there.
+      reject(new Error(`card read: no answer in ${ms} ms`))
+    }, ms)
+  })
+  return Promise.race([read(ctl.signal), expired]).finally(() => clearTimeout(timer))
+}
+
 export const Api = {
   // Profile -------------------------------------------------
 
@@ -648,9 +783,17 @@ export const Api = {
   /// or a query string. On a closed island this is what turns a 404 into an
   /// answer; it is a credential with no expiry, and a query string is an
   /// access log. See lib/guest-card.ts.
+  ///
+  /// Queued through `limitPeerLookup` as a 'card' (see above): this is the
+  /// route whose bursts exhausted the island's pool. ⚠ Cut off at
+  /// PEER_CARD_TIMEOUT_MS, token refresh included: `request` itself has no
+  /// timeout, and a card read the network black-holes would otherwise keep its
+  /// slot for as long as the OS keeps the socket.
   userInfo(id: WebIdentity, uin: number, card?: string | null): Promise<UserInfo> {
-    return request<UserInfo>(id, 'GET', `/users/${uin}/info`, undefined,
-      card ? { headers: { 'X-RCQ-Guest-Card': card } } : undefined)
+    return limitPeerLookup(id.apiBase, 'card', () =>
+      withCutoff(PEER_CARD_TIMEOUT_MS, (signal) =>
+        request<UserInfo>(id, 'GET', `/users/${uin}/info`, undefined,
+          { ...(card ? { headers: { 'X-RCQ-Guest-Card': card } } : {}), signal })))
   },
 
   // Guest cards (closed islands) ----------------------------

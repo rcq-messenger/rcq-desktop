@@ -32,6 +32,7 @@ import { flushVaultWriter } from './pin-gate'
 import { carrySealKeyOnMove } from './local-seal'
 import { defaultHome } from './routing'
 import { Api, setTokenRefresher, setUnauthorizedHandler , clearGroupPreviewCache } from './api'
+import { clearPeerSealKeys } from './peer-keys'
 import { clearRandomPeers } from './random-peers'
 import { loadProfileKeys, loadPublishedProfileKey } from './profile-key'
 import { migrateOwnAvatar } from './avatar-migration'
@@ -642,6 +643,7 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
     const from = identity?.uin ?? loadStoredIdentity()?.uin
     if (from != null) rememberAddAccountOrigin(from)
     clearGroupPreviewCache()
+    clearPeerSealKeys()
     clearRandomPeers()
     clearIdentity()
     showTransitionVeil()

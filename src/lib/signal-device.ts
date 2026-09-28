@@ -37,6 +37,7 @@ import { idbDel, idbGet, idbGetFlat, idbSet } from './signal-persist'
 import { clientLabel } from './client-name'
 import { fetchServerInfo } from './server-info'
 import * as depositAuth from './deposit-auth-store'
+import { limitPeerLookup } from './api'
 
 const _devices = new Map<number, Promise<WebSignalDevice>>()
 const blobKey = (uin: number) => `signal-device:${uin}`
@@ -668,7 +669,14 @@ async function resolveTargets(
   rebuildDevices: ReadonlySet<number> = new Set(),
 ): Promise<PeerTargets> {
   const byId = new Map(known.map((t) => [t.deviceId, t]))
-  const list = (await apiGet(identity, `/keys/${peerUin}/devices`)) as { devices?: Array<{ device_id: number }> }
+  // Both reads below queue per island (api.ts limitPeerLookup): every send and
+  // every receipt that finds no cached device list resolves it here, a drain
+  // after a night offline can mean dozens of peers at once, and each read
+  // holds one of the island's database connections while it runs. As 'key'
+  // reads: first in line, and never behind a card read.
+  const list = (await limitPeerLookup(identity.apiBase, 'key', () => apiGet(identity, `/keys/${peerUin}/devices`))) as {
+    devices?: Array<{ device_id: number }>
+  }
   const devices: PeerTarget[] = []
   for (const d of list.devices ?? []) {
     // The in-memory list first, then the session store — which outlives the
@@ -709,7 +717,8 @@ async function resolveTargets(
     // next resolve; nothing here is cached as reachable.
     let bundle: SignalBundle
     try {
-      bundle = await fetchKeyBundle(identity, `/keys/${peerUin}/devices/${d.device_id}/bundle`)
+      bundle = await limitPeerLookup(identity.apiBase, 'key', () =>
+        fetchKeyBundle(identity, `/keys/${peerUin}/devices/${d.device_id}/bundle`))
     } catch (e) {
       if (e instanceof KeyLookupError && e.status === 404) {
         console.warn(`bundle 404 for ${peerUin}:${d.device_id}; dropped from roster`)

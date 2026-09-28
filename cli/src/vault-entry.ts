@@ -70,8 +70,17 @@ export {
   profileKeyOfAccount,
   entitledToMyProfileKey,
   fanOutMyProfileKey,
+  worthAskingForProfileKey,
+  askForProfileKey,
+  handleProfileKeyEnvelope,
   VAULT_PKEY,
 } from '../../src/lib/profile-key'
+// Per-peer lookups against an island: the queue every card, device list and
+// bundle read goes through, and the cached keys the receipts and the profile
+// key answer seal to. A burst of card reads is what stalled the island on
+// 28.09; cli/test/peer-lookup.mjs pins the ceiling and the sharing.
+export { limitPeerLookup, PEER_LOOKUP_PARALLEL, PEER_CARD_SLOTS, PEER_CARD_TIMEOUT_MS, Api } from '../../src/lib/api'
+export { PeerCache, peerSealKeys, clearPeerSealKeys } from '../../src/lib/peer-keys'
 // The roster the entitlement rule reads. Seeded directly in the test: the
 // question "did I accept them" is answered from this device's list, not from
 // the island.

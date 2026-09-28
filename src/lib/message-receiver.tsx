@@ -4,7 +4,8 @@
 // feed the incoming-store, deduped by envelope id. Renders nothing.
 
 import { useEffect } from 'react'
-import { rememberTheirCard, theirCard } from './guest-card'
+import { rememberTheirCard } from './guest-card'
+import { peerSealKeys } from './peer-keys'
 import { useIdentity } from './identity-context'
 import { useWS } from './ws'
 import { currentDeviceId, decryptIncoming, getDevice, myDeviceId, noteInboundFrom, resetSilenceProbes, sendV2 } from './signal-device'
@@ -554,13 +555,13 @@ async function sendDeliveredReceipt(
   try {
     const reached = await sendV2(identity, peerUin, env, 'read').catch(() => 0)
     if (reached === 0) {
-      const info = await Api.userInfo(identity, peerUin, theirCard(peerUin)).catch(() => null)
-      if (!info?.identity_key || !info.signing_key) return
-      const bundle = peerBundleFrom({
-        uin: peerUin,
-        identity_key: info.identity_key,
-        signing_key: info.signing_key,
-      })
+      // Roster first, then one cached, queued card read per peer (peer-keys.ts):
+      // a drain can owe receipts to the same few people dozens of times over,
+      // and each fresh read was one more request of the kind that stalled the
+      // island on 28.09.
+      const keys = await peerSealKeys(identity, peerUin)
+      if (!keys) return
+      const bundle = peerBundleFrom({ uin: peerUin, ...keys })
       await Api.sendSealed(identity, peerUin, encryptV1(env, identity, bundle), 'read')
     }
   } catch {

@@ -95,7 +95,8 @@ export function PersonAvatar({
     if (!key) {
       // No key is the lettered tile, exactly like no picture. Ask its owner
       // once (throttled) so the face appears on a later render rather than
-      // never; a stranger we are not entitled to simply never gets an answer.
+      // never. Only a contact is actually asked: a stranger would refuse, so
+      // askForProfileKey does not spend a request on one (profile-key.ts).
       if (uinForKey != null && askPeer) void askForProfileKey(identity, askPeer)
       return
     }

@@ -17,7 +17,7 @@
 
 import { Api, peerBundleFrom } from './api'
 import { contactsCache, snapshotFor } from './contacts-cache'
-import { theirCard } from './guest-card'
+import { peerSealKeys } from './peer-keys'
 import { encryptV1, bytesToB64, b64ToBytes, type Envelope, type WebIdentity } from './crypto'
 import { readSlot, slotId, writeSlot, VaultError } from './vault'
 
@@ -315,6 +315,28 @@ export function entitledToMyProfileKey(ownUin: number, asker: number): boolean {
   return roster.some((c) => c.uin === asker && !c.host && !c.blocked)
 }
 
+/// Is `peer` worth a `pkeyask` at all?
+///
+/// ⚠⚠ The same rule as the answer above, read from the other end, and for the
+/// same reason: every client answers an accepted contact and NOBODY ELSE
+/// (Android's ingest, iOS's roster gate, `entitledToMyProfileKey` here). An ask
+/// to anybody else is refused by construction, every time, and their face stays
+/// a lettered tile whether we asked or not. Contacts are mutual (removing one
+/// removes both rows on the island), so "I hold them" is "they hold me".
+///
+/// Asking anyway was not free. The sender avatars on a group thread and the
+/// member list asked every face they could not open: in the 2271-member beta
+/// room that is a sealed deposit per stranger with a picture, and every answerer
+/// still on an old build fetched OUR card to reply. Android's version of the
+/// same loop (the room roster asking every member) is what exhausted the
+/// island's database pool on 28.09; this is its twin, closed the same way.
+///
+/// Fails closed, like the answer: no roster yet is no ask. The caller does not
+/// stamp the throttle in that case, so the ask happens once the roster is in.
+export function worthAskingForProfileKey(ownUin: number, peer: number): boolean {
+  return entitledToMyProfileKey(ownUin, peer)
+}
+
 
 /// Handle an inbound `pkey`/`pkeyask`. Returns true when it was ours to eat.
 /// ⚠ `from` is the SEALED sender identity the envelope was verified under, not
@@ -353,14 +375,14 @@ export async function handleProfileKeyEnvelope(
     const k = mine ?? (await loadPublishedProfileKey(identity))
     if (!k) return true
     try {
-      const info = await Api.userInfo(identity, from, theirCard(from))
-      if (info?.identity_key) {
-        await sendMyProfileKeyTo(
-          identity,
-          { uin: from, identity_key: info.identity_key, signing_key: info.signing_key },
-          k,
-        )
-      }
+      // ⚠ Sealed to the keys the ROSTER holds for them, not a fresh card read:
+      // `entitledToMyProfileKey` just found their row, and it carries the same
+      // keys the island's card would. A drain after a night offline can hold a
+      // question from every contact at once, and each card read used to be one
+      // more request of the kind that stalled the island (28.09). peerSealKeys
+      // still falls back to one queued, cached read for a row without keys.
+      const keys = await peerSealKeys(identity, from)
+      if (keys) await sendMyProfileKeyTo(identity, { uin: from, ...keys }, k)
     } catch { /* they ask again */ }
     return true
   }
@@ -368,7 +390,8 @@ export async function handleProfileKeyEnvelope(
 }
 
 /// Ask a peer for their key, throttled per peer so a contact list of faces we
-/// are not entitled to does not turn into a poll.
+/// are not entitled to does not turn into a poll. Contacts only: a stranger's
+/// answer is a refusal, so asking one is a request spent on nothing.
 const ASK_THROTTLE_MS = 6 * 60 * 60 * 1000
 const askedAt = new Map<number, number>()
 
@@ -377,6 +400,10 @@ export async function askForProfileKey(
   peer: { uin: number; identity_key?: string | null; signing_key?: string | null },
 ): Promise<void> {
   if (!peer.identity_key) return
+  // Only somebody who can answer; see worthAskingForProfileKey. Before the
+  // throttle on purpose: a "no" because the roster is not in yet must not cost
+  // a real contact six hours without a face.
+  if (!worthAskingForProfileKey(identity.uin, peer.uin)) return
   const now = Date.now()
   const last = askedAt.get(peer.uin) ?? 0
   if (now - last < ASK_THROTTLE_MS) return

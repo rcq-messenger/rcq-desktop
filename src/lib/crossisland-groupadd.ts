@@ -24,6 +24,7 @@ import { Api, ApiError, type RCQGroup } from './api'
 import type { WebIdentity } from './crypto'
 import { cardIsStale, groupAddErrorKey, guestAddBody, guestRefusalOf, neutralGuestNickname, type GuestPath } from './guest-path'
 import { islandGuestPath } from './guest-register'
+import { ROOM_LINK_KEY } from './room-link-keys'
 
 /// The uin an island has issued to this signing key, or null if it has none.
 export async function resolveUinOnIsland(
@@ -88,8 +89,9 @@ export async function uinForContactOnIsland(
 /// The shareable form of a group invite. Always carries the host, because a
 /// bare id means "on my own island" to the parser and the joiner's island is
 /// not necessarily ours.
-export function groupInviteLink(gid: number, host: string): string {
-  return `https://rcq.app/g/${gid}@${host}`
+export function groupInviteLink(gid: number, host: string, k?: string | null): string {
+  // With the room's key when we hold it (#990 step 2).
+  return `https://rcq.app/g/${gid}@${host}` + (k && ROOM_LINK_KEY.test(k) ? `?k=${k}` : '')
 }
 
 /// Turn the island's refusal into a key our dictionaries carry. The router

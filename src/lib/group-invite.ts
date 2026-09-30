@@ -19,10 +19,14 @@ import type { WebIdentity } from './crypto'
 import { groupInviteLink } from './crossisland-groupadd'
 import { hostOfApiBase } from './multihome'
 import { isForeignGroupId, refByAlias } from './visited-islands'
+import { rememberRoomLinkKey } from './room-link-keys'
+import { contactsCache } from './contacts-cache'
 
 export interface GroupInviteRef {
   id: number
   host: string | null // null = own island
+  /// The room link's key (#990 step 2), when the link carries one.
+  k?: string | null
 }
 
 /// The (id, host) pair a group must be SHARED as. A route id is local to this
@@ -40,16 +44,17 @@ export function groupShareRef(identity: WebIdentity, routeId: number): { id: num
 
 /// The shareable link for a group I am in, host and all. Android builds the
 /// same string in `GroupLinkParser.canonicalUrl` (ChatScreen.kt:2215).
-export function groupShareLink(identity: WebIdentity, routeId: number): string {
+export function groupShareLink(identity: WebIdentity, routeId: number, shareToken?: string | null): string {
   const ref = groupShareRef(identity, routeId)
-  return groupInviteLink(ref.id, ref.host)
+  const k = shareToken ?? contactsCache.get(identity.uin)?.groups.find((g) => g.id === routeId)?.share_token ?? null
+  return groupInviteLink(ref.id, ref.host, k)
 }
 
 const PATTERNS: RegExp[] = [
-  // https://rcq.app/g/123[@is2.rcq.app]  ·  chat.rcq.app/g/123  ·  rcq.app/g/123
-  /(?:https?:\/\/)?(?:www\.|chat\.)?rcq\.app\/g\/(\d+)(?:@([a-z0-9.-]+))?/i,
-  // rcq://group/123[@is2.rcq.app]
-  /rcq:\/\/group\/(\d+)(?:@([a-z0-9.-]+))?/i,
+  // https://rcq.app/g/123[@is2.rcq.app][?k=<key>]  ·  chat.rcq.app/g/123  ·  rcq.app/g/123
+  /(?:https?:\/\/)?(?:www\.|chat\.)?rcq\.app\/g\/(\d+)(?:@([a-z0-9.-]+))?(?:\?k=([A-Za-z0-9_-]{8,64}))?/i,
+  // rcq://group/123[@is2.rcq.app][?k=<key>]
+  /rcq:\/\/group\/(\d+)(?:@([a-z0-9.-]+))?(?:\?k=([A-Za-z0-9_-]{8,64}))?/i,
 ]
 
 /// If `text` is (or contains) a group-invite link, return the group id +
@@ -61,7 +66,11 @@ export function parseGroupInvite(text: string): GroupInviteRef | null {
     if (m) {
       const id = Number(m[1])
       if (Number.isFinite(id) && id > 0) {
-        return { id, host: m[2] ? m[2].toLowerCase() : null }
+        const host = m[2] ? m[2].toLowerCase() : null
+        const k = m[3] ?? null
+        // Remembered where the preview, the join and the guest entry find it.
+        if (k) rememberRoomLinkKey(host, id, k)
+        return { id, host, k }
       }
     }
   }

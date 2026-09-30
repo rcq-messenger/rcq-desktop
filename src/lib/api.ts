@@ -7,6 +7,7 @@ import type { WebIdentity, PeerBundle } from './crypto'
 import type { ReportAttachment } from './media'
 import { addTurnBody } from './report-attachments'
 import { messageClass } from './crypto'
+import { findRoomLinkKey } from './room-link-keys'
 
 /// Told about every roster a group fetch brings back (#982: the last-known
 /// nickname store in group-names.ts). Registered, not imported, for the reason
@@ -69,6 +70,19 @@ export function setUnauthorizedHandler(fn: ((uin: number) => void) | null) {
 let tokenRefresher: ((identity: WebIdentity) => Promise<string | null>) | null = null
 export function setTokenRefresher(fn: ((identity: WebIdentity) => Promise<string | null>) | null) {
   tokenRefresher = fn
+}
+
+/// `?k=<key>` for a room a parsed link left a key for (#990 step 2): the room's
+/// island is the identity's own, whose links name it by host or not at all.
+function linkKeyQuery(id: WebIdentity, groupId: number): string {
+  let host: string | null = null
+  try {
+    host = new URL(id.apiBase).host
+  } catch {
+    host = null
+  }
+  const k = findRoomLinkKey(groupId, [host, null])
+  return k ? `?k=${encodeURIComponent(k)}` : ''
 }
 
 async function request<T>(
@@ -417,6 +431,9 @@ export interface RCQGroup {
   /// than this may read but not post. Owner-set, island-enforced.
   min_account_age_hours?: number
   in_catalog?: boolean
+  /// The room link's key (#990 step 2), served to members: what a shared link
+  /// carries so a room outside the catalogue opens for whoever it was given to.
+  share_token?: string | null
   // Pin metadata beside the text (who pinned, when) - served today, needed
   // by the sealed-state blob so an overlay loses nothing.
   pinned_at?: string | null
@@ -1185,7 +1202,7 @@ export const Api = {
     const key = `${id.uin}@${id.apiBase}:${groupId}`
     const hit = previewCache.get(key)
     if (hit) return Promise.resolve(hit)
-    return request<GroupPreview>(id, 'GET', `/groups/${groupId}/preview`).then((p) => {
+    return request<GroupPreview>(id, 'GET', `/groups/${groupId}/preview${linkKeyQuery(id, groupId)}`).then((p) => {
       previewCache.set(key, p)
       return p
     })
@@ -1195,7 +1212,13 @@ export const Api = {
   /// group; a closed group rejects a non-member with 403 {code:
   /// "group_closed"}, a blocked user with 403 {code: "blocked"}.
   joinGroup(id: WebIdentity, groupId: number): Promise<RCQGroup> {
-    return request<RCQGroup>(id, 'POST', `/groups/${groupId}/join`)
+    return request<RCQGroup>(id, 'POST', `/groups/${groupId}/join${linkKeyQuery(id, groupId)}`)
+  },
+
+  /// A new share link for the room (#990 step 2): the owner, or a member who
+  /// manages members. The old key stops opening the room.
+  resetShareToken(id: WebIdentity, groupId: number): Promise<RCQGroup> {
+    return request<RCQGroup>(id, 'POST', `/groups/${groupId}/share-token`)
   },
 
   /// Open rooms the caller is not in, biggest first: what an empty contact

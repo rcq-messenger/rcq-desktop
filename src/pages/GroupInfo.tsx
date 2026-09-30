@@ -235,6 +235,23 @@ export function GroupInfo() {
   /// Put the group's invite link on the clipboard. The route id is local to
   /// this device, so the link is built from the (island id, host) pair the rest
   /// of the world uses.
+  const [resetting, setResetting] = useState(false)
+  const [resetNote, setResetNote] = useState<string | null>(null)
+  async function resetShareLink() {
+    if (!gctx || resetting) return
+    setResetting(true)
+    try {
+      const g = await Api.resetShareToken(gctx.ident, gctx.gid)
+      if (group) setGroup({ ...group, share_token: g.share_token ?? null })
+      setResetNote(t('group.share.reset_done'))
+    } catch {
+      setResetNote(t('group.share.reset_failed'))
+    } finally {
+      setResetting(false)
+      setTimeout(() => setResetNote(null), 3000)
+    }
+  }
+
   async function copyShareLink() {
     // Stage 6 phase 2: an unlisted room's link carries the room state key in
     // the FRAGMENT - browsers never send it to any server, ours included.
@@ -243,7 +260,8 @@ export function GroupInfo() {
 
     if (!identity) return
     try {
-      let link = groupShareLink(identity, groupId)
+      // With the room's key when the island served it (#990 step 2).
+      let link = groupShareLink(identity, groupId, group?.share_token)
       const k = group && !group.in_catalog ? roomKey(groupId) : null
       if (k) link += `#k=${k.v}.${encodeURIComponent(k.k)}`
       await navigator.clipboard.writeText(link)
@@ -785,6 +803,17 @@ export function GroupInfo() {
                 <p className="px-3 pb-1 pt-0.5 text-center text-xs text-fg-dim">
                   {t('group.share.hint')}
                 </p>
+                {/* A new link (#990 step 2): the old one stops opening the room
+                    once its island asks for the key. Whoever manages members. */}
+                {canManageMembers && gctx && (
+                  <button
+                    onClick={() => void resetShareLink()}
+                    disabled={resetting}
+                    className="w-full h-10 rounded-md text-sm text-fg-secondary hover:bg-field transition-colors disabled:opacity-50"
+                  >
+                    {resetNote ?? t('group.share.reset')}
+                  </button>
+                )}
               </section>
             )}
 

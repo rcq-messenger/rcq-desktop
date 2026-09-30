@@ -19,6 +19,7 @@ import { bytesToB64, type WebIdentity } from './crypto'
 import { isIdentityRotated, recoverOnIsland, type IslandCredentials } from './multihome'
 import { loadServerInfo } from './server-info'
 import { guestProofBytes } from './guest-proof'
+import { findRoomLinkKey } from './room-link-keys'
 import {
   GUEST_NICKNAME_PLACEHOLDER,
   decideGuestPath,
@@ -144,7 +145,10 @@ export async function registerGuestOnIsland(
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(
-            guestJoinBody({ host, groupId, nickname, identityKey, signingKey, challenge, signature, homeUin: identity.uin }),
+            guestJoinBody({
+              host, groupId, nickname, identityKey, signingKey, challenge, signature, homeUin: identity.uin,
+              k: findRoomLinkKey(groupId, [host]),
+            }),
           ),
         })
         status = res.status

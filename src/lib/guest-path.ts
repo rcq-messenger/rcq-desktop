@@ -150,6 +150,9 @@ export function guestJoinErrorKey(code: string | null | undefined, status?: numb
       return 'auth.rotated_elsewhere'
     case 'group_closed':
       return 'group_join.closed_hint'
+    // The link lacked the room's key, or the link was reset (#990 step 2).
+    case 'room_link_invalid':
+      return 'group_join.link_invalid'
     case 'blocked':
       return 'group_join.error.blocked'
     case 'group_not_found':
@@ -235,8 +238,11 @@ export function guestJoinBody(p: {
   signature: string
   /// Our number at home, which the name must never carry (D1).
   homeUin?: number
+  /// The room link's key (#990 step 2), outside the proof on purpose.
+  k?: string | null
 }): Record<string, unknown> {
   return {
+    ...(p.k ? { k: p.k } : {}),
     v: 1,
     host: p.host,
     group_id: p.groupId,

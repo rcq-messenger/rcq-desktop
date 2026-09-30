@@ -753,6 +753,10 @@ export const zh: Record<string, string> = {
   'add.ci.undelivered': '已添加到本设备。对方的岛没有收下请求，在能联系上那个岛之前，对方看不到这个请求。',
   'add.ci.closed_island': '这个岛屿是封闭的。要给那里的人写信，需要他本人给你的链接：他分享联系方式，或者先给你写信。',
   'add.ci.no_user': '{host} 上没有号码 {uin}。',
+  'group_join.link_invalid': '这个房间链接不完整或已过期。请向给你链接的人要一个新的。',
+  'group.share.reset': '重置链接',
+  'group.share.reset_done': '链接已重置。旧链接将无法再打开这个房间。',
+  'group.share.reset_failed': '无法重置链接。',
   'add.ci.number_clash': '你在另一个岛上已经有一个号码为 {uin} 的联系人。会话目前仅按号码归档，第二个 {uin} 会和它共用同一段聊天记录。未添加。',
   // Add contact
   'add.title': '添加联系人',

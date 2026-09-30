@@ -20,7 +20,7 @@ import { snapshotFor } from './contacts-cache'
 import { isRandomTraffic, randomEnded, randomMatched } from './random-peers'
 import { adoptHomesFromOwnRecord, applyPushedRecord, backupIdentityFor, drainBackupQueues, listBackupHomes, scrubFrontAliasHomes } from './multihome'
 import { aliasFor, drainVisitedQueues, guestIdentityFor, listVisitedIslands } from './visited-islands'
-import { getCrossIsland, getVerifiedCrossIsland } from './crossisland-store'
+import { getCrossIsland, getVerifiedCrossIsland, sameKeyElsewhere } from './crossisland-store'
 import { depositReceiptToContact } from './federation-send'
 import { carbonIsOwn, crossIslandGateVerdict, foreignRoomBroadcastDropped, groupFrameDropped, sameSigningKey } from './crossisland-gate'
 import type { GuestRoom } from './held-gmsg'
@@ -471,7 +471,9 @@ function route(
   // gate with any kind at all. (`ownSeal` is computed above the carbon branch.)
   if (senderHost && senderHost !== ownHost && !ownSeal) {
     const kind = (envelope as { kind?: string }).kind ?? ''
-    const pinned = getCrossIsland(senderUIN, senderHost)
+    // The row at this exact address decides; without one, the same person
+    // under the same key on another of their islands (sameKeyElsewhere).
+    const pinned = getCrossIsland(senderUIN, senderHost) ?? sameKeyElsewhere(senderUIN, senderSigningKey)
     const verdict = crossIslandGateVerdict(kind, pinned?.signingKey ?? null, senderSigningKey)
     if (verdict.action === 'hold') {
       // Returning skips the delivered receipt below, as for every held row:

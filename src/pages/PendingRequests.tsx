@@ -29,6 +29,7 @@ import {
   withdrawServerRequest,
 } from '../lib/crossisland-pending-poll'
 import { crossIslandNumberElsewhere, getCrossIsland, saveCrossIsland } from '../lib/crossisland-store'
+import { contactsCache, snapshotFor } from '../lib/contacts-cache'
 import { sameSigningKey } from '../lib/crossisland-gate'
 import { sendRequestAck } from '../lib/crossisland-ack'
 import { sendContactAccept, sendContactDecline } from '../lib/crossisland-contactreq'
@@ -80,7 +81,9 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
     try {
       // The same number is already a contact on another island (#1061): one
       // thread per number, so the two would share a history. Refuse.
-      if (!getCrossIsland(r.uin, r.host) && (r.uin === identity?.uin || crossIslandNumberElsewhere(r.uin, r.host))) {
+      const roster = identity ? (contactsCache.get(identity.uin)?.contacts ?? snapshotFor(identity.uin)?.contacts) : undefined
+      const heldHere = roster?.some((c) => c.uin === r.uin && !c.host) ?? false
+      if (!getCrossIsland(r.uin, r.host) && (r.uin === identity?.uin || heldHere || crossIslandNumberElsewhere(r.uin, r.host))) {
         setError(t('add.ci.number_clash', { uin: String(r.uin) }))
         return
       }

@@ -107,7 +107,19 @@ export function getVerifiedCrossIsland(
   senderSigningKey: string | null | undefined,
 ): CrossIslandContact | null {
   const c = getCrossIsland(uin, host)
-  return c && sameSigningKey(c.signingKey, senderSigningKey) ? c : null
+  if (c) return sameSigningKey(c.signingKey, senderSigningKey) ? c : null
+  return sameKeyElsewhere(uin, senderSigningKey)
+}
+
+/// The same person writing from another of their islands: a row for this
+/// number under the SAME pinned key. The key is who they are, the address only
+/// where the row came from: a backup made primary writes from its new home,
+/// and the row kept after collapsing duplicates may be their other home (#1061
+/// review). Without this their mail went to requests and the accept was then
+/// refused as a number already held.
+export function sameKeyElsewhere(uin: number, senderSigningKey: string | null | undefined): CrossIslandContact | null {
+  if (!senderSigningKey) return null
+  return listCrossIsland().find((c) => c.uin === uin && sameSigningKey(c.signingKey, senderSigningKey)) ?? null
 }
 
 export function saveCrossIsland(c: CrossIslandContact): void {
@@ -210,7 +222,10 @@ export function dedupeSamePersonCrossIsland(): number {
   let n = 0
   for (const same of groups.values()) {
     if (same.length < 2) continue
-    for (const c of [...same].sort((a, b) => a.addedAt - b.addedAt).slice(1)) {
+    // Ties broken by address, the same way on every client, so two devices
+    // never keep different rows and bury both between them.
+    const byAge = [...same].sort((a, b) => a.addedAt - b.addedAt || ciKey(a.uin, a.host).localeCompare(ciKey(b.uin, b.host)))
+    for (const c of byAge.slice(1)) {
       removeCrossIsland(c.uin, c.host)
       n++
     }

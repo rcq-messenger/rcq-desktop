@@ -185,6 +185,46 @@ export function applyCrossIslandProfile(
   return true
 }
 
+/// Is `uin` already a cross-island contact on an island OTHER than `host`?
+/// (#1061) A conversation is filed by the bare number, so `N@a` and `N@b`
+/// would share one history and every lookup by number would take whichever
+/// came first. The add paths refuse; the same number on OUR island is the
+/// caller's to check, against the roster.
+export function crossIslandNumberElsewhere(uin: number, host: string): boolean {
+  const want = canonHost(host)
+  return listCrossIsland().some((c) => c.uin === uin && canonHost(c.host) !== want)
+}
+
+/// The same person twice under one number (#1061): a contact and their backup
+/// copy on a third island, which gets the same number where it can, both added
+/// before the add path refused that. Same number AND the same pinned signing
+/// key is one person: the row added first stays, the rest are removed (and so
+/// buried by the vault mirror, which a later sync respects). Same number under
+/// another key is two people and is left alone. Returns how many went.
+export function dedupeSamePersonCrossIsland(): number {
+  const groups = new Map<string, CrossIslandContact[]>()
+  for (const c of listCrossIsland()) {
+    const k = `${c.uin}|${c.signingKey}`
+    groups.set(k, [...(groups.get(k) ?? []), c])
+  }
+  let n = 0
+  for (const same of groups.values()) {
+    if (same.length < 2) continue
+    for (const c of [...same].sort((a, b) => a.addedAt - b.addedAt).slice(1)) {
+      removeCrossIsland(c.uin, c.host)
+      n++
+    }
+  }
+  return n
+}
+
+/// One spelling of an island address for comparing two writers' stamps.
+function canonHost(host: string): string {
+  let h = host.trim().toLowerCase()
+  if (h.endsWith(':443')) h = h.slice(0, -4)
+  return h.replace(/\.+$/, '')
+}
+
 export function removeCrossIsland(uin: number, host: string): void {
   const map = loadAll()
   delete map[ciKey(uin, host)]

@@ -16,7 +16,7 @@ import { useIdentity } from '../lib/identity-context'
 import { parseAddress } from '../lib/federation'
 import { resolvePeerHomes } from '../lib/federation-resolve'
 import { fetchPeerKeyCard } from '../lib/federation-send'
-import { saveCrossIsland } from '../lib/crossisland-store'
+import { crossIslandNumberElsewhere, saveCrossIsland } from '../lib/crossisland-store'
 import { sendContactRequest } from '../lib/crossisland-contactreq'
 import { usePrimaryGuest } from '../lib/use-guest-copy'
 import { hostOfApiBase } from '../lib/multihome'
@@ -139,6 +139,12 @@ function AddContactForm({
     setCiBusy(true)
     setError(null)
     try {
+      // The same number already names somebody here or on another island
+      // (#1061): a conversation is filed by the bare number, so the two would
+      // share one history. Refuse rather than merge them.
+      if (known.has(crossIsland.uin) || crossIslandNumberElsewhere(crossIsland.uin, crossIsland.host)) {
+        throw new Error(t('add.ci.number_clash', { uin: String(crossIsland.uin) }))
+      }
       const card = await fetchPeerKeyCard(crossIsland.host, crossIsland.uin)
       if (!card) {
         // ⚠ A CLOSED island answers a stranger with the SAME "no such number"

@@ -148,6 +148,7 @@ export const tr: Record<string, string> = {
   'login.create.have_code': 'Erişim kodum var',
   'add.ci.closed_island': 'Bu ada kapalı. Oradaki birine yazmak için kişinin kendisinden bir bağlantı gerekir: kişiyi paylaşması ya da size önce yazması.',
   'add.ci.no_user': '{host} üzerinde {uin} numarası yok.',
+  'add.ci.number_clash': 'Başka bir adada {uin} numaralı bir kişin zaten var. Bir sohbet yalnızca numaraya göre saklandığından ikinci bir {uin} o geçmişi paylaşırdı. Eklenmedi.',
   'login.create.invite_placeholder': 'adadan gelen kod',
   'login.create.invited_by': 'Seni {uin} davet etti. Hesap oluşunca birbirinizin kişilerinde olacaksınız.',
   'login.create.invite_hint': 'Bu ada kapalı. Erişim kodlarını adanın işletmecisi verir: davet ettiklerine, yerleşimle birlikte veya kendi bildiği gibi.',

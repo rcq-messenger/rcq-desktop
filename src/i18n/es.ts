@@ -148,6 +148,7 @@ export const es: Record<string, string> = {
   'login.create.have_code': 'Tengo un código de acceso',
   'add.ci.closed_island': 'Esta isla es cerrada. Para escribirle a alguien de ahí hace falta un enlace suyo: que comparta su contacto, o que te escriba primero.',
   'add.ci.no_user': 'No hay cuenta {uin} en {host}.',
+  'add.ci.number_clash': 'Ya tienes un contacto con el número {uin} en otra isla. Una conversación se archiva solo por el número, así que un segundo {uin} compartiría ese historial. No se ha añadido.',
   'login.create.invite_placeholder': 'el código de la isla',
   'login.create.invited_by': 'Te invitó {uin}. Al crear la cuenta, quedan en los contactos del otro.',
   'login.create.invite_hint': 'Esta isla es cerrada. Su operador reparte los códigos de acceso: a quien invita, junto con la residencia, o como prefiera.',

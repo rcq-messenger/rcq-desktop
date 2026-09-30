@@ -28,7 +28,7 @@ import {
   sharedGroupsOn,
   withdrawServerRequest,
 } from '../lib/crossisland-pending-poll'
-import { getCrossIsland, saveCrossIsland } from '../lib/crossisland-store'
+import { crossIslandNumberElsewhere, getCrossIsland, saveCrossIsland } from '../lib/crossisland-store'
 import { sameSigningKey } from '../lib/crossisland-gate'
 import { sendRequestAck } from '../lib/crossisland-ack'
 import { sendContactAccept, sendContactDecline } from '../lib/crossisland-contactreq'
@@ -78,6 +78,12 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
     setCiActing(tag)
     setError(null)
     try {
+      // The same number is already a contact on another island (#1061): one
+      // thread per number, so the two would share a history. Refuse.
+      if (!getCrossIsland(r.uin, r.host) && crossIslandNumberElsewhere(r.uin, r.host)) {
+        setError(t('add.ci.number_clash', { uin: String(r.uin) }))
+        return
+      }
       const card = await fetchPeerKeyCard(r.host, r.uin)
       if (!card) throw new Error('card')
       // ⚠⚠ The address on these envelopes is unsigned (v=1), the key they were

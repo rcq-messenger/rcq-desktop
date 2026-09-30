@@ -154,6 +154,7 @@ export const en: Record<string, string> = {
   'login.create.have_code': 'I have an access code',
   'add.ci.closed_island': 'This island is closed. To write to somebody there you need a link from them: a shared contact, or a message they sent you first.',
   'add.ci.no_user': 'No account {uin} on {host}.',
+  'add.ci.number_clash': 'You already have a contact numbered {uin} on another island. A conversation is still filed by number alone, so a second {uin} would share that history. Not added.',
   'login.create.invite_placeholder': 'the code from the island',
   'login.create.invited_by': 'Invited by {uin}. Once the account is created, you are in each other\'s contacts.',
   'login.create.invite_hint': 'This island is closed. Its operator hands out access codes: to people they invite, with residency, or however they choose.',

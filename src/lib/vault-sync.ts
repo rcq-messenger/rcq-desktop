@@ -40,7 +40,7 @@ import {
   scheduleCrossIslandPush,
   syncCrossIsland,
 } from './crossisland-vault'
-import { setCrossIslandListener } from './crossisland-store'
+import { dedupeSamePersonCrossIsland, setCrossIslandListener } from './crossisland-store'
 import {
   lastSeenGuestCardVersion,
   retireGuestCardSync,
@@ -186,6 +186,8 @@ function armCrossIslandMirror(identity: WebIdentity): void {
     if (e.kind === 'removed') buryCrossIsland(e.uin, e.host, Date.now())
     scheduleCrossIslandPush(identity)
   })
+  // After the listener, so the removals are buried and mirrored like any other.
+  dedupeSamePersonCrossIsland()
 }
 
 async function refreshContactsSlot(identity: WebIdentity): Promise<void> {

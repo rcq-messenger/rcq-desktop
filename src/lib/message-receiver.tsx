@@ -21,7 +21,7 @@ import { isRandomTraffic, randomEnded, randomMatched } from './random-peers'
 import { adoptHomesFromOwnRecord, applyPushedRecord, backupIdentityFor, drainBackupQueues, listBackupHomes, scrubFrontAliasHomes } from './multihome'
 import { aliasFor, drainVisitedQueues, guestIdentityFor, listVisitedIslands } from './visited-islands'
 import { getCrossIsland, getVerifiedCrossIsland } from './crossisland-store'
-import { depositReceiptCrossIsland } from './federation-send'
+import { depositReceiptToContact } from './federation-send'
 import { carbonIsOwn, crossIslandGateVerdict, foreignRoomBroadcastDropped, groupFrameDropped, sameSigningKey } from './crossisland-gate'
 import type { GuestRoom } from './held-gmsg'
 import { applyRequestAck } from './crossisland-ack'
@@ -535,6 +535,18 @@ function route(
     void flushHistory()
       .then(() => sendDeliveredReceipt(identity, senderUIN, targetID))
       .catch(() => {})
+  } else if (identity && senderUIN !== myUin && groupId == null && senderHost && 'id' in envelope && envelope.id) {
+    // From another island (#1062): answered on THEIR island, to the contact
+    // this row was verified as (address and pinned key), never by number. A
+    // stranger's row is held before it gets here, so nobody unaccepted learns
+    // that this device is awake.
+    const ci = getVerifiedCrossIsland(senderUIN, senderHost, senderSigningKey)
+    if (ci) {
+      const env: Envelope = { kind: 'delivered', targetIDs: [envelope.id] }
+      void flushHistory()
+        .then(() => depositReceiptToContact(identity, ci, env))
+        .catch(() => {})
+    }
   }
 }
 
@@ -554,7 +566,6 @@ async function sendDeliveredReceipt(
 ): Promise<void> {
   const env: Envelope = { kind: 'delivered', targetIDs: [targetID] }
   try {
-    if (await depositReceiptCrossIsland(identity, peerUin, env)) return
     const reached = await sendV2(identity, peerUin, env, 'read').catch(() => 0)
     if (reached === 0) {
       // Roster first, then one cached, queued card read per peer (peer-keys.ts):

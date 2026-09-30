@@ -142,7 +142,13 @@ function AddContactForm({
       // The same number already names somebody here or on another island
       // (#1061): a conversation is filed by the bare number, so the two would
       // share one history. Refuse rather than merge them.
-      if (known.has(crossIsland.uin) || crossIslandNumberElsewhere(crossIsland.uin, crossIsland.host)) {
+      // Our own number over there is somebody else under the number Saved
+      // Messages is filed by, and every row they send reads as forged.
+      if (
+        crossIsland.uin === identity?.uin ||
+        known.has(crossIsland.uin) ||
+        crossIslandNumberElsewhere(crossIsland.uin, crossIsland.host)
+      ) {
         throw new Error(t('add.ci.number_clash', { uin: String(crossIsland.uin) }))
       }
       const card = await fetchPeerKeyCard(crossIsland.host, crossIsland.uin)

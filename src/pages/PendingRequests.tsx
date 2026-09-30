@@ -80,7 +80,7 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
     try {
       // The same number is already a contact on another island (#1061): one
       // thread per number, so the two would share a history. Refuse.
-      if (!getCrossIsland(r.uin, r.host) && crossIslandNumberElsewhere(r.uin, r.host)) {
+      if (!getCrossIsland(r.uin, r.host) && (r.uin === identity?.uin || crossIslandNumberElsewhere(r.uin, r.host))) {
         setError(t('add.ci.number_clash', { uin: String(r.uin) }))
         return
       }

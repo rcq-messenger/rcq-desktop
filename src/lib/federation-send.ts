@@ -18,7 +18,8 @@ import type { WebIdentity, Envelope } from './crypto'
 import { encryptV1, messageClass } from './crypto'
 import { type ResolvedPeer } from './federation-resolve'
 import { resolveAndMirrorHomes } from './multihome'
-import { findCrossIslandByUin } from './crossisland-store'
+import { findCrossIslandByUin, type CrossIslandContact } from './crossisland-store'
+import { contactsCache, snapshotFor } from './contacts-cache'
 
 export interface PeerKeyCard {
   identity_key: string
@@ -206,16 +207,34 @@ export async function deliverCrossIsland(
 /// contact never saw a second tick from us. No card read: a drain can owe the
 /// same few people dozens of receipts. Returns false when the peer is not a
 /// cross-island contact, and the caller takes the same-island road.
+///
+/// A thread is keyed by the bare number, so a contact on OUR island with it
+/// wins: the number may be a neighbour here and somebody else over there, and
+/// their receipts must not cross (the add paths refuse that pairing now,
+/// #1061, but a roster from before can still hold it).
 export async function depositReceiptCrossIsland(
   sender: WebIdentity,
   peerUin: number,
   envelope: Envelope,
 ): Promise<boolean> {
+  if (peerUin === sender.uin) return false
+  const roster = contactsCache.get(sender.uin)?.contacts ?? snapshotFor(sender.uin)?.contacts
+  if (roster?.some((c) => c.uin === peerUin && !c.host)) return false
   const ci = findCrossIslandByUin(peerUin)
   if (!ci) return false
-  await depositSealedWithKeys(sender, ci.host, ci.uin, envelope, {
+  await depositReceiptToContact(sender, ci, envelope)
+  return true
+}
+
+/// The same deposit to one known contact: a delivered receipt answers the
+/// exact address and key the message was verified under, not a number.
+export async function depositReceiptToContact(
+  sender: WebIdentity,
+  ci: CrossIslandContact,
+  envelope: Envelope,
+): Promise<boolean> {
+  return depositSealedWithKeys(sender, ci.host, ci.uin, envelope, {
     identityKey: ci.identityKey,
     signingKey: ci.signingKey,
   }, 'read')
-  return true
 }

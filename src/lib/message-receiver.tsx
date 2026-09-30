@@ -27,7 +27,7 @@ import type { GuestRoom } from './held-gmsg'
 import { applyRequestAck } from './crossisland-ack'
 import { isBurning } from './burn-cascade'
 import { pollVisitedPending } from './crossisland-pending-poll'
-import { ensureRequestsLoaded, holdRequestMessage, isBlocked } from './crossisland-requests'
+import { ensureRequestsLoaded, holdRequestMessage, isBlocked, retractHeldMessage } from './crossisland-requests'
 import { isContact, shouldQuarantineStranger } from './stranger-requests'
 import { handleContactReq } from './crossisland-contactreq'
 import { CALL_OFFER_TTL_SEC, fileMissedCall, fileMissedCrossIslandOffer } from './crossisland-call'
@@ -483,6 +483,12 @@ function route(
       return
     }
     if (verdict.action === 'drop') {
+      // Dropped, except for what it says about a message we hold from them:
+      // a delete for everyone takes that back, or the accept would replay it.
+      const del = envelope as { kind?: string; targetID?: string }
+      if (del.kind === 'delete' && del.targetID) {
+        retractHeldMessage(senderUIN, senderHost, del.targetID, senderSigningKey)
+      }
       if (verdict.keyMismatch) {
         console.warn('[crossisland] control envelope under a key that is not the pinned one; dropped', {
           senderUIN,
@@ -503,6 +509,9 @@ function route(
       holdRequestMessage(senderUIN, '', envelope)
       return
     }
+    // A stranger deleting for everyone a message we still hold.
+    const del = envelope as { kind?: string; targetID?: string }
+    if (del.kind === 'delete' && del.targetID && retractHeldMessage(senderUIN, '', del.targetID, '')) return
   }
   addIncoming(senderUIN, envelope, srvAt)
   // Tell the sender it ARRIVED.

@@ -61,6 +61,10 @@ export interface CrossIslandRequest {
   /// Deposits of our accept so far that did not reach the requester. The
   /// visited poll tries again up to three in all, then the row says so.
   srvAcceptTries?: number
+  /// Which key sealed each held message, by message id ('' for a v=2 row,
+  /// whose ratchet vouches for the sender). Lets the author take one back,
+  /// see `retractHeldMessage`. Absent on rows held before.
+  heldSpub?: Record<string, string>
 }
 
 /// What the receive path proved about who sealed an envelope it is holding.
@@ -230,6 +234,8 @@ export function holdRequestMessage(uin: number, host: string, env: Envelope, pro
     if (!existing.msgs.some((m) => (m as { id?: string }).id === (env as { id?: string }).id)) {
       existing.msgs.push(env)
       if (existing.msgs.length > MAX_HELD) existing.msgs = existing.msgs.slice(-MAX_HELD)
+      const id = (env as { id?: string }).id
+      if (id) existing.heldSpub = { ...(existing.heldSpub ?? {}), [id]: proof?.spub ?? '' }
     }
     map[k] = existing
     saveAll(map)
@@ -310,6 +316,30 @@ export function requestCount(): number {
 /// Returns the row so the caller can replay the held messages. Null when the
 /// store is not open yet — every UI caller runs long after that, and the one
 /// receive-path caller (a `decline` from the peer) only needs the removal.
+/// The sender deleted a held message for everyone before we answered. A
+/// control from somebody not yet accepted is dropped at the gate, so the
+/// message used to stay, and accepting replayed what its author had taken
+/// back. Only the key that sealed the held message can retract it. A row left
+/// with nothing in it goes too, unless it is an explicit contact request or
+/// stands for one on an island's pending list. True when something went.
+export function retractHeldMessage(uin: number, host: string, targetID: string, spub: string | null | undefined): boolean {
+  if (!cache) return false
+  const map = loadAll()
+  const k = reqKey(uin, host)
+  const r = map[k]
+  if (!r || r.heldSpub?.[targetID] === undefined || r.heldSpub[targetID] !== (spub ?? '')) return false
+  const before = r.msgs.length
+  r.msgs = r.msgs.filter((m) => (m as { id?: string }).id !== targetID)
+  if (r.msgs.length === before) return false
+  const rest = { ...r.heldSpub }
+  delete rest[targetID]
+  r.heldSpub = rest
+  if (r.msgs.length === 0 && !r.contactReq && !r.server) delete map[k]
+  else map[k] = r
+  saveAll(map)
+  return true
+}
+
 export function clearRequest(uin: number, host: string): CrossIslandRequest | null {
   if (!cache) {
     whenLoaded(() => clearRequest(uin, host))

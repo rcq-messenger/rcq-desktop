@@ -235,7 +235,15 @@ export function holdRequestMessage(uin: number, host: string, env: Envelope, pro
       existing.msgs.push(env)
       if (existing.msgs.length > MAX_HELD) existing.msgs = existing.msgs.slice(-MAX_HELD)
       const id = (env as { id?: string }).id
-      if (id) existing.heldSpub = { ...(existing.heldSpub ?? {}), [id]: proof?.spub ?? '' }
+      if (id) {
+        // Only for the messages still held: trimmed with them, or a stranger
+        // writing thousands of rows would grow this map without end.
+        const kept = new Set(existing.msgs.map((m) => (m as { id?: string }).id).filter(Boolean) as string[])
+        const next: Record<string, string> = {}
+        for (const [k, v] of Object.entries(existing.heldSpub ?? {})) if (kept.has(k)) next[k] = v
+        next[id] = proof?.spub ?? ''
+        existing.heldSpub = next
+      }
     }
     map[k] = existing
     saveAll(map)
@@ -323,7 +331,12 @@ export function requestCount(): number {
 /// with nothing in it goes too, unless it is an explicit contact request or
 /// stands for one on an island's pending list. True when something went.
 export function retractHeldMessage(uin: number, host: string, targetID: string, spub: string | null | undefined): boolean {
-  if (!cache) return false
+  // Still opening: run it once the store is there, like a hold. A message and
+  // its delete can both land in the first milliseconds of a session.
+  if (!cache) {
+    whenLoaded(() => void retractHeldMessage(uin, host, targetID, spub))
+    return false
+  }
   const map = loadAll()
   const k = reqKey(uin, host)
   const r = map[k]

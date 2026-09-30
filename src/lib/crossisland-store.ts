@@ -224,7 +224,13 @@ export function dedupeSamePersonCrossIsland(): number {
     if (same.length < 2) continue
     // Ties broken by address, the same way on every client, so two devices
     // never keep different rows and bury both between them.
-    const byAge = [...same].sort((a, b) => a.addedAt - b.addedAt || ciKey(a.uin, a.host).localeCompare(ciKey(b.uin, b.host)))
+    // Plain code-unit order, not localeCompare: that follows the browser's
+    // language, and Android and iOS compare by character codes.
+    const byAge = [...same].sort((a, b) => {
+      if (a.addedAt !== b.addedAt) return a.addedAt - b.addedAt
+      const ka = ciKey(a.uin, a.host), kb = ciKey(b.uin, b.host)
+      return ka < kb ? -1 : ka > kb ? 1 : 0
+    })
     for (const c of byAge.slice(1)) {
       removeCrossIsland(c.uin, c.host)
       n++

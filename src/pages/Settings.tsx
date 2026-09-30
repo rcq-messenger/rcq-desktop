@@ -1135,14 +1135,28 @@ export function Settings() {
           {mhAutoError && (
             <div className="text-sm text-red-600 bg-red-500/5 rounded-md p-2">{mhAutoError}</div>
           )}
+          {/* Promotable like a manual row (#1060): the automatic backup is the
+              only one most people have, and making it primary is the one way
+              to send during an outage. Same safety either way (recover first,
+              nothing changes on a failure, the old primary stays as a backup).
+              No "remove": the toggle is how an automatic backup goes away. */}
           {backups
             .filter((h) => h.auto || h.adopted)
             .map((h) => (
-              <div key={h.host} className="text-sm">
-                <div className="truncate">{h.host}</div>
-                <div className="text-xs text-fg-dim">
-                  {t('settings.multihome.row_uin', { uin: h.uin })}
+              <div key={h.host} className="flex items-center justify-between gap-3 text-sm">
+                <div className="min-w-0">
+                  <div className="truncate">{h.host}</div>
+                  <div className="text-xs text-fg-dim">
+                    {t('settings.multihome.row_uin', { uin: h.uin })}
+                  </div>
                 </div>
+                <button
+                  onClick={() => makePrimary(h.host)}
+                  disabled={promoteBusy != null}
+                  className="h-8 px-3 shrink-0 rounded-md bg-field text-xs font-medium text-fg-secondary hover:bg-line/50 transition-colors disabled:opacity-50"
+                >
+                  {promoteBusy === h.host ? t('settings.multihome.promoting') : t('settings.multihome.make_primary')}
+                </button>
               </div>
             ))}
           <p className="text-xs text-fg-dim">{t('settings.multihome.auto_sub')}</p>

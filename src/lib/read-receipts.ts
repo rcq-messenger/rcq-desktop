@@ -20,6 +20,7 @@ import { peerSealKeys } from './peer-keys'
 import { Api, peerBundleFrom } from './api'
 import { encryptV1, type Envelope, type WebIdentity } from './crypto'
 import { sendV2 } from './signal-device'
+import { depositReceiptCrossIsland } from './federation-send'
 import { incomingHydrated } from './incoming-store'
 
 /// Ids remembered per thread. Old ids fall off the front; the age gate below
@@ -120,6 +121,7 @@ export function noteThreadViewed(
 async function sendReadReceipt(identity: WebIdentity, peerUin: number, targetIDs: string[]): Promise<void> {
   const env: Envelope = { kind: 'read', targetIDs }
   try {
+    if (await depositReceiptCrossIsland(identity, peerUin, env)) return
     const reached = await sendV2(identity, peerUin, env, 'read').catch(() => 0)
     if (reached === 0) {
       // Roster first, then one cached, queued card read per peer (peer-keys.ts):

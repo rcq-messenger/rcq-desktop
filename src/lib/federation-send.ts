@@ -18,6 +18,7 @@ import type { WebIdentity, Envelope } from './crypto'
 import { encryptV1, messageClass } from './crypto'
 import { type ResolvedPeer } from './federation-resolve'
 import { resolveAndMirrorHomes } from './multihome'
+import { findCrossIslandByUin } from './crossisland-store'
 
 export interface PeerKeyCard {
   identity_key: string
@@ -102,7 +103,7 @@ export async function depositSealedWithKeys(
   peerUin: number,
   envelope: Envelope,
   keys: { identityKey: string; signingKey: string },
-  envelopeType: 'message' | 'call' = 'message',
+  envelopeType: string = 'message',
   // Stage 2: ring a closed app (§5d wake). With `envelope_type "message"` on
   // an island that honours it; the caller sends type "call" to one that does not.
   ring = false,
@@ -196,4 +197,25 @@ export async function deliverCrossIsland(
     }
   }
   return { delivered, homes, verified }
+}
+
+/// A read or delivered receipt to a contact on ANOTHER island (#1062): to
+/// THEIR island, sealed to the keys we pinned when we added them, under the
+/// ephemeral "read" type so it never pushes. Receipts only ever went to our
+/// own island, where that number is somebody else or nobody, so a cross-island
+/// contact never saw a second tick from us. No card read: a drain can owe the
+/// same few people dozens of receipts. Returns false when the peer is not a
+/// cross-island contact, and the caller takes the same-island road.
+export async function depositReceiptCrossIsland(
+  sender: WebIdentity,
+  peerUin: number,
+  envelope: Envelope,
+): Promise<boolean> {
+  const ci = findCrossIslandByUin(peerUin)
+  if (!ci) return false
+  await depositSealedWithKeys(sender, ci.host, ci.uin, envelope, {
+    identityKey: ci.identityKey,
+    signingKey: ci.signingKey,
+  }, 'read')
+  return true
 }

@@ -21,6 +21,7 @@ import { isRandomTraffic, randomEnded, randomMatched } from './random-peers'
 import { adoptHomesFromOwnRecord, applyPushedRecord, backupIdentityFor, drainBackupQueues, listBackupHomes, scrubFrontAliasHomes } from './multihome'
 import { aliasFor, drainVisitedQueues, guestIdentityFor, listVisitedIslands } from './visited-islands'
 import { getCrossIsland, getVerifiedCrossIsland } from './crossisland-store'
+import { depositReceiptCrossIsland } from './federation-send'
 import { carbonIsOwn, crossIslandGateVerdict, foreignRoomBroadcastDropped, groupFrameDropped, sameSigningKey } from './crossisland-gate'
 import type { GuestRoom } from './held-gmsg'
 import { applyRequestAck } from './crossisland-ack'
@@ -553,6 +554,7 @@ async function sendDeliveredReceipt(
 ): Promise<void> {
   const env: Envelope = { kind: 'delivered', targetIDs: [targetID] }
   try {
+    if (await depositReceiptCrossIsland(identity, peerUin, env)) return
     const reached = await sendV2(identity, peerUin, env, 'read').catch(() => 0)
     if (reached === 0) {
       // Roster first, then one cached, queued card read per peer (peer-keys.ts):

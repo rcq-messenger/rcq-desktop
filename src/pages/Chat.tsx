@@ -1452,10 +1452,13 @@ export function Chat() {
         // token for cross-island; v=1 needs only their public key card.
         // Pass the locally-pinned keys so the send survives the peer's island
         // being blocked/dead: seal from these + reach them via the gossip mirror.
+        // The envelope's own outer type, as on every other branch here: as a
+        // "message" a reaction, an edit or a delete to somebody on another
+        // island was pushed to them as a "New message" that led nowhere.
         await deliverCrossIsland(identity, peer.host, peer.uin, envelope, {
           identityKey: peer.identity_key,
           signingKey: peer.signing_key,
-        })
+        }, etype)
       } else if (peer) {
         // Prefer v=2 (libsignal Double Ratchet): fan out one ciphertext per
         // device of the peer. If the peer has published NO libsignal bundle

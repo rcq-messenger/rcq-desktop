@@ -37,7 +37,7 @@
 
 import { getCrossIsland } from './crossisland-store'
 import { newUUIDv4, type CallEnvelope, type WebIdentity } from './crypto'
-import { depositSealedWithKeys, fetchPeerKeyCard } from './federation-send'
+import { depositSealedWithKeys, sealingKeysFor } from './federation-send'
 import { sendAnchorMs } from './disappearing'
 import { logCall } from './outgoing-store'
 import { loadServerInfo } from './server-info'
@@ -93,10 +93,13 @@ function toWireData(extra: Record<string, unknown>): Record<string, string> {
 
 const keyCache = new Map<string, { keys: { identityKey: string; signingKey: string }; at: number }>()
 
-/// Resolve the key to seal to for `uin@host`. Prefers a fresh card (so a peer
-/// who rotated is still reachable) and falls back to the keys pinned when the
-/// contact was added (so a call still goes out when their island cannot serve
-/// its card right now). Read-only: sealing to a key never writes one, and the
+/// Resolve the key to seal to for `uin@host`: the keys pinned when the contact
+/// was added, and nothing at all when their island now serves a card under
+/// another key (`sealingKeysFor`, report 1067). This preferred the fresh card
+/// "so a peer who rotated is still reachable", and so sealed the offer, SDP
+/// and all, to whoever the island handed the number to next. A card that
+/// cannot be fetched right now still leaves the pin, so a call goes out while
+/// their island is down. Read-only: sealing to a key never writes one, and the
 /// pinned pair stays the anti-impersonation anchor (§2.4).
 async function sealingKeys(
   host: string,
@@ -105,11 +108,13 @@ async function sealingKeys(
   const cacheKey = `${uin}@${host}`
   const hit = keyCache.get(cacheKey)
   if (hit && Date.now() - hit.at < KEY_TTL_MS) return hit.keys
-  const card = await fetchPeerKeyCard(host, uin)
   const pinned = getCrossIsland(uin, host)
-  const identityKey = card?.identity_key || pinned?.identityKey
-  if (!identityKey) return null
-  const keys = { identityKey, signingKey: card?.signing_key || pinned?.signingKey || '' }
+  const { keys } = await sealingKeysFor(
+    host,
+    uin,
+    pinned ? { identityKey: pinned.identityKey, signingKey: pinned.signingKey } : undefined,
+  )
+  if (!keys) return null
   keyCache.set(cacheKey, { keys, at: Date.now() })
   return keys
 }

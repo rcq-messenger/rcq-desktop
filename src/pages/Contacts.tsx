@@ -26,7 +26,7 @@ import { AltText } from '../components/AltText'
 import { applySealedStateAll, loadRoomKeys } from '../lib/group-state'
 import { loadProfileKeys, myProfileKey } from '../lib/profile-key'
 import { AnimatePresence } from 'framer-motion'
-import { useEffect, useReducer, useState, useRef, type ReactNode } from 'react'
+import { useEffect, useReducer, useState, useRef, useSyncExternalStore, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { BypassShield } from '../components/BypassShield'
 import { ChatPreviewModal } from '../components/ChatPreviewModal'
@@ -111,7 +111,8 @@ import {
   useMutedPeers,
 } from '../lib/local-store'
 import { useWS } from '../lib/ws'
-import { listCrossIsland, type CrossIslandContact } from '../lib/crossisland-store'
+import { ciKey, listCrossIsland, type CrossIslandContact } from '../lib/crossisland-store'
+import { goneCrossIslandKeys, peerLivenessVersion, subscribePeerLiveness } from '../lib/peer-liveness'
 import {
   ensureRequestsLoaded,
   isBlocked,
@@ -186,6 +187,9 @@ export function Contacts() {
   const ws = useWS()
   const navigate = useNavigate()
   const { toast } = useToast()
+  // A probe in an open chat (report 1067) can mark somebody gone while this
+  // list sits mounted underneath it, in another tab or behind the split view.
+  useSyncExternalStore(subscribePeerLiveness, peerLivenessVersion)
 
   /// Hand someone the link that adds you. The native share sheet where there
   /// is one, because on a phone the next step is a messenger the person
@@ -709,6 +713,13 @@ export function Contacts() {
     if (sid) file(filedCross, sid, ci)
     else crossLoose.push(ci)
   }
+  // An account its island says is gone (report 1067) sinks to the end of the
+  // section, muted, rather than vanishing: a false "gone" exists (a restored
+  // island database, a number that moved), and the history stays reachable.
+  // Stable sort, so the newest-first order holds within each half.
+  const goneCi = goneCrossIslandKeys(crossIsland)
+  const isGoneCi = (ci: CrossIslandContact) => goneCi.has(ciKey(ci.uin, ci.host))
+  crossLoose.sort((a, b) => Number(isGoneCi(a)) - Number(isGoneCi(b)))
   // Inside a user section: unread first, then favorite (which survives filing
   // as a flag even though it has no section of its own to render into), then
   // the sort this client already uses, which on the web is by name.
@@ -981,6 +992,7 @@ export function Contacts() {
               <CrossIslandRow
                 key={`${ci.uin}@${ci.host}`}
                 ci={ci}
+                gone={isGoneCi(ci)}
                 aliasFor={ciAliasFor}
                 onChanged={() => refresh(true)}
               />
@@ -1088,6 +1100,7 @@ export function Contacts() {
                   <CrossIslandRow
                     key={`${ci.uin}@${ci.host}`}
                     ci={ci}
+                    gone={isGoneCi(ci)}
                     aliasFor={ciAliasFor}
                     onChanged={() => refresh(true)}
                   />
@@ -1848,10 +1861,15 @@ function ContactRow({
 /// CrossIslandActionsMenu for why favourite/mute/archive are missing.
 function CrossIslandRow({
   ci,
+  gone,
   aliasFor,
   onChanged,
 }: {
   ci: CrossIslandContact
+  /// Their island says this account no longer exists (report 1067): the row
+  /// is muted and the address line says so. Same row otherwise, so the history
+  /// and the menu (remove included) stay one click away.
+  gone: boolean
   aliasFor: (uin: number, host?: string | null) => string | undefined
   onChanged: () => void
 }) {
@@ -1860,7 +1878,7 @@ function CrossIslandRow({
   const blocked = isBlocked(ci.uin, ci.host)
   return (
     <li className="relative">
-      <div className={'flex items-center gap-3 px-4 py-3 lg:py-2 hover:bg-field transition-colors ' + (blocked ? 'opacity-60' : '')}>
+      <div className={'flex items-center gap-3 px-4 py-3 lg:py-2 hover:bg-field transition-colors ' + (blocked || gone ? 'opacity-60' : '')}>
         <Link to={`/chat/${ci.uin}?i=${encodeURIComponent(ci.host)}`} className="flex items-center gap-3 flex-1 min-w-0">
           {/* The same greyed flower every other cross-island row uses
               (StatusIcon's `crossIsland`), not a globe emoji: presence
@@ -1899,7 +1917,7 @@ function CrossIslandRow({
               {aliasFor(ci.uin, ci.host) || ci.nickname || `${ci.uin}@${ci.host}`}
             </div>
             <div className="text-xs text-fg-dim truncate">
-              {ci.uin} · {ci.host}
+              {gone ? t('ci.gone.row') : `${ci.uin} · ${ci.host}`}
             </div>
           </div>
         </Link>

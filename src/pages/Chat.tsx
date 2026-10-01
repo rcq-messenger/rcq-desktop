@@ -15,7 +15,7 @@
 import { relativeLastSeen } from '../lib/last-seen'
 import { cardForEnvelope } from '../lib/guest-card'
 import { AltText } from '../components/AltText'
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { BadgeMark } from '../components/BadgeMark'
 import { createPortal } from 'react-dom'
 import { scopedKey } from '../lib/account-scope'
@@ -55,10 +55,13 @@ import {
   type IncomingRow,
 } from '../lib/incoming-store'
 import { PartialFanOutError, sendV2 } from '../lib/signal-device'
-import { getCrossIsland } from '../lib/crossisland-store'
+import { getCrossIsland, removeCrossIsland } from '../lib/crossisland-store'
 import { usePrimaryGuest } from '../lib/use-guest-copy'
 import { memberMarkOf, memberProfileHref, type MemberMark } from '../lib/guest-path'
-import { deliverCrossIsland } from '../lib/federation-send'
+import { CrossIslandKeyChangedError, deliverCrossIsland } from '../lib/federation-send'
+import { forgetPeerLiveness, peerLivenessVersion, peerMark, probePeerLiveness, subscribePeerLiveness } from '../lib/peer-liveness'
+import { forgetSectionMember } from '../lib/sections-vault'
+import { peerKey } from '../lib/sections'
 import { depositToExtraHomes, hostOfApiBase } from '../lib/multihome'
 import {
   encryptV1,
@@ -666,6 +669,26 @@ export function Chat() {
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [identity, peerUIN, groupId, isGroup, islandHost, loadAttempt])
+
+  // Is this contact on another island still there (report 1067)? Asked when
+  // their chat opens, at most once a day per address (peer-liveness.ts), so a
+  // burned account says so before anybody types into the void; a failed send
+  // asks again below. A peer that merely carries a host without a row in the
+  // cross-island store is a no-op there: the question is about the keys
+  // pinned in it.
+  const ciPeerHost = !isGroup && !isSelf ? peer?.host ?? null : null
+  const ciPeerUin = ciPeerHost ? peer?.uin ?? null : null
+  useEffect(() => {
+    if (!identity || !ciPeerHost || ciPeerUin == null) return
+    void probePeerLiveness(identity, ciPeerUin, ciPeerHost, 'open')
+  }, [identity, ciPeerHost, ciPeerUin])
+  // Read once per mark change, not on every keystroke this screen re-renders for.
+  const livenessVersion = useSyncExternalStore(subscribePeerLiveness, peerLivenessVersion)
+  const peerState = useMemo(
+    () => (ciPeerHost && ciPeerUin != null ? peerMark(ciPeerUin, ciPeerHost) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the version is what changes
+    [livenessVersion, ciPeerUin, ciPeerHost],
+  )
 
   // Pull own profile once for the nickname — used as authorName on
   // replies-to-self and as fwdName on forwards. Best-effort; if it
@@ -1455,10 +1478,31 @@ export function Chat() {
         // The envelope's own outer type, as on every other branch here: as a
         // "message" a reaction, an edit or a delete to somebody on another
         // island was pushed to them as a "New message" that led nowhere.
-        await deliverCrossIsland(identity, peer.host, peer.uin, envelope, {
-          identityKey: peer.identity_key,
-          signingKey: peer.signing_key,
-        }, etype)
+        //
+        // ⚠⚠ And the RESULT is the send's result (report 1067). It was
+        // dropped on the floor, and `deliverCrossIsland` reports a refused
+        // deposit as `delivered: 0` rather than a throw, so a message to a
+        // burned account showed as sent here, no error, nothing. No home took
+        // it: the send failed, and their island is asked whether they still
+        // exist, which is what puts the banner up. A reaction, an edit or a
+        // delete fails the same way and says the same words: none of them
+        // arrived either.
+        let res: Awaited<ReturnType<typeof deliverCrossIsland>>
+        try {
+          res = await deliverCrossIsland(identity, peer.host, peer.uin, envelope, {
+            identityKey: peer.identity_key,
+            signingKey: peer.signing_key,
+          }, etype)
+        } catch (e) {
+          // Their island serves this address under another key: nothing was
+          // sealed, and the banner (set by the send path) says why.
+          if (e instanceof CrossIslandKeyChangedError) throw new Error(t('chat.error.key_changed'))
+          throw new Error(t('chat.error.send_failed'))
+        }
+        if (res.delivered === 0) {
+          void probePeerLiveness(identity, peer.uin, peer.host, 'failure')
+          throw new Error(t('chat.error.send_failed'))
+        }
       } else if (peer) {
         // Prefer v=2 (libsignal Double Ratchet): fan out one ciphertext per
         // device of the peer. If the peer has published NO libsignal bundle
@@ -1890,6 +1934,18 @@ export function Chat() {
     stickToBottom()
     taRef.current?.focus()
     await attemptSendRow(row)
+  }
+
+  /// Remove the contact from the "account deleted" / "key changed" banner
+  /// (report 1067): the same removal as the contact menu's, so it is buried in
+  /// the vault and another device does not bring the ghost back on its next
+  /// sync, and its section membership goes with a tombstone. The history stays.
+  function removeCrossIslandPeer() {
+    if (!peer?.host) return
+    removeCrossIsland(peer.uin, peer.host)
+    forgetSectionMember(identity, peerKey(peer.uin, peer.host))
+    forgetPeerLiveness(peer.uin, peer.host)
+    navigate('/contacts', { replace: true })
   }
 
   /// Unblock the current peer (from the blocked-composer banner) so the
@@ -3885,6 +3941,9 @@ export function Chat() {
           onToggle={() => setPinExpanded((v) => !v)}
           linksAllowed={linksAllowed}
         />
+      )}
+      {peerState && (peerState.gone || peerState.keyChanged) && (
+        <PeerStateBanner gone={peerState.gone} onRemove={removeCrossIslandPeer} />
       )}
 
 
@@ -6831,6 +6890,58 @@ function MediaPlaceholder({ mediaKind }: { mediaKind?: string }) {
 /// protection a long URL needs.
 function pinPreview(text: string): string {
   return text.replace(/\s+/g, ' ').trim()
+}
+
+/// A contact on another island who is gone, or whose island now serves this
+/// address under another key (report 1067). Under the header, where Android
+/// puts the same line, with the one action that helps: removing the contact.
+/// The removal asks first, with the contact menu's own warning, because the
+/// pinned keys live on this device only and cannot be fetched back.
+function PeerStateBanner({ gone, onRemove }: { gone: boolean; onRemove: () => void }) {
+  const { t } = useI18n()
+  const [confirming, setConfirming] = useState(false)
+  return (
+    // The pin bar's treatment (see PinnedBanner): a bar floating over the
+    // thread, the page's own colour behind a blur, not a third surface.
+    <div className="rcq-floating-bar flex-none relative z-20" role="status">
+      <div className="max-w-2xl mx-auto w-full px-4 py-2 text-[0.8125rem]">
+        {confirming ? (
+          <div className="space-y-2">
+            <p className="text-xs text-fg-secondary leading-relaxed">{t('ci.actions.remove.warn')}</p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirming(false)}
+                className="flex-1 h-8 rounded-md bg-field text-xs font-medium hover:bg-line/50"
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={onRemove}
+                className="flex-1 h-8 rounded-md bg-red-600 hover:bg-red-700 text-white text-xs font-semibold"
+              >
+                {t('ci.actions.remove')}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-3">
+            <div className="flex-1 min-w-0 text-red-500 leading-snug">
+              {gone ? t('chat.peer_gone') : t('chat.peer_key_changed')}
+            </div>
+            <button
+              type="button"
+              onClick={() => setConfirming(true)}
+              className="shrink-0 rounded-full bg-field hover:bg-line/50 text-fg-primary text-xs font-semibold px-3 py-1.5 transition-colors"
+            >
+              {t('chat.peer_remove')}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
 }
 
 /// The pinned message: a one-line bar under the header, and the whole text in

@@ -16,6 +16,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useI18n } from '../lib/i18n-context'
 import { useContactAliases } from '../lib/local-store'
 import { removeCrossIsland, type CrossIslandContact } from '../lib/crossisland-store'
+import { forgetPeerLiveness } from '../lib/peer-liveness'
 import { blockRequest, isBlocked, unblockRequest } from '../lib/crossisland-requests'
 import { peerKey } from '../lib/sections'
 import { forgetSectionMember } from '../lib/sections-vault'
@@ -111,6 +112,8 @@ export function CrossIslandActionsMenu({ contact, onClose, onChanged }: Props) {
                 // Deliberate local removal, so the section membership goes
                 // with a tombstone (see forgetSectionMember).
                 forgetSectionMember(identity, peerKey(contact.uin, contact.host))
+                // And whatever a probe said about the address (report 1067).
+                forgetPeerLiveness(contact.uin, contact.host)
                 onChanged()
                 onClose()
               }}

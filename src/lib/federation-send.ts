@@ -2,8 +2,9 @@
 //
 // The reusable core that delivers a sealed envelope to a peer on ANOTHER island:
 // resolve the peer's current homes (federation-protocol.md §4), seal the envelope
-// to them (v=1 sealed sender, anchored from their island's open key card), and
-// deposit a copy to each home's island. Receiving is unchanged — the peer polls
+// to them (v=1 sealed sender, to the keys pinned when they were added; their
+// island's open key card only before anything is pinned), and deposit a copy
+// to each home's island. Receiving is unchanged — the peer polls
 // their own island, into which we deposited.
 //
 // NOT yet wired into the live UI send path: that needs a cross-island *contact*
@@ -20,6 +21,8 @@ import { type ResolvedPeer } from './federation-resolve'
 import { resolveAndMirrorHomes } from './multihome'
 import { findCrossIslandByUin, type CrossIslandContact } from './crossisland-store'
 import { contactsCache, snapshotFor } from './contacts-cache'
+import { cardAgainstPin } from './peer-liveness-rules'
+import { isPeerGone, notePinnedCard } from './peer-liveness'
 
 export interface PeerKeyCard {
   identity_key: string
@@ -44,6 +47,62 @@ export async function fetchPeerKeyCard(host: string, uin: number): Promise<PeerK
   }
 }
 
+export interface SealKeys {
+  identityKey: string
+  signingKey: string
+}
+
+/// The send refused to seal: the island serves this address under a key that
+/// is not the one pinned for the contact. Thrown by `deliverCrossIsland`, so
+/// every caller that already treats a throw as "not delivered" does so here.
+export class CrossIslandKeyChangedError extends Error {
+  constructor(
+    readonly uin: number,
+    readonly host: string,
+  ) {
+    super(`the key card for ${uin}@${host} is not the pinned one; not sealed`)
+    this.name = 'CrossIslandKeyChangedError'
+  }
+}
+
+/// The keys an envelope for `peerUin@peerHost` is sealed to.
+///
+/// ⚠⚠ THE PIN WINS, and a card under another key stops the send. This used to
+/// be `card?.identity_key || pinned`, the live card first and no comparison,
+/// on the idea that a fresh card catches a peer who rotated. What it caught
+/// just as well: a burned number the island handed to somebody else (numbers
+/// go straight back into circulation, and `desired_uin` lets anyone with a key
+/// claim a free one), or an island that simply serves another card. Either
+/// way the web sealed our message to the newcomer's key and they read it. The
+/// phones seal to the pin; so does this now.
+///
+/// And a card that DIFFERS is not sealed to the pin either: the deposit would
+/// land in the newcomer's mailbox as a row they cannot open, push their phone,
+/// and still read as delivered here. Nothing goes; the address is marked key
+/// changed (peer-liveness.ts) and the chat says so. No card at all (their
+/// island down or refusing) is no evidence of anything, and the pin is used as
+/// it always was.
+///
+/// No pin (a first contact request, before anything was pinned) is the one
+/// case where the card is the key: that IS the trust-on-first-use moment.
+///
+/// Returns null when there is no key to seal to; `keyChanged` says why.
+export async function sealingKeysFor(
+  peerHost: string,
+  peerUin: number,
+  pinned?: SealKeys,
+): Promise<{ keys: SealKeys; keyChanged: false } | { keys: null; keyChanged: boolean }> {
+  const card = await fetchPeerKeyCard(peerHost, peerUin)
+  if (pinned?.identityKey) {
+    const verdict = cardAgainstPin(card, pinned)
+    notePinnedCard(peerUin, peerHost, pinned.signingKey, verdict)
+    if (verdict === 'differs') return { keys: null, keyChanged: true }
+    return { keys: { identityKey: pinned.identityKey, signingKey: pinned.signingKey || '' }, keyChanged: false }
+  }
+  if (!card?.identity_key) return { keys: null, keyChanged: false }
+  return { keys: { identityKey: card.identity_key, signingKey: card.signing_key || '' }, keyChanged: false }
+}
+
 /// Deposit ONE sealed envelope to a peer's PRIMARY island and nowhere else.
 ///
 /// The counterpart to `deliverCrossIsland` for signalling-shaped envelopes
@@ -60,9 +119,9 @@ export async function depositSealedToPrimary(
   peerHost: string,
   peerUin: number,
   envelope: Envelope,
-  // Locally-pinned keys from an existing cross-island contact, used when the
-  // peer's island cannot serve a fresh card. Read-only here: sealing to a key
-  // never writes one.
+  // Locally-pinned keys from an existing cross-island contact. When present
+  // they are what gets sealed to (see `sealingKeysFor`). Read-only here:
+  // sealing to a key never writes one.
   localKeys?: { identityKey: string; signingKey: string },
   // Outer deposit type. Stage 2: a call wake rides `envelope_type "message"`
   // with `ring:true` (see `ring` below) rather than the more telling type
@@ -76,19 +135,12 @@ export async function depositSealedToPrimary(
   // picks the type (see `honoursRing` in crossisland-call.ts).
   ring = false,
 ): Promise<boolean> {
-  const card = await fetchPeerKeyCard(peerHost, peerUin)
-  const identityKey = card?.identity_key || localKeys?.identityKey
-  if (!identityKey) return false
-  const signingKey = card?.signing_key || localKeys?.signingKey || ''
-  return depositSealedWithKeys(
-    sender,
-    peerHost,
-    peerUin,
-    envelope,
-    { identityKey, signingKey },
-    envelopeType,
-    ring,
-  )
+  // Pinned keys first, and nothing at all to a card under another key: see
+  // `sealingKeysFor`. A profile push sealed to a newcomer would hand them our
+  // picture's key.
+  const { keys } = await sealingKeysFor(peerHost, peerUin, localKeys)
+  if (!keys) return false
+  return depositSealedWithKeys(sender, peerHost, peerUin, envelope, keys, envelopeType, ring)
 }
 
 /// The half of `depositSealedToPrimary` that does not go looking for a key.
@@ -145,8 +197,10 @@ export interface CrossIslandResult {
 
 /// Deliver one envelope to `peerUin@peerHost`, depositing to every resolved home.
 ///
-/// Returns how many island homes accepted it. Throws only if the peer's key card
-/// can't be fetched at all (no way to seal to them); transient per-home deposit
+/// Returns how many island homes accepted it; 0 is a failed send, and the
+/// caller has to say so. Throws only when there is no key it may seal to: no
+/// pin and no card, or `CrossIslandKeyChangedError` when the island serves a
+/// card under a key that is not the pinned one. Transient per-home deposit
 /// failures are counted, not thrown, so multi-homing degrades gracefully.
 export async function deliverCrossIsland(
   sender: WebIdentity,
@@ -154,9 +208,9 @@ export async function deliverCrossIsland(
   peerUin: number,
   envelope: Envelope,
   // Locally-pinned keys from the cross-island contact (anchored at add-time).
-  // When present, the send survives the peer's island being blocked or dead:
-  // we seal from these instead of depending on a live card fetch, and reach the
-  // peer via the gossip mirror of their record. Omitted = legacy live-card-only.
+  // When present they are the keys sealed to, always (see `sealingKeysFor`),
+  // and the send survives the peer's island being blocked or dead: we reach
+  // the peer via the gossip mirror of their record. Omitted = live card only.
   localKeys?: { identityKey: string; signingKey: string },
   // Deposit type. Defaults to "message", which is what an actual message wants
   // — the island pushes those. A silent sync (the `homerec` self-push) passes
@@ -166,18 +220,27 @@ export async function deliverCrossIsland(
   // matched against the pushable set), so this needs no server change.
   envelopeType = 'message',
 ): Promise<CrossIslandResult> {
-  // Prefer a fresh card (catches key rotation), but fall back to the locally-
-  // pinned keys so a dead/blocked peer island doesn't break the send outright.
-  const card = await fetchPeerKeyCard(peerHost, peerUin)
-  const identityKey = card?.identity_key || localKeys?.identityKey
-  const signingKey = card?.signing_key || localKeys?.signingKey || ''
-  if (!identityKey) throw new Error(`cannot fetch key card for ${peerUin}@${peerHost}`)
+  // The pin, and never a card under another key (see `sealingKeysFor`).
+  const choice = await sealingKeysFor(peerHost, peerUin, localKeys)
+  if (!choice.keys) {
+    if (choice.keyChanged) throw new CrossIslandKeyChangedError(peerUin, peerHost)
+    throw new Error(`cannot fetch key card for ${peerUin}@${peerHost}`)
+  }
+  const { identityKey, signingKey } = choice.keys
 
   // Gossip-aware home resolution: mirror the record onto our island on success,
   // reap our gossip mirror when the peer's island is unreachable. Floor to the
   // single address we have when nothing resolves.
+  //
+  // ⚠ Not for a contact marked gone (report 1067). Reading the mirror renews
+  // the record it serves, so every retry to a burned account kept "this
+  // person lives on these islands" alive on OUR island, against the whole
+  // point of burning it. The address we hold is still tried: if the mark was
+  // wrong, the island takes the deposit and their next message clears it.
   let homes: ResolvedPeer['homes'] = []
-  if (signingKey) homes = await resolveAndMirrorHomes(sender, peerHost, peerUin, signingKey)
+  if (signingKey && !isPeerGone(peerUin, peerHost)) {
+    homes = await resolveAndMirrorHomes(sender, peerHost, peerUin, signingKey)
+  }
   const verified = homes.length > 0
   if (homes.length === 0) homes = [{ host: peerHost, uin: peerUin }]
 

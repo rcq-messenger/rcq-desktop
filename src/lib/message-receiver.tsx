@@ -21,6 +21,7 @@ import { isRandomTraffic, randomEnded, randomMatched } from './random-peers'
 import { adoptHomesFromOwnRecord, applyPushedRecord, backupIdentityFor, drainBackupQueues, listBackupHomes, scrubFrontAliasHomes } from './multihome'
 import { aliasFor, drainVisitedQueues, guestIdentityFor, listVisitedIslands } from './visited-islands'
 import { getCrossIsland, getVerifiedCrossIsland, sameKeyElsewhere } from './crossisland-store'
+import { notePeerHeardFrom } from './peer-liveness'
 import { depositReceiptToContact } from './federation-send'
 import { carbonIsOwn, crossIslandGateVerdict, foreignRoomBroadcastDropped, groupFrameDropped, sameSigningKey } from './crossisland-gate'
 import type { GuestRoom } from './held-gmsg'
@@ -500,6 +501,11 @@ function route(
       }
       return
     }
+    // Delivered means verified under the pinned key: the person is there,
+    // whatever a probe concluded about the address (report 1067). The ONLY
+    // place an "account deleted" mark comes off, and never on the number
+    // alone: a reissued number writes under another key and is held above.
+    if (pinned) notePeerHeardFrom(pinned.uin, pinned.host, srvAt)
   }
   // The same consent gate for the OWN island, opt-in (Privacy → strangers to
   // requests). host '' marks a same-island row in the shared store. Returning

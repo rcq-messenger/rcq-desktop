@@ -97,7 +97,9 @@ export function AddMemberSheet({ group, ident, gid, host, onAdded, onClose }: Pr
 
   const ownHost = identity ? hostOfApiBase(identity.apiBase) : 'api.rcq.app'
   const groupHost = host ?? ownHost
-  const link = groupInviteLink(gid, groupHost)
+  // With the room's key (#990 step 2), as GroupInfo's link has it: a room
+  // outside the catalogue opens only for a link that carries it.
+  const link = groupInviteLink(gid, groupHost, group.share_token)
   // Spec 2026-09-15, 12.1: in a room on another island where our own row is a
   // guest copy, the island refuses every add from us (`guest_restricted`), so
   // nobody from a third island is offered. The link is how a guest brings

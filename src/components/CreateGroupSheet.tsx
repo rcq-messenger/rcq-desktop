@@ -70,7 +70,7 @@ export function CreateGroupSheet({ contacts, onClose, onCreated }: Props) {
             identity,
             ci.host,
             ci.uin,
-            { kind: 'text', id: newUUIDv4(), text: groupInviteLink(g.id, ownHost) },
+            { kind: 'text', id: newUUIDv4(), text: groupInviteLink(g.id, ownHost, g.share_token) },
             { identityKey: ci.identityKey, signingKey: ci.signingKey },
           )
         } catch {

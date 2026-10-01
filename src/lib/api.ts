@@ -74,6 +74,11 @@ export function setTokenRefresher(fn: ((identity: WebIdentity) => Promise<string
 
 /// `?k=<key>` for a room a parsed link left a key for (#990 step 2): the room's
 /// island is the identity's own, whose links name it by host or not at all.
+///
+/// ⚠ The bare-id slot only for the home identity. A bare `rcq.app/g/5?k=...`
+/// is a room on the READER's own island; a guest clone (a visited or backup
+/// island) asking for its room 5 is asking about a different room, and would
+/// hand that island our island's key for it.
 function linkKeyQuery(id: WebIdentity, groupId: number): string {
   let host: string | null = null
   try {
@@ -81,7 +86,7 @@ function linkKeyQuery(id: WebIdentity, groupId: number): string {
   } catch {
     host = null
   }
-  const k = findRoomLinkKey(groupId, [host, null])
+  const k = findRoomLinkKey(groupId, id.guest ? [host] : [host, null])
   return k ? `?k=${encodeURIComponent(k)}` : ''
 }
 

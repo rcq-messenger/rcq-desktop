@@ -7016,7 +7016,10 @@ function memberProfilePath(uin: number, host: string | null | undefined, mark: M
 function PinnedRichText({ text, group, linksAllowed = true, memberHost = null }: { text: string; group: RCQGroup; linksAllowed?: boolean; memberHost?: string | null }) {
   const nodes: ReactNode[] = []
   // group-invite link | generic URL | #UIN mention
-  const re = /((?:https?:\/\/)?(?:www\.|chat\.)?rcq\.app\/g\/\d+(?:@[a-z0-9.-]+)?|rcq:\/\/group\/\d+(?:@[a-z0-9.-]+)?)|(https?:\/\/[^\s]+)|#(\d{3,})/gi
+  // The invite alternatives take the room link's `?k=` too (#990 step 2), the
+  // same tail group-invite.ts PATTERNS read: without it the key was cut off,
+  // never remembered, and printed after the card as stray text.
+  const re = /((?:https?:\/\/)?(?:www\.|chat\.)?rcq\.app\/g\/\d+(?:@[a-z0-9.-]+)?(?:\?k=[A-Za-z0-9_-]{8,64})?|rcq:\/\/group\/\d+(?:@[a-z0-9.-]+)?(?:\?k=[A-Za-z0-9_-]{8,64})?)|(https?:\/\/[^\s]+)|#(\d{3,})/gi
   let last = 0
   let key = 0
   let m: RegExpExecArray | null

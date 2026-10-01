@@ -8,8 +8,9 @@
 // inline by GroupJoinCard.)
 
 import { useEffect } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { putRoomKey } from '../lib/group-state'
+import { rememberRoomLinkKey } from '../lib/room-link-keys'
 import { GroupJoinCard } from '../components/GroupJoinCard'
 import { useIdentity } from '../lib/identity-context'
 import { useI18n } from '../lib/i18n-context'
@@ -18,12 +19,22 @@ export function JoinGroup() {
   const { identity } = useIdentity()
   const { t } = useI18n()
   const navigate = useNavigate()
+  const { search } = useLocation()
   const params = useParams<{ groupId?: string }>()
   // `123` or `123@is2.rcq.app`
   const raw = params.groupId ?? ''
   const at = raw.indexOf('@')
   const groupId = Number(at >= 0 ? raw.slice(0, at) : raw)
   const host = at >= 0 ? raw.slice(at + 1).toLowerCase() : null
+
+  // The room link's key (#990 step 2): `?k=` in the address. Stored during
+  // render, not in an effect: GroupJoinCard's preview effect runs before this
+  // page's own, and the preview, the join and the guest entry all read the key
+  // from room-link-keys. Read through the router rather than window.location,
+  // so an in-app navigation here (the desktop shell has no other way in)
+  // carries it the same way an address typed into a browser does.
+  const linkKey = new URLSearchParams(search).get('k')
+  if (linkKey && Number.isFinite(groupId) && groupId > 0) rememberRoomLinkKey(host, groupId, linkKey)
 
   // Stage 6 phase 2: an unlisted room's invite carries its state key in the
   // URL FRAGMENT (#k=<ver>.<key>) - the browser never sent it to any server.

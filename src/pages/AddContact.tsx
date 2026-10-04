@@ -18,6 +18,7 @@ import { resolvePeerHomes } from '../lib/federation-resolve'
 import { fetchPeerKeyCard } from '../lib/federation-send'
 import { crossIslandNumberElsewhere, saveCrossIsland } from '../lib/crossisland-store'
 import { sendContactRequest } from '../lib/crossisland-contactreq'
+import { unblockSender } from '../lib/crossisland-ack'
 import { usePrimaryGuest } from '../lib/use-guest-copy'
 import { hostOfApiBase } from '../lib/multihome'
 import { b64ToBytes } from '../lib/crypto'
@@ -185,6 +186,10 @@ function AddContactForm({
         statusMessage: card.status_message ?? null,
       })
       void resolved // verified flag available for future UX
+      // Adding them is a decision to hear from them. A block from an old
+      // request of theirs, here or on another of their islands, would drop
+      // everything they write from now on, with nothing on screen to say why.
+      unblockSender(identity!, crossIsland.uin, crossIsland.host, card.signing_key)
       // §5f: the local row above is only OUR half. Tell the peer, by depositing
       // a sealed `contactreq` to their primary island — without this the add is
       // silent, they never see a request, and a cross-island call to them is

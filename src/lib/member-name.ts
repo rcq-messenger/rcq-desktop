@@ -70,3 +70,30 @@ export function quotedAuthorNames(
   for (const [uin, v] of best) out.set(uin, v.name)
   return out
 }
+
+/// Longest "forwarded from" credit kept, in characters (code points, so a name
+/// is never cut through the middle of an emoji). The same bound Android puts on
+/// the field it reads.
+export const FWD_NAME_MAX = 64
+
+/// The "forwarded from" credit (`fwdName`) an incoming envelope carries, as
+/// something safe to draw, or nothing.
+///
+/// ⚠ It is whatever the forwarding client wrote, from another person's device:
+/// no island checks it. So it gets no more room than a name: line breaks and
+/// other control characters become spaces (a label is one line, and a name
+/// with a newline in it can pass as a second line of the bubble), the bidi
+/// controls that reorder what follows them go, and what is left is cut to
+/// FWD_NAME_MAX. Empty after that is no credit at all.
+export function forwardedName(v: unknown): string | undefined {
+  if (typeof v !== 'string') return undefined
+  const s = v
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ')
+    .replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (!s) return undefined
+  const chars = Array.from(s)
+  return chars.length > FWD_NAME_MAX ? chars.slice(0, FWD_NAME_MAX).join('').trimEnd() : s
+}

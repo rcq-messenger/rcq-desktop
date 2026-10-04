@@ -115,7 +115,8 @@ import { ciKey, listCrossIsland, type CrossIslandContact } from '../lib/crossisl
 import { goneCrossIslandKeys, peerLivenessVersion, subscribePeerLiveness } from '../lib/peer-liveness'
 import {
   ensureRequestsLoaded,
-  isBlocked,
+  isBlockedSender,
+  onBlocksChanged,
   onRequestsChanged,
   requestCount,
 } from '../lib/crossisland-requests'
@@ -333,6 +334,9 @@ export function Contacts() {
     void ensureRequestsLoaded().then(() => setCiCount(requestCount()))
     return off
   }, [])
+  // A block made or lifted on another device (a `ciack`) redraws the rows.
+  const [, setBlocksVersion] = useState(0)
+  useEffect(() => onBlocksChanged(() => setBlocksVersion((v) => v + 1)), [])
   const [showCreateGroup, setShowCreateGroup] = useState(false)
   const [showRequests, setShowRequests] = useState(false)
   const [showAdd, setShowAdd] = useState(false)
@@ -1875,7 +1879,9 @@ function CrossIslandRow({
 }) {
   const { t } = useI18n()
   const [menuOpen, setMenuOpen] = useState(false)
-  const blocked = isBlocked(ci.uin, ci.host)
+  // By the address or by their pinned key (crossisland-block-rules.ts), the
+  // same question the receive gate asks of what they write.
+  const blocked = isBlockedSender(ci.uin, ci.host, ci.signingKey)
   return (
     <li className="relative">
       <div className={'flex items-center gap-3 px-4 py-3 lg:py-2 hover:bg-field transition-colors ' + (blocked || gone ? 'opacity-60' : '')}>
@@ -1913,8 +1919,13 @@ function CrossIslandRow({
             {/* My own name for them beats the one they push. §5e is a
                 self-asserted name; an alias is a decision the user made
                 on this device, and it has to survive their next rename. */}
-            <div className="truncate font-medium">
-              {aliasFor(ci.uin, ci.host) || ci.nickname || `${ci.uin}@${ci.host}`}
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="truncate font-medium">
+                {aliasFor(ci.uin, ci.host) || ci.nickname || `${ci.uin}@${ci.host}`}
+              </span>
+              {/* The same mark a blocked contact on this island gets: what
+                  they write is dropped, and the row has to say so. */}
+              {blocked && <BlockedIcon />}
             </div>
             <div className="text-xs text-fg-dim truncate">
               {gone ? t('ci.gone.row') : `${ci.uin} · ${ci.host}`}

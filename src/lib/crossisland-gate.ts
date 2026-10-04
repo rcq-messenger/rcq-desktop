@@ -278,18 +278,28 @@ export interface GateVerdict {
 ///
 /// `pinnedSigningKey` is the key pinned for this (uin, host) in the
 /// cross-island contact store, or null when there is no such contact.
-/// `senderSigningKey` is the key the seal verified under.
+/// `senderSigningKey` is the key the seal verified under. `blocked` is the
+/// block list's answer for this sender, by address or by that proven key
+/// (crossisland-block-rules.ts).
 ///
+///  * blocked                    -> drop, every kind, a pinned contact too
 ///  * pinned and the keys match  -> deliver (the normal 1:1 ingest)
 ///  * otherwise, content         -> hold as a message request
 ///  * otherwise, anything else   -> drop: not held, not applied
+///
+/// ⚠⚠ The block comes first (reports 1064, 1065). It used to be asked only by
+/// the hold path, so a pinned contact under the pinned key was delivered
+/// whether blocked or not: blocking an accepted contact stopped their calls,
+/// their requests and their profile, and nothing they wrote.
 export function crossIslandGateVerdict(
   kind: unknown,
   pinnedSigningKey: string | null | undefined,
   senderSigningKey: string | null | undefined,
+  blocked = false,
 ): GateVerdict {
   const pinned = typeof pinnedSigningKey === 'string' && pinnedSigningKey.length > 0
   const matches = pinned && sameSigningKey(pinnedSigningKey, senderSigningKey)
+  if (blocked) return { action: 'drop', keyMismatch: pinned && !matches }
   if (matches) return { action: 'deliver', keyMismatch: false }
   return { action: isContentKind(kind) ? 'hold' : 'drop', keyMismatch: pinned }
 }

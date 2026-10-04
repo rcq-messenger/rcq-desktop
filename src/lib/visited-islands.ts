@@ -93,7 +93,10 @@ function saveVisited(list: VisitedIsland[]): void {
 export async function ensureGuestOn(
   identity: WebIdentity,
   hostInput: string,
-  opts?: { groupId?: number },
+  /// `linkKey`: the key of the room link this entry is for, when the caller
+  /// holds its own (a join card does), so a newer or older link to the same
+  /// room read since cannot swap it out.
+  opts?: { groupId?: number; linkKey?: string | null },
 ): Promise<VisitedIsland> {
   const host = normalizeIslandHost(hostInput)
   if (!host) throw new Error('invalid host')
@@ -105,7 +108,7 @@ export async function ensureGuestOn(
   if (existing) return existing
   let cred
   try {
-    cred = await guestCredentialsFor(host, identity, opts?.groupId)
+    cred = await guestCredentialsFor(host, identity, opts?.groupId, opts?.linkKey)
   } catch (e) {
     // D2: the key was retired by a rotation. The account's rotated-elsewhere
     // notice, never a wipe and never a generic join error; rethrown so the

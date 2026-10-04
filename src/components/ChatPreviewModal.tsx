@@ -117,7 +117,7 @@ export function ChatPreviewModal({
                     }`}
                   >
                     {invite ? (
-                      <GroupJoinCard groupId={invite.id} host={invite.host} compact />
+                      <GroupJoinCard groupId={invite.id} host={invite.host} linkKey={invite.k} compact />
                     ) : r.text ? (
                       <EmoticonText text={r.text} emoticonSize={16} link={{ enabled: true }} />
                     ) : (

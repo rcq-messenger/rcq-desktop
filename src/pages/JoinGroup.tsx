@@ -69,7 +69,7 @@ export function JoinGroup() {
         </div>
       </header>
       <main className="flex-1 flex items-center justify-center px-4 py-10">
-        <GroupJoinCard groupId={groupId} host={host} />
+        <GroupJoinCard groupId={groupId} host={host} linkKey={linkKey} />
       </main>
     </div>
   )

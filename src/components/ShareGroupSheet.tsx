@@ -107,7 +107,11 @@ export function ShareGroupSheet({
                     onClick={() => {
                       if (!identity) return
                       onClose()
-                      void onPick(groupShareLink(identity, g.id))
+                      // The key this list just fetched, not the roster
+                      // snapshot's: a link reset in room info a moment ago
+                      // updates that screen only, and the old key opens
+                      // nothing once the island requires keys.
+                      void onPick(groupShareLink(identity, g.id, g.share_token))
                     }}
                     className="w-full px-4 py-2.5 flex items-center gap-3 hover:bg-field transition-colors text-left"
                   >

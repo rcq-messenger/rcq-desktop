@@ -16,6 +16,7 @@ import { isGroupMuted, isPeerMuted } from './local-store'
 import { SWEEP_INTERVAL_MS, expiryFrom, lapsed, sendAnchorMs } from './disappearing'
 import { forgetCachedImage } from './media'
 import { arrivalAnchorMs, clockOffsetMs } from './message-time'
+import { forwardedName } from './member-name'
 
 export interface IncomingRow {
   id: string // envelope UUID
@@ -63,6 +64,9 @@ export interface IncomingRow {
   fileMime?: string // for 'file': content type
   fileSize?: number // for 'file': plaintext byte length
   replyTo?: ReplyContext // quoted message this is a reply to (if any)
+  /// "Forwarded from" credit the sender's client put on the envelope, cleaned
+  /// by `forwardedName` (member-name.ts): another person's device wrote it.
+  fwdName?: string
   edited?: boolean // author edited this message after sending
   /// Disappearing message (founder item 20): epoch ms after which this row is
   /// swept from memory, from IndexedDB and out of any backup export. Absent =
@@ -137,8 +141,16 @@ function rowFromEnvelope(from: number, env: Envelope): IncomingRow | null {
     const at = expiryFrom(typeof ttl === 'number' ? ttl : null, sendAnchorMs(ts, now))
     return at != null ? { expiresAt: at } : {}
   }
+  /// The "forwarded from" credit (report 1063). It was read on our own rows
+  /// only, so a forward from an iPhone arrived here with no sign that the
+  /// words were somebody else's. Read loosely, like the kinds below: any
+  /// content envelope may carry it.
+  const fwd = (e: unknown): { fwdName?: string } => {
+    const name = forwardedName((e as { fwdName?: unknown }).fwdName)
+    return name ? { fwdName: name } : {}
+  }
   if (env.kind === 'text') {
-    return { id: env.id, from, text: env.text, at: now, kind: 'text', replyTo: env.reply, ...dying(env.ttl, env.ts), ...sent(env.ts) }
+    return { id: env.id, from, text: env.text, at: now, kind: 'text', replyTo: env.reply, ...fwd(env), ...dying(env.ttl, env.ts), ...sent(env.ts) }
   }
   if (env.kind === 'photo') {
     return {
@@ -150,6 +162,7 @@ function rowFromEnvelope(from: number, env: Envelope): IncomingRow | null {
       mediaId: env.mediaID,
       mediaKey: env.mediaKey,
       replyTo: env.reply,
+      ...fwd(env),
       ...dying(env.ttl, env.ts), ...sent(env.ts),
     }
   }
@@ -167,6 +180,7 @@ function rowFromEnvelope(from: number, env: Envelope): IncomingRow | null {
       thumbnailB64: env.thumbnailB64,
       durationSec: env.durationSec,
       replyTo: env.reply,
+      ...fwd(env),
       ...dying(env.ttl, env.ts), ...sent(env.ts),
     }
   }
@@ -185,6 +199,7 @@ function rowFromEnvelope(from: number, env: Envelope): IncomingRow | null {
       fileMime: env.mime,
       fileSize: env.size,
       replyTo: env.reply,
+      ...fwd(env),
       ...dying(env.ttl, env.ts), ...sent(env.ts),
     }
   }
@@ -204,6 +219,7 @@ function rowFromEnvelope(from: number, env: Envelope): IncomingRow | null {
       // #1048: Android 0.207 sends the quote on voice and location too, as
       // iOS always has. It was dropped here and the bubble answered nothing.
       ...(quoteOf(env.reply) ?? {}),
+      ...fwd(env),
       ...dying(env.ttl, env.ts), ...sent(env.ts),
     }
   }
@@ -219,6 +235,7 @@ function rowFromEnvelope(from: number, env: Envelope): IncomingRow | null {
       mediaKind: loose.kind,
       ...(geo.lat != null && geo.lng != null ? { lat: geo.lat, lng: geo.lng } : {}),
       ...(quoteOf(loose.reply) ?? {}),
+      ...fwd(loose),
       ...dying(loose.ttl, loose.ts), ...sent(loose.ts),
     }
   }

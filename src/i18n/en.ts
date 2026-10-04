@@ -773,12 +773,13 @@ export const en: Record<string, string> = {
   'settings.multihome.body':
     'Your account can also live on a second, independent RCQ island (server). Messages are then delivered into both mailboxes, so if one island goes down, nothing is lost: the other keeps receiving.',
   'settings.multihome.row_uin': 'your number there: {uin}',
-  'settings.multihome.auto_label': 'Keep a copy automatically',
+  'settings.multihome.row_uin_diff': 'mailbox on this island: {uin} (islands number independently, so it differs from your {own})',
+  'settings.multihome.auto_label': 'Backup on an automatically picked island',
   'settings.multihome.auto_sub':
-    'The island is picked automatically from the public catalogue. Turning this off disconnects the picked island.',
+    'The app picks an island from the public catalogue. Turning this off disconnects that island. Islands you add by hand below are not affected.',
   'settings.multihome.auto_busy': 'Picking an island…',
   'settings.multihome.auto_connecting': 'Connecting to {host}…',
-  'settings.multihome.advanced': 'Advanced: add an island manually',
+  'settings.multihome.manual_title': 'Add an island manually',
   'settings.multihome.error.none':
     'No reachable backup island right now. Try again later, or add one manually.',
   'settings.multihome.error.no_open_island':
@@ -838,7 +839,7 @@ export const en: Record<string, string> = {
   'ci.section': 'Message requests',
   'ci.block': 'Block',
   'ci.wants': 'wants to message you ({n})',
-  'ci.wants_contact': 'wants to add you as a contact',
+  'ci.wants_contact': 'wants to chat with you',
   'ci.accept_undelivered':
     'Accepted here. Their island did not take the reply, so they will not see you as a contact until it can be reached.',
   'ci.key_mismatch':
@@ -979,6 +980,10 @@ export const en: Record<string, string> = {
   'settings.privacy.badge_desc': "The island's mark beside your name. Turning this off hides it from everyone else; you still see it yourself.",
   'settings.privacy.strangers': 'Strangers go to requests',
   'settings.privacy.strangers_desc': 'Messages from people outside your contacts wait in Requests until you accept them. If you wrote to someone first, their reply comes through as usual.',
+  'settings.privacy.blocked': 'Blocked',
+  'settings.privacy.blocked_desc': 'People you blocked from a message request, and contacts on other islands you blocked. Nothing they send reaches your chats.',
+  'settings.privacy.blocked_empty': 'No one is blocked.',
+  'settings.privacy.blocked_key_only': 'Only the other key that wrote as this contact',
   'settings.privacy.trade_offers': 'Trade offers from',
   'settings.privacy.footer.short': 'Last seen, gender, profile card, group invites, calls.',
   'settings.privacy.footer':

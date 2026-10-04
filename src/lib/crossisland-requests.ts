@@ -14,6 +14,19 @@ import type { Envelope } from './crypto'
 
 import { scopedKey } from './account-scope'
 import {
+  activeBlocks,
+  addressBlocked,
+  blockKey,
+  blockingEntries,
+  decideBlock,
+  normalizeBlocks,
+  parseBlockKey,
+  type BlockDecision,
+  type BlockEntry,
+  type BlockMap,
+} from './crossisland-block-rules'
+import { getCrossIsland } from './crossisland-store'
+import {
   answeredKey,
   mergeServerRequest,
   reconcileServerRequests as reconcileServerRows,
@@ -21,6 +34,7 @@ import {
   type ServerRequestRef,
 } from './crossisland-pending'
 import { isSealed, openLocal, sealLocal } from './local-seal'
+import { clockOffsetMs } from './message-time'
 
 const KEY = () => scopedKey('ci-requests.v1')
 const BLOCKED_KEY = () => scopedKey('ci-blocked.v1')
@@ -109,8 +123,9 @@ function reqKey(uin: number, host: string): string {
 //
 // ⚠ The seal only covers the CONTENT (`ci-requests.v1`), not the block list:
 // `isBlocked` is asked synchronously by the call path, the profile push and
-// federation gossip, and none of them can wait on a key. That list is a set of
-// numbers with no words in it.
+// federation gossip, and none of them can wait on a key. That list holds
+// addresses, public signing keys and times, and no words: the list of blocks
+// names a person by the address, or by the contact this device holds there.
 
 let cache: Record<string, CrossIslandRequest> | null = null
 let loading: Promise<void> | null = null
@@ -198,29 +213,131 @@ function saveAll(map: Record<string, CrossIslandRequest>): void {
 }
 
 /// Run `op` now if the store is open, else the moment it is. The return value
-/// of a deferred mutation is decided by [isBlocked], which needs no store.
+/// of a deferred mutation is decided by [isBlockedSender], which needs no store.
 function whenLoaded(op: () => void): void {
   if (cache) op()
   else deferred.push(op)
 }
 
-function loadBlocked(): Record<string, true> {
+// The block list (reports 1064, 1065). Rules in crossisland-block-rules.ts;
+// this is only the I/O. Same key as ever: the old `{ "uin@host": true }` rows
+// read as blocks made before decisions were stamped.
+
+const blockListeners = new Set<() => void>()
+
+/// Re-render when a block is made or lifted, here or from another device.
+export function onBlocksChanged(cb: () => void): () => void {
+  blockListeners.add(cb)
+  return () => blockListeners.delete(cb)
+}
+
+function loadBlocked(): BlockMap {
   try {
-    return JSON.parse(localStorage.getItem(BLOCKED_KEY()) || '{}') as Record<string, true>
+    return normalizeBlocks(JSON.parse(localStorage.getItem(BLOCKED_KEY()) || '{}'))
   } catch {
     return {}
   }
 }
 
+function saveBlocked(map: BlockMap): void {
+  try {
+    localStorage.setItem(BLOCKED_KEY(), JSON.stringify(map))
+  } catch {
+    /* quota: the decision holds for this session only, and says so nowhere */
+  }
+  for (const l of blockListeners) {
+    try {
+      l()
+    } catch {
+      /* a listener that throws must not undo the write that just landed */
+    }
+  }
+}
+
+function pinnedKeyAt(uin: number, host: string): string | null {
+  return getCrossIsland(uin, host)?.signingKey ?? null
+}
+
+/// Is the ADDRESS blocked? What the outgoing paths ask (a profile push, gossip,
+/// the visited poll), which deal in addresses. A sender on the receive path is
+/// asked about with [isBlockedSender], which knows the key it sealed with.
 export function isBlocked(uin: number, host: string): boolean {
-  return loadBlocked()[reqKey(uin, host)] === true
+  return addressBlocked(loadBlocked(), uin, host)
+}
+
+/// Is this sender blocked: their address, or the signing key their seal was
+/// verified under (the same person on any of their islands). `signingKey` is
+/// the PROVEN key (`spub`) on the receive path, or a contact's pinned key when
+/// a screen asks about a contact.
+export function isBlockedSender(uin: number, host: string, signingKey?: string | null): boolean {
+  return blockingEntries(loadBlocked(), uin, host, signingKey, pinnedKeyAt).length > 0
+}
+
+/// Record one decision. False when it changed nothing (an older decision than
+/// the one held here, or the same one again).
+export function applyBlockDecision(uin: number, host: string, d: BlockDecision): boolean {
+  const next = decideBlock(loadBlocked(), uin, host, d)
+  if (!next) return false
+  saveBlocked(next)
+  return true
+}
+
+/// Now, on the island's clock as well as this device knows it. Every block
+/// decision is dated on it, so the account's devices compare like with like:
+/// a decision from another device is capped by the island's deposit stamp
+/// (crossisland-block-rules.ts `ackDecisionAt`), and one made here on a clock
+/// an hour fast would otherwise outrank every unblock made elsewhere in that
+/// hour.
+export function decisionNow(): number {
+  return Date.now() - clockOffsetMs()
+}
+
+/// When a decision made on THIS device, now, is dated. Never older than the
+/// one it replaces: a clock that was set back since must not turn a tap on
+/// Block or Unblock into a decision that loses to the one already held.
+export function localDecisionAt(uin: number, host: string, now: number = decisionNow()): number {
+  return Math.max(now, loadBlocked()[blockKey(uin, host)]?.at ?? 0)
+}
+
+/// Lift every block that stops this sender: the address, and any entry made
+/// against their key on another of their islands. Returns the addresses lifted
+/// and the time each lift carries, so the caller can tell the account's other
+/// devices about each. `local` is a decision made here (a tap, an add): dated
+/// by [localDecisionAt] per entry. Otherwise `at` is a remote decision's time,
+/// and a newer block held here stays.
+export function liftBlocksFor(
+  uin: number,
+  host: string,
+  signingKey: string | null | undefined,
+  at: number,
+  local = false,
+): Array<{ uin: number; host: string; at: number }> {
+  let map = loadBlocked()
+  const lifted: Array<{ uin: number; host: string; at: number }> = []
+  for (const k of blockingEntries(map, uin, host, signingKey, pinnedKeyAt)) {
+    const a = parseBlockKey(k)
+    if (!a) continue
+    const when = local ? Math.max(at, map[k]?.at ?? 0) : at
+    const next = decideBlock(map, a.uin, a.host, { on: false, at: when })
+    if (next) {
+      map = next
+      lifted.push({ ...a, at: when })
+    }
+  }
+  if (lifted.length) saveBlocked(map)
+  return lifted
+}
+
+/// The blocks in force, newest first.
+export function listBlocks(): Array<{ uin: number; host: string; entry: BlockEntry }> {
+  return activeBlocks(loadBlocked())
 }
 
 /// Quarantine one decrypted envelope from an un-accepted cross-island sender.
 /// No-op if they're blocked. Returns true if it was held (caller then skips the
 /// normal ingest), false if blocked (caller drops it).
 export function holdRequestMessage(uin: number, host: string, env: Envelope, proof?: HeldSenderProof): boolean {
-  if (isBlocked(uin, host)) return false
+  if (isBlockedSender(uin, host, proof?.spub)) return false
   // ⚠ Deferred if the store is still opening: the queue drain starts the
   // moment the socket connects and can beat the key out of IndexedDB by a few
   // milliseconds. Dropping the envelope there would lose a stranger's first
@@ -267,7 +384,7 @@ export function addContactRequest(
   note?: string,
   proof?: HeldSenderProof,
 ): boolean {
-  if (isBlocked(uin, host)) return false
+  if (isBlockedSender(uin, host, proof?.spub)) return false
   whenLoaded(() => {
     const map = loadAll()
     const k = reqKey(uin, host)
@@ -366,21 +483,16 @@ export function clearRequest(uin: number, host: string): CrossIslandRequest | nu
   return r
 }
 
-/// Block a sender: drop the pending request + remember so future deposits are
-/// dropped on arrival.
-/// Let them through again. Without this a block was a one-way door with no
-/// handle on the inside: the only way back was clearing site data.
-export function unblockRequest(uin: number, host: string): void {
-  const b = loadBlocked()
-  delete b[reqKey(uin, host)]
-  localStorage.setItem(BLOCKED_KEY(), JSON.stringify(b))
-}
-
-export function blockRequest(uin: number, host: string): void {
+/// Block a sender: drop the pending request and remember the decision, so
+/// what they deposit later is dropped on arrival. `d` says what is blocked
+/// (the address, and which keys) and when; see crossisland-block-rules.ts.
+/// False when the decision was older than the one held, and nothing changed:
+/// the late echo of a block that was lifted since leaves a request filed after
+/// the lift where it is.
+export function blockRequest(uin: number, host: string, d: Omit<BlockDecision, 'on'>): boolean {
+  if (!applyBlockDecision(uin, host, { ...d, on: true })) return false
   clearRequest(uin, host)
-  const b = loadBlocked()
-  b[reqKey(uin, host)] = true
-  localStorage.setItem(BLOCKED_KEY(), JSON.stringify(b))
+  return true
 }
 
 // -----------------------------------------------------------

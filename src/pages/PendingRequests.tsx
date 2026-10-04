@@ -13,7 +13,6 @@ import { useWS } from '../lib/ws'
 import {
   listRequests,
   clearRequest,
-  blockRequest,
   ensureRequestsLoaded,
   getRequest,
   noteAcceptUndelivered,
@@ -31,7 +30,7 @@ import {
 import { crossIslandNumberElsewhere, getCrossIsland, saveCrossIsland } from '../lib/crossisland-store'
 import { contactsCache, snapshotFor } from '../lib/contacts-cache'
 import { sameSigningKey } from '../lib/crossisland-gate'
-import { sendRequestAck } from '../lib/crossisland-ack'
+import { blockSender, sendRequestAck, unblockSender } from '../lib/crossisland-ack'
 import { sendContactAccept, sendContactDecline } from '../lib/crossisland-contactreq'
 import { pushProfileTo } from '../lib/crossisland-profile'
 import { fetchPeerKeyCard } from '../lib/federation-send'
@@ -64,6 +63,8 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
     // remember the allowance, release what they already wrote, open the chat.
     if (r.host === '') {
       allowStranger(r.uin)
+      // An accept is a decision to hear from them (crossisland-ack.ts).
+      unblockSender(identity!, r.uin, '')
       void sendRequestAck(identity!, r.uin, '', 'accept')
       const held = clearRequest(r.uin, '')
       beginCatchUp()
@@ -121,6 +122,10 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
         }
       }
       setKeyConfirm(null)
+      // Accepting them is a decision to hear from them: a block left behind
+      // against this address or this key would drop every word they write
+      // from now on, with nothing on screen to say why.
+      unblockSender(identity!, r.uin, r.host, card.signing_key)
       if (!pinned) {
         saveCrossIsland({
           uin: r.uin,
@@ -249,8 +254,23 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
   function blockCI(r: CrossIslandRequest) {
     const srv = r.server && r.host !== '' ? { host: r.host, id: r.server.id } : undefined
     setKeyConfirm(null)
-    blockRequest(r.uin, r.host)
-    void sendRequestAck(identity!, r.uin, r.host, 'block', undefined, srv)
+    // The keys these messages were sealed under go with the address, so the
+    // block follows the person to their other islands. Under a contact's
+    // address with another key (`keyMismatch`) only those keys are blocked:
+    // the address is the real contact's, and they did not write this.
+    //
+    // ⚠ Never the contact's own pinned key, whatever the row collected: a row
+    // filed before the contact was added can hold their key beside the
+    // impostor's, and a key-only block of it would cut the contact off.
+    const pinnedKey = r.host ? getCrossIsland(r.uin, r.host)?.signingKey : null
+    const keys = (r.spubs ?? []).filter((k) => !sameSigningKey(k, pinnedKey))
+    if (r.keyMismatch && keys.length === 0) {
+      // Nothing to hold the block against but the contact's own address (the
+      // impostor's seals named no key we kept). Drop the row, block nobody.
+      clearRequest(r.uin, r.host)
+    } else {
+      blockSender(identity!, r.uin, r.host, { keys, keyOnly: r.keyMismatch === true, srv })
+    }
     // Cleared on the island where it can be; hidden here either way.
     if (srv) void withdrawServerRequest(identity!, srv.host, srv.id, true)
     setCi(listRequests())

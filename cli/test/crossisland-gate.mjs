@@ -89,6 +89,17 @@ check('pinned address under ANOTHER key: a stranger, flagged', () => {
   assert.deepEqual(crossIslandGateVerdict('text', '', K), { action: 'hold', keyMismatch: false })
 })
 
+check('a blocked sender is dropped, an accepted contact under its pinned key too (reports 1064, 1065)', () => {
+  for (const kind of ['text', 'photo', 'visit', 'delete', 'edit', 'reaction']) {
+    assert.deepEqual(crossIslandGateVerdict(kind, K, K_URL, true), { action: 'drop', keyMismatch: false })
+    assert.deepEqual(crossIslandGateVerdict(kind, null, K, true), { action: 'drop', keyMismatch: false })
+  }
+  // Blocked and under another key than the pinned one: still flagged.
+  assert.deepEqual(crossIslandGateVerdict('text', K, OTHER, true), { action: 'drop', keyMismatch: true })
+  // Not blocked: exactly the verdicts above.
+  assert.deepEqual(crossIslandGateVerdict('text', K, K_URL, false), { action: 'deliver', keyMismatch: false })
+})
+
 check('a carbon is ours only when nothing in it says otherwise', () => {
   const HOME = 'a.example'
   // v=1 carbon from another of our devices: own number, own island, own key.

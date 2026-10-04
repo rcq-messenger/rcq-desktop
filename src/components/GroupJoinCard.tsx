@@ -65,9 +65,14 @@ interface Props {
   /// ⋯ handle is pinned there, and the group name is `truncate`, so without
   /// the gap the handle would land on the tail of the name.
   menuSpace?: boolean
+  /// The `?k=` of THIS card's link (#990 step 2). Used before the remembered
+  /// one, which is only the last link to the room the app happened to read: a
+  /// pin still holding the key from before a reset, opened after the fresh
+  /// link was read, used to send its stale key with a join from the fresh one.
+  linkKey?: string | null
 }
 
-export function GroupJoinCard({ groupId, host, compact = false, menuSpace = false }: Props) {
+export function GroupJoinCard({ groupId, host, compact = false, menuSpace = false, linkKey = null }: Props) {
   const { identity } = useIdentity()
   const { t } = useI18n()
   const navigate = useNavigate()
@@ -111,7 +116,7 @@ export function GroupJoinCard({ groupId, host, compact = false, menuSpace = fals
         }
         const cacheKey = foreignHost ? `${identity.uin}@${foreignHost}` : `${identity.uin}`
         const [p, ids] = await Promise.all([
-          Api.groupPreview(ident, groupId),
+          Api.groupPreview(ident, groupId, linkKey),
           loadMyGroupIds(ident, cacheKey).catch(() => new Set<number>()),
         ])
         if (!alive) return
@@ -132,7 +137,7 @@ export function GroupJoinCard({ groupId, host, compact = false, menuSpace = fals
       alive = false
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [identity?.uin, groupId, foreignHost])
+  }, [identity?.uin, groupId, foreignHost, linkKey])
 
   function chatPath(): string {
     return foreignHost ? `/chat/g/${aliasFor(foreignHost, groupId)}` : `/chat/g/${groupId}`
@@ -180,12 +185,12 @@ export function GroupJoinCard({ groupId, host, compact = false, menuSpace = fals
         // The room id goes along: an island that admits guests makes the copy
         // together with this room (spec 2026-09-15, 4); any other island gets
         // the recover-first registration it always did.
-        await ensureGuestOn(identity, foreignHost, { groupId })
+        await ensureGuestOn(identity, foreignHost, { groupId, linkKey })
         const guest = await ensureGuestAuth(identity, foreignHost)
         if (!guest) throw new Error('guest registration failed')
         ident = guest
       }
-      await Api.joinGroup(ident, groupId)
+      await Api.joinGroup(ident, groupId, linkKey)
       const cacheKey = foreignHost ? `${identity.uin}@${foreignHost}` : `${identity.uin}`
       _myGroupIds.get(cacheKey)?.add(groupId)
       navigate(chatPath())

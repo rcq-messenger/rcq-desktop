@@ -765,12 +765,13 @@ export const ru: Record<string, string> = {
   'settings.multihome.body':
     'Ваш аккаунт может жить ещё и на втором, независимом острове RCQ (сервере). Сообщения доставляются сразу в оба почтовых ящика: если один остров упадёт, ничего не потеряется, второй продолжит принимать.',
   'settings.multihome.row_uin': 'ваш номер там: {uin}',
-  'settings.multihome.auto_label': 'Хранить копию автоматически',
+  'settings.multihome.row_uin_diff': 'почтовый ящик на этом острове: {uin} (острова нумеруют независимо, поэтому он не совпадает с вашим {own})',
+  'settings.multihome.auto_label': 'Резерв на автоматически подобранном острове',
   'settings.multihome.auto_sub':
-    'Остров подбирается автоматически из публичного каталога. Выключение тумблера отключает подобранный остров.',
+    'Приложение само берёт остров из публичного каталога. Если выключить, этот остров будет отключён. Острова, добавленные вручную ниже, переключатель не трогает.',
   'settings.multihome.auto_busy': 'Подбираем остров…',
   'settings.multihome.auto_connecting': 'Подключаемся к {host}…',
-  'settings.multihome.advanced': 'Дополнительно: добавить остров вручную',
+  'settings.multihome.manual_title': 'Добавить остров вручную',
   'settings.multihome.error.none':
     'Сейчас нет доступного резервного острова. Попробуйте позже или добавьте вручную.',
   'settings.multihome.error.no_open_island':
@@ -829,7 +830,7 @@ export const ru: Record<string, string> = {
   'ci.section': 'Запросы на переписку',
   'ci.block': 'Заблокировать',
   'ci.wants': 'хочет вам написать ({n})',
-  'ci.wants_contact': 'хочет добавить вас в контакты',
+  'ci.wants_contact': 'хочет переписываться с вами',
   'ci.accept_undelivered':
     'Здесь принято. Их остров не принял ответ, поэтому вы не появитесь у них в контактах, пока до острова не получится достучаться.',
   'ci.key_mismatch':
@@ -979,6 +980,10 @@ export const ru: Record<string, string> = {
   'settings.privacy.badge_desc': 'Метка острова рядом с вашим именем. Если выключить, её не увидит никто, кроме вас.',
   'settings.privacy.strangers': 'Незнакомцы в запросы',
   'settings.privacy.strangers_desc': 'Сообщения не из контактов ждут в запросах, пока вы их не примете. Если вы написали человеку первым, его ответ придёт как обычно.',
+  'settings.privacy.blocked': 'Заблокированные',
+  'settings.privacy.blocked_desc': 'Те, кого вы заблокировали в запросах на переписку, и заблокированные контакты с других островов. Ничего из того, что они присылают, в ваши чаты не попадает.',
+  'settings.privacy.blocked_empty': 'Никто не заблокирован.',
+  'settings.privacy.blocked_key_only': 'Только чужой ключ, который писал от имени этого контакта',
   'settings.privacy.trade_offers': 'Запросы на обмен',
   'settings.privacy.footer.short': 'Был в сети, пол, карточка профиля, приглашения, звонки.',
   'settings.privacy.footer':

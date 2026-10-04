@@ -6,7 +6,7 @@
 // Run: npm run cli:test   (builds first; this imports the BUILT bundle)
 
 import assert from 'node:assert/strict'
-import { isNumberOnly, memberName, quotedAuthorNames } from '../dist/member-name.mjs'
+import { FWD_NAME_MAX, forwardedName, isNumberOnly, memberName, quotedAuthorNames } from '../dist/member-name.mjs'
 
 // Each source wins over everything after it.
 const all = { alias: 'Mum', roster: 'anna', lastKnown: 'anna_old', contact: 'Anna K', quoted: 'Anna Q' }
@@ -47,5 +47,21 @@ const q = quotedAuthorNames(senders, quoting)
 assert.equal(q.get(5), 'five')
 assert.equal(q.has(6), false)
 assert.equal(q.size, 1)
+
+// "Forwarded from" on an incoming message (report 1063): another person's
+// device wrote it, so it is one line, no reordering, and no longer than a name.
+assert.equal(forwardedName('Anna'), 'Anna')
+assert.equal(forwardedName('  Anna\nK  '), 'Anna K')
+assert.equal(forwardedName('Anna\u0000\u0007\r\nYou were hacked'), 'Anna You were hacked')
+assert.equal(forwardedName('\u202eanna\u2066'), 'anna')
+assert.equal(forwardedName('\n\t '), undefined)
+assert.equal(forwardedName(''), undefined)
+assert.equal(forwardedName(42), undefined)
+assert.equal(forwardedName({ name: 'x' }), undefined)
+assert.equal(forwardedName('x'.repeat(200)).length, FWD_NAME_MAX)
+// Cut by characters, never through the middle of one.
+const emoji = forwardedName('\u{1F600}'.repeat(100))
+assert.equal(Array.from(emoji).length, FWD_NAME_MAX)
+assert.equal(emoji, '\u{1F600}'.repeat(FWD_NAME_MAX))
 
 console.log('member-name: ok')

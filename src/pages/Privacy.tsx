@@ -26,6 +26,11 @@ import {
   setMyProfileCardPolicy,
   type ProfileCardPolicy,
 } from '../lib/profile-card-privacy'
+import { listBlocks, onBlocksChanged } from '../lib/crossisland-requests'
+import { unblockEntry } from '../lib/crossisland-ack'
+import { getCrossIsland } from '../lib/crossisland-store'
+import { useContactAliases } from '../lib/local-store'
+import type { WebIdentity } from '../lib/crypto'
 
 type Scope = 'everyone' | 'contacts' | 'nobody'
 
@@ -272,8 +277,80 @@ export function Privacy() {
             </div>
           </section>
         )}
+
+        <BlockedSection identity={identity} t={t} />
       </main>
     </div>
+  )
+}
+
+/// The block list this device keeps (reports 1064, 1065): senders blocked from
+/// Requests, and contacts on other islands blocked from their menu. No island
+/// holds these, so without this list a block made from a request had no way
+/// back short of clearing site data, and a block that came from another
+/// device was invisible here. Contacts on this island are blocked with the
+/// island's own flag, from their menu in Contacts, and are not listed here.
+function BlockedSection({
+  identity,
+  t,
+}: {
+  identity: WebIdentity
+  t: (k: string, p?: Record<string, string | number>) => string
+}) {
+  const { aliasFor } = useContactAliases()
+  const [blocks, setBlocks] = useState(() => listBlocks())
+  useEffect(() => onBlocksChanged(() => setBlocks(listBlocks())), [])
+  return (
+    <section className="bg-surface rounded-lg p-4 space-y-3">
+      <div className="space-y-1">
+        <div className="text-sm font-medium">{t('settings.privacy.blocked')}</div>
+        <p className="text-xs text-fg-dim">{t('settings.privacy.blocked_desc')}</p>
+      </div>
+      {blocks.length === 0 ? (
+        <p className="text-xs text-fg-dim">{t('settings.privacy.blocked_empty')}</p>
+      ) : (
+        <ul className="divide-y divide-line">
+          {blocks.map(({ uin, host, entry }) => {
+            // host '' is a stranger on this island, blocked from Requests.
+            const address = host === '' ? `${uin}` : `${uin}@${host}`
+            // A name only from what THIS device decided to call them: an
+            // alias, or the contact held at that address. Never a name the
+            // blocked sender chose, which is not kept.
+            const name = aliasFor(uin, host || null) || (host ? getCrossIsland(uin, host)?.nickname : undefined)
+            return (
+              <li key={address} className="py-2.5 flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  {name ? (
+                    <>
+                      <div className="text-sm truncate">{name}</div>
+                      <div className="text-xs text-fg-dim break-all">{address}</div>
+                    </>
+                  ) : (
+                    <div className="text-sm break-all">{address}</div>
+                  )}
+                  {/* Blocked from a request that came under this contact's
+                      address with another key: the contact is not blocked,
+                      the key that wrote as them is. */}
+                  {entry.keyOnly && (
+                    <div className="text-xs text-fg-dim break-words">{t('settings.privacy.blocked_key_only')}</div>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    unblockEntry(identity, uin, host)
+                    setBlocks(listBlocks())
+                  }}
+                  className="flex-none h-8 px-3 rounded-md bg-field text-xs font-medium hover:bg-line/50 transition-colors"
+                >
+                  {t('ci.actions.unblock')}
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </section>
   )
 }
 

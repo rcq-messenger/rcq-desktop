@@ -22,7 +22,7 @@
 import { Api } from './api'
 import { contactsCache } from './contacts-cache'
 import { newUUIDv4, type ContactReqEnvelope, type WebIdentity } from './crypto'
-import { addContactRequest, clearRequest, isBlocked } from './crossisland-requests'
+import { addContactRequest, clearRequest, isBlockedSender } from './crossisland-requests'
 import { getCrossIsland, getVerifiedCrossIsland, removeCrossIsland } from './crossisland-store'
 import { depositSealedToPrimary } from './federation-send'
 
@@ -119,8 +119,9 @@ export function handleContactReq(
 ): void {
   // Same-island rule, unchanged: a blocked sender's request is dropped
   // silently. (A removed sender is simply not in the store, so `request`
-  // below files them as pending again — the same as any stranger.)
-  if (isBlocked(senderUin, senderHost)) return
+  // below files them as pending again — the same as any stranger.) Blocked by
+  // the address, or by the key this seal proved on any of their islands.
+  if (isBlockedSender(senderUin, senderHost, senderSigningKey)) return
 
   // ⚠⚠ "Accepted" means the address is pinned AND this envelope was sealed by
   // the key pinned for it. The address is unsigned in v=1; the key is not. A

@@ -28,7 +28,7 @@ import type { GuestRoom } from './held-gmsg'
 import { applyRequestAck } from './crossisland-ack'
 import { isBurning } from './burn-cascade'
 import { pollVisitedPending } from './crossisland-pending-poll'
-import { ensureRequestsLoaded, holdRequestMessage, isBlocked, retractHeldMessage } from './crossisland-requests'
+import { ensureRequestsLoaded, holdRequestMessage, isBlocked, isBlockedSender, retractHeldMessage } from './crossisland-requests'
 import { isContact, shouldQuarantineStranger } from './stranger-requests'
 import { handleContactReq } from './crossisland-contactreq'
 import { CALL_OFFER_TTL_SEC, fileMissedCall, fileMissedCrossIslandOffer } from './crossisland-call'
@@ -82,7 +82,9 @@ function ensureHydrated(uin: number): Promise<void> {
 /// catches per BATCH, not per row) — every drain, forever — so each field is
 /// coerced rather than trusted, exactly as §5f does.
 function handleCallSignal(senderUin: number, senderHost: string, env: CallEnvelope, senderSigningKey?: string): void {
-  if (isBlocked(senderUin, senderHost)) return
+  // The address, or the key the seal proved: a person blocked on one of their
+  // islands does not ring from another (crossisland-block-rules.ts).
+  if (isBlockedSender(senderUin, senderHost, senderSigningKey)) return
   // Gate 2 asks for the pinned ADDRESS and the pinned KEY. `from`/`from_host`
   // are unsigned in v=1, so the address alone would let anyone who knows one
   // of our contacts ring us as them. Under another key the sender is a
@@ -278,7 +280,10 @@ function route(
         // while keyless carbons of other kinds are allowed): this is the line
         // that pins keys, and it should read as guarded without a trip into
         // another file.
-        if (ownSeal) applyRequestAck(inner as Record<string, unknown>)
+        // The row's deposit stamp goes with it: a block or an unblock from a
+        // sender that predates `at` is dated by it, never by when this
+        // device happened to drain it.
+        if (ownSeal) applyRequestAck(inner as Record<string, unknown>, srvAt)
       } else if (inner?.kind === 'readmark') {
         // We read this thread on another device (A2): drop the badge here
         // too, minus anything that arrived after that read. Not a message,
@@ -448,8 +453,8 @@ function route(
   }
   // Variant A consent: a message from an un-accepted CROSS-ISLAND sender is
   // quarantined as a "request" instead of landing in the chat list. Accepted
-  // (we proactively added them) → normal ingest. Blocked → holdRequestMessage
-  // drops it and returns false. The rule itself is crossisland-gate.ts.
+  // (we proactively added them) → normal ingest. Blocked → dropped, accepted
+  // or not. The rule itself is crossisland-gate.ts.
   //
   // ⚠⚠ #985(1): CONTENT only is held. Everyone on a group's island stamps that
   // island as `from_host`, so a co-member's control traffic to our guest copy
@@ -475,7 +480,11 @@ function route(
     // The row at this exact address decides; without one, the same person
     // under the same key on another of their islands (sameKeyElsewhere).
     const pinned = getCrossIsland(senderUIN, senderHost) ?? sameKeyElsewhere(senderUIN, senderSigningKey)
-    const verdict = crossIslandGateVerdict(kind, pinned?.signingKey ?? null, senderSigningKey)
+    // Blocked by the address or by the key the seal proved, on any of their
+    // islands. Asked for an accepted contact too (reports 1064, 1065): the
+    // pinned key is who they are, and it is what a block holds against them.
+    const blocked = isBlockedSender(senderUIN, senderHost, senderSigningKey)
+    const verdict = crossIslandGateVerdict(kind, pinned?.signingKey ?? null, senderSigningKey, blocked)
     if (verdict.action === 'hold') {
       // Returning skips the delivered receipt below, as for every held row:
       // a held message must not confirm to a stranger that it landed.
@@ -486,6 +495,9 @@ function route(
       return
     }
     if (verdict.action === 'drop') {
+      // Blocked: nothing at all, and no receipt. Their request row went with
+      // the block, so there is nothing held to take back either.
+      if (blocked) return
       // Dropped, except for what it says about a message we hold from them:
       // a delete for everyone takes that back, or the accept would replay it.
       const del = envelope as { kind?: string; targetID?: string }

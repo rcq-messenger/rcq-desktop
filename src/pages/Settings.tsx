@@ -219,11 +219,6 @@ export function Settings() {
   // True while we are checking our own published record for homes this browser
   // has not adopted yet (#605) — the section is not trustworthy until it lands.
   const [mhSyncing, setMhSyncing] = useState(true)
-  // The manual block starts open only when a manually-added island exists
-  // (self-hosters); everyone else sees just the toggle.
-  const [mhAdvanced, setMhAdvanced] = useState(() =>
-    listBackupHomes().some((h) => !h.auto && !h.adopted),
-  )
   const [reportText, setReportText] = useState('')
   const [reportBusy, setReportBusy] = useState(false)
   const [reportSent, setReportSent] = useState(false)
@@ -528,6 +523,17 @@ export function Settings() {
     void pushHomeRecordToContacts(identity!)
   }
 
+  /// The number this account has on a backup island (report 1069). Said as a
+  /// mailbox when it is not our own number: the client cannot know why it
+  /// differs (taken there, reserved, or a copy made before clients asked for
+  /// the same number), so the line says only what is true, that islands
+  /// number on their own.
+  function mailboxLine(uin: number): string {
+    return uin === identity?.uin
+      ? t('settings.multihome.row_uin', { uin })
+      : t('settings.multihome.row_uin_diff', { uin, own: identity?.uin ?? 0 })
+  }
+
   // Make a backup island the new primary (one-tap DR for a dead primary). The
   // promote refreshes the target token first and aborts if it's unreachable, so
   // a failed promote never strands you. On success we republish the record with
@@ -610,8 +616,8 @@ export function Settings() {
         [NO_ISLAND_REACHABLE]: 'settings.multihome.error.none',
         [NO_OPEN_ISLAND]: 'settings.multihome.error.no_open_island',
       }
-      // D7: the sentence says the manual add is below, so open it.
-      if (msg === NO_OPEN_ISLAND) setMhAdvanced(true)
+      // D7: the sentence says the manual add is below. It always is now: the
+      // manual block is no longer folded away (report 1069).
       setMhAutoError(known[msg] ? t(known[msg]) : t('settings.multihome.error.generic'))
     } finally {
       setMhAutoBusy(false)
@@ -1147,7 +1153,7 @@ export function Settings() {
                 <div className="min-w-0">
                   <div className="truncate">{h.host}</div>
                   <div className="text-xs text-fg-dim">
-                    {t('settings.multihome.row_uin', { uin: h.uin })}
+                    {mailboxLine(h.uin)}
                   </div>
                 </div>
                 <button
@@ -1161,14 +1167,11 @@ export function Settings() {
             ))}
           <p className="text-xs text-fg-dim">{t('settings.multihome.auto_sub')}</p>
 
-          {/* Manual host entry stays for self-hosters, tucked away. */}
-          <button
-            onClick={() => setMhAdvanced(!mhAdvanced)}
-            className="block text-left text-xs text-fg-secondary hover:text-fg-primary transition-colors"
-          >
-            {mhAdvanced ? '▾' : '▸'} {t('settings.multihome.advanced')}
-          </button>
-          {mhAdvanced && (
+          {/* Manual host entry, always shown (report 1069). It was folded
+              behind "Advanced" for self-hosters, so nobody else knew it was
+              there, and the "no open island" sentence above points straight
+              at it. */}
+          <div className="pt-1 text-xs font-medium text-fg-secondary">{t('settings.multihome.manual_title')}</div>
             <>
               {backups
                 .filter((h) => !h.auto && !h.adopted)
@@ -1177,7 +1180,7 @@ export function Settings() {
                     <div className="min-w-0">
                       <div className="truncate">{h.host}</div>
                       <div className="text-xs text-fg-dim">
-                        {t('settings.multihome.row_uin', { uin: h.uin })}
+                        {mailboxLine(h.uin)}
                       </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
@@ -1237,7 +1240,6 @@ export function Settings() {
                 </div>
               )}
             </>
-          )}
           {mhError && (
             <div className="text-sm text-red-600 bg-red-500/5 rounded-md p-2">{mhError}</div>
           )}

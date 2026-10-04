@@ -19,7 +19,7 @@ import { bytesToB64, type WebIdentity } from './crypto'
 import { isIdentityRotated, recoverOnIsland, type IslandCredentials } from './multihome'
 import { loadServerInfo } from './server-info'
 import { guestProofBytes } from './guest-proof'
-import { findRoomLinkKey } from './room-link-keys'
+import { ROOM_LINK_KEY, findRoomLinkKey } from './room-link-keys'
 import {
   GUEST_NICKNAME_PLACEHOLDER,
   decideGuestPath,
@@ -71,11 +71,14 @@ export async function guestCredentialsFor(
   host: string,
   identity: WebIdentity,
   groupId?: number,
+  /// The key of the room link being acted on, when the caller holds its own
+  /// (see `registerGuestOnIsland`).
+  linkKey?: string | null,
 ): Promise<IslandCredentials> {
   const path = await islandGuestPath(`https://${host}`)
   if (path === 'guest') {
     if (groupId != null && Number.isSafeInteger(groupId) && groupId > 0) {
-      return registerGuestOnIsland(host, identity, groupId)
+      return registerGuestOnIsland(host, identity, groupId, linkKey)
     }
     const cred = await recoverGuestCopy(host, identity)
     if (cred) return cred
@@ -114,6 +117,9 @@ export async function registerGuestOnIsland(
   host: string,
   identity: WebIdentity,
   groupId: number,
+  /// The link's own key wins over the remembered one, which is only the last
+  /// link to this room that was read (api.ts `linkKeyOf`).
+  linkKey?: string | null,
 ): Promise<IslandCredentials> {
   const base = `https://${host}`
   const signingKey = bytesToB64(identity.signingPub)
@@ -147,7 +153,7 @@ export async function registerGuestOnIsland(
           body: JSON.stringify(
             guestJoinBody({
               host, groupId, nickname, identityKey, signingKey, challenge, signature, homeUin: identity.uin,
-              k: findRoomLinkKey(groupId, [host]),
+              k: linkKey && ROOM_LINK_KEY.test(linkKey) ? linkKey : findRoomLinkKey(groupId, [host]),
             }),
           ),
         })

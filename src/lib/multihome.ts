@@ -26,7 +26,8 @@
 import { ed25519 } from '@noble/curves/ed25519'
 import { b64ToBytes, bytesToB64, encryptV1, messageClass, type Envelope, type PeerBundle, type WebIdentity } from './crypto'
 import { suggestNickname, persistIdentity } from './auth'
-import { verifyHomeIslandRecord, type IslandHome } from './federation'
+import { buildHomeIslandRecord, verifyHomeIslandRecord, type HomeIslandRecord, type IslandHome } from './federation'
+import { getDevice } from './signal-device'
 import { verifySigned } from './signing-keys'
 import { scopedKey } from './account-scope'
 import { isFrontHost } from './front'
@@ -235,6 +236,39 @@ export async function recoverOnIsland(
   return { uin: out.uin, token: out.token, guest: out.guest === true }
 }
 
+/// The signed record offered with a backup registration (`home_record`): our
+/// PRIMARY home and nothing else.
+///
+/// Why it is sent at all (report 1069): a backup island asked for a reserved
+/// (short or patterned) number grants it only to somebody who already answers
+/// to it elsewhere, and reads this record as the pointer to the island to ask
+/// (backend services/reserved_tenure.py). Without it the island could only
+/// look in its gossip mirror, which deleting an old copy there wipes, so a
+/// short number did not follow its owner to a backup. For any other number the
+/// island ignores the field.
+///
+/// Why only the primary (the skeptic's point on the fix): the island may still
+/// refuse at the door, and an island added by hand has no use for the list of
+/// every backup we keep. Registration does not store it, so a record naming one
+/// home cannot unpublish the others.
+async function offeredHomeRecord(identity: WebIdentity): Promise<HomeIslandRecord | null> {
+  if (identity.guest) return null
+  try {
+    const device = await getDevice(identity)
+    return buildHomeIslandRecord({
+      ik: device.signalIdentityKeyB64(),
+      sk: bytesToB64(identity.signingPub),
+      signingPriv: identity.signingPriv,
+      homes: [{ host: hostOfApiBase(identity.apiBase), uin: identity.uin }],
+      ts: Math.floor(Date.now() / 1000),
+    })
+  } catch {
+    // No device yet: register without it, as before. A fresh number on the
+    // backup is the worst that costs.
+    return null
+  }
+}
+
 /// First-time registration of this identity on `host` — same public keys as
 /// the primary account, fresh per-island uin. The nickname is cosmetic (peers
 /// see the name from the primary contact list, never the backup roster).
@@ -255,6 +289,9 @@ export async function registerOnIsland(host: string, identity: WebIdentity): Pro
   } catch {
     // no proof, same as an old island
   }
+  // Only beside the proof: the island reads the record under it and nowhere
+  // else, and without one there is nothing it would be read for.
+  const homeRecord = challenge ? await offeredHomeRecord(identity) : null
   const res = await fetch(`https://${host}/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -273,6 +310,7 @@ export async function registerOnIsland(host: string, identity: WebIdentity): Pro
             ),
           }
         : {}),
+      ...(homeRecord ? { home_record: homeRecord } : {}),
     }),
   })
   const text = await res.text()

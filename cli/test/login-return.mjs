@@ -3,7 +3,8 @@
 // The login screen reloads into whatever this function lets through, so a hole
 // in it is an open redirect handed to anyone who can get a person to click a
 // link. Only this app's own contact screens pass: /add with a query, /u/<uin>
-// and /r/<uin>. Everything else is dropped, not repaired.
+// and /r/<uin>, and the room join screen /g/<id>[@<host>] (report 990).
+// Everything else is dropped, not repaired.
 //
 // Run: node cli/build.mjs && node cli/test/login-return.mjs
 
@@ -59,6 +60,19 @@ check('a dot segment cannot walk out of an allowed prefix', () => {
   assert.equal(safeReturnPath('/u/../settings'), null)
   assert.equal(safeReturnPath('/r/1/../../market'), null)
   assert.equal(safeReturnPath('/add/../contacts?q=1'), null)
+})
+
+check('a room link survives sign-in, its key included, its state key never', () => {
+  assert.equal(safeReturnPath('/g/55'), '/g/55')
+  assert.equal(safeReturnPath('/g/55@is2.rcq.app?k=AbCdEfGh_123'), '/g/55@is2.rcq.app?k=AbCdEfGh_123')
+  assert.equal(safeReturnPath('/g/55@localhost:9444'), '/g/55@localhost:9444')
+  assert.equal(safeReturnPath('/g/55@is2.rcq.app?k=AbCdEfGh#k=3.c2VjcmV0'), '/g/55@is2.rcq.app?k=AbCdEfGh')
+})
+
+check('anything else under /g/ is refused', () => {
+  for (const bad of ['/g/', '/g/abc', '/g/55/extra', '/g/55@', '/g/55@evil/../../settings', '/g/55@a b', '/g/55@host:port', '//g/55']) {
+    assert.equal(safeReturnPath(bad), null, bad)
+  }
 })
 
 check('an overlong value is refused', () => {

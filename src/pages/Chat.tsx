@@ -56,6 +56,8 @@ import {
 } from '../lib/incoming-store'
 import { PartialFanOutError, sendV2 } from '../lib/signal-device'
 import { getCrossIsland, removeCrossIsland } from '../lib/crossisland-store'
+import { isBlockedSender, onBlocksChanged } from '../lib/crossisland-requests'
+import { unblockSender } from '../lib/crossisland-ack'
 import { usePrimaryGuest } from '../lib/use-guest-copy'
 import { memberMarkOf, memberProfileHref, type MemberMark } from '../lib/guest-path'
 import { CrossIslandKeyChangedError, deliverCrossIsland } from '../lib/federation-send'
@@ -635,7 +637,11 @@ export function Chat() {
             uin: peerUIN,
             nickname: ci.nickname || `${peerUIN}@${ci.host}`,
             status: 'online',
-            blocked: false,
+            // Our own block list, not a server flag: no island holds one for
+            // a contact on another island. By the address or the pinned key,
+            // as the receive gate asks it, so the composer says why nothing
+            // they write arrives (reports 1064, 1065).
+            blocked: isBlockedSender(peerUIN, ci.host, ci.signingKey),
             identity_key: ci.identityKey,
             signing_key: ci.signingKey,
             signal_identity_key: ci.signalIdentityKey ?? null,
@@ -1948,10 +1954,30 @@ export function Chat() {
     navigate('/contacts', { replace: true })
   }
 
+  // A block on this cross-island peer made or lifted elsewhere (the contact
+  // menu, the list in Privacy, another device's `ciack`) redraws the banner.
+  const ciBlockUin = peer?.host ? peer.uin : null
+  const ciBlockHost = peer?.host ?? null
+  const ciBlockKey = peer?.host ? peer.signing_key : null
+  useEffect(() => {
+    if (ciBlockUin == null || !ciBlockHost) return
+    return onBlocksChanged(() => {
+      const now = isBlockedSender(ciBlockUin, ciBlockHost, ciBlockKey)
+      setPeer((p) => (p && p.uin === ciBlockUin && p.host === ciBlockHost && p.blocked !== now ? { ...p, blocked: now } : p))
+    })
+  }, [ciBlockUin, ciBlockHost, ciBlockKey])
+
   /// Unblock the current peer (from the blocked-composer banner) so the
   /// user can message again. Optimistically clears the local blocked flag.
+  /// A peer on another island is unblocked in our own list, here and on the
+  /// account's other devices: no island holds that block.
   async function unblockPeer() {
     if (!identity || !peer) return
+    if (peer.host) {
+      unblockSender(identity, peer.uin, peer.host, peer.signing_key)
+      setPeer({ ...peer, blocked: false })
+      return
+    }
     try {
       await Api.blockContact(identity, peer.uin, false)
       setPeer({ ...peer, blocked: false })
@@ -5555,6 +5581,14 @@ const IncomingMessageRow = memo(function IncomingMessageRow({
             <BadgeMark kind={senderBadge} className="h-3 w-3" />
           </Link>
         )}
+        {/* The same credit our own forwards carry (report 1063). One line:
+            the name is the forwarding client's to choose, and a long one
+            must not push the bubble around. */}
+        {m.fwdName && (
+          <div className="max-w-full truncate px-1 text-[0.625rem] uppercase tracking-wider text-fg-dim">
+            ↗ {t('chat.forwarded_label', { name: m.fwdName })}
+          </div>
+        )}
         {m.replyTo && <ReplyQuote reply={m.replyTo} h={h} />}
         {m.kind === 'poll' ? (
           // A ballot from an old peer, or one this account received before
@@ -5642,7 +5676,7 @@ const IncomingMessageRow = memo(function IncomingMessageRow({
           // links-off room is still gated to the owner and moderators, so
           // what appears here already passed that gate.
           <div className="relative" data-chat-menu {...press()}>
-            <GroupJoinCard groupId={invite.id} host={invite.host} menuSpace />
+            <GroupJoinCard groupId={invite.id} host={invite.host} linkKey={invite.k} menuSpace />
             <BubbleMenuButton tone="chrome" label={t('chat.actions.more')} open={showActions} onOpen={(el) => h.toggleActions(m.id, el)} />
           </div>
         ) : (
@@ -6008,7 +6042,7 @@ const OutgoingMessageRow = memo(function OutgoingMessageRow({
               carried nothing else. Retracting your own invite is
               the whole point of having one here. */}
           <div className="relative">
-            <GroupJoinCard groupId={outInvite.id} host={outInvite.host} menuSpace />
+            <GroupJoinCard groupId={outInvite.id} host={outInvite.host} linkKey={outInvite.k} menuSpace />
             {menuButton('chrome')}
           </div>
           {reactionChips(row.id, 'end', myUin, h)}
@@ -7130,7 +7164,14 @@ function PinnedRichText({ text, group, linksAllowed = true, memberHost = null }:
   // The invite alternatives take the room link's `?k=` too (#990 step 2), the
   // same tail group-invite.ts PATTERNS read: without it the key was cut off,
   // never remembered, and printed after the card as stray text.
-  const re = /((?:https?:\/\/)?(?:www\.|chat\.)?rcq\.app\/g\/\d+(?:@[a-z0-9.-]+)?(?:\?k=[A-Za-z0-9_-]{8,64})?|rcq:\/\/group\/\d+(?:@[a-z0-9.-]+)?(?:\?k=[A-Za-z0-9_-]{8,64})?)|(https?:\/\/[^\s]+)|#(\d{3,})/gi
+  //
+  // And the `#k=<ver>.<key>` a link copied from room info ends in (the room
+  // STATE key of an unlisted room), for the same stray-text reason. It is
+  // consumed and NOT stored: a pin is one member's text about some room, and a
+  // state key taken from it could pre-empt the one that room hands its own
+  // members (the store keeps the highest version), which is a door JoinGroup
+  // opens only for a link the person opened themselves.
+  const re = /((?:https?:\/\/)?(?:www\.|chat\.)?rcq\.app\/g\/\d+(?:@[a-z0-9.-]+)?(?:\?k=[A-Za-z0-9_-]{8,64})?(?:#k=\d+\.[A-Za-z0-9%_-]+)?|rcq:\/\/group\/\d+(?:@[a-z0-9.-]+)?(?:\?k=[A-Za-z0-9_-]{8,64})?(?:#k=\d+\.[A-Za-z0-9%_-]+)?)|(https?:\/\/[^\s]+)|#(\d{3,})/gi
   let last = 0
   let key = 0
   let m: RegExpExecArray | null
@@ -7166,7 +7207,7 @@ function PinnedRichText({ text, group, linksAllowed = true, memberHost = null }:
         // Slim row, not the message-bubble card: a pin often IS a list of
         // invites, and three cards with their own Join buttons were the "too
         // big" half of the report. Same shape the phones use here.
-        nodes.push(<div key={key++} className="my-1.5"><GroupJoinCard groupId={inv.id} host={inv.host} compact /></div>)
+        nodes.push(<div key={key++} className="my-1.5"><GroupJoinCard groupId={inv.id} host={inv.host} linkKey={inv.k} compact /></div>)
       } else {
         pushText(m[0])
       }

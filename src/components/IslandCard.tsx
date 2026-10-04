@@ -28,6 +28,7 @@
 // still lives there: forgetting the island under a signed-in account would
 // be a list that disagrees with the switcher.
 
+import { useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { useI18n } from '../lib/i18n-context'
 import { islandCard } from '../lib/island-card'
 import { islandLabel } from '../lib/island-choice'
@@ -113,10 +114,70 @@ export function IslandCard({
             </button>
           )
         ) : island.description ? (
-          // ⚠ Not `block` beside the clamp: `display:block` wins over the
-          // clamp's `-webkit-box` and the blurb runs to four lines.
-          <div className="line-clamp-2">{island.description}</div>
+          <IslandBlurb name={name} text={island.description} onOpen={onRules} />
         ) : null}
+      </div>
+    </div>
+  )
+}
+
+/// The operator's blurb, two lines of it, and the rest one click away (report
+/// 1069: "the description is cut off and there is no way to read it").
+///
+/// ⚠ Still clamped on the card: every slot keeps its height (the header note),
+/// so the whole text opens on the same reading page as the rules instead of
+/// growing the card. Clickable only when the clamp actually cut something,
+/// measured, because a blurb that fits has nothing more to show; the full text
+/// is on hover either way.
+function IslandBlurb({
+  name,
+  text,
+  onOpen,
+}: {
+  name: string
+  text: string
+  onOpen: (name: string, text: string) => void
+}) {
+  const ref = useRef<HTMLDivElement | null>(null)
+  const [cut, setCut] = useState(false)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    // ⚠ Not measured on an element that has left the page: the observer
+    // reports a detached one as zero by zero, which reads as "fits".
+    const measure = () => {
+      if (el.isConnected) setCut(el.scrollHeight > el.clientHeight + 1)
+    }
+    measure()
+    // The deck is narrower on a phone, and a font loaded late re-flows it.
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
+    ro?.observe(el)
+    return () => ro?.disconnect()
+  }, [text])
+  // ⚠ One element whether it opens or not. Swapping a <div> for a <button>
+  // when the clamp is found to cut would remount the measured text under the
+  // observer, which then sees the old copy leave and says it fits.
+  // ⚠ Not `block` beside the clamp: `display:block` wins over the clamp's
+  // `-webkit-box` and the blurb runs to four lines.
+  return (
+    <div
+      title={text}
+      {...(cut
+        ? {
+            role: 'button',
+            tabIndex: 0,
+            onClick: () => onOpen(name, text),
+            onKeyDown: (e: KeyboardEvent<HTMLDivElement>) => {
+              if (e.key !== 'Enter' && e.key !== ' ') return
+              e.preventDefault()
+              onOpen(name, text)
+            },
+            className: 'cursor-pointer hover:text-fg-primary transition-colors',
+          }
+        : {})}
+    >
+      <div ref={ref} className="line-clamp-2">
+        {text}
       </div>
     </div>
   )

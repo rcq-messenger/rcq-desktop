@@ -7,7 +7,7 @@ import type { WebIdentity, PeerBundle } from './crypto'
 import type { ReportAttachment } from './media'
 import { addTurnBody } from './report-attachments'
 import { messageClass } from './crypto'
-import { findRoomLinkKey } from './room-link-keys'
+import { ROOM_LINK_KEY, findRoomLinkKey } from './room-link-keys'
 
 /// Told about every roster a group fetch brings back (#982: the last-known
 /// nickname store in group-names.ts). Registered, not imported, for the reason
@@ -79,14 +79,26 @@ export function setTokenRefresher(fn: ((identity: WebIdentity) => Promise<string
 /// is a room on the READER's own island; a guest clone (a visited or backup
 /// island) asking for its room 5 is asking about a different room, and would
 /// hand that island our island's key for it.
-function linkKeyQuery(id: WebIdentity, groupId: number): string {
+///
+/// `linkKey` is the key of the very link the caller is acting on (a join card
+/// holds its own link's), and it wins over the remembered one: the store keeps
+/// one key per room, the last link read, and after a reset an old link read a
+/// moment later (a pin, scrolled history) would otherwise send its stale key
+/// with a join made from the fresh link (403 `room_link_invalid` once the
+/// island requires keys).
+function linkKeyOf(id: WebIdentity, groupId: number, linkKey?: string | null): string | null {
+  if (linkKey && ROOM_LINK_KEY.test(linkKey)) return linkKey
   let host: string | null = null
   try {
     host = new URL(id.apiBase).host
   } catch {
     host = null
   }
-  const k = findRoomLinkKey(groupId, id.guest ? [host] : [host, null])
+  return findRoomLinkKey(groupId, id.guest ? [host] : [host, null])
+}
+
+function linkKeyQuery(id: WebIdentity, groupId: number, linkKey?: string | null): string {
+  const k = linkKeyOf(id, groupId, linkKey)
   return k ? `?k=${encodeURIComponent(k)}` : ''
 }
 
@@ -1191,7 +1203,7 @@ export const Api = {
     return request(id, 'POST', '/invites')
   },
 
-  groupPreview(id: WebIdentity, groupId: number): Promise<GroupPreview> {
+  groupPreview(id: WebIdentity, groupId: number, linkKey?: string | null): Promise<GroupPreview> {
     // ⚠⚠ Memoised for the life of the page, and it has to be. A pinned message
     // can carry many links and the sheet mounts a card per link, each firing
     // its own preview. One production room's pin holds nineteen; the island
@@ -1204,10 +1216,15 @@ export const Api = {
     //
     // SUCCESSES ONLY. Caching a failure would poison the card for the life of
     // the page over one bad minute; the whole point is that the next open works.
-    const key = `${id.uin}@${id.apiBase}:${groupId}`
+    //
+    // Keyed by the link key it was asked with, too. A closed room previewed
+    // without its key answers a cut-down card with no name, and that card
+    // was then served to a link that HAS the key for the rest of the page.
+    const k = linkKeyOf(id, groupId, linkKey)
+    const key = `${id.uin}@${id.apiBase}:${groupId}:${k ?? ''}`
     const hit = previewCache.get(key)
     if (hit) return Promise.resolve(hit)
-    return request<GroupPreview>(id, 'GET', `/groups/${groupId}/preview${linkKeyQuery(id, groupId)}`).then((p) => {
+    return request<GroupPreview>(id, 'GET', `/groups/${groupId}/preview${k ? `?k=${encodeURIComponent(k)}` : ''}`).then((p) => {
       previewCache.set(key, p)
       return p
     })
@@ -1216,8 +1233,8 @@ export const Api = {
   /// Self-join an open group. Idempotent — already-member returns the
   /// group; a closed group rejects a non-member with 403 {code:
   /// "group_closed"}, a blocked user with 403 {code: "blocked"}.
-  joinGroup(id: WebIdentity, groupId: number): Promise<RCQGroup> {
-    return request<RCQGroup>(id, 'POST', `/groups/${groupId}/join${linkKeyQuery(id, groupId)}`)
+  joinGroup(id: WebIdentity, groupId: number, linkKey?: string | null): Promise<RCQGroup> {
+    return request<RCQGroup>(id, 'POST', `/groups/${groupId}/join${linkKeyQuery(id, groupId, linkKey)}`)
   },
 
   /// A new share link for the room (#990 step 2): the owner, or a member who

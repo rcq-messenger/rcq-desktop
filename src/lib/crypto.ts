@@ -260,7 +260,9 @@ export interface CIAckEnvelope {
   /// Island host of the peer. Empty string is a SAME-island quarantined
   /// stranger, which has no key card and no §5f request behind it.
   host: string
-  act: 'accept' | 'decline' | 'block'
+  /// `unblock` is newer than the rest (reports 1064, 1065): a client that
+  /// predates it ignores the act, on all three platforms.
+  act: 'accept' | 'decline' | 'block' | 'unblock'
   /// Present on an accept of a cross-island request: the key card the
   /// accepting device pinned. Omitted for decline/block and for strangers.
   card?: {
@@ -275,6 +277,19 @@ export interface CIAckEnvelope {
   /// island's own request list (spec 2026-09-15, F1): my other devices mark it
   /// answered so their poll does not show it again.
   srv?: { host: string; id: number }
+  /// On a block or an unblock: when it was decided, ms since epoch. A late
+  /// carbon (re-served, or the echo of an older block) loses to a newer
+  /// decision instead of undoing it. Absent from older senders; the receiver
+  /// then uses the row's deposit time.
+  at?: number
+  /// On a block: the signing keys blocked with the address (a contact's
+  /// pinned key, or the keys a request was sealed under), so the block follows
+  /// the person to their other islands.
+  keys?: string[]
+  /// On a block: only `keys` are blocked, not the address. A request under a
+  /// contact's address with another key; blocking the address would block the
+  /// contact it impersonated.
+  keyOnly?: boolean
 }
 
 /// Group poll announcement (iOS/Android kind "poll"). Terse wire keys to
@@ -712,6 +727,14 @@ export function envelopeToObject(env: Envelope): Record<string, unknown> {
     obj.host = env.host
     obj.act = env.act
     if (env.card) obj.card = env.card
+    // ⚠ `srv` was declared on the type and never written here, so the island
+    // row an answer settled never reached the account's other devices and
+    // their visited poll showed it again. Every field the type declares goes
+    // on the wire or it does not exist.
+    if (env.srv) obj.srv = env.srv
+    if (env.at != null) obj.at = env.at
+    if (env.keys?.length) obj.keys = env.keys
+    if (env.keyOnly) obj.keyOnly = true
   } else if (env.kind === 'readmark') {
     // Cross-device read marker (A2). One field: when the read happened.
     // Which thread it belongs to is the carbon's own to/gid, so nothing is

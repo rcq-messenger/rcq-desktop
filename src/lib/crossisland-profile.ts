@@ -36,7 +36,7 @@
 import { Api } from './api'
 import { contactsCache } from './contacts-cache'
 import { newUUIDv4, type ProfileEnvelope, type WebIdentity } from './crypto'
-import { isBlocked } from './crossisland-requests'
+import { isBlockedSender } from './crossisland-requests'
 import {
   applyCrossIslandProfile,
   getCrossIsland,
@@ -171,7 +171,7 @@ export function pushProfileToCrossIslandContacts(identity: WebIdentity): Promise
   // list is already "accepted cross-island contacts" — minus anyone blocked.
   return deliverTo(
     identity,
-    listCrossIsland().filter((c) => !isBlocked(c.uin, c.host)),
+    listCrossIsland().filter((c) => !isBlockedSender(c.uin, c.host, c.signingKey)),
   )
 }
 
@@ -181,7 +181,7 @@ export function pushProfileToCrossIslandContacts(identity: WebIdentity): Promise
 /// a request, and the side whose request was accepted.
 export async function pushProfileTo(identity: WebIdentity, host: string, uin: number): Promise<boolean> {
   const peer = getCrossIsland(uin, host)
-  if (!peer || isBlocked(uin, host)) return false
+  if (!peer || isBlockedSender(uin, host, peer.signingKey)) return false
   return (await deliverTo(identity, [peer])) > 0
 }
 
@@ -200,8 +200,9 @@ export function handleProfile(
   /// The key the seal verified under (decryptV1's `spub`).
   senderSigningKey?: string,
 ): void {
-  // Same-island rule, unchanged: a blocked sender is dropped silently.
-  if (isBlocked(senderUin, senderHost)) return
+  // Same-island rule, unchanged: a blocked sender is dropped silently, by the
+  // address or by the key this seal proved.
+  if (isBlockedSender(senderUin, senderHost, senderSigningKey)) return
 
   // ⚠⚠ Only the pinned contact may rename the pinned contact. The address on a
   // v=1 seal is unsigned, so a `profile` claiming to be `uin@host` is applied

@@ -17,7 +17,8 @@ import { useI18n } from '../lib/i18n-context'
 import { useContactAliases } from '../lib/local-store'
 import { removeCrossIsland, type CrossIslandContact } from '../lib/crossisland-store'
 import { forgetPeerLiveness } from '../lib/peer-liveness'
-import { blockRequest, isBlocked, unblockRequest } from '../lib/crossisland-requests'
+import { isBlockedSender } from '../lib/crossisland-requests'
+import { blockSender, unblockSender } from '../lib/crossisland-ack'
 import { peerKey } from '../lib/sections'
 import { forgetSectionMember } from '../lib/sections-vault'
 import { useIdentity } from '../lib/identity-context'
@@ -36,7 +37,9 @@ export function CrossIslandActionsMenu({ contact, onClose, onChanged }: Props) {
   const [renaming, setRenaming] = useState(false)
   const [name, setName] = useState(() => aliasFor(contact.uin, contact.host) ?? '')
   const [confirmRemove, setConfirmRemove] = useState(false)
-  const blocked = isBlocked(contact.uin, contact.host)
+  // By the address, or by their pinned key on another of their islands: the
+  // label says what the gate will do with what they write.
+  const blocked = isBlockedSender(contact.uin, contact.host, contact.signingKey)
 
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
@@ -130,8 +133,13 @@ export function CrossIslandActionsMenu({ contact, onClose, onChanged }: Props) {
             icon={<BanIcon />}
             label={blocked ? t('ci.actions.unblock') : t('ci.actions.block')}
             onClick={() => {
-              if (blocked) unblockRequest(contact.uin, contact.host)
-              else blockRequest(contact.uin, contact.host)
+              // Both reach the account's other devices as a `ciack`. A block
+              // holds the pinned key with the address, so it follows the
+              // person to their backup or next home island.
+              if (identity) {
+                if (blocked) unblockSender(identity, contact.uin, contact.host, contact.signingKey)
+                else blockSender(identity, contact.uin, contact.host, { keys: [contact.signingKey] })
+              }
               onChanged()
               onClose()
             }}

@@ -21,7 +21,7 @@ import { buildHomeIslandRecord, type HomeIslandRecord } from './federation'
 import { Api, peerBundleFrom, type Contact } from './api'
 import { assembleHomes } from './multihome'
 import { deliverCrossIsland } from './federation-send'
-import { isBlocked } from './crossisland-requests'
+import { isBlockedSender } from './crossisland-requests'
 import { listCrossIsland, type CrossIslandContact } from './crossisland-store'
 
 // Non-pushable envelope_type: a silent record sync must NOT buzz the contact's
@@ -121,7 +121,7 @@ export async function pushHomeRecordToContacts(identity: WebIdentity): Promise<n
     // the only audience that could still receive it.
   }
   const local = contacts.filter((c) => !c.blocked && c.uin !== identity.uin)
-  const foreign = listCrossIsland().filter((c) => !isBlocked(c.uin, c.host))
+  const foreign = listCrossIsland().filter((c) => !isBlockedSender(c.uin, c.host, c.signingKey))
   const results = await Promise.all([
     ...local.map((c) => pushToContact(identity, c, rec)),
     ...foreign.map((c) => pushToCrossIsland(identity, c, rec)),

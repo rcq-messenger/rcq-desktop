@@ -16,7 +16,17 @@ import { Api, peerBundleFrom } from './api'
 import { encryptV1, bytesToB64, type CarbonEnvelope, type CIAckEnvelope, type WebIdentity } from './crypto'
 import { saveCrossIsland, getCrossIsland } from './crossisland-store'
 import { ackServerRef } from './crossisland-pending'
-import { clearRequest, blockRequest, getRequest, markAnswered } from './crossisland-requests'
+import {
+  applyBlockDecision,
+  blockRequest,
+  clearRequest,
+  decisionNow,
+  getRequest,
+  liftBlocksFor,
+  localDecisionAt,
+  markAnswered,
+} from './crossisland-requests'
+import { ackDecisionAt, ackKeys } from './crossisland-block-rules'
 import { allowStranger } from './stranger-requests'
 
 export interface CIAckCard {
@@ -35,14 +45,27 @@ export async function sendRequestAck(
   identity: WebIdentity,
   uin: number,
   host: string,
-  act: 'accept' | 'decline' | 'block',
+  act: 'accept' | 'decline' | 'block' | 'unblock',
   card?: CIAckCard,
   /// The island row the answer settled (spec 2026-09-15, F1), so my other
   /// devices mark it answered instead of polling it back into their list.
   srv?: { host: string; id: number },
+  /// A block or an unblock: when it was decided, and for a block what it
+  /// covers (crossisland-block-rules.ts).
+  decision?: { at: number; keys?: string[]; keyOnly?: boolean },
 ): Promise<void> {
   try {
-    const inner: CIAckEnvelope = { kind: 'ciack', uin, host, act, ...(card ? { card } : {}), ...(srv ? { srv } : {}) }
+    const inner: CIAckEnvelope = {
+      kind: 'ciack',
+      uin,
+      host,
+      act,
+      ...(card ? { card } : {}),
+      ...(srv ? { srv } : {}),
+      ...(decision ? { at: decision.at } : {}),
+      ...(decision?.keys?.length ? { keys: decision.keys } : {}),
+      ...(decision?.keyOnly ? { keyOnly: true } : {}),
+    }
     // ⚠⚠ `to` is MY OWN uin, not null, and that is a compatibility decision
     // rather than a meaning: this answer belongs to no thread and names its
     // subject in its own fields. But a client that predates `ciack` resolves
@@ -64,6 +87,48 @@ export async function sendRequestAck(
   }
 }
 
+/// Block a sender from this device: the decision here, then the same one to
+/// the account's other devices. `keys` are the keys blocked with the address
+/// (a contact's pinned key, or the keys a request was sealed under);
+/// `keyOnly` blocks only those, for a request under a contact's address with
+/// another key. `srv` is the island row the block answers, if any.
+export function blockSender(
+  identity: WebIdentity,
+  uin: number,
+  host: string,
+  opts: { keys?: string[]; keyOnly?: boolean; srv?: { host: string; id: number } } = {},
+): void {
+  const at = localDecisionAt(uin, host)
+  const keys = (opts.keys ?? []).filter((k) => typeof k === 'string' && k.length > 0)
+  const keyOnly = opts.keyOnly === true && keys.length > 0
+  blockRequest(uin, host, { at, keys, keyOnly })
+  void sendRequestAck(identity, uin, host, 'block', undefined, opts.srv, { at, keys, keyOnly })
+}
+
+/// Let a sender through again: every block that stops them (their address,
+/// and a block made against their key on another of their islands), here and
+/// on the account's other devices. `signingKey` is the key they are known by
+/// (a contact's pinned key). Returns how many blocks were lifted.
+///
+/// Also what an explicit add or accept of this exact person calls: that is a
+/// decision to hear from them, and a block left behind from an old request
+/// would otherwise drop everything they write, with nothing on screen.
+export function unblockSender(identity: WebIdentity, uin: number, host: string, signingKey?: string | null): number {
+  const lifted = liftBlocksFor(uin, host, signingKey, decisionNow(), true)
+  for (const a of lifted) void sendRequestAck(identity, a.uin, a.host, 'unblock', undefined, undefined, { at: a.at })
+  return lifted.length
+}
+
+/// Lift exactly one entry of the block list, the one the list of blocks
+/// (Privacy) shows as a row, here and on the account's other devices. Another
+/// entry that blocks the same person stays: it is its own row in that list.
+export function unblockEntry(identity: WebIdentity, uin: number, host: string): boolean {
+  const at = localDecisionAt(uin, host)
+  if (!applyBlockDecision(uin, host, { on: false, at })) return false
+  void sendRequestAck(identity, uin, host, 'unblock', undefined, undefined, { at })
+  return true
+}
+
 /// Apply an ack that came from another of my devices. Returns true when
 /// something actually changed here, so the caller can refresh a list.
 ///
@@ -73,24 +138,41 @@ export async function sendRequestAck(
 /// missing. Never re-fetches anything: the card in the envelope is the one the
 /// accepting device pinned, and copying it is the whole point — two devices
 /// doing their own TOFU on the same peer is how the keys drift apart.
-export function applyRequestAck(ack: {
-  uin?: unknown
-  host?: unknown
-  act?: unknown
-  card?: unknown
-  srv?: unknown
-}): boolean {
-  const uin = typeof ack.uin === 'number' ? ack.uin : null
+///
+/// A block or an unblock is a decision with a time (`at`, or the row's deposit
+/// stamp `srvAt` from a sender that predates it), and an older one than this
+/// device holds changes nothing: the echo of my own block, drained after I
+/// already unblocked, must not block again.
+export function applyRequestAck(
+  ack: {
+    uin?: unknown
+    host?: unknown
+    act?: unknown
+    card?: unknown
+    srv?: unknown
+    at?: unknown
+    keys?: unknown
+    keyOnly?: unknown
+  },
+  srvAt?: number,
+): boolean {
+  const uin = typeof ack.uin === 'number' && Number.isInteger(ack.uin) && ack.uin > 0 ? ack.uin : null
   const host = typeof ack.host === 'string' ? ack.host : null
   const act = ack.act
   if (uin == null || host == null) return false
-  if (act !== 'accept' && act !== 'decline' && act !== 'block') return false
+  if (act !== 'accept' && act !== 'decline' && act !== 'block' && act !== 'unblock') return false
 
+  const at = ackDecisionAt(ack.at, srvAt, decisionNow())
   if (act === 'block') {
     const blocked = ackServerRef(ack.srv, host)
     if (blocked) markAnswered(blocked.host, blocked.id)
-    blockRequest(uin, host)
+    // An older Android or iOS names no keys: the address alone, as before.
+    const keys = ackKeys(ack.keys)
+    blockRequest(uin, host, { at, keys, keyOnly: ack.keyOnly === true && keys.length > 0 })
     return true
+  }
+  if (act === 'unblock') {
+    return applyBlockDecision(uin, host, { on: false, at })
   }
 
   // ⚠⚠ This device holds an accept for this person that has not reached them
@@ -111,14 +193,22 @@ export function applyRequestAck(ack: {
     return clearRequest(uin, host) != null || srv != null
   }
 
-  // Accept. A same-island stranger (host '') has no card and no §5f request:
-  // the allowance IS the acceptance.
+  // Accept. An accept of this person on another device is a decision to hear
+  // from them, and it lifts a block this device holds against them, if that
+  // block is older: the address, or the key the accepting device pinned.
+  // Without it a block made here before the person was accepted elsewhere
+  // would now drop everything they write. A block held against ANOTHER key at
+  // this address (an impostor's) is not theirs to lift, and stays.
+  const card = ack.card as CIAckCard | undefined
+  const cardKey = card && typeof card.sk === 'string' ? card.sk : null
+  liftBlocksFor(uin, host, cardKey ?? getCrossIsland(uin, host)?.signingKey ?? null, at)
+  // A same-island stranger (host '') has no card and no §5f request: the
+  // allowance IS the acceptance.
   if (host === '') {
     allowStranger(uin)
     clearRequest(uin, '')
     return true
   }
-  const card = ack.card as CIAckCard | undefined
   if (card && typeof card.ik === 'string' && typeof card.sk === 'string' && !getCrossIsland(uin, host)) {
     saveCrossIsland({
       uin,

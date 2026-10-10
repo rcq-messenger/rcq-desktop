@@ -22,7 +22,8 @@
 // key) is never an address block, here or on the wire: the address belongs to
 // the real contact. It travels as its own act (crossisland-ack.ts), which
 // phones and older webs ignore, and it survives an address block laid over it
-// and that address block's lifting.
+// and that address block's lifting. Its unblock is remembered by key too (a
+// key tombstone), so the block it lifted, arriving after it, stays lifted.
 //
 // Pure: no store, no network. The store (crossisland-requests.ts) does the I/O
 // and the offline test (cli/test/crossisland-block.mjs) holds these rules to
@@ -42,7 +43,15 @@ export interface BlockEntry {
   /// Only the keys are blocked, not the address. Set for a request that came
   /// under a contact's address with another key (`keyMismatch`): blocking the
   /// address there would cut off the real contact it was impersonating.
+  ///
+  /// On a tombstone (a key tombstone): the last decision here is a key-only
+  /// unblock that found no key block of its own to lift. `at` is its time,
+  /// which a late key block has to beat; it says nothing about the address,
+  /// so an address decision only has to beat `addrAt`.
   keyOnly?: boolean
+  /// On a key tombstone only: when the address itself was last unblocked
+  /// here, before the key unblock. Absent: no address decision is held.
+  addrAt?: number
   /// On an ADDRESS block only: the keys of key-only blocks at this address
   /// that the address block was laid over (they are in `keys` too). Lifting
   /// the address leaves them blocked: unblocking the contact is not unblocking
@@ -112,6 +121,13 @@ export function normalizeBlocks(raw: unknown): BlockMap {
     const e = v as Record<string, unknown>
     if (typeof e.on !== 'boolean') continue
     const at = typeof e.at === 'number' && Number.isFinite(e.at) && e.at > 0 ? e.at : 0
+    if (!e.on && e.keyOnly === true) {
+      // A key tombstone with no time remembers nothing.
+      if (!at) continue
+      const addrAt = typeof e.addrAt === 'number' && Number.isFinite(e.addrAt) && e.addrAt > 0 ? Math.min(e.addrAt, at) : 0
+      out[k] = { on: false, at, keyOnly: true, ...(addrAt ? { addrAt } : {}) }
+      continue
+    }
     if (!e.on) {
       out[k] = { on: false, at }
       continue
@@ -143,6 +159,10 @@ function sameKeyIn(list: string[], k: string): boolean {
 /// narrowed to key-only by a later key-only one (both were asked for). The
 /// key-only part is remembered under the address block (`keyOnlyKeys`), and
 /// lifting the address leaves it standing.
+///
+/// A key unblock with no block of its keys held leaves a key tombstone, which
+/// a late key block loses to and an address decision does not see. An address
+/// block laid over it replaces it, whatever its time.
 export function decideBlock(map: BlockMap, uin: number, host: string, d: BlockDecision): BlockMap | null {
   const k = blockKey(uin, host)
   const cur = map[k]
@@ -151,7 +171,10 @@ export function decideBlock(map: BlockMap, uin: number, host: string, d: BlockDe
   // wins" a block and its own echo stamped alike could undo the unblock made
   // in between. Decisions made here are dated past the held one
   // (crossisland-requests.ts `localDecisionAt`), so a tie is never a tap.
-  if (cur && cur.at >= at) return null
+  // A key tombstone holds an address decision back only by the address's own
+  // time: a key decision is not the address's.
+  const keyLift = cur && !cur.on && cur.keyOnly ? cur : null
+  if (cur && (keyLift && d.keyOnly !== true ? keyLift.addrAt ?? 0 : cur.at) >= at) return null
   const held = cur?.on ? cur : null
   // The key-only part of what is held: the whole entry when it is key-only,
   // else what key-only blocks named before an address block was laid over.
@@ -160,12 +183,22 @@ export function decideBlock(map: BlockMap, uin: number, host: string, d: BlockDe
   let next: BlockEntry
   if (!d.on && d.keyOnly) {
     // Only keys a key-only block named come off: a key blocked with the
-    // address stays as long as the address block does. Nothing to lift
-    // writes nothing (no tombstone): a key decision is not the address's.
+    // address stays as long as the address block does, and a key unblock
+    // over it changes nothing.
     const lifted = heldKeyOnly.filter((x) => sameKeyIn(named, x))
-    if (!held || !lifted.length) return null
-    const keys = (held.keys ?? []).filter((x) => !sameKeyIn(lifted, x))
-    if (held.keyOnly) {
+    const keys = (held?.keys ?? []).filter((x) => !sameKeyIn(lifted, x))
+    if (!held) {
+      // Nothing held: the unblock can come before its own block (a live
+      // carbon while the queue still drains the older one), and that block
+      // must find it here, as it would an address unblock. Kept as a KEY
+      // tombstone: an address block that comes late still lands, and an
+      // address unblock held here goes on holding the address (`addrAt`).
+      if (!named.length || at === 0) return null
+      const addrAt = keyLift ? keyLift.addrAt ?? 0 : cur?.at ?? 0
+      next = { on: false, at, keyOnly: true, ...(addrAt > 0 ? { addrAt } : {}) }
+    } else if (!lifted.length) {
+      return null
+    } else if (held.keyOnly) {
       next = keys.length ? { on: true, at, keys, keyOnly: true } : { on: false, at }
     } else {
       const ko = heldKeyOnly.filter((x) => !sameKeyIn(lifted, x))
@@ -173,10 +206,15 @@ export function decideBlock(map: BlockMap, uin: number, host: string, d: BlockDe
     }
   } else if (!d.on) {
     // Written even with nothing to lift: carbons can arrive out of order, and
-    // the older block that follows this unblock must find it here.
+    // the older block that follows this unblock must find it here. Under a
+    // newer key tombstone only the address's time moves: the key's stays.
     if (!cur && at === 0) return null
     const keep = heldKeyOnly.filter((x) => !sameKeyIn(named, x))
-    next = keep.length ? { on: true, at, keys: keep, keyOnly: true } : { on: false, at }
+    next = keep.length
+      ? { on: true, at, keys: keep, keyOnly: true }
+      : keyLift && keyLift.at > at
+        ? { on: false, at: keyLift.at, keyOnly: true, addrAt: at }
+        : { on: false, at }
   } else {
     const keys = cleanKeys([...(held?.keys ?? []), ...named])
     const addressBefore = held != null && !held.keyOnly

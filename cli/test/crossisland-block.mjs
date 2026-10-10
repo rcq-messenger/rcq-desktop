@@ -17,6 +17,10 @@
 //   * Ties keep what is held: the echo of an old decision stamped like the
 //     newer one must not undo it. The decision time is read from `ts` first
 //     (Android's name), then `at`.
+//   * A key unblock that arrives before the block it lifts (a live carbon
+//     while the queue drains the older one) found nothing to lift and left
+//     nothing behind, so that block blocked the key again. It now leaves a
+//     key tombstone, which an address decision does not see.
 // Everything here is production code from src/lib/crossisland-block-rules.ts,
 // imported from the BUILT bundle.
 //
@@ -153,14 +157,69 @@ check('a key decision never touches the address, and an address decision never t
   let m = decideBlock({}, 134, 'a.example', { on: true, at: 10, keys: [K] })
   // A key unblock of a key the address block carries is not a key-only one.
   assert.equal(decideBlock(m, 134, 'a.example', { on: false, at: 20, keyOnly: true, keys: [K] }), null)
-  // Nothing held: a key unblock writes nothing, not an address tombstone.
-  assert.equal(decideBlock({}, 134, 'a.example', { on: false, at: 20, keyOnly: true, keys: [K] }), null)
+  // Nothing held: a key unblock writes a KEY tombstone, never an address one.
+  const lone = decideBlock({}, 134, 'a.example', { on: false, at: 20, keyOnly: true, keys: [K] })
+  assert.deepEqual(lone, { '134@a.example': { on: false, at: 20, keyOnly: true } })
+  assert.equal(addressBlocked(decideBlock(lone, 134, 'a.example', { on: true, at: 15, keys: [K] }), 134, 'a.example'), true)
   // A key block over an address block, then the key lifted: the address stays.
   m = decideBlock(m, 134, 'a.example', { on: true, at: 20, keys: [IMPOSTOR], keyOnly: true })
   m = decideBlock(m, 134, 'a.example', { on: false, at: 30, keyOnly: true, keys: [IMPOSTOR] })
   assert.equal(addressBlocked(m, 134, 'a.example'), true)
   assert.equal(senderBlocked(m, 9, 'z.example', IMPOSTOR, noPins), false)
   assert.deepEqual(m['134@a.example'], { on: true, at: 30, keys: [K] })
+})
+
+check('a key unblock that arrives before its block keeps the key lifted', () => {
+  // A live `unblockkey` while the queue still drains the older `blockkey`:
+  // nothing is held yet, and the block that follows must lose to it.
+  const m = decideBlock({}, 134, 'a.example', { on: false, at: 20, keyOnly: true, keys: [IMPOSTOR] })
+  assert.equal(decideBlock(m, 134, 'a.example', { on: true, at: 10, keys: [IMPOSTOR], keyOnly: true }), null)
+  assert.equal(decideBlock(m, 134, 'a.example', { on: true, at: 20, keys: [IMPOSTOR], keyOnly: true }), null)
+  // The tombstone blocks nobody and is no row in the list.
+  assert.equal(senderBlocked(m, 55, 'c.example', IMPOSTOR, noPins), false)
+  assert.equal(addressBlocked(m, 134, 'a.example'), false)
+  assert.deepEqual(activeBlocks(m), [])
+  // A key block made after it blocks again.
+  const again = decideBlock(m, 134, 'a.example', { on: true, at: 30, keys: [IMPOSTOR], keyOnly: true })
+  assert.equal(senderBlocked(again, 55, 'c.example', IMPOSTOR, noPins), true)
+  assert.equal(addressBlocked(again, 134, 'a.example'), false)
+  // Its own echo, or an older key unblock, changes nothing.
+  assert.equal(decideBlock(m, 134, 'a.example', { on: false, at: 20, keyOnly: true, keys: [IMPOSTOR] }), null)
+  assert.equal(decideBlock(m, 134, 'a.example', { on: false, at: 5, keyOnly: true, keys: [IMPOSTOR] }), null)
+  // A key unblock naming no key is no decision at all.
+  assert.equal(decideBlock({}, 134, 'a.example', { on: false, at: 20, keyOnly: true, keys: [] }), null)
+})
+
+check('a key tombstone keeps the address\'s own time apart from the key\'s', () => {
+  // The address was unblocked at 10, the impostor's key at 20.
+  let m = decideBlock({}, 134, 'a.example', { on: false, at: 10 })
+  m = decideBlock(m, 134, 'a.example', { on: false, at: 20, keyOnly: true, keys: [IMPOSTOR] })
+  assert.deepEqual(m['134@a.example'], { on: false, at: 20, keyOnly: true, addrAt: 10 })
+  // An address block from before the address unblock stays out...
+  assert.equal(decideBlock(m, 134, 'a.example', { on: true, at: 5, keys: [K] }), null)
+  // ...one made after it lands, the key unblock being no address decision...
+  const blocked = decideBlock(m, 134, 'a.example', { on: true, at: 15, keys: [K] })
+  assert.equal(addressBlocked(blocked, 134, 'a.example'), true)
+  // ...and a key block from before the key unblock stays out.
+  assert.equal(decideBlock(m, 134, 'a.example', { on: true, at: 15, keys: [IMPOSTOR], keyOnly: true }), null)
+  // An address unblock in between moves the address's time, not the key's.
+  const later = decideBlock(m, 134, 'a.example', { on: false, at: 15 })
+  assert.deepEqual(later['134@a.example'], { on: false, at: 20, keyOnly: true, addrAt: 15 })
+  assert.equal(decideBlock(later, 134, 'a.example', { on: true, at: 12, keys: [K] }), null)
+  assert.equal(decideBlock(later, 134, 'a.example', { on: true, at: 18, keys: [IMPOSTOR], keyOnly: true }), null)
+  // One newer than both is a plain tombstone again.
+  const newest = decideBlock(m, 134, 'a.example', { on: false, at: 25 })
+  assert.deepEqual(newest['134@a.example'], { on: false, at: 25 })
+  // It survives a reload, and a newer key unblock keeps the address's time.
+  assert.deepEqual(normalizeBlocks(JSON.parse(JSON.stringify(m))), m)
+  const next = decideBlock(m, 134, 'a.example', { on: false, at: 30, keyOnly: true, keys: [OTHER] })
+  assert.deepEqual(next['134@a.example'], { on: false, at: 30, keyOnly: true, addrAt: 10 })
+  // One with no time on disk is left out, and its address time is never later
+  // than its own.
+  assert.deepEqual(normalizeBlocks({ '1@a.example': { on: false, keyOnly: true } }), {})
+  assert.deepEqual(normalizeBlocks({ '1@a.example': { on: false, at: 5, keyOnly: true, addrAt: 9 } }), {
+    '1@a.example': { on: false, at: 5, keyOnly: true, addrAt: 5 },
+  })
 })
 
 check('letting a person through lifts their key where it was taken for an impostor\'s, not that address', () => {

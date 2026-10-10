@@ -699,6 +699,11 @@ export function Chat() {
     ciKey(peer.uin, peer.host) === ciKey(peerUIN, islandHost)
   const ciPeerHost = peerIsRoute ? peer?.host ?? null : null
   const ciPeerUin = ciPeerHost ? peer?.uin ?? null : null
+  // The same check for any 1:1 peer, on our own island or another: what a tap
+  // does to `peer` (Unblock) waits until it is the contact of this route.
+  const peerOnRoute =
+    peerIsRoute ||
+    (!isGroup && peer != null && !peer.host && !islandHost && peerUIN != null && peer.uin === peerUIN)
   useEffect(() => {
     if (!identity || !ciPeerHost || ciPeerUin == null) return
     void probePeerLiveness(identity, ciPeerUin, ciPeerHost, 'open')
@@ -1973,31 +1978,39 @@ export function Chat() {
 
   // A block on this cross-island peer made or lifted elsewhere (the contact
   // menu, the list in Privacy, another device's `ciack`) redraws the banner.
-  const ciBlockUin = peer?.host ? peer.uin : null
-  const ciBlockHost = peer?.host ?? null
-  const ciBlockKey = peer?.host ? peer.signing_key : null
+  // The checked pair (see `ciPeerHost`): a `peer` left over from the chat
+  // shown before is not asked about, nor its flag redrawn, in this one.
+  const ciBlockKey = ciPeerHost ? peer?.signing_key ?? null : null
   useEffect(() => {
-    if (ciBlockUin == null || !ciBlockHost) return
+    if (ciPeerUin == null || !ciPeerHost) return
     return onBlocksChanged(() => {
-      const now = isBlockedSender(ciBlockUin, ciBlockHost, ciBlockKey)
-      setPeer((p) => (p && p.uin === ciBlockUin && p.host === ciBlockHost && p.blocked !== now ? { ...p, blocked: now } : p))
+      const now = isBlockedSender(ciPeerUin, ciPeerHost, ciBlockKey)
+      setPeer((p) => (p && p.uin === ciPeerUin && p.host === ciPeerHost && p.blocked !== now ? { ...p, blocked: now } : p))
     })
-  }, [ciBlockUin, ciBlockHost, ciBlockKey])
+  }, [ciPeerUin, ciPeerHost, ciBlockKey])
 
   /// Unblock the current peer (from the blocked-composer banner) so the
   /// user can message again. Optimistically clears the local blocked flag.
   /// A peer on another island is unblocked in our own list, here and on the
   /// account's other devices: no island holds that block.
+  ///
+  /// ⚠ Only the contact of the open route (`peerOnRoute`): right after a
+  /// switch `peer` is still the one shown before, and its Unblock lifted the
+  /// block of that other person. The flag is cleared on that same contact
+  /// only, never on whoever the screen has moved on to while the island
+  /// answered.
   async function unblockPeer() {
-    if (!identity || !peer) return
-    if (peer.host) {
-      unblockSender(identity, peer.uin, peer.host, peer.signing_key)
-      setPeer({ ...peer, blocked: false })
+    if (!identity || !peer || !peerOnRoute) return
+    const { uin, host } = peer
+    const same = (p: Contact | null): p is Contact => p != null && p.uin === uin && p.host === host
+    if (ciPeerHost && ciPeerUin != null) {
+      unblockSender(identity, ciPeerUin, ciPeerHost, peer.signing_key)
+      setPeer((p) => (same(p) ? { ...p, blocked: false } : p))
       return
     }
     try {
-      await Api.blockContact(identity, peer.uin, false)
-      setPeer({ ...peer, blocked: false })
+      await Api.blockContact(identity, uin, false)
+      setPeer((p) => (same(p) ? { ...p, blocked: false } : p))
     } catch (e) {
       toast(e instanceof Error ? e.message : t('chat.error.send_failed'), 'error')
     }
@@ -4561,9 +4574,12 @@ export function Chat() {
           {!isGroup && peer?.blocked ? (
             <div className={`flex items-center justify-center gap-3 rounded-2xl bg-surface px-4 py-3 text-sm text-fg-secondary ${selecting ? 'invisible' : ''}`}>
               <span>{t('chat.blocked.notice')}</span>
+              {/* Still the chat shown before while this one loads: the button
+                  waits for this route's contact (see `unblockPeer`). */}
               <button
                 onClick={() => void unblockPeer()}
-                className="rounded-full bg-accent hover:bg-accent-dim text-white text-xs font-semibold px-3 py-1.5 transition-colors"
+                disabled={!peerOnRoute}
+                className="rounded-full bg-accent hover:bg-accent-dim text-white text-xs font-semibold px-3 py-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {t('chat.blocked.unblock')}
               </button>

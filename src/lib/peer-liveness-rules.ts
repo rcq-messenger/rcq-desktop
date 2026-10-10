@@ -43,6 +43,8 @@ export interface PinnedKeys {
 /// these, and nothing else on the way says them.
 export const NO_SUCH_USER = 'no such user'
 export const NO_ACCOUNT_FOR_KEY = 'no account for key'
+/// `GET /federation/gossip-record` for a key the island holds no record for.
+export const NO_RECORD = 'no record'
 
 function detailOf(body: unknown): string | null {
   const d = (body as { detail?: unknown } | null)?.detail
@@ -93,18 +95,46 @@ export function ownerStep(reply: IslandReply | null, uin: number): 'moved' | 'ab
   return 'unknown'
 }
 
-/// Step 3: does the person's own signed record of homes, verified against the
-/// PINNED signing key, name any home other than this address?
+/// Step 3, `GET /federation/gossip-record?sk=<pinned>` on OUR island: does
+/// the person's own signed record of homes, verified against the PINNED
+/// signing key, name any home other than this address?
 ///
 /// A contact pinned on a backup copy (added that way before the add paths
 /// refused it) answers steps 1 and 2 with two clean 404s once the copy is
 /// deleted or swept, while the person lives on at their primary. Their record
-/// is what says so. Unverifiable or absent: nothing is known, so no.
-export function livesElsewhere(record: unknown, pinnedSigningKey: string, host: string, uin: number): boolean {
-  if (record == null || !pinnedSigningKey) return false
-  const v = verifyHomeIslandRecord(record, { expectedSk: pinnedSigningKey })
-  if (!v.ok) return false
-  return v.record.homes.some((h) => !(sameIslandHost(h.host, host) && h.uin === uin))
+/// is what says so.
+///
+/// ⚠⚠ `absent` only for the island's own "no record", or a record verified
+/// under the pinned key that names no other home. A refused, failed or
+/// unverifiable read (a 429, a 5xx while the pool is stuck, a dropped
+/// connection between two requests) is unknown: it used to read as "no
+/// record", and a person alive at their primary was marked deleted for good.
+export function recordStep(
+  reply: IslandReply | null,
+  pinnedSigningKey: string,
+  host: string,
+  uin: number,
+): 'moved' | 'absent' | 'unknown' {
+  if (!reply || !pinnedSigningKey) return 'unknown'
+  if (reply.status === 200) {
+    const v = verifyHomeIslandRecord(reply.body, { expectedSk: pinnedSigningKey })
+    if (!v.ok) return 'unknown'
+    return v.record.homes.some((h) => !(sameIslandHost(h.host, host) && h.uin === uin)) ? 'moved' : 'absent'
+  }
+  if (reply.status === 404 && detailOf(reply.body) === NO_RECORD) return 'absent'
+  return 'unknown'
+}
+
+/// Is a message deposited at `srvAt` (the island's clock) news after a mark
+/// set at `markedAt` (this device's clock)? `offsetMs` is this device's clock
+/// minus the island's (message-time.ts `clockOffsetMs`), so both sides are
+/// compared on the device's clock: a device an hour fast would otherwise read
+/// every message of the next hour as old mail, and one an hour slow would let
+/// old mail lift a mark set since. No stamp at all is a live delivery.
+export function depositAfterMark(srvAt: number | undefined, markedAt: number, offsetMs: number): boolean {
+  if (srvAt == null || !Number.isFinite(srvAt)) return true
+  const offset = Number.isFinite(offsetMs) ? offsetMs : 0
+  return srvAt + offset >= markedAt
 }
 
 /// One spelling of an island address for comparing two of them.

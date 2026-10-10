@@ -19,10 +19,11 @@ import {
   blockKey,
   blockingEntries,
   decideBlock,
+  liftsFor,
   normalizeBlocks,
-  parseBlockKey,
   type BlockDecision,
   type BlockEntry,
+  type BlockLift,
   type BlockMap,
 } from './crossisland-block-rules'
 import { getCrossIsland } from './crossisland-store'
@@ -273,8 +274,13 @@ export function isBlockedSender(uin: number, host: string, signingKey?: string |
   return blockingEntries(loadBlocked(), uin, host, signingKey, pinnedKeyAt).length > 0
 }
 
-/// Record one decision. False when it changed nothing (an older decision than
-/// the one held here, or the same one again).
+/// The entry held for (uin, host), lifted ones included, or null.
+export function blockEntryAt(uin: number, host: string): BlockEntry | null {
+  return loadBlocked()[blockKey(uin, host)] ?? null
+}
+
+/// Record one decision. False when it changed nothing (a decision not newer
+/// than the one held here, or the same one again).
 export function applyBlockDecision(uin: number, host: string, d: BlockDecision): boolean {
   const next = decideBlock(loadBlocked(), uin, host, d)
   if (!next) return false
@@ -292,36 +298,39 @@ export function decisionNow(): number {
   return Date.now() - clockOffsetMs()
 }
 
-/// When a decision made on THIS device, now, is dated. Never older than the
-/// one it replaces: a clock that was set back since must not turn a tap on
-/// Block or Unblock into a decision that loses to the one already held.
+/// When a decision made on THIS device, now, is dated. Always strictly newer
+/// than the one it replaces: a clock that was set back since must not turn a
+/// tap on Block or Unblock into a decision that loses to the one already held,
+/// nor into one that TIES with it, because a tie keeps what is held and the
+/// late echo of that older decision would then come back on top
+/// (crossisland-block-rules.ts `decideBlock`).
 export function localDecisionAt(uin: number, host: string, now: number = decisionNow()): number {
-  return Math.max(now, loadBlocked()[blockKey(uin, host)]?.at ?? 0)
+  return Math.max(now, (loadBlocked()[blockKey(uin, host)]?.at ?? 0) + 1)
 }
 
-/// Lift every block that stops this sender: the address, and any entry made
-/// against their key on another of their islands. Returns the addresses lifted
-/// and the time each lift carries, so the caller can tell the account's other
+/// Lift every block that stops this sender: the address, any entry made
+/// against their key on another of their islands, and their key where it was
+/// blocked as an impostor's (key-only, crossisland-block-rules.ts `liftsFor`).
+/// A key-only block of ANOTHER key at their address stays. Returns each lift
+/// with the time it carries, so the caller can tell the account's other
 /// devices about each. `local` is a decision made here (a tap, an add): dated
-/// by [localDecisionAt] per entry. Otherwise `at` is a remote decision's time,
-/// and a newer block held here stays.
+/// past the held entry, as [localDecisionAt] does. Otherwise `at` is a remote
+/// decision's time, and a block held here as new or newer stays.
 export function liftBlocksFor(
   uin: number,
   host: string,
   signingKey: string | null | undefined,
   at: number,
   local = false,
-): Array<{ uin: number; host: string; at: number }> {
+): Array<BlockLift & { at: number }> {
   let map = loadBlocked()
-  const lifted: Array<{ uin: number; host: string; at: number }> = []
-  for (const k of blockingEntries(map, uin, host, signingKey, pinnedKeyAt)) {
-    const a = parseBlockKey(k)
-    if (!a) continue
-    const when = local ? Math.max(at, map[k]?.at ?? 0) : at
-    const next = decideBlock(map, a.uin, a.host, { on: false, at: when })
+  const lifted: Array<BlockLift & { at: number }> = []
+  for (const l of liftsFor(map, uin, host, signingKey, pinnedKeyAt)) {
+    const when = local ? Math.max(at, (map[blockKey(l.uin, l.host)]?.at ?? 0) + 1) : at
+    const next = decideBlock(map, l.uin, l.host, { on: false, at: when, keyOnly: l.keyOnly, keys: l.keys })
     if (next) {
       map = next
-      lifted.push({ ...a, at: when })
+      lifted.push({ ...l, at: when })
     }
   }
   if (lifted.length) saveBlocked(map)

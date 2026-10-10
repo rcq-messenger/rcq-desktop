@@ -5,12 +5,15 @@
 
 export {
   MAX_TOMBSTONES,
+  ackBlockScope,
   ackDecisionAt,
   ackKeys,
+  ackStamp,
   activeBlocks,
   addressBlocked,
   blockingEntries,
   decideBlock,
+  liftsFor,
   normalizeBlocks,
   senderBlocked,
 } from '../../src/lib/crossisland-block-rules'

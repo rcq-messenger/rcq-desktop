@@ -262,7 +262,13 @@ export interface CIAckEnvelope {
   host: string
   /// `unblock` is newer than the rest (reports 1064, 1065): a client that
   /// predates it ignores the act, on all three platforms.
-  act: 'accept' | 'decline' | 'block' | 'unblock'
+  ///
+  /// `blockkey` / `unblockkey` block or lift a KEY only (`sk`, `keys`, with
+  /// `"scope": "key"`), never the address: an impostor that wrote under a
+  /// contact's address. ⚠⚠ Never a `block`: Android, iOS and older webs read
+  /// any `block` as an address block, and the address is the real contact's.
+  /// Every client that predates these acts ignores them.
+  act: 'accept' | 'decline' | 'block' | 'unblock' | 'blockkey' | 'unblockkey'
   /// Present on an accept of a cross-island request: the key card the
   /// accepting device pinned. Omitted for decline/block and for strangers.
   card?: {
@@ -279,17 +285,23 @@ export interface CIAckEnvelope {
   srv?: { host: string; id: number }
   /// On a block or an unblock: when it was decided, ms since epoch. A late
   /// carbon (re-served, or the echo of an older block) loses to a newer
-  /// decision instead of undoing it. Absent from older senders; the receiver
-  /// then uses the row's deposit time.
+  /// decision instead of undoing it. ⚠ `ts` is the field: Android writes and
+  /// reads it under that name. `at` carries the same value for web builds
+  /// that read only `at`. Readers take `ts`, then `at`; absent from older
+  /// senders, and the receiver then uses the row's deposit time.
+  ts?: number
   at?: number
   /// On a block: the signing keys blocked with the address (a contact's
   /// pinned key, or the keys a request was sealed under), so the block follows
-  /// the person to their other islands.
+  /// the person to their other islands. On a key act: the keys it names. On
+  /// an unblock: the key of the person let through, lifted from a key-only
+  /// block under the address too.
   keys?: string[]
-  /// On a block: only `keys` are blocked, not the address. A request under a
-  /// contact's address with another key; blocking the address would block the
-  /// contact it impersonated.
-  keyOnly?: boolean
+  /// On a key act: the (first) key it is about.
+  sk?: string
+  /// On a key act: "key". A receiver that meets a scope it does not know
+  /// ignores the act rather than block or unblock the address.
+  scope?: 'key'
 }
 
 /// Group poll announcement (iOS/Android kind "poll"). Terse wire keys to
@@ -732,9 +744,15 @@ export function envelopeToObject(env: Envelope): Record<string, unknown> {
     // their visited poll showed it again. Every field the type declares goes
     // on the wire or it does not exist.
     if (env.srv) obj.srv = env.srv
-    if (env.at != null) obj.at = env.at
+    // Both names, one value: Android's CiAck reads `ts`, older webs read `at`.
+    const ts = env.ts ?? env.at
+    if (ts != null) {
+      obj.ts = ts
+      obj.at = ts
+    }
     if (env.keys?.length) obj.keys = env.keys
-    if (env.keyOnly) obj.keyOnly = true
+    if (env.sk) obj.sk = env.sk
+    if (env.scope) obj.scope = env.scope
   } else if (env.kind === 'readmark') {
     // Cross-device read marker (A2). One field: when the read happened.
     // Which thread it belongs to is the carbon's own to/gid, so nothing is

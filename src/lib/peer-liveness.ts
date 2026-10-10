@@ -21,9 +21,12 @@
 //   2. GET /federation/uin-for-key?signing_key=<pinned>
 //                                        another number: moved, not marked.
 //                                        404 "no account for key": go on.
-//   3. Their signed home record, from OUR island's gossip mirror by the pinned
-//      key: another home named there is a person who lives on elsewhere.
-//   Otherwise: gone. Anything unclear on the way: unknown, nothing changes.
+//   3. GET /federation/gossip-record?sk=<pinned> on OUR island
+//                                        their signed record naming another
+//                                        home: moved, not marked.
+//                                        404 "no record", or a record naming
+//                                        only this address: gone.
+//   Anything unclear on the way, at any step: unknown, nothing changes.
 //
 // ⚠⚠ NEVER `/messages/sealed` and never `island-record`. A deposit wakes the
 // phone at the other end and answers with presence; the record endpoint is a
@@ -42,22 +45,28 @@
 // row at that address now pins another key or was (re)added after the mark:
 // identity is the number AND the key, the address is only where to deliver.
 //
-// The "deleted" mark is cleared by one thing only: a message that verified
-// under the pinned key and was deposited after the mark (message-receiver.tsx).
-// Not by a later probe answering differently, and not by a message from the
-// same number under another key: a reissued number writing to us must not
-// bring the old contact back to life. The "key changed" mark is a statement
-// about the card, so it lifts when a card under the pinned keys is seen again.
+// The "deleted" mark is cleared by two things only, both about the pinned
+// number AND key: a message that verified under the pinned key and was
+// deposited after the mark (message-receiver.tsx), and a card the island
+// serves under both pinned keys, which the send path checks before every
+// send (a restored island database, a re-register under the same keys).
+// Not by a later probe, which a gone contact never gets, and not by anything
+// under another key: a reissued number writing to us, or serving its card,
+// must not bring the old contact back to life. The "key changed" mark is a
+// statement about the card, so it lifts when a card under the pinned keys is
+// seen again.
 
 import { scopedKey } from './account-scope'
 import { ciKey, getCrossIsland, type CrossIslandContact } from './crossisland-store'
 import { sameSigningKey } from './crossisland-gate'
-import { fetchGossipRecord, hostOfApiBase } from './multihome'
+import { hostOfApiBase } from './multihome'
+import { clockOffsetMs } from './message-time'
 import type { WebIdentity } from './crypto'
 import {
   cardStep,
-  livesElsewhere,
+  depositAfterMark,
   ownerStep,
+  recordStep,
   type IslandReply,
   type Liveness,
   type PinnedKeys,
@@ -192,6 +201,13 @@ export function isPeerGone(uin: number, host: string): boolean {
   return liveMark(load(), uin, host)?.gone != null
 }
 
+/// A card under another key was seen at this address, and none under the
+/// pinned keys since. Read raw, not through `peerMark`, which hides it under
+/// `gone`: a mark can carry both (gone, then the number reissued).
+export function isPeerKeyChanged(uin: number, host: string): boolean {
+  return liveMark(load(), uin, host)?.keyChanged != null
+}
+
 /// The `ciKey`s of `rows` marked gone right now. One read of the marks for a
 /// whole list, for the contact list's sort and rows.
 export function goneCrossIslandKeys(rows: CrossIslandContact[]): Set<string> {
@@ -214,7 +230,14 @@ export function notePinnedCard(uin: number, host: string, pinnedSk: string, verd
     if (verdict === 'differs') {
       if (m.keyChanged == null) m.keyChanged = Date.now()
     } else {
+      // The island serves this number under BOTH pinned keys right now: the
+      // number and the key, which is this person (a reissued number shows
+      // 'differs'). An earlier "deleted" was a false one, and the send that
+      // saw this card is about to be deposited to them; leaving the banner
+      // up would say "messages will not be delivered" next to one that was.
+      // No mirror is read here, so nothing about them is kept warm.
       delete m.keyChanged
+      delete m.gone
     }
     return m
   })
@@ -225,12 +248,14 @@ export function notePinnedCard(uin: number, host: string, pinnedSk: string, verd
 /// `srvAt` is the island's deposit stamp. A copy deposited BEFORE the mark is
 /// old mail arriving late (a backup mailbox, a long-closed tab draining), not a
 /// sign of life, and leaves the mark alone. No stamp at all is a live delivery.
+/// The stamp is on the island's clock and the mark on this device's, so they
+/// are compared through the offset the socket learned (`depositAfterMark`).
 export function notePeerHeardFrom(uin: number, host: string, srvAt?: number): void {
   // Every verified envelope from another island passes through here, so the
   // common case (nothing marked) is decided before the contact store is read.
   const m = load()[ciKey(uin, host)]
   if (m?.gone == null || !holds(m, getCrossIsland(uin, host))) return
-  if (srvAt != null && srvAt < m.gone) return
+  if (!depositAfterMark(srvAt, m.gone, clockOffsetMs())) return
   update(uin, host, m.sk, (x) => {
     delete x.gone
     return x
@@ -267,8 +292,9 @@ export function probePeerLiveness(
   const running = inFlight.get(k)
   if (running) return running
   const map = load()
-  // Already gone: the mark stands until they write, and asking again would
-  // only renew their record in our island's mirror (see the header).
+  // Already gone: the mark stands until they write or a send finds their card
+  // under the pinned keys again, and asking again would only renew their
+  // record in our island's mirror (see the header).
   if (liveMark(map, uin, host)?.gone != null) return Promise.resolve('gone')
   const prev = rawMark(map, k, row.signingKey)
   const prevAt = trigger === 'open' ? prev?.probedAt : prev?.failProbeAt
@@ -346,7 +372,13 @@ async function classify(ownHost: string, host: string, uin: number, pin: PinnedK
     uin,
   )
   if (owner !== 'absent') return owner
-  const record = await fetchGossipRecord(ownHost, pin.signingKey)
-  if (livesElsewhere(record, pin.signingKey, host, uin)) return 'moved'
-  return 'gone'
+  // Step 3 as strict as the first two: only the island's own "no record", or
+  // a verified record naming no other home, is "gone". A failed read is not.
+  const record = recordStep(
+    await getJson(`https://${ownHost}/federation/gossip-record?sk=${encodeURIComponent(pin.signingKey)}`),
+    pin.signingKey,
+    host,
+    uin,
+  )
+  return record === 'absent' ? 'gone' : record
 }

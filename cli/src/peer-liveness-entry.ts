@@ -5,11 +5,13 @@
 
 export {
   NO_ACCOUNT_FOR_KEY,
+  NO_RECORD,
   NO_SUCH_USER,
   cardAgainstPin,
   cardStep,
-  livesElsewhere,
+  depositAfterMark,
   ownerStep,
+  recordStep,
   sameIslandHost,
 } from '../../src/lib/peer-liveness-rules'
 export { buildHomeIslandRecord } from '../../src/lib/federation'

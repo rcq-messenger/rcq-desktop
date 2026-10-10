@@ -12,21 +12,30 @@
 //     after the unblock) must lose to the newer decision instead of undoing it.
 //   * A request under a contact's address with another key is blocked by that
 //     key only: blocking the address would cut off the contact it impersonated.
+//     It never travels as a `block` (phones read that as the address), and an
+//     address block laid over it, then lifted, leaves it standing.
+//   * Ties keep what is held: the echo of an old decision stamped like the
+//     newer one must not undo it. The decision time is read from `ts` first
+//     (Android's name), then `at`.
 // Everything here is production code from src/lib/crossisland-block-rules.ts,
 // imported from the BUILT bundle.
 //
 // Run: npm run cli:test   (builds first; this imports the BUILT bundle)
 
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
 import {
   MAX_TOMBSTONES,
+  ackBlockScope,
   ackDecisionAt,
   ackKeys,
+  ackStamp,
   activeBlocks,
   addressBlocked,
   blockingEntries,
   crossIslandGateVerdict,
   decideBlock,
+  liftsFor,
   normalizeBlocks,
   senderBlocked,
 } from '../dist/crossisland-block.mjs'
@@ -113,6 +122,65 @@ check('a later address block widens a key-only one; a key-only one never narrows
   const n2 = decideBlock(m, 134, 'a.example', { on: true, at: 30, keys: [OTHER], keyOnly: true })
   assert.equal(addressBlocked(n2, 134, 'a.example'), true)
   assert.equal(n2['134@a.example'].keyOnly, undefined)
+  // ...and the key-only part is remembered under the address block.
+  assert.deepEqual(n2['134@a.example'].keyOnlyKeys, [IMPOSTOR, OTHER])
+})
+
+check('unblocking the contact does not unblock the impostor who wrote as them', () => {
+  let m = decideBlock({}, 134, 'a.example', { on: true, at: 10, keys: [IMPOSTOR], keyOnly: true })
+  m = decideBlock(m, 134, 'a.example', { on: true, at: 20, keys: [K] })
+  const pins = (uin, host) => (uin === 134 && host === 'a.example' ? K : null)
+  // Unblock the contact: the menu, the banner, Add, an accept.
+  const lifts = liftsFor(m, 134, 'a.example', K, pins)
+  assert.deepEqual(lifts, [{ uin: 134, host: 'a.example', keyOnly: false }])
+  m = decideBlock(m, 134, 'a.example', { on: false, at: 30 })
+  assert.equal(senderBlocked(m, 134, 'a.example', K, pins), false)
+  assert.equal(senderBlocked(m, 134, 'a.example', IMPOSTOR, pins), true)
+  assert.deepEqual(m['134@a.example'], { on: true, at: 30, keys: [IMPOSTOR], keyOnly: true })
+  // The late echo of the address block, older than the unblock, stays out.
+  assert.equal(decideBlock(m, 134, 'a.example', { on: true, at: 20, keys: [K] }), null)
+  // Lifting the key-only row clears it, and leaves a tombstone.
+  const gone = decideBlock(m, 134, 'a.example', { on: false, at: 40, keyOnly: true, keys: [IMPOSTOR] })
+  assert.equal(senderBlocked(gone, 134, 'a.example', IMPOSTOR, pins), false)
+  assert.deepEqual(gone['134@a.example'], { on: false, at: 40 })
+  // The key block it was laid over survives a reload.
+  const disk = normalizeBlocks(JSON.parse(JSON.stringify(decideBlock({}, 1, 'b.example', { on: true, at: 1, keys: [OTHER], keyOnly: true }))))
+  const both = decideBlock(disk, 1, 'b.example', { on: true, at: 2, keys: [K] })
+  assert.deepEqual(normalizeBlocks(JSON.parse(JSON.stringify(both))), both)
+})
+
+check('a key decision never touches the address, and an address decision never the impostor', () => {
+  let m = decideBlock({}, 134, 'a.example', { on: true, at: 10, keys: [K] })
+  // A key unblock of a key the address block carries is not a key-only one.
+  assert.equal(decideBlock(m, 134, 'a.example', { on: false, at: 20, keyOnly: true, keys: [K] }), null)
+  // Nothing held: a key unblock writes nothing, not an address tombstone.
+  assert.equal(decideBlock({}, 134, 'a.example', { on: false, at: 20, keyOnly: true, keys: [K] }), null)
+  // A key block over an address block, then the key lifted: the address stays.
+  m = decideBlock(m, 134, 'a.example', { on: true, at: 20, keys: [IMPOSTOR], keyOnly: true })
+  m = decideBlock(m, 134, 'a.example', { on: false, at: 30, keyOnly: true, keys: [IMPOSTOR] })
+  assert.equal(addressBlocked(m, 134, 'a.example'), true)
+  assert.equal(senderBlocked(m, 9, 'z.example', IMPOSTOR, noPins), false)
+  assert.deepEqual(m['134@a.example'], { on: true, at: 30, keys: [K] })
+})
+
+check('letting a person through lifts their key where it was taken for an impostor\'s, not that address', () => {
+  // Their key was blocked key-only at a contact's address that is also
+  // address-blocked; they are accepted at their own address.
+  let m = decideBlock({}, 134, 'a.example', { on: true, at: 10, keys: [IMPOSTOR], keyOnly: true })
+  m = decideBlock(m, 134, 'a.example', { on: true, at: 20, keys: [K] })
+  const lifts = liftsFor(m, 55, 'c.example', IMPOSTOR, noPins)
+  assert.deepEqual(lifts, [{ uin: 134, host: 'a.example', keyOnly: true, keys: [IMPOSTOR] }])
+  m = decideBlock(m, 134, 'a.example', { on: false, at: 30, keyOnly: true, keys: [IMPOSTOR] })
+  assert.equal(senderBlocked(m, 55, 'c.example', IMPOSTOR, noPins), false)
+  assert.equal(addressBlocked(m, 134, 'a.example'), true)
+  // The contact re-added under the key that was blocked as an impostor's:
+  // their own address lift lets that key through as well.
+  let r = decideBlock({}, 134, 'a.example', { on: true, at: 10, keys: [IMPOSTOR], keyOnly: true })
+  r = decideBlock(r, 134, 'a.example', { on: true, at: 20, keys: [K] })
+  const own = liftsFor(r, 134, 'a.example', IMPOSTOR, () => IMPOSTOR)
+  assert.deepEqual(own, [{ uin: 134, host: 'a.example', keyOnly: false, keys: [IMPOSTOR] }])
+  r = decideBlock(r, 134, 'a.example', { on: false, at: 30, keys: [IMPOSTOR] })
+  assert.deepEqual(r['134@a.example'], { on: false, at: 30 })
 })
 
 check('the newer decision wins: a late echo of an older block does not undo an unblock', () => {
@@ -131,6 +199,25 @@ check('the newer decision wins: a late echo of an older block does not undo an u
   assert.equal(addressBlocked(again, 134, 'a.example'), true)
   // A lifted block does not hand its old keys to the next one.
   assert.equal(again['134@a.example'].keys, undefined)
+})
+
+check('a tie keeps what is held: an echo stamped like the unblock does not block again', () => {
+  let m = decideBlock({}, 134, 'a.example', { on: true, at: 100, keys: [K] })
+  m = decideBlock(m, 134, 'a.example', { on: false, at: 101 })
+  // The unblock was made here on a clock set back since: dated one past the
+  // block (crossisland-requests.ts localDecisionAt), so the echo loses.
+  assert.equal(decideBlock(m, 134, 'a.example', { on: true, at: 100, keys: [K] }), null)
+  // Two decisions stamped alike, whichever arrives second: the first stays.
+  const t = decideBlock({}, 134, 'a.example', { on: false, at: 100 })
+  assert.equal(decideBlock(t, 134, 'a.example', { on: true, at: 100, keys: [K] }), null)
+  const b = decideBlock({}, 134, 'a.example', { on: true, at: 100, keys: [K] })
+  assert.equal(decideBlock(b, 134, 'a.example', { on: false, at: 100 }), null)
+})
+
+check('decisions made here are dated strictly past the one held', () => {
+  const store = fs.readFileSync(new URL('../../src/lib/crossisland-requests.ts', import.meta.url), 'utf8')
+  assert.match(store, /return Math\.max\(now, \(loadBlocked\(\)\[blockKey\(uin, host\)\]\?\.at \?\? 0\) \+ 1\)/)
+  assert.match(store, /const when = local \? Math\.max\(at, \(map\[blockKey\(l\.uin, l\.host\)\]\?\.at \?\? 0\) \+ 1\) : at/)
 })
 
 check('the same decision twice changes nothing, so its echo does nothing', () => {
@@ -195,6 +282,44 @@ check('a carbon is dated by its own stamp, never later than its deposit or now',
   assert.equal(ackDecisionAt('500', 900, 1000), 900)
   // An island stamp from our future (a clock behind the island's) is capped by now.
   assert.equal(ackDecisionAt(undefined, 2000, 1000), 1000)
+})
+
+check('the decision time is read from ts (Android), then at (older webs)', () => {
+  assert.equal(ackStamp(700, 500), 700)
+  assert.equal(ackStamp(undefined, 500), 500)
+  assert.equal(ackStamp(0, 500), 500)
+  assert.equal(ackStamp('700', 500), 500)
+  assert.equal(ackStamp(undefined, undefined), undefined)
+  // Through the same ceiling as before.
+  assert.equal(ackDecisionAt(ackStamp(800, 500), 900, 1000), 800)
+  // Neither (an older iOS): the time it was received.
+  assert.equal(ackDecisionAt(ackStamp(undefined, undefined), 900, 1000), 900)
+})
+
+check('a block ack is about the address or a key, and an unknown scope is ignored', () => {
+  assert.equal(ackBlockScope('block', undefined, undefined), 'address')
+  assert.equal(ackBlockScope('unblock', null, undefined), 'address')
+  assert.equal(ackBlockScope('block', 'address', undefined), 'address')
+  assert.equal(ackBlockScope('blockkey', undefined, undefined), 'key')
+  assert.equal(ackBlockScope('unblockkey', 'key', undefined), 'key')
+  // A phone that carries a key block as `block` + scope "key".
+  assert.equal(ackBlockScope('block', 'key', undefined), 'key')
+  assert.equal(ackBlockScope('unblock', 'key', undefined), 'key')
+  // Web builds of a few days wrote `keyOnly`.
+  assert.equal(ackBlockScope('block', undefined, true), 'key')
+  // Never guessed into an address block.
+  assert.equal(ackBlockScope('block', 'device', undefined), null)
+  assert.equal(ackBlockScope('blockkey', 'address', undefined), null)
+  assert.equal(ackBlockScope('accept', undefined, undefined), null)
+})
+
+check('a key-only block never leaves this device as a `block`', () => {
+  const ack = fs.readFileSync(new URL('../../src/lib/crossisland-ack.ts', import.meta.url), 'utf8')
+  const body = ack.slice(ack.indexOf('export function blockSender'), ack.indexOf('function announceLifts'))
+  const keyBranch = body.slice(body.indexOf('if (keyOnly) {'), body.indexOf('return\n', body.indexOf('if (keyOnly) {')))
+  assert.match(keyBranch, /'decline'/)
+  assert.match(keyBranch, /'blockkey'/)
+  assert.doesNotMatch(keyBranch, /'block'/)
 })
 
 check('the gate drops a blocked contact under its pinned key, every kind', () => {

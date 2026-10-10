@@ -260,7 +260,13 @@ async function offeredHomeRecord(identity: WebIdentity): Promise<HomeIslandRecor
       sk: bytesToB64(identity.signingPub),
       signingPriv: identity.signingPriv,
       homes: [{ host: hostOfApiBase(identity.apiBase), uin: identity.uin }],
-      ts: Math.floor(Date.now() / 1000),
+      // ⚠ Dated at the epoch on purpose. The island reads this only as a
+      // pointer and never looks at `ts`, while an open gossip mirror orders
+      // records by it: signed "now", this one-home record could be PUT by the
+      // island we hand it to over our real, older-dated record in every
+      // mirror, hiding our backups exactly when contacts fall back to the
+      // mirror. At ts=1 it loses to any record we ever published (409 stale).
+      ts: 1,
     })
   } catch {
     // No device yet: register without it, as before. A fresh number on the

@@ -55,7 +55,7 @@ import {
   type IncomingRow,
 } from '../lib/incoming-store'
 import { PartialFanOutError, sendV2 } from '../lib/signal-device'
-import { getCrossIsland, removeCrossIsland } from '../lib/crossisland-store'
+import { ciKey, getCrossIsland, removeCrossIsland } from '../lib/crossisland-store'
 import { isBlockedSender, onBlocksChanged } from '../lib/crossisland-requests'
 import { unblockSender } from '../lib/crossisland-ack'
 import { usePrimaryGuest } from '../lib/use-guest-copy'
@@ -682,7 +682,22 @@ export function Chat() {
   // asks again below. A peer that merely carries a host without a row in the
   // cross-island store is a no-op there: the question is about the keys
   // pinned in it.
-  const ciPeerHost = !isGroup && !isSelf ? peer?.host ?? null : null
+  //
+  // ⚠ Only the peer of the route that is open. This screen is reused from
+  // chat to chat (no `key` on the route), and `peer` is set only after its
+  // load: a tap on a message toast from a contact marked deleted to a contact
+  // of our own island kept the old peer while /contacts loaded (or failed and
+  // retried), showed their banner in the other chat, and its Remove deleted
+  // that other person. Compared as the store compares addresses (`ciKey`).
+  const peerIsRoute =
+    !isGroup &&
+    !isSelf &&
+    peer != null &&
+    !!peer.host &&
+    !!islandHost &&
+    peerUIN != null &&
+    ciKey(peer.uin, peer.host) === ciKey(peerUIN, islandHost)
+  const ciPeerHost = peerIsRoute ? peer?.host ?? null : null
   const ciPeerUin = ciPeerHost ? peer?.uin ?? null : null
   useEffect(() => {
     if (!identity || !ciPeerHost || ciPeerUin == null) return
@@ -1947,10 +1962,12 @@ export function Chat() {
   /// the vault and another device does not bring the ghost back on its next
   /// sync, and its section membership goes with a tombstone. The history stays.
   function removeCrossIslandPeer() {
-    if (!peer?.host) return
-    removeCrossIsland(peer.uin, peer.host)
-    forgetSectionMember(identity, peerKey(peer.uin, peer.host))
-    forgetPeerLiveness(peer.uin, peer.host)
+    // The checked pair (see `ciPeerHost`), never a `peer` left over from the
+    // chat this screen showed before.
+    if (!ciPeerHost || ciPeerUin == null) return
+    removeCrossIsland(ciPeerUin, ciPeerHost)
+    forgetSectionMember(identity, peerKey(ciPeerUin, ciPeerHost))
+    forgetPeerLiveness(ciPeerUin, ciPeerHost)
     navigate('/contacts', { replace: true })
   }
 

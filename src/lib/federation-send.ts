@@ -22,7 +22,7 @@ import { resolveAndMirrorHomes } from './multihome'
 import { findCrossIslandByUin, type CrossIslandContact } from './crossisland-store'
 import { contactsCache, snapshotFor } from './contacts-cache'
 import { cardAgainstPin } from './peer-liveness-rules'
-import { isPeerGone, notePinnedCard } from './peer-liveness'
+import { isPeerGone, isPeerKeyChanged, notePinnedCard } from './peer-liveness'
 
 export interface PeerKeyCard {
   identity_key: string
@@ -81,7 +81,10 @@ export class CrossIslandKeyChangedError extends Error {
 /// and still read as delivered here. Nothing goes; the address is marked key
 /// changed (peer-liveness.ts) and the chat says so. No card at all (their
 /// island down or refusing) is no evidence of anything, and the pin is used as
-/// it always was.
+/// it always was, unless the address is already marked key changed: no card
+/// does not lift evidence we hold, and the last card seen there was somebody
+/// else's. A 429 on the card (an anonymous per-IP bucket, shared behind a
+/// carrier NAT) used to let exactly the deposit above through on a retry.
 ///
 /// No pin (a first contact request, before anything was pinned) is the one
 /// case where the card is the key: that IS the trust-on-first-use moment.
@@ -97,6 +100,9 @@ export async function sealingKeysFor(
     const verdict = cardAgainstPin(card, pinned)
     notePinnedCard(peerUin, peerHost, pinned.signingKey, verdict)
     if (verdict === 'differs') return { keys: null, keyChanged: true }
+    // Only a card under the pin clears the mark (notePinnedCard above), and
+    // only then does the send go to the pin again.
+    if (verdict === 'no_card' && isPeerKeyChanged(peerUin, peerHost)) return { keys: null, keyChanged: true }
     return { keys: { identityKey: pinned.identityKey, signingKey: pinned.signingKey || '' }, keyChanged: false }
   }
   if (!card?.identity_key) return { keys: null, keyChanged: false }
@@ -236,7 +242,8 @@ export async function deliverCrossIsland(
   // the record it serves, so every retry to a burned account kept "this
   // person lives on these islands" alive on OUR island, against the whole
   // point of burning it. The address we hold is still tried: if the mark was
-  // wrong, the island takes the deposit and their next message clears it.
+  // wrong, the card check above already cleared it when the island served the
+  // pinned keys again, and their next message would too.
   let homes: ResolvedPeer['homes'] = []
   if (signingKey && !isPeerGone(peerUin, peerHost)) {
     homes = await resolveAndMirrorHomes(sender, peerHost, peerUin, signingKey)

@@ -514,9 +514,10 @@ function route(
       return
     }
     // Delivered means verified under the pinned key: the person is there,
-    // whatever a probe concluded about the address (report 1067). The ONLY
-    // place an "account deleted" mark comes off, and never on the number
-    // alone: a reissued number writes under another key and is held above.
+    // whatever a probe concluded about the address (report 1067). One of the
+    // two places an "account deleted" mark comes off (the other is a card
+    // under the pinned keys on a send), and never on the number alone: a
+    // reissued number writes under another key and is held above.
     if (pinned) notePeerHeardFrom(pinned.uin, pinned.host, srvAt)
   }
   // The same consent gate for the OWN island, opt-in (Privacy → strangers to

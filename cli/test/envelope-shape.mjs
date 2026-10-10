@@ -114,4 +114,29 @@ assert.deepEqual(read.targetIDs, ['a', 'b'], 'receipts stayed covered after the 
 const delivered = trip({ kind: 'delivered', targetIDs: ['c'] })
 assert.deepEqual(delivered.targetIDs, ['c'])
 
+// A block decision's time goes out as `ts`, the name Android's CiAck reads
+// and writes (ms), and as `at` for web builds that read only that. With `at`
+// alone every web unblock reached Android as ts=0 and never lifted anything.
+const ackOf = (inner) => trip({ kind: 'carbon', to: sender.uin, gid: null, env: inner }).env
+const unblock = ackOf({ kind: 'ciack', uin: 42, host: 'is2.example', act: 'unblock', ts: 1_759_000_000_123 })
+assert.equal(unblock.ts, 1_759_000_000_123, 'Android reads the decision time from ts')
+assert.equal(unblock.at, 1_759_000_000_123, 'older webs read it from at')
+// A key block names its key as `sk` with scope "key", under an act the phones
+// ignore, and never the address-wide `keyOnly` flag they do not know.
+const keyBlock = ackOf({
+  kind: 'ciack',
+  uin: 42,
+  host: 'is2.example',
+  act: 'blockkey',
+  ts: 5,
+  keys: [KEY],
+  sk: KEY,
+  scope: 'key',
+})
+assert.equal(keyBlock.act, 'blockkey')
+assert.equal(keyBlock.sk, KEY)
+assert.equal(keyBlock.scope, 'key')
+assert.deepEqual(keyBlock.keys, [KEY])
+assert.equal(keyBlock.keyOnly, undefined)
+
 console.log('envelope-shape: ok')

@@ -18,6 +18,7 @@ import { saveCrossIsland, getCrossIsland } from './crossisland-store'
 import { ackServerRef } from './crossisland-pending'
 import {
   applyBlockDecision,
+  blockEntryAt,
   blockRequest,
   clearRequest,
   decisionNow,
@@ -26,7 +27,7 @@ import {
   localDecisionAt,
   markAnswered,
 } from './crossisland-requests'
-import { ackDecisionAt, ackKeys } from './crossisland-block-rules'
+import { ackBlockScope, ackDecisionAt, ackKeys, ackStamp } from './crossisland-block-rules'
 import { allowStranger } from './stranger-requests'
 
 export interface CIAckCard {
@@ -45,16 +46,19 @@ export async function sendRequestAck(
   identity: WebIdentity,
   uin: number,
   host: string,
-  act: 'accept' | 'decline' | 'block' | 'unblock',
+  act: CIAckEnvelope['act'],
   card?: CIAckCard,
   /// The island row the answer settled (spec 2026-09-15, F1), so my other
   /// devices mark it answered instead of polling it back into their list.
   srv?: { host: string; id: number },
-  /// A block or an unblock: when it was decided, and for a block what it
-  /// covers (crossisland-block-rules.ts).
-  decision?: { at: number; keys?: string[]; keyOnly?: boolean },
+  /// A block or an unblock: when it was decided, and what keys it names
+  /// (crossisland-block-rules.ts).
+  decision?: { at: number; keys?: string[] },
 ): Promise<void> {
   try {
+    const keyAct = act === 'blockkey' || act === 'unblockkey'
+    const keys = decision?.keys ?? []
+    if (keyAct && !keys.length) return
     const inner: CIAckEnvelope = {
       kind: 'ciack',
       uin,
@@ -62,9 +66,11 @@ export async function sendRequestAck(
       act,
       ...(card ? { card } : {}),
       ...(srv ? { srv } : {}),
-      ...(decision ? { at: decision.at } : {}),
-      ...(decision?.keys?.length ? { keys: decision.keys } : {}),
-      ...(decision?.keyOnly ? { keyOnly: true } : {}),
+      // `ts` is the field every platform reads; `at` is the same value for
+      // web builds that predate it (crypto.ts writes both).
+      ...(decision ? { ts: decision.at } : {}),
+      ...(keys.length ? { keys } : {}),
+      ...(keyAct ? { sk: keys[0], scope: 'key' as const } : {}),
     }
     // ⚠⚠ `to` is MY OWN uin, not null, and that is a compatibility decision
     // rather than a meaning: this answer belongs to no thread and names its
@@ -102,7 +108,32 @@ export function blockSender(
   const keys = (opts.keys ?? []).filter((k) => typeof k === 'string' && k.length > 0)
   const keyOnly = opts.keyOnly === true && keys.length > 0
   blockRequest(uin, host, { at, keys, keyOnly })
-  void sendRequestAck(identity, uin, host, 'block', undefined, opts.srv, { at, keys, keyOnly })
+  if (keyOnly) {
+    // ⚠⚠ Never a `block` for a key-only block. Android, iOS and web builds
+    // before this one know no key-only block: a `block` there files this
+    // ADDRESS, which is the real contact's, and drops everything they write
+    // while this device still delivers them. Those devices are told only that
+    // the row is answered (`decline`, what Android does for its own
+    // key-changed row); the key block itself travels as `blockkey`, which
+    // they ignore and current webs apply.
+    void sendRequestAck(identity, uin, host, 'decline', undefined, opts.srv)
+    void sendRequestAck(identity, uin, host, 'blockkey', undefined, opts.srv, { at, keys })
+    return
+  }
+  void sendRequestAck(identity, uin, host, 'block', undefined, opts.srv, { at, keys })
+}
+
+/// Tell the account's other devices about each lift, each in its own scope: an
+/// address as `unblock`, a key-only block as `unblockkey`, which a device that
+/// does not know key blocks ignores instead of lifting the address.
+function announceLifts(
+  identity: WebIdentity,
+  lifts: Array<{ uin: number; host: string; at: number; keyOnly: boolean; keys?: string[] }>,
+): void {
+  for (const a of lifts) {
+    const act = a.keyOnly ? 'unblockkey' : 'unblock'
+    void sendRequestAck(identity, a.uin, a.host, act, undefined, undefined, { at: a.at, keys: a.keys })
+  }
 }
 
 /// Let a sender through again: every block that stops them (their address,
@@ -115,17 +146,29 @@ export function blockSender(
 /// would otherwise drop everything they write, with nothing on screen.
 export function unblockSender(identity: WebIdentity, uin: number, host: string, signingKey?: string | null): number {
   const lifted = liftBlocksFor(uin, host, signingKey, decisionNow(), true)
-  for (const a of lifted) void sendRequestAck(identity, a.uin, a.host, 'unblock', undefined, undefined, { at: a.at })
+  announceLifts(identity, lifted)
   return lifted.length
 }
 
 /// Lift exactly one entry of the block list, the one the list of blocks
 /// (Privacy) shows as a row, here and on the account's other devices. Another
 /// entry that blocks the same person stays: it is its own row in that list.
+///
+/// A key-only row lifts those keys and never the address: an address
+/// `unblock` would lift a real block a phone holds against the contact there.
+/// An address row lifts the address; a key-only block it was laid over stays,
+/// and the row says "key only" again.
 export function unblockEntry(identity: WebIdentity, uin: number, host: string): boolean {
+  const entry = blockEntryAt(uin, host)
   const at = localDecisionAt(uin, host)
+  if (entry?.on && entry.keyOnly) {
+    const keys = entry.keys ?? []
+    if (!applyBlockDecision(uin, host, { on: false, at, keyOnly: true, keys })) return false
+    announceLifts(identity, [{ uin, host, at, keyOnly: true, keys }])
+    return true
+  }
   if (!applyBlockDecision(uin, host, { on: false, at })) return false
-  void sendRequestAck(identity, uin, host, 'unblock', undefined, undefined, { at })
+  announceLifts(identity, [{ uin, host, at, keyOnly: false }])
   return true
 }
 
@@ -139,10 +182,10 @@ export function unblockEntry(identity: WebIdentity, uin: number, host: string): 
 /// accepting device pinned, and copying it is the whole point — two devices
 /// doing their own TOFU on the same peer is how the keys drift apart.
 ///
-/// A block or an unblock is a decision with a time (`at`, or the row's deposit
-/// stamp `srvAt` from a sender that predates it), and an older one than this
-/// device holds changes nothing: the echo of my own block, drained after I
-/// already unblocked, must not block again.
+/// A block or an unblock is a decision with a time (`ts`, then `at`, or the
+/// row's deposit stamp `srvAt` from a sender that predates both), and one not
+/// newer than this device holds changes nothing: the echo of my own block,
+/// drained after I already unblocked, must not block again.
 export function applyRequestAck(
   ack: {
     uin?: unknown
@@ -150,8 +193,11 @@ export function applyRequestAck(
     act?: unknown
     card?: unknown
     srv?: unknown
+    ts?: unknown
     at?: unknown
     keys?: unknown
+    sk?: unknown
+    scope?: unknown
     keyOnly?: unknown
   },
   srvAt?: number,
@@ -160,20 +206,31 @@ export function applyRequestAck(
   const host = typeof ack.host === 'string' ? ack.host : null
   const act = ack.act
   if (uin == null || host == null) return false
-  if (act !== 'accept' && act !== 'decline' && act !== 'block' && act !== 'unblock') return false
 
-  const at = ackDecisionAt(ack.at, srvAt, decisionNow())
-  if (act === 'block') {
-    const blocked = ackServerRef(ack.srv, host)
-    if (blocked) markAnswered(blocked.host, blocked.id)
-    // An older Android or iOS names no keys: the address alone, as before.
-    const keys = ackKeys(ack.keys)
-    blockRequest(uin, host, { at, keys, keyOnly: ack.keyOnly === true && keys.length > 0 })
-    return true
+  const at = ackDecisionAt(ackStamp(ack.ts, ack.at), srvAt, decisionNow())
+  if (act === 'block' || act === 'unblock' || act === 'blockkey' || act === 'unblockkey') {
+    // A scope this build does not know is ignored, never read as the address.
+    const scope = ackBlockScope(act, ack.scope, ack.keyOnly)
+    if (!scope) return false
+    const keys = ackKeys([ack.sk, ...(Array.isArray(ack.keys) ? ack.keys : [])])
+    if (act === 'block' || act === 'blockkey') {
+      const blocked = ackServerRef(ack.srv, host)
+      if (blocked) markAnswered(blocked.host, blocked.id)
+      if (scope === 'key') {
+        // Keys only, and with no key it blocks nobody: never the address.
+        if (keys.length) blockRequest(uin, host, { at, keys, keyOnly: true })
+        return keys.length > 0 || blocked != null
+      }
+      // An older Android or iOS names no keys: the address alone, as before.
+      blockRequest(uin, host, { at, keys })
+      return true
+    }
+    if (scope === 'key') {
+      return keys.length > 0 && applyBlockDecision(uin, host, { on: false, at, keyOnly: true, keys })
+    }
+    return applyBlockDecision(uin, host, { on: false, at, ...(keys.length ? { keys } : {}) })
   }
-  if (act === 'unblock') {
-    return applyBlockDecision(uin, host, { on: false, at })
-  }
+  if (act !== 'accept' && act !== 'decline') return false
 
   // ⚠⚠ This device holds an accept for this person that has not reached them
   // yet (crossisland-pending.ts, `srvAcceptTries`). That row is what the retry

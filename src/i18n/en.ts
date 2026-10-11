@@ -849,6 +849,8 @@ export const en: Record<string, string> = {
     'Sealed with a different key than the one saved for this contact. It may be someone else using their address.',
   'ci.key_mismatch_refused':
     'Not added: this sender signed with a key their island does not publish for this address.',
+  'ci.held_back':
+    'You accepted this number. These messages were not signed with the key its island publishes, so they were kept out of the chat.',
   'add.ci.undelivered':
     'Added on this device. Their island did not take the request, so they will not see it until it can be reached.',
 

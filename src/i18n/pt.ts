@@ -769,6 +769,8 @@ export const pt: Record<string, string> = {
     'Assinado com uma chave diferente da que está salva para este contato. Pode ser outra pessoa usando o endereço dele.',
   'ci.key_mismatch_refused':
     'Não adicionado: quem enviou assinou com uma chave que a ilha dessa pessoa não publica para este endereço.',
+  'ci.held_back':
+    'Você aceitou este número. Estas mensagens não foram assinadas com a chave que a ilha dele publica, então ficaram fora da conversa.',
   'add.ci.undelivered':
     'Adicionado neste dispositivo. A ilha dessa pessoa não recebeu o pedido, então ela não vai ver o pedido até dar para alcançar a ilha.',
   // Add contact

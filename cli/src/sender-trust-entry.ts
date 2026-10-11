@@ -14,3 +14,4 @@ export {
 export { prekeyMessageIdentity, sessionRemoteIdentities, v2IdentityDecision } from '../../src/lib/v2-identity'
 export { acceptSkdm, deriveInbound, knowsKid, peekInbound } from '../../src/lib/sender-key-store'
 export { sameSigningKey } from '../../src/lib/crossisland-gate'
+export { splitHeldForRelease } from '../../src/lib/held-release'

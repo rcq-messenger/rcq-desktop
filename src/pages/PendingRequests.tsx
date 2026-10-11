@@ -17,6 +17,7 @@ import {
   getRequest,
   noteAcceptUndelivered,
   onRequestsChanged,
+  releaseRequest,
   type CrossIslandRequest,
 } from '../lib/crossisland-requests'
 import { MAX_ACCEPT_TRIES } from '../lib/crossisland-pending'
@@ -30,6 +31,7 @@ import {
 import { crossIslandNumberElsewhere, getCrossIsland, listCrossIsland, saveCrossIsland } from '../lib/crossisland-store'
 import { contactsCache, snapshotFor } from '../lib/contacts-cache'
 import { sameSigningKey } from '../lib/crossisland-gate'
+import { splitHeldForRelease } from '../lib/held-release'
 import { blockSender, sendRequestAck, unblockSender } from '../lib/crossisland-ack'
 import { sendContactAccept, sendContactDecline } from '../lib/crossisland-contactreq'
 import { pushProfileTo } from '../lib/crossisland-profile'
@@ -79,10 +81,10 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
       // row flagged as a changed key whose seals named no key (a v=2 identity
       // the island does not publish) has nothing to check, and is refused.
       const keys = r.spubs ?? []
+      let card: string | null = null
       if (keys.length > 0 || r.keyMismatch) {
         setCiActing(tag)
         setError(null)
-        let card: string | null = null
         let asked = false
         try {
           card = (await Api.userInfo(identity!, r.uin, theirCard(r.uin))).signing_key || null
@@ -108,10 +110,16 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
       // An accept is a decision to hear from them (crossisland-ack.ts).
       unblockSender(identity!, r.uin, '')
       void sendRequestAck(identity!, r.uin, '', 'accept')
-      const held = clearRequest(r.uin, '')
+      // ⚠⚠ Not the whole row. The check above is over the keys the row
+      // COLLECTED, and a v=2 message whose identity the island did not vouch
+      // for adds none: beside the person's own v=1 message it passed with
+      // theirs and went into their thread. On a row flagged as a changed key
+      // only what was sealed under the card key goes; the rest stays in this
+      // list, said so on the row (held-release.ts).
+      const held = releaseRequest(r.uin, '', card)
       beginCatchUp()
       try {
-        held?.msgs.forEach((m) => addIncoming(r.uin, m))
+        held?.release.forEach((m) => addIncoming(r.uin, m))
       } finally {
         endCatchUp()
       }
@@ -184,7 +192,14 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
       // A row that is only a §5f request or held messages goes now, as before.
       // A row from the island's list stays until our accept has actually
       // reached the requester: it is what the retry hangs on.
-      const heldMsgs = r.server ? (getRequest(r.uin, r.host)?.msgs ?? []) : (clearRequest(r.uin, r.host)?.msgs ?? [])
+      // Per message, by the key each was sealed under (held-release.ts), as
+      // for a same-island row: a row flagged as a changed key releases only
+      // what the published key sealed. An island row stays until the accept
+      // lands and what it holds back goes with it then; any other row leaves
+      // what it holds back here, flagged.
+      const heldMsgs = r.server
+        ? splitHeldForRelease(getRequest(r.uin, r.host) ?? { msgs: [] }, card.signing_key).release
+        : (releaseRequest(r.uin, r.host, card.signing_key)?.release ?? [])
       // Held messages are a backlog being released by an explicit accept, not
       // traffic arriving now: a banner per quarantined message would fire a
       // burst at the exact moment the user is looking at the request.
@@ -464,6 +479,11 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
                             looks like the contact, and must not pass as them. */}
                         {r.keyMismatch && (
                           <div className="mt-1 text-xs text-amber-600 break-words">{t('ci.key_mismatch')}</div>
+                        )}
+                        {/* What an accept of this number did not let into
+                            their chat, and why it is still here. */}
+                        {r.heldBack && (
+                          <div className="mt-1 text-xs text-amber-600 break-words">{t('ci.held_back')}</div>
                         )}
                         {fromIsland && tries > 0 && (
                           <div className="mt-1 text-xs text-amber-600 break-words">

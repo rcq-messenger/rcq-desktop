@@ -13,6 +13,10 @@
 //   * v=2 named its sender in the clear and the identity store trusted the
 //     first PreKey message for any address, so anyone could pose as anyone
 //     (our own devices included) and displace the session we reply on.
+//   * accepting a request released every message held on its row once the
+//     keys the row collected matched the number's card. A v=2 message whose
+//     identity the island did not vouch for collects no key, so it went into
+//     the person's thread beside their own v=1 message.
 // Everything here is production code: the pure rule and the sender-key store
 // from the built bundle, the v=2 codec from crypto-v2.mjs, and the incoming
 // store bundled on its own the way queue-time.mjs does it.
@@ -372,6 +376,42 @@ await check('v=2: an island that cannot be asked leaves the row untouched (the c
   assert.equal(g.envelope.text, 'later')
 })
 
+// ── an accept in the requests list: per message, by the key that sealed it ──
+
+await check('accept: a marked row releases only what the card key sealed', () => {
+  const fake = { kind: 'text', id: 'fake-1', text: 'send the code' }
+  const real = { kind: 'text', id: 'real-1', text: 'hi' }
+  // The row the gap was in: a v=2 forgery ('' and the changed-key mark) and
+  // the number's own v=1 message. The keys it collected are [V_KEY] only, so
+  // the card check passed and the whole row used to go into V's thread.
+  const row = { msgs: [fake, real], keyMismatch: true, heldSpub: { 'fake-1': '', 'real-1': V_KEY } }
+  const out = T.splitHeldForRelease(row, V_KEY)
+  assert.deepEqual(out.release.map((m) => m.id), ['real-1'])
+  assert.deepEqual(out.keep.map((m) => m.id), ['fake-1'])
+  // The same key in another base64 spelling is the same key.
+  const urlSafe = V_KEY.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+  assert.deepEqual(T.splitHeldForRelease(row, urlSafe).release.map((m) => m.id), ['real-1'])
+  // Another key, no record (held before keys were kept per message), no id,
+  // no card: none of it shows who sealed it, so all of it stays.
+  const legacy = { kind: 'text', id: 'old-1' }
+  const noId = { kind: 'text', text: 'no id' }
+  const mixed = { msgs: [legacy, noId, { kind: 'text', id: 'evil-1' }], keyMismatch: true, heldSpub: { 'evil-1': EVIL } }
+  assert.equal(T.splitHeldForRelease(mixed, V_KEY).release.length, 0)
+  assert.equal(T.splitHeldForRelease(row, null).release.length, 0)
+})
+
+await check('accept: an unmarked row goes whole, as before, except a key that is not the card', () => {
+  // v=2 strangers the island vouched for ('') and a row from before keys were
+  // recorded per message: every key the row collected was checked already.
+  const v2 = { msgs: [{ kind: 'text', id: 'a' }, { kind: 'text', id: 'b' }], heldSpub: { a: '', b: '' } }
+  assert.equal(T.splitHeldForRelease(v2, null).release.length, 2)
+  assert.equal(T.splitHeldForRelease({ msgs: [{ kind: 'text', id: 'c' }] }, V_KEY).release.length, 1)
+  const v1 = { msgs: [{ kind: 'text', id: 'd' }, { kind: 'text', id: 'e' }], heldSpub: { d: V_KEY, e: EVIL } }
+  const out = T.splitHeldForRelease(v1, V_KEY)
+  assert.deepEqual(out.release.map((m) => m.id), ['d'])
+  assert.deepEqual(out.keep.map((m) => m.id), ['e'])
+})
+
 // ── the incoming store: control traffic stays in its own thread ───────────
 
 const root = path.dirname(path.dirname(path.dirname(fileURLToPath(import.meta.url))))
@@ -382,6 +422,7 @@ await build({
       export * from './src/lib/incoming-store'
       export { savePersisted, storageKey } from './src/lib/outgoing-store'
       export { pinFirstSight, repinSignKey, signPinFor, unseenKeyChange, markKeyChangeSeen, seedSignPins } from './src/lib/sign-pins'
+      export { ensureRequestsLoaded, getRequest, holdRequestMessage, listRequests, releaseRequest } from './src/lib/crossisland-requests'
     `,
     resolveDir: root,
     loader: 'ts',
@@ -514,6 +555,50 @@ await check('pins: first sight is kept, an island-vouched change is taken with t
   assert.equal(S.unseenKeyChange(V).previous, V_KEY)
   S.markKeyChangeSeen(V)
   assert.equal(S.unseenKeyChange(V), null)
+})
+
+await check('accept on the requests list: the forgery stays held, flagged, and the person is not blocked with it', async () => {
+  await S.ensureRequestsLoaded()
+  const N = 4242
+  const N_KEY = key(4)
+  const IMP = key(5)
+  // What the receive path files: a v=2 row the island does not vouch for
+  // (FORGED, no key), then N's own v=1 message as a same-island stranger.
+  assert.equal(S.holdRequestMessage(N, '', text('n-fake', 'send the code'), { spub: null, keyMismatch: true }), true)
+  assert.equal(S.holdRequestMessage(N, '', text('n-real', 'hi'), { spub: N_KEY }), true)
+  const before = S.getRequest(N, '')
+  assert.deepEqual(before.spubs, [N_KEY], 'the row collected only the real key: the card check alone passes')
+  assert.equal(before.keyMismatch, true)
+
+  const out = S.releaseRequest(N, '', N_KEY)
+  assert.deepEqual(out.release.map((m) => m.id), ['n-real'])
+  assert.equal(out.kept, 1)
+  const left = S.getRequest(N, '')
+  assert.deepEqual(left.msgs.map((m) => m.id), ['n-fake'])
+  assert.equal(left.heldBack, true, 'the row says the accept left these behind')
+  assert.equal(left.keyMismatch, true)
+  // No key to check: accepting the leftover again is refused by the page
+  // (a changed-key row that names no key), and blocking it blocks nobody.
+  assert.equal(left.spubs, undefined)
+  assert.deepEqual(left.heldSpub, { 'n-fake': '' })
+
+  // An impostor's v=1 key on such a row is kept for a block, the card key never.
+  S.holdRequestMessage(N, '', text('n-imp', 'me again'), { spub: IMP, keyMismatch: true })
+  S.holdRequestMessage(N, '', text('n-real-2', 'still me'), { spub: N_KEY })
+  const again = S.releaseRequest(N, '', N_KEY)
+  assert.deepEqual(again.release.map((m) => m.id), ['n-real-2'])
+  const rest = S.getRequest(N, '')
+  assert.deepEqual(rest.msgs.map((m) => m.id).sort(), ['n-fake', 'n-imp'])
+  assert.deepEqual(rest.spubs, [IMP])
+
+  // A row with no mark (v=2 strangers the island vouched for) goes whole.
+  const M = 4343
+  S.holdRequestMessage(M, '', text('m-1'), { spub: null })
+  S.holdRequestMessage(M, '', text('m-2'), { spub: null })
+  const all = S.releaseRequest(M, '', null)
+  assert.deepEqual(all.release.map((m) => m.id), ['m-1', 'm-2'])
+  assert.equal(S.getRequest(M, ''), null)
+  assert.equal(S.releaseRequest(M, '', null), null)
 })
 
 console.log(`sender-auth ok: ${n} checks`)

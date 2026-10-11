@@ -769,6 +769,8 @@ export const es: Record<string, string> = {
     'Firmado con una clave distinta de la guardada para este contacto. Puede ser otra persona usando su dirección.',
   'ci.key_mismatch_refused':
     'No se añadió: quien envía firmó con una clave que su isla no publica para esta dirección.',
+  'ci.held_back':
+    'Aceptaste este número. Estos mensajes no están firmados con la clave que publica su isla, así que no entraron en el chat.',
   'add.ci.undelivered':
     'Agregado en este dispositivo. Su isla no recibió la solicitud, así que no la verá hasta que se pueda llegar a ella.',
   // Add contact

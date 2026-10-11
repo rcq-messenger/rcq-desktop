@@ -759,6 +759,8 @@ export const zh: Record<string, string> = {
   'ci.accept_undelivered': '这边已接受。对方的岛没有收下回复，在能联系上那个岛之前，对方不会把你看作联系人。',
   'ci.key_mismatch': '签名所用的密钥与为这个联系人保存的密钥不一样。可能是别人在冒用这个地址。',
   'ci.key_mismatch_refused': '未添加：发送者使用的签名密钥不是其所在岛为这个地址公布的密钥。',
+  'ci.held_back':
+    '你已接受这个号码。这些消息不是用其所在岛公布的密钥签名的，所以没有放进聊天。',
   'add.ci.undelivered': '已添加到本设备。对方的岛没有收下请求，在能联系上那个岛之前，对方看不到这个请求。',
   'add.ci.closed_island': '这个岛屿是封闭的。要给那里的人写信，需要他本人给你的链接：他分享联系方式，或者先给你写信。',
   'add.ci.no_user': '{host} 上没有号码 {uin}。',

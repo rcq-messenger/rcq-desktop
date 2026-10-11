@@ -769,6 +769,8 @@ export const tr: Record<string, string> = {
     'Bu kişi için kayıtlı olandan farklı bir anahtarla imzalanmış. Adresini kullanan başka biri olabilir.',
   'ci.key_mismatch_refused':
     'Eklenmedi: gönderen, adasının bu adres için yayımlamadığı bir anahtarla imzalamış.',
+  'ci.held_back':
+    'Bu numarayı kabul ettiniz. Bu mesajlar adasının yayımladığı anahtarla imzalanmamış, bu yüzden sohbete alınmadı.',
   'add.ci.undelivered':
     'Bu cihaza eklendi. Karşı tarafın adası isteği almadı, adaya ulaşılana kadar isteği göremeyecek.',
   // Add contact

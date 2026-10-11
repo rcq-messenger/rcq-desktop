@@ -26,6 +26,7 @@ import {
   type BlockLift,
   type BlockMap,
 } from './crossisland-block-rules'
+import { sameSigningKey } from './crossisland-gate'
 import { getCrossIsland } from './crossisland-store'
 import {
   answeredKey,
@@ -34,6 +35,7 @@ import {
   type ServerPendingRow,
   type ServerRequestRef,
 } from './crossisland-pending'
+import { splitHeldForRelease } from './held-release'
 import { isSealed, openLocal, sealLocal } from './local-seal'
 import { clockOffsetMs } from './message-time'
 
@@ -80,6 +82,10 @@ export interface CrossIslandRequest {
   /// whose ratchet vouches for the sender). Lets the author take one back,
   /// see `retractHeldMessage`. Absent on rows held before.
   heldSpub?: Record<string, string>
+  /// What an accept of this number left behind: messages on a row flagged as
+  /// a changed key that were not sealed under the key the island publishes
+  /// for it, so they never went into the thread (see `releaseRequest`).
+  heldBack?: boolean
 }
 
 /// What the receive path proved about who sealed an envelope it is holding.
@@ -490,6 +496,58 @@ export function clearRequest(uin: number, host: string): CrossIslandRequest | nu
   delete map[k]
   saveAll(map)
   return r
+}
+
+/// Accept: take the row for (uin, host) out of the list and hand back the
+/// held messages that may go into that number's thread, by the rule in
+/// held-release.ts. `cardKey` is the key the island publishes for the number
+/// now, or null when the accept asked for none.
+///
+/// ⚠⚠ What may not go stays here, as a row of its own flagged as a changed
+/// key and as left behind by the accept (`heldBack`), with only its own keys:
+/// a v=2 message whose identity the island did not vouch for shares the row
+/// with the real person's v=1 message, and releasing the row whole put it in
+/// their thread. Nothing of the answered request (`contactReq`, `server`)
+/// comes along: that question was answered.
+///
+/// Null when there is no such row, or the store is not open yet (every
+/// caller is a screen that opened it first).
+export function releaseRequest(
+  uin: number,
+  host: string,
+  cardKey: string | null | undefined,
+): { row: CrossIslandRequest; release: Envelope[]; kept: number } | null {
+  if (!cache) return null
+  const map = loadAll()
+  const k = reqKey(uin, host)
+  const r = map[k]
+  if (!r) return null
+  const { release, keep } = splitHeldForRelease(r, cardKey)
+  delete map[k]
+  if (keep.length > 0) {
+    const ids = new Set(keep.map((m) => (m as { id?: string }).id).filter(Boolean) as string[])
+    const heldSpub: Record<string, string> = {}
+    for (const [id, v] of Object.entries(r.heldSpub ?? {})) if (ids.has(id)) heldSpub[id] = v
+    // The keys these sealed under, never the published one: a block made from
+    // this row must not cut off the person just accepted.
+    const spubs: string[] = []
+    for (const v of [...(r.spubs ?? []), ...Object.values(heldSpub)]) {
+      if (!v || sameSigningKey(v, cardKey) || spubs.includes(v)) continue
+      spubs.push(v)
+    }
+    map[k] = {
+      uin: r.uin,
+      host: r.host,
+      firstAt: r.firstAt,
+      msgs: keep,
+      keyMismatch: true,
+      heldBack: true,
+      heldSpub,
+      spubs: spubs.length > 0 ? spubs.slice(-MAX_SPUBS) : undefined,
+    }
+  }
+  saveAll(map)
+  return { row: r, release, kept: keep.length }
 }
 
 /// Block a sender: drop the pending request and remember the decision, so

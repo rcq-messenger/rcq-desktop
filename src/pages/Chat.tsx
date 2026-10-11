@@ -100,6 +100,7 @@ import {
 } from '../lib/mentions'
 import type { MentionContext } from '../components/EmoticonText'
 import { groupApiCtx } from '../lib/visited-islands'
+import { markKeyChangeSeen, onSignPinsChanged, signPinsVersion, unseenKeyChange } from '../lib/sign-pins'
 import { ensureRoster, memberCount } from '../lib/group-roster'
 import { contactsCache, lookupContactStatus } from '../lib/contacts-cache'
 import { useGroupChanged } from '../lib/group-events'
@@ -714,6 +715,16 @@ export function Chat() {
     () => (ciPeerHost && ciPeerUin != null ? peerMark(ciPeerUin, ciPeerHost) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the version is what changes
     [livenessVersion, ciPeerUin, ciPeerHost],
+  )
+  // A contact on our island whose key the island replaced since this device
+  // first saw it (sign-pins.ts). Their messages under the new key are shown,
+  // because the island vouches for it; the change is never silent.
+  const pinsVersion = useSyncExternalStore(onSignPinsChanged, signPinsVersion)
+  const keyChangeUin = !isGroup && !isSelf && !islandHost && !peer?.host && peerUIN != null ? peerUIN : null
+  const contactKeyChanged = useMemo(
+    () => (keyChangeUin != null ? unseenKeyChange(keyChangeUin) != null : false),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the version is what changes
+    [pinsVersion, keyChangeUin],
   )
 
   // Pull own profile once for the nickname — used as authorName on
@@ -4001,6 +4012,9 @@ export function Chat() {
       {peerState && (peerState.gone || peerState.keyChanged) && (
         <PeerStateBanner gone={peerState.gone} onRemove={removeCrossIslandPeer} />
       )}
+      {contactKeyChanged && keyChangeUin != null && (
+        <ContactKeyBanner onDismiss={() => markKeyChangeSeen(keyChangeUin)} />
+      )}
 
 
       </div>
@@ -7006,6 +7020,29 @@ function PeerStateBanner({ gone, onRemove }: { gone: boolean; onRemove: () => vo
             </button>
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+/// A contact on our island whose key the island replaced since this device
+/// first saw it (sign-pins.ts). Said once, under the header where the
+/// cross-island line goes, until it is dismissed.
+function ContactKeyBanner({ onDismiss }: { onDismiss: () => void }) {
+  const { t } = useI18n()
+  return (
+    <div className="rcq-floating-bar flex-none relative z-20" role="status">
+      <div className="max-w-2xl mx-auto w-full px-4 py-2 text-[0.8125rem]">
+        <div className="flex items-center gap-3">
+          <div className="flex-1 min-w-0 text-amber-600 leading-snug">{t('chat.contact_key_changed')}</div>
+          <button
+            type="button"
+            onClick={onDismiss}
+            className="shrink-0 rounded-full bg-field hover:bg-line/50 text-fg-primary text-xs font-semibold px-3 py-1.5 transition-colors"
+          >
+            {t('common.close')}
+          </button>
+        </div>
       </div>
     </div>
   )

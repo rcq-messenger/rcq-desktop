@@ -261,6 +261,7 @@ export const en: Record<string, string> = {
   'chat.blocked.unblock': 'Unblock',
   'chat.peer_gone': 'This account no longer exists: their island says there is no such number. Messages will not be delivered.',
   'chat.peer_key_changed': 'Their island now shows this address under a different key, so messages are not sent: they could reach someone else. If they reset their account, remove the contact and add them again.',
+  'chat.contact_key_changed': 'This contact\'s key has changed: our island now shows a new key for this number. If you did not expect that, check with them another way before you trust what arrives.',
   'chat.peer_remove': 'Remove contact',
   'chat.owner_only.notice': 'Only the owner can post in this group.',
   'chat.attach': 'Attach',

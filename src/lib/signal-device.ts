@@ -38,6 +38,9 @@ import { clientLabel } from './client-name'
 import { fetchServerInfo } from './server-info'
 import * as depositAuth from './deposit-auth-store'
 import { limitPeerLookup } from './api'
+import { v2IdentityDecision } from './v2-identity'
+import { sameSigningKey } from './crossisland-gate'
+import type { V2Identity } from './sender-trust'
 
 const _devices = new Map<number, Promise<WebSignalDevice>>()
 const blobKey = (uin: number) => `signal-device:${uin}`
@@ -486,6 +489,126 @@ function wireVersion(payloadB64: string): number {
 /// it, and it is gone. Everything here comes back on a later drain.
 export class DeviceUnavailableError extends Error {}
 
+/// Thrown when a v=2 payload was not attempted because the island could not be
+/// asked whose identity is behind it (verifyV2Identity). Nothing was
+/// decrypted, no ratchet moved: like DeviceUnavailableError, the row stays
+/// where it is and a later drain opens it.
+export class IdentityCheckUnavailableError extends Error {}
+
+// ---- Who is behind a v=2 session (sender-auth, 11.10). ----
+//
+// The rule is v2-identity.ts; this is its memory and its source. The memory is
+// the identity first seen per (number, device), per account, on disk: the
+// libsignal stores keep peer identities in memory only and trust whatever a
+// first PreKey message brings, so before this every reload was a fresh
+// first contact for everybody. The source is the island's device list, which
+// names each device's published identity and consumes no prekey.
+
+const v2IdKey = (uin: number) => `rcq.web.${uin}.v2ids.v1`
+/// Remembered (number, device) identities. Oldest go first past this; the
+/// island's list still vouches for anyone forgotten.
+const V2ID_MAX = 3000
+
+/// Read once per page and kept: every v=2 row asks, and a drain is hundreds of
+/// rows. Another tab's write drops the copy (the `storage` listener below).
+const _v2Ids = new Map<number, Record<string, { ik: string; at: number }>>()
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('storage', (e) => {
+    if (e.key === null || /^rcq\.web\.\d+\.v2ids\.v1$/.test(e.key)) _v2Ids.clear()
+  })
+}
+
+function loadV2Ids(myUin: number): Record<string, { ik: string; at: number }> {
+  const held = _v2Ids.get(myUin)
+  if (held) return held
+  let map: Record<string, { ik: string; at: number }> = {}
+  try {
+    const raw = JSON.parse(localStorage.getItem(v2IdKey(myUin)) || '{}')
+    if (raw && typeof raw === 'object') map = raw
+  } catch {
+    /* unreadable: the island's list still vouches */
+  }
+  _v2Ids.set(myUin, map)
+  return map
+}
+
+function rememberV2Id(myUin: number, uin: number, deviceId: number, ik: string): void {
+  const map = loadV2Ids(myUin)
+  map[`${uin}:${deviceId}`] = { ik, at: Date.now() }
+  const keys = Object.keys(map)
+  if (keys.length > V2ID_MAX) {
+    keys.sort((a, b) => map[a].at - map[b].at)
+    for (const k of keys.slice(0, keys.length - (V2ID_MAX - 300))) delete map[k]
+  }
+  try {
+    localStorage.setItem(v2IdKey(myUin), JSON.stringify(map))
+  } catch {
+    /* quota: the island's list still vouches next time */
+  }
+}
+
+/// One device-list read per number per ten minutes, shared by every row that
+/// asks while it is on the wire. A read that failed is not kept: it throws,
+/// and the row waits for the next drain.
+const DEVLIST_TTL_MS = 10 * 60_000
+/// A mismatch against a cached list earns one fresh read, at most this often:
+/// the peer may have reinstalled since the list was read.
+const DEVLIST_RECHECK_MS = 30_000
+const _devLists = new Map<string, { at: number; list: Map<number, string | undefined> }>()
+const _devListFlights = new Map<string, Promise<Map<number, string | undefined>>>()
+
+function publishedDevices(identity: WebIdentity, uin: number, fresh: boolean): Promise<Map<number, string | undefined>> {
+  const key = `${identity.apiBase}|${identity.uin}|${uin}`
+  const hit = _devLists.get(key)
+  const now = Date.now()
+  if (hit && now - hit.at < (fresh ? DEVLIST_RECHECK_MS : DEVLIST_TTL_MS)) return Promise.resolve(hit.list)
+  const running = _devListFlights.get(key)
+  if (running) return running
+  const flight = (async () => {
+    let list: Map<number, string | undefined>
+    try {
+      const path = `/keys/${uin}/devices`
+      const body = (await limitPeerLookup(identity.apiBase, 'key', () =>
+        uin === identity.uin ? apiGetAuthed(identity, path) : apiGet(identity, path))) as {
+        devices?: Array<{ device_id: number; signal_identity_key?: string | null }>
+      }
+      list = new Map()
+      for (const d of body.devices ?? []) {
+        if (typeof d.device_id !== 'number') continue
+        list.set(d.device_id, typeof d.signal_identity_key === 'string' ? d.signal_identity_key : undefined)
+      }
+    } catch (e) {
+      // "No such user" is an answer: nobody is published for that number.
+      if (e instanceof KeyLookupError && e.status === 404) list = new Map()
+      else throw new IdentityCheckUnavailableError(`device list for ${uin}: ${e instanceof Error ? e.message : e}`)
+    }
+    _devLists.set(key, { at: Date.now(), list })
+    return list
+  })().finally(() => _devListFlights.delete(key))
+  _devListFlights.set(key, flight)
+  return flight
+}
+
+/// Is `ik` the identity this device may take for (uin, deviceId)? See
+/// v2-identity.ts for the rule. Throws IdentityCheckUnavailableError when the
+/// island had to be asked and could not be.
+export async function verifyV2Identity(identity: WebIdentity, uin: number, deviceId: number, ikBytes: Uint8Array): Promise<V2Identity> {
+  const ik = bytesToB64(ikBytes)
+  const memory = loadV2Ids(identity.uin)[`${uin}:${deviceId}`]?.ik ?? null
+  const decideWith = (list: Map<number, string | undefined>) =>
+    v2IdentityDecision(memory, list.has(deviceId) ? list.get(deviceId) : null, ik)
+  // The identity first seen here answers without asking anyone.
+  if (memory && sameSigningKey(memory, ik)) return 'verified'
+  let d = decideWith(await publishedDevices(identity, uin, false))
+  if (d.verdict === 'mismatch') d = decideWith(await publishedDevices(identity, uin, true))
+  if (d.remember) {
+    if (memory) console.warn(`[v2] identity of ${uin}:${deviceId} changed; the island publishes the new one`)
+    rememberV2Id(identity.uin, uin, deviceId, ik)
+  }
+  if (d.verdict === 'mismatch') console.warn(`[v2] identity of ${uin}:${deviceId} is not the one the island publishes`)
+  return d.verdict
+}
+
 /// Decode an inbound sealed envelope. Returns null for envelopes this device
 /// can't read (e.g. a ciphertext fanned out to a DIFFERENT device) so callers
 /// can silently skip them; throws DeviceUnavailableError for the ones it could
@@ -493,7 +616,16 @@ export class DeviceUnavailableError extends Error {}
 export async function decryptIncoming(
   identity: WebIdentity,
   payloadB64: string,
-): Promise<{ senderUIN: number; senderDeviceId?: number; senderHost?: string; senderSigningKey?: string; envelope: Envelope } | null> {
+): Promise<{
+  senderUIN: number
+  senderDeviceId?: number
+  senderHost?: string
+  senderSigningKey?: string
+  /// v=2 only: whether the identity behind the session is the one our island
+  /// publishes for that (number, device). See verifyV2Identity.
+  senderV2?: V2Identity
+  envelope: Envelope
+} | null> {
   const v = wireVersion(payloadB64)
   if (v === 2) {
     let dev: WebSignalDevice
@@ -502,11 +634,22 @@ export async function decryptIncoming(
     } catch (e) {
       throw new DeviceUnavailableError(`no libsignal device: ${e instanceof Error ? e.message : e}`)
     }
+    // Asked before anything is decrypted; see WebSignalDevice.decrypt.
+    const verify = (uin: number, deviceId: number, ik: Uint8Array) => verifyV2Identity(identity, uin, deviceId, ik)
+    const shaped = (out: Awaited<ReturnType<WebSignalDevice['decrypt']>>) => ({
+      senderUIN: out.senderUIN,
+      senderDeviceId: out.senderDeviceId,
+      envelope: out.envelope,
+      senderV2: out.identity ?? 'mismatch',
+    })
     try {
-      const out = await dev.decrypt(payloadB64) // sender UIN read from the envelope
+      const out = await dev.decrypt(payloadB64, undefined, undefined, verify) // sender UIN read from the envelope
       await persist(identity, dev) // ratchet advanced — snapshot
-      return out // v=2 is same-island only; no senderHost
+      return shaped(out) // v=2 is same-island only; no senderHost
     } catch (e) {
+      // The island could not say who is behind it: nothing was decrypted, the
+      // row stays for the next drain.
+      if (e instanceof IdentityCheckUnavailableError) throw e
       // Not ours to read — or ours to read with the identity this install
       // published before it became a secondary. Logged, never thrown: the
       // caller treats null as terminal and acks the row away, and a silent
@@ -516,10 +659,11 @@ export async function decryptIncoming(
       const prev = await previousDevice(identity)
       if (!prev) return null
       try {
-        const out = await prev.decrypt(payloadB64)
+        const out = await prev.decrypt(payloadB64, undefined, undefined, verify)
         await persist(identity, prev, prevKey(identity.uin)) // its ratchet advanced too
-        return out
+        return shaped(out)
       } catch (e2) {
+        if (e2 instanceof IdentityCheckUnavailableError) throw e2
         console.warn('v2 decrypt failed (previous device):', e2 instanceof Error ? e2.message : e2)
         return null
       }

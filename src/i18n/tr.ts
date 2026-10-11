@@ -248,6 +248,7 @@ export const tr: Record<string, string> = {
   'chat.blocked.unblock': 'Engeli kaldır',
   'chat.peer_gone': 'Bu hesap artık yok: karşı tarafın adası böyle bir numara olmadığını söylüyor. Mesajlar teslim edilmeyecek.',
   'chat.peer_key_changed': 'Karşı tarafın adası bu adresi artık farklı bir anahtarla gösteriyor, bu yüzden mesajlar gönderilmiyor: başka birine ulaşabilirler. Hesabını sıfırladıysa kişiyi kaldır ve yeniden ekle.',
+  'chat.contact_key_changed': 'Bu kişinin anahtarı değişti: adamız artık bu numara için yeni bir anahtar gösteriyor. Bunu beklemiyorsan, gelenlere güvenmeden önce kişiyle başka bir yoldan doğrula.',
   'chat.peer_remove': 'Kişiyi kaldır',
   'chat.owner_only.notice': 'Bu grupta yalnızca grup sahibi yazabilir.',
   'chat.attach': 'Ekle',

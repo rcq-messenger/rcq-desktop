@@ -39,6 +39,15 @@ import { hkdf } from '@noble/hashes/hkdf'
 import { sha256 } from '@noble/hashes/sha256'
 import { randomBytes } from '@noble/ciphers/webcrypto'
 import { bytesToB64, b64ToBytes, concat, encodeEnvelopeBytes, padInnerBytes, shouldPadKind, type Envelope } from './crypto'
+import { prekeyMessageIdentity, sessionRemoteIdentities } from './v2-identity'
+import type { V2Identity } from './sender-trust'
+
+function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false
+  let d = 0
+  for (let i = 0; i < a.length; i++) d |= a[i] ^ b[i]
+  return d === 0
+}
 
 const HKDF_INFO_V2 = new TextEncoder().encode('RCQ-1to1-v2')
 const WIRE_VERSION_V2 = 2
@@ -370,28 +379,107 @@ export class WebSignalDevice {
   /// devices, so a session addressed as (uin, 1) for a message the peer's
   /// second device sent has no state to decrypt with. Both may be passed to
   /// override/pin them.
-  async decrypt(payloadB64: string, senderUin?: number, senderDeviceId?: number): Promise<{ senderUIN: number; senderDeviceId: number; envelope: Envelope }> {
+  ///
+  /// `verify`, when given, is asked who is behind the message BEFORE anything
+  /// is decrypted (v2-identity.ts): the identity a PreKey message carries, or
+  /// every identity the session record it would open on holds. It may throw
+  /// (the island could not be asked): nothing has been touched then, and the
+  /// row can be tried again. The answer travels back as `identity`:
+  ///  * a PreKey message under an identity that is not vouched for is opened
+  ///    in a SANDBOX (throwaway session and identity stores), so it can be
+  ///    shown as the request it is but never replaces the session we hold for
+  ///    that address, which is where our replies to the real person go;
+  ///  * a vouched-for PreKey message whose identity differs from the one the
+  ///    in-memory store remembers (a reinstall the island has taken) rebuilds
+  ///    that store first, which is otherwise a decrypt that fails until the
+  ///    next reload.
+  async decrypt(
+    payloadB64: string,
+    senderUin?: number,
+    senderDeviceId?: number,
+    verify?: (uin: number, deviceId: number, ik: Uint8Array) => Promise<V2Identity>,
+  ): Promise<{ senderUIN: number; senderDeviceId: number; envelope: Envelope; identity?: V2Identity }> {
     const inner = outerUnwrapV2(payloadB64, this.outerPriv, this.outerPub)
     const from = senderUin ?? inner.from
     const fromDevice = senderDeviceId ?? inner.dev ?? PRIMARY_DEVICE_ID
     const type = inner.kind === 'prekey' ? 3 : 2
-    const plaintext = await decryptMessage(
-      b64ToBytes(inner.msg),
-      type,
-      this.addr(from, fromDevice),
-      this.localAddr,
-      this.sessionStore,
-      this.identityStore,
-      this.preKeyStore,
-      this.signedStore,
-      this.kyberStore,
-    )
-    this.markSession(from, fromDevice)
+    const msg = b64ToBytes(inner.msg)
+    const addr = this.addr(from, fromDevice)
+    let identity: V2Identity | undefined
+    // Type 2: the verdict per identity the record holds, worked out before
+    // the decrypt; which one applies is known only after it.
+    let byState: Array<{ ik: Uint8Array; verdict: V2Identity }> = []
+    if (verify) {
+      if (type === 3) {
+        const ik = prekeyMessageIdentity(msg)
+        identity = ik ? await verify(from, fromDevice, ik) : 'mismatch'
+      } else {
+        const rec = await this.sessionStore.export_session(addr)
+        const ids = rec ? sessionRemoteIdentities(rec) : null
+        for (const ik of [ids?.current, ...(ids?.previous ?? [])]) {
+          if (!ik || byState.some((s) => bytesEqual(s.ik, ik))) continue
+          byState.push({ ik, verdict: await verify(from, fromDevice, ik) })
+        }
+      }
+    }
+    let plaintext: Uint8Array
+    if (type === 3 && identity === 'mismatch') {
+      plaintext = await this.decryptSandboxed(msg, addr)
+    } else {
+      const run = () =>
+        decryptMessage(msg, type, addr, this.localAddr, this.sessionStore, this.identityStore, this.preKeyStore, this.signedStore, this.kyberStore)
+      try {
+        plaintext = await run()
+      } catch (e) {
+        if (!(type === 3 && identity === 'verified')) throw e
+        // The island vouches for this identity; the store refusing it only
+        // remembers the one before (see establishSession for the same rebuild).
+        this.resetIdentityStore()
+        plaintext = await run()
+      }
+      this.markSession(from, fromDevice)
+      if (verify && type === 2) {
+        const after = await this.sessionStore.export_session(addr)
+        const used = after ? sessionRemoteIdentities(after)?.current : null
+        identity = (used && byState.find((s) => bytesEqual(s.ik, used))?.verdict) || 'mismatch'
+      }
+    }
     const envelope = JSON.parse(new TextDecoder().decode(plaintext)) as Envelope
     // The sending DEVICE, not just the account: the silence probe needs to know
     // which of the peer's installs is provably alive, because one of them
     // answering says nothing about a sibling whose session is dead.
-    return { senderUIN: inner.from, senderDeviceId: fromDevice, envelope }
+    return { senderUIN: inner.from, senderDeviceId: fromDevice, envelope, ...(identity ? { identity } : {}) }
+  }
+
+  /// Open a PreKey message whose identity nobody vouches for, without letting
+  /// it near this device's sessions: throwaway session and identity stores,
+  /// the real prekey stores (the message was built from our published bundle).
+  private async decryptSandboxed(msg: Uint8Array, addr: WasmProtocolAddress): Promise<Uint8Array> {
+    const sessions = new WasmInMemSessionStore()
+    const ids = new WasmInMemIdentityKeyStore(this.idkp, this.regId)
+    try {
+      return await decryptMessage(msg, 3, addr, this.localAddr, sessions, ids, this.preKeyStore, this.signedStore, this.kyberStore)
+    } finally {
+      try {
+        sessions.free()
+        ids.free()
+      } catch {
+        /* already freed */
+      }
+    }
+  }
+
+  /// Forget every peer identity the in-memory store remembers. It holds
+  /// nothing persistent (peer identities never survived a reload anyway); the
+  /// persisted first-seen memory is signal-device's, and it is what decides.
+  private resetIdentityStore(): void {
+    const old = this.identityStore
+    this.identityStore = new WasmInMemIdentityKeyStore(this.idkp, this.regId)
+    try {
+      old.free()
+    } catch {
+      /* already freed */
+    }
   }
 
   /// Snapshot this device's full libsignal state for persistence (IndexedDB).

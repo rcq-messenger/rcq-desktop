@@ -27,7 +27,7 @@ import {
   sharedGroupsOn,
   withdrawServerRequest,
 } from '../lib/crossisland-pending-poll'
-import { crossIslandNumberElsewhere, getCrossIsland, saveCrossIsland } from '../lib/crossisland-store'
+import { crossIslandNumberElsewhere, getCrossIsland, listCrossIsland, saveCrossIsland } from '../lib/crossisland-store'
 import { contactsCache, snapshotFor } from '../lib/contacts-cache'
 import { sameSigningKey } from '../lib/crossisland-gate'
 import { blockSender, sendRequestAck, unblockSender } from '../lib/crossisland-ack'
@@ -36,6 +36,8 @@ import { pushProfileTo } from '../lib/crossisland-profile'
 import { fetchPeerKeyCard } from '../lib/federation-send'
 import { addIncoming, beginCatchUp, endCatchUp } from '../lib/incoming-store'
 import { allowStranger } from '../lib/stranger-requests'
+import { theirCard } from '../lib/guest-card'
+import { repinSignKey, signPinFor } from '../lib/sign-pins'
 
 /// [embedded] drops the page chrome so the same body can live inside a modal.
 export function PendingRequests({ embedded = false }: { embedded?: boolean } = {}) {
@@ -58,10 +60,50 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
 
   async function acceptCI(r: CrossIslandRequest, keyChangeConfirmed = false) {
     const tag = `${r.uin}@${r.host}`
-    // A SAME-ISLAND stranger (host '' — the opt-in Privacy quarantine): no
-    // key card to pin, no §5f dance. Accepting means "let this person talk":
-    // remember the allowance, release what they already wrote, open the chat.
+    // A SAME-ISLAND sender (host ''): the opt-in Privacy quarantine, or a seal
+    // under a key that is not the one held for that number. No §5f dance.
+    // Accepting means "let this person talk": check the key, remember the
+    // allowance, release what they already wrote, open the chat.
     if (r.host === '') {
+      // One thread per number (report 1061): this number's thread is a contact's on
+      // another island, and releasing these rows would put a stranger's
+      // words into it.
+      if (listCrossIsland().some((c) => c.uin === r.uin)) {
+        setError(t('add.ci.number_clash', { uin: String(r.uin) }))
+        return
+      }
+      // ⚠⚠ The number on these rows is unsigned (v=1); the key they were
+      // sealed with is not (sender-auth, 11.10). Releasing them files them in
+      // that number's thread, so the key has to be the one our island
+      // publishes for it NOW, the same check the cross-island accept makes. A
+      // row flagged as a changed key whose seals named no key (a v=2 identity
+      // the island does not publish) has nothing to check, and is refused.
+      const keys = r.spubs ?? []
+      if (keys.length > 0 || r.keyMismatch) {
+        setCiActing(tag)
+        setError(null)
+        let card: string | null = null
+        let asked = false
+        try {
+          card = (await Api.userInfo(identity!, r.uin, theirCard(r.uin))).signing_key || null
+          asked = true
+        } catch {
+          /* answered below */
+        } finally {
+          setCiActing(null)
+        }
+        if (!asked) {
+          setError(t('auth.error.network'))
+          return
+        }
+        if (!card || keys.length === 0 || keys.some((k) => !sameSigningKey(k, card))) {
+          setError(t('ci.key_mismatch_refused'))
+          return
+        }
+        // Accepted under the key the island publishes: that is the key held
+        // for this number from now on (no banner, the person just decided).
+        repinSignKey(r.uin, card, false)
+      }
       allowStranger(r.uin)
       // An accept is a decision to hear from them (crossisland-ack.ts).
       unblockSender(identity!, r.uin, '')
@@ -262,7 +304,8 @@ export function PendingRequests({ embedded = false }: { embedded?: boolean } = {
     // ⚠ Never the contact's own pinned key, whatever the row collected: a row
     // filed before the contact was added can hold their key beside the
     // impostor's, and a key-only block of it would cut the contact off.
-    const pinnedKey = r.host ? getCrossIsland(r.uin, r.host)?.signingKey : null
+    // On our own island (host ''), the key first seen here for that number.
+    const pinnedKey = r.host ? getCrossIsland(r.uin, r.host)?.signingKey : signPinFor(r.uin)
     const keys = (r.spubs ?? []).filter((k) => !sameSigningKey(k, pinnedKey))
     if (r.keyMismatch && keys.length === 0) {
       // Nothing to hold the block against but the contact's own address (the

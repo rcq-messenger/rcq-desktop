@@ -13,6 +13,7 @@ import {
   ownChainSnapshot,
   ownKidForGroup,
   ownsKid,
+  peekInbound,
 } from './sender-key-store'
 
 // Debounce NACKs so a burst of un-openable gmsg (e.g. a missed SKDM) fires at
@@ -82,8 +83,18 @@ function nowMs(): number {
 
 export interface RoutedGmsg {
   senderUIN: number
+  /// The key the chain was bound to when it was accepted, which the
+  /// broadcast's signature just verified under: what the receive path checks
+  /// against the room's roster, like the key of a per-member seal.
+  spub: string
   envelope: Envelope
 }
+
+/// May the owner of a chain still speak in the room this broadcast arrived
+/// in? Asked BEFORE the chain is ratcheted (sender-auth, 11.10): true opens
+/// it, false drops it, and a throw (the roster could not be read) leaves the
+/// chain where it was, so a later copy of the same row still opens.
+export type GmsgAuthorize = (senderUin: number, spub: string) => Promise<boolean>
 
 /// What decoding one broadcast came to. `routed` is the inner envelope plus
 /// its real sender, or null when there is nothing to show; `held` says the
@@ -116,8 +127,9 @@ export async function handleGmsg(
   payloadB64: string,
   gid: number,
   room?: GuestRoom,
+  authorize?: GmsgAuthorize,
 ): Promise<RoutedGmsg | null> {
-  return (await decodeGmsg(identity, payloadB64, gid, room)).routed
+  return (await decodeGmsg(identity, payloadB64, gid, room, authorize)).routed
 }
 
 /// handleGmsg with the hold made visible (see DecodedGmsg).
@@ -126,6 +138,7 @@ export async function decodeGmsg(
   payloadB64: string,
   gid: number,
   room?: GuestRoom,
+  authorize?: GmsgAuthorize,
 ): Promise<DecodedGmsg> {
   const dropped: DecodedGmsg = { routed: null, held: false }
   let wire: GmsgWire
@@ -147,7 +160,21 @@ export async function decodeGmsg(
   // re-send request fanned out to the whole room about our own message.
   if (room && ownsKid(room.ident.uin, wire.kid)) return dropped
 
-  const key = deriveInbound(identity.uin, wire.kid, wire.e, wire.i)
+  // ⚠⚠ The chain is bound to the room it was handed over in (sender-auth,
+  // 11.10). A kid is random and travels in the clear in every broadcast, and
+  // the AEAD binds the gid the forger also chooses, so a chain received in one
+  // room used to open broadcasts deposited in any other. And the room decides
+  // who may speak in it, before the position is spent.
+  const owner = peekInbound(identity.uin, wire.kid)
+  if (owner) {
+    const roomHost = room ? room.host : null
+    if (owner.gid !== gid || (owner.host !== undefined && (owner.host ?? null) !== roomHost)) {
+      console.warn('[sender-keys] gmsg under a chain handed over in another room; dropping', { gid, kid: wire.kid })
+      return dropped
+    }
+    if (authorize && !(await authorize(owner.senderUin, owner.spub))) return dropped
+  }
+  const key = deriveInbound(identity.uin, wire.kid, wire.e, wire.i, gid)
   if (!key) {
     if (!knowsKid(identity.uin, wire.kid)) {
       // Unknown kid: live delivery is unordered, so the SKDM may simply not
@@ -175,21 +202,27 @@ export async function decodeGmsg(
     console.warn('[sender-keys] gmsg signature did not verify; dropping', { gid, kid: wire.kid })
     return dropped
   }
-  return { routed: { senderUIN: key.senderUin, envelope: opened.envelope }, held: false }
+  return { routed: { senderUIN: key.senderUin, spub: key.spub, envelope: opened.envelope }, held: false }
 }
 
 /// Store an inbound chain handed to us via an SKDM (bound to the
 /// authenticated sender from the seal). Called from the receive router.
 /// Returns true when the chain was stored (or refreshed), i.e. when a
 /// replay of gmsgs held for this kid is worth firing.
+///
+/// ⚠ The caller has already decided that the sender is a member of that room
+/// under the key the roster holds for them, and that the SKDM rode a frame of
+/// that same room (message-receiver). `roomHost` is the room's island, null
+/// for ours: the chain is filed against it.
 export function handleSkdm(
   ownUin: number,
   senderUIN: number,
   senderSigningKey: string | undefined,
   env: { gid: number; kid: string; e: number; i: number; ck: string },
+  roomHost: string | null = null,
 ): boolean {
   if (!senderSigningKey) return false // unauthenticated: never trust an unbound chain
-  const ok = acceptSkdm(ownUin, env.kid, env.gid, senderUIN, senderSigningKey, env.e, env.i, env.ck)
+  const ok = acceptSkdm(ownUin, env.kid, env.gid, senderUIN, senderSigningKey, env.e, env.i, env.ck, roomHost)
   if (ok) nackAnswered(env.kid)
   return ok
 }
@@ -211,11 +244,16 @@ export interface ReplayedGmsg extends RoutedGmsg {
 /// was for a newer epoch) is dropped or re-held by `handleGmsg` itself, and
 /// cannot NACK-storm: the key is known now, and the not-known case sits
 /// behind the same per-kid debounce as ever.
-export async function replayHeldGmsg(identity: WebIdentity, kid: string): Promise<ReplayedGmsg[]> {
+export async function replayHeldGmsg(
+  identity: WebIdentity,
+  kid: string,
+  authorize?: (room: { gid: number; host: string | null; aliasGid: number }) => GmsgAuthorize,
+): Promise<ReplayedGmsg[]> {
   const held = takeHeldForKid(identity.uin, kid)
   const out: ReplayedGmsg[] = []
   for (const h of held) {
-    const got = await handleGmsg(identity, h.payloadB64, h.gid, h.room)
+    const auth = authorize?.({ gid: h.gid, host: h.room ? h.room.host : null, aliasGid: h.room ? h.room.aliasGid : h.gid })
+    const got = await handleGmsg(identity, h.payloadB64, h.gid, h.room, auth).catch(() => null)
     // A foreign room's broadcast is decoded under its island's id but FILED
     // under the local alias, like every other row out of a guest mailbox.
     if (got) out.push(h.room ? { ...got, gid: h.room.aliasGid, host: h.room.host } : { ...got, gid: h.gid })

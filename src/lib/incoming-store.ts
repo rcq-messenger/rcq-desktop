@@ -11,7 +11,7 @@ import { openValue, pinSealActive, sealExistingHistory, sealValue } from './pin-
 import { playSound } from './sounds'
 import { markMention, mentionsMe } from './mentions'
 import { contactsCache, snapshotFor } from './contacts-cache'
-import { applyReceiptToOutgoing, sweepExpiredOutgoing } from './outgoing-store'
+import { applyReceiptToOutgoing, outgoingHas, outgoingKeysHolding, storageKey, sweepExpiredOutgoing } from './outgoing-store'
 import { isGroupMuted, isPeerMuted } from './local-store'
 import { SWEEP_INTERVAL_MS, expiryFrom, lapsed, sendAnchorMs } from './disappearing'
 import { forgetCachedImage } from './media'
@@ -363,18 +363,64 @@ export function isDeleted(targetId: string): boolean {
   return deletedIds.has(targetId)
 }
 
-/// Retract a message for everyone locally. `senderUin` (when the delete came
-/// from a peer) gates the incoming removal to that sender's OWN message, so a
-/// peer can't delete someone else's message; `fromSelf` (our own delete, or a
-/// carbon of it) also lets it retract an OUTGOING row (hidden via the filter).
-export function markDeleted(targetId: string, opts?: { senderUin?: number; fromSelf?: boolean; moderator?: boolean }): void {
+/// The outgoing log behind a thread key ("p:<uin>" / "g:<id>").
+function outgoingKeyOf(threadKey: string): string {
+  const id = Number(threadKey.slice(2))
+  return storageKey(threadKey.startsWith('g:'), id)
+}
+
+/// Does a message with this id live in any thread but `threadKey`, received or
+/// sent? The tombstone hides an id everywhere, so a delete scoped to one
+/// thread may only write it when the answer is no.
+function idElsewhere(targetId: string, threadKey: string): boolean {
+  for (const [k, rows] of byPeer) if (peerKey(k) !== threadKey && rows.some((r) => r.id === targetId)) return true
+  for (const [k, rows] of byGroup) if (groupKey(k) !== threadKey && rows.some((r) => r.id === targetId)) return true
+  const own = outgoingKeyOf(threadKey)
+  return outgoingKeysHolding(targetId).some((k) => k !== own)
+}
+
+/// Is this id a message of the thread `threadKey`, theirs or ours? The one
+/// place somebody else's reaction may land (sender-auth, 11.10).
+function threadHolds(threadKey: string, targetId: string): boolean {
+  const id = Number(threadKey.slice(2))
+  const rows = threadKey.startsWith('g:') ? byGroup.get(id) : byPeer.get(id)
+  if (rows?.some((r) => r.id === targetId)) return true
+  return outgoingHas(outgoingKeyOf(threadKey), targetId)
+}
+
+/// Retract a message for everyone locally.
+///
+/// Our own delete (`fromSelf`: this device, a carbon of it, or a note retracted
+/// on another device of the account) and a local hide (no options) reach every
+/// thread, and `fromSelf` also retracts an OUTGOING row (hidden via the
+/// tombstone filter).
+///
+/// ⚠⚠ Anybody else's delete reaches exactly ONE thread (sender-auth, 11.10):
+///  * `peerUin`: a 1:1 delete, only that person's own rows in their own thread;
+///  * `groupId`: a room's delete, only rows of that room, the `author`'s own,
+///    or anybody's when `moderator` (owner or admin by the verified roster) or
+///    `fromSelf` (our own other device), plus our own outgoing row in THAT
+///    room for a moderator.
+/// It used to remove the id from every thread there was, and a moderator of
+/// any room (anyone can make one and add us) could bury a message in our 1:1
+/// chats or in another room by its id. And the tombstone, which hides an id in
+/// every thread on screen, is written for a scoped delete only when the id
+/// lives nowhere else: a row filed in the sender's own thread under somebody
+/// else's message id must not let them hide that message by deleting "theirs".
+export function markDeleted(
+  targetId: string,
+  opts?: { fromSelf?: boolean; peerUin?: number; groupId?: number; author?: number; moderator?: boolean },
+): void {
   if (deletedIds.has(targetId)) return
+  const scope =
+    opts?.groupId != null ? groupKey(opts.groupId) : opts?.peerUin != null ? peerKey(opts.peerUin) : null
+  const owner = opts?.peerUin ?? opts?.author
+  const anyAuthor = scope == null || opts?.fromSelf === true || opts?.moderator === true
   let removed = false
   const drop = (map: Map<number, IncomingRow[]>, threadKey: (id: number) => string) => {
     for (const [key, rows] of map) {
-      const next = rows.filter(
-        (r) => !(r.id === targetId && (opts?.senderUin == null || opts?.moderator || r.from === opts.senderUin)),
-      )
+      if (scope != null && threadKey(key) !== scope) continue
+      const next = rows.filter((r) => !(r.id === targetId && (anyAuthor || r.from === owner)))
       if (next.length !== rows.length) {
         map.set(key, next)
         removed = true
@@ -395,14 +441,22 @@ export function markDeleted(targetId: string, opts?: { senderUin?: number; fromS
   }
   drop(byPeer, peerKey)
   drop(byGroup, groupKey)
-  // Only tombstone when we either removed the sender's own incoming message,
-  // it's our own delete, or the sender holds moderator power in the group the
-  // delete arrived through — never let an ordinary peer tombstone (and thus
-  // hide) a message that wasn't theirs. The moderator case must tombstone
-  // even with nothing removed: the target may be OUR OWN message (it lives in
-  // the outgoing log, which renders through this same tombstone set), or one
-  // still in flight.
-  if (!removed && !opts?.fromSelf && !opts?.moderator) return
+  if (scope == null) {
+    // Our own delete, or a local hide: tombstone when something went, or
+    // always for our own (the target may sit in an outgoing log, which renders
+    // through this same tombstone set, or still be in flight).
+    if (!removed && !opts?.fromSelf) return
+  } else {
+    // Somebody else's, within one thread. Only tombstone when we removed a row
+    // they may take, or a moderator (or our other device) retracts a row of
+    // ours in that very room; and never when the id also lives in another
+    // thread. The moderator case tombstones even with nothing removed: the
+    // target may be OUR OWN message in the room's outgoing log, or one still
+    // in flight.
+    const roomOwn = opts?.groupId != null && (opts?.moderator === true || opts?.fromSelf === true)
+    if (!removed && !roomOwn) return
+    if (idElsewhere(targetId, scope)) return
+  }
   deletedIds.add(targetId)
   if (reactionsByTarget.delete(targetId)) emitReactions()
   persist()
@@ -1050,15 +1104,32 @@ export async function hydrateIncoming(uin: number): Promise<void> {
 /// Ingest a decrypted 1:1 envelope (text/photo/other media). `from` is the sender.
 /// In-place edit of an already-received message (author changed its text).
 /// Replaces the thread array (new reference) so useSyncExternalStore re-renders.
-function applyEditTo(map: Map<number, IncomingRow[]>, key: number, targetID: string, text: string): void {
+/// ⚠ Only the AUTHOR's row: the thread is the sender's, and inside it only a
+/// row they wrote changes (sender-auth, 11.10). A room thread holds everybody's
+/// rows, and an edit used to rewrite whichever one carried the id.
+function applyEditTo(map: Map<number, IncomingRow[]>, key: number, targetID: string, text: string, author: number): void {
   const prev = map.get(key)
-  if (!prev || !prev.some((r) => r.id === targetID)) return
-  map.set(key, prev.map((r) => (r.id === targetID ? { ...r, text, edited: true } : r)))
+  if (!prev || !prev.some((r) => r.id === targetID && r.from === author)) return
+  map.set(key, prev.map((r) => (r.id === targetID && r.from === author ? { ...r, text, edited: true } : r)))
   persist()
   emit()
 }
 
-export function addIncoming(from: number, env: Envelope, srvAt?: number): void {
+/// A reaction from somebody else lands only on a message of the thread it came
+/// through (theirs or ours there). It used to land on any message whose id the
+/// sender knew, a room's included, from anyone at all.
+function applyThreadReaction(threadKey: string, targetID: unknown, reactor: number, asset: unknown): void {
+  if (typeof targetID !== 'string' || !targetID) return
+  if (!threadHolds(threadKey, targetID)) return
+  applyReaction(targetID, reactor, typeof asset === 'string' ? asset : null)
+}
+
+/// Ingest a decrypted 1:1 envelope. `from` is the sender senderTrust settled
+/// on; `self` says it is our own number under our own key (a note, or a
+/// retract, from another device of the account), the only sender whose
+/// control traffic reaches beyond its own thread.
+export function addIncoming(from: number, env: Envelope, srvAt?: number, opts?: { self?: boolean }): void {
+  const self = opts?.self === true && from === _activeUin
   // The peer's delivered/read receipt for OUR messages: second tick / read
   // tint on the outgoing rows of that thread (#636/#637). Never a row.
   if (env.kind === 'delivered' || env.kind === 'read') {
@@ -1066,19 +1137,21 @@ export function addIncoming(from: number, env: Envelope, srvAt?: number): void {
     return
   }
   // A reaction the peer placed on one of OUR messages (or removed) — apply
-  // it to the reactions store rather than creating a message row.
+  // it to the reactions store rather than creating a message row. Our own
+  // reaction echoed from another device may target any thread.
   if (env.kind === 'reaction') {
-    applyReaction(env.targetID, from, env.asset)
+    if (self) applyReaction(env.targetID, from, env.asset)
+    else applyThreadReaction(peerKey(from), env.targetID, from, env.asset)
     return
   }
   if (env.kind === 'edit') {
-    applyEditTo(byPeer, from, env.targetID, env.text)
+    applyEditTo(byPeer, from, env.targetID, env.text, from)
     return
   }
   if (env.kind === 'delete') {
-    // 1:1 delete-for-everyone: honor only the sender's OWN message (author
-    // rule), unless it's our own delete carboned from another device.
-    markDeleted(env.targetID, from === _activeUin ? { fromSelf: true } : { senderUin: from })
+    // 1:1 delete-for-everyone: the sender's OWN message in their own thread,
+    // unless it's our own delete from another device.
+    markDeleted(env.targetID, self ? { fromSelf: true } : { peerUin: from })
     return
   }
   const row = rowFromEnvelope(from, env)
@@ -1114,44 +1187,42 @@ export function addIncoming(from: number, env: Envelope, srvAt?: number): void {
   bumpUnread(peerKey(from), row, null)
 }
 
-/// May `from` retract other people's messages in `groupId`? The owner may; an
-/// admin may when a roster is cached. The chat list is fetched `?members=0`,
-/// so the ROLE can be unknowable on the receive path — the owner check, off
-/// the group row itself, never is. An admin's delete that arrives before any
-/// roster was ever cached is simply ignored, same as on an old client.
-function groupModerator(groupId: number, from: number): boolean {
-  if (_activeUin == null) return false
-  const groups = contactsCache.get(_activeUin)?.groups ?? snapshotFor(_activeUin)?.groups ?? []
-  const g = groups.find((row) => row.id === groupId)
-  if (!g) return false
-  if (g.owner_uin === from) return true
-  return (g.members ?? []).find((m) => m.uin === from)?.role === 'admin'
-}
-
 /// Ingest a decrypted GROUP envelope: routed by `groupId` (from the transport),
-/// `from` is the member who sent it (from the sealed envelope). Deduped per
-/// group+envelope-id (each member gets their own ciphertext of the same envelope).
-export function addGroupIncoming(groupId: number, from: number, env: Envelope, srvAt?: number): void {
+/// `from` is the member who sent it, as the room's roster verified them
+/// (message-receiver). Deduped per group+envelope-id (each member gets their
+/// own ciphertext of the same envelope).
+///
+/// `moderator` is the sender's role by that same verified roster (owner or
+/// admin); `self` is our own number under our own key, another device of the
+/// account. Neither reaches past this room.
+export function addGroupIncoming(
+  groupId: number,
+  from: number,
+  env: Envelope,
+  srvAt?: number,
+  opts?: { moderator?: boolean; self?: boolean },
+): void {
   if (env.kind === 'reaction') {
-    applyReaction(env.targetID, from, env.asset)
+    applyThreadReaction(groupKey(groupId), env.targetID, from, env.asset)
     return
   }
   if (env.kind === 'edit') {
-    applyEditTo(byGroup, groupId, env.targetID, env.text)
+    applyEditTo(byGroup, groupId, env.targetID, env.text, from)
     return
   }
   if (env.kind === 'delete') {
     // Group delete: the author retracts their own message, and the group's
     // owner or an admin retracts anybody's (founder batch 21.08, item 3 —
     // "админ не может удалить чужое сообщение"). The wire is unchanged; the
-    // RECEIVER decides whether this sender may. An older client ignores a
+    // RECEIVER decides whether this sender may, by the roster it verified the
+    // sender against, and only inside this room. An older client ignores a
     // foreign delete and keeps the message — nothing breaks, it just stays.
-    markDeleted(
-      env.targetID,
-      from === _activeUin
-        ? { fromSelf: true }
-        : { senderUin: from, moderator: groupModerator(groupId, from) },
-    )
+    markDeleted(env.targetID, {
+      groupId,
+      author: from,
+      moderator: opts?.moderator === true,
+      fromSelf: opts?.self === true,
+    })
     return
   }
   const row = rowFromEnvelope(from, env)

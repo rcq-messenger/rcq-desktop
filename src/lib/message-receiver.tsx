@@ -4,7 +4,7 @@
 // feed the incoming-store, deduped by envelope id. Renders nothing.
 
 import { useEffect, useRef } from 'react'
-import { rememberTheirCard } from './guest-card'
+import { rememberTheirCard, theirCard } from './guest-card'
 import { peerSealKeys } from './peer-keys'
 import { useIdentity } from './identity-context'
 import { useWS } from './ws'
@@ -14,16 +14,19 @@ import { addIncoming, addGroupIncoming, serverStampMs, hydrateIncoming, beginCat
 } from './incoming-store'
 import { applyEditToOutgoing, carbonThreadKey, fileOutgoingCarbon } from './outgoing-store'
 import { publishHomeIslandRecord } from './federation-publish'
-import { answerKeyAsk, loadRoomKeys, putRoomKey } from './group-state'
+import { answerKeyAsk, loadRoomKeys, putRoomKey, roomKey, sealedKeyVer } from './group-state'
 import { handleProfileKeyEnvelope, loadProfileKeys } from './profile-key'
 import { snapshotFor } from './contacts-cache'
 import { isRandomTraffic, randomEnded, randomMatched } from './random-peers'
 import { adoptHomesFromOwnRecord, applyPushedRecord, backupIdentityFor, drainBackupQueues, listBackupHomes, scrubFrontAliasHomes } from './multihome'
 import { aliasFor, drainVisitedQueues, guestIdentityFor, listVisitedIslands } from './visited-islands'
-import { getCrossIsland, getVerifiedCrossIsland, sameKeyElsewhere } from './crossisland-store'
+import { getCrossIsland, getVerifiedCrossIsland } from './crossisland-store'
 import { notePeerHeardFrom } from './peer-liveness'
 import { depositReceiptToContact } from './federation-send'
-import { carbonIsOwn, crossIslandGateVerdict, foreignRoomBroadcastDropped, groupFrameDropped, sameSigningKey } from './crossisland-gate'
+import { carbonIsOwn, crossIslandGateVerdict, foreignRoomBroadcastDropped, groupFrameDropped, isContentKind, sameSigningKey } from './crossisland-gate'
+import { roomKeyVersionAllowed, skdmRoomMatches, type V2Identity } from './sender-trust'
+import { foreignClaim, noteRoomSnapshot, refreshRoomRoster, resolveDirectTrust, resolveRoomTrust } from './sender-trust-resolve'
+import { parseGroupChanged } from './group-events'
 import type { GuestRoom } from './held-gmsg'
 import { applyRequestAck } from './crossisland-ack'
 import { isBurning } from './burn-cascade'
@@ -36,11 +39,11 @@ import { CALL_OFFER_TTL_SEC, fileMissedCall, fileMissedCrossIslandOffer } from '
 import { deliverCrossIslandCallSignal } from './call'
 import { myCallPolicy } from './call-privacy'
 import { handleProfile, pushProfileTo } from './crossisland-profile'
-import { decodeGmsg, handleGmsg, handleSkdm, handleSknack, replayHeldGmsg } from './sender-key-receive'
+import { decodeGmsg, handleGmsg, handleSkdm, handleSknack, replayHeldGmsg, type GmsgAuthorize } from './sender-key-receive'
 import { ackLiveGroupRow, drainGroupLog, forgetVouched, islandHasGroupLog, type GroupLogRequest } from './group-log'
 import { Api, peerBundleFrom } from './api'
 import { bytesToB64, encryptV1 } from './crypto'
-import type { CallEnvelope, ContactReqEnvelope, Envelope, ProfileEnvelope, WebIdentity } from './crypto'
+import type { CallEnvelope, CarbonEnvelope, ContactReqEnvelope, Envelope, ProfileEnvelope, WebIdentity } from './crypto'
 
 // Hydrate the incoming store once per account per app load. Both receive paths
 // (the primary connect-drain and the backup-island poll, which runs even when
@@ -176,24 +179,66 @@ function handleSameIslandCallEnvelope(myUin: number, senderUin: number, env: Cal
   fileMissedCall(senderUin, null, media === 'video' ? 'video' : 'audio', ts, cid)
 }
 
+/// What a decrypted row proved about who sealed it, for route().
+interface SealProof {
+  /// The key a v=1 seal verified under, or the key a broadcast's chain is
+  /// bound to (sender-key-receive verified the broadcast under it).
+  spub?: string
+  /// v=2 only: the identity check signal-device ran before it decrypted.
+  v2?: V2Identity
+  /// The row may be left for a later drain when it cannot be judged yet: true
+  /// only for a v=1 seal, which nothing advanced. A v=2 row moved its ratchet
+  /// and a broadcast its chain, so neither opens a second time.
+  retryable?: boolean
+}
+
+/// 'retry': the row could not be judged for now (a room's roster unreadable,
+/// nothing cached) and nothing irreversible happened to it. The queue drains
+/// leave it unacked; everything else drops it.
+type RouteResult = 'done' | 'retry'
+
+function proofOf(got: { senderSigningKey?: string; senderV2?: V2Identity }): SealProof {
+  return got.senderV2 != null
+    ? { v2: got.senderV2 }
+    : { spub: got.senderSigningKey, retryable: true }
+}
+
+/// Answers "may the owner of this chain still speak in the room" for
+/// sender-key-receive, BEFORE the chain is ratcheted (see GmsgAuthorize).
+function gmsgAuthorizer(identity: WebIdentity, localGid: number): GmsgAuthorize {
+  return async (senderUin, spub) => {
+    const room = await resolveRoomTrust(identity, localGid, senderUin, spub, null)
+    if (room === 'retry') throw new Error('room roster unavailable')
+    if (room.trust === 'self' || room.trust === 'pinned') return true
+    console.warn('[sender-auth] broadcast under a chain whose owner the room does not hold; dropped', { localGid, senderUin })
+    return false
+  }
+}
+
 // Route a decrypted envelope to the 1:1 store or the group store by group_id.
-// `myUin` gates carbons (a message we sent from another device, echoed to our
-// own uin) — only honour one that's actually signed by us.
-function route(
+//
+// ⚠⚠ WHO SENT IT IS DECIDED FIRST (sender-auth, 11.10). In a v=1 seal `from`
+// and `from_host` are unsigned and the deposit is anonymous, so the number on
+// a row is a claim anyone holding our open key card can make. The only
+// comparison of the key a seal proved with anything used to sit at the
+// cross-island gate, and a sender dodged it by leaving `from_host` out. Every
+// branch below now starts from one verdict (sender-trust.ts), computed before
+// the first of them: the profile key, the room key and the sender-key chain
+// hand-offs, the guest card, the home record, call signalling, carbons,
+// receipts, edits, deletes and reactions as much as the messages themselves.
+async function route(
   senderUIN: number,
   senderHost: string | undefined,
-  envelope: Parameters<typeof addIncoming>[1],
+  envelope: Envelope,
   groupId: unknown,
-  myUin: number,
-  ownHost: string,
-  senderSigningKey?: string,
-  identity?: WebIdentity,
+  identity: WebIdentity,
+  proof: SealProof,
   /// The island's deposit stamp for this row, when the path that fetched it
   /// has one. See `IncomingRow.srvAt`: without it a queue drain files a day
   /// of backlog as if it had all arrived just now, and the read marker from
   /// another device can never clear any of it.
   srvAt?: number,
-): void {
+): Promise<RouteResult> {
   // ⚠⚠ RANDOM-CHAT TRAFFIC IS NOT OURS TO FILE, and this device has no random
   // chat at all. Undelivered queue rows go to EVERY device of the account, so a
   // phone in a random chat had its anonymous conversation written into a
@@ -205,66 +250,174 @@ function route(
   // The island tells every device when a pair starts and ends, which is how
   // this device knows whom to ignore without being able to join in.
   //
-  // Before the guest card below on purpose: a card from somebody whose traffic
-  // we are about to drop is a card we have no use for.
-  if (isRandomTraffic(senderUIN, isContact(myUin, senderUIN))) return
+  // Before everything else on purpose: nothing about traffic we are about to
+  // drop is worth a roster read or a card.
+  if (isRandomTraffic(senderUIN, isContact(identity.uin, senderUIN))) return 'done'
 
-  // ⚠⚠ A GROUP FRAME NEVER REACHES A 1:1 HANDLER (spec 2026-09-15, section 7).
-  // The island stores a group-sealed payload for any subset of a room's members
-  // without checking the sender, so one member can address exactly one other
-  // through the room. A contact request, a call, a profile push, a key ask, a
-  // visit or a carbon riding such a frame is dropped here, before any branch
-  // below could act on it; content keeps rendering in its group's thread only.
-  if (typeof groupId === 'number' && groupFrameDropped((envelope as { kind?: unknown }).kind)) return
+  if (typeof groupId === 'number') {
+    // ⚠⚠ A GROUP FRAME NEVER REACHES A 1:1 HANDLER (spec 2026-09-15, section 7).
+    // The island stores a group-sealed payload for any subset of a room's
+    // members without checking the sender, so one member can address exactly
+    // one other through the room. A contact request, a call, a profile push, a
+    // key ask, a visit or a carbon riding such a frame is dropped here;
+    // content keeps rendering in its group's thread only.
+    if (groupFrameDropped((envelope as { kind?: unknown }).kind)) return 'done'
+    return routeRoomFrame(senderUIN, envelope, groupId, identity, proof, srvAt)
+  }
+  return routeDirect(senderUIN, senderHost, envelope, identity, proof, srvAt)
+}
 
-  // ⚠⚠ A GUEST CARD the sender handed us, on a closed island. Read FIRST, and
-  // before any decision about whether we want this message: it is what makes
-  // "they wrote to me" into "I can answer them", and the answer path (the
-  // delivered receipt) fires within the same tick. Held even for a message we
-  // go on to quarantine as a stranger's, because the card costs nothing to
-  // keep and the alternative is a person who accepted a request an hour later
-  // and then cannot reply.
+/// A row that arrived as a room's frame: a per-member copy, or a broadcast
+/// decoded through a sender-key chain.
+///
+/// ⚠⚠ Only a MEMBER of that room, under the key its roster holds for them,
+/// speaks there (sender-auth, 11.10). `POST /messages/group-sealed` is
+/// anonymous and checks recipients only, so anyone who knew a room's id, one
+/// member's number and that member's card could post into the room as its
+/// owner, retract anybody's message with the owner's authority, or rewrite one
+/// as its author. Not a member, or not under that key: dropped. Moderation
+/// rights come from the same verified roster row, and act in this room only.
+async function routeRoomFrame(
+  senderUIN: number,
+  envelope: Envelope,
+  groupId: number,
+  identity: WebIdentity,
+  proof: SealProof,
+  srvAt: number | undefined,
+): Promise<RouteResult> {
+  const kind = (envelope as { kind?: unknown }).kind
+  const room = await resolveRoomTrust(identity, groupId, senderUIN, proof.spub, proof.v2)
+  if (room === 'retry') {
+    // The roster could not be read and nothing is cached. A v=1 seal comes
+    // back on the next drain; anything else cannot be opened again.
+    if (proof.retryable) return 'retry'
+    console.warn('[sender-auth] room roster unreadable; row dropped', { groupId, senderUIN, kind })
+    return 'done'
+  }
+  if (room.trust !== 'self' && room.trust !== 'pinned') {
+    console.warn('[sender-auth] row in a room from someone it does not hold under that key; dropped', {
+      groupId,
+      senderUIN,
+      kind,
+      trust: room.trust,
+    })
+    return 'done'
+  }
+
+  // Sender-keys distribution (never rendered). The chain is bound to the
+  // member who sealed it, to the key they sealed it under, and to THIS room.
+  if (kind === 'skdm') {
+    const skdm = envelope as unknown as { gid: number; kid: string; e: number; i: number; ck: string }
+    // The chain names its room, the frame names where it was deposited. A
+    // chain handed over in one room is never a key for another.
+    if (!skdmRoomMatches(skdm.gid, room.ctx.gid)) {
+      console.warn('[sender-keys] SKDM for another room than the frame it rode; dropped', { groupId, gid: skdm.gid })
+      return 'done'
+    }
+    // Filed under the home account, against the room's island. A v=2 SKDM
+    // names no key to bind the chain to and is refused inside handleSkdm.
+    const accepted = handleSkdm(identity.uin, senderUIN, proof.spub, skdm, room.ctx.host)
+    // A live gmsg can outrun its own SKDM (a drain cannot: skdm rows are
+    // served first) and used to be lost for good. Replay whatever was held
+    // for this kid through the normal decrypt path, in arrival order; a
+    // copy the queue drain also delivers is absorbed by the chain position
+    // and the envelope-id dedup downstream of route().
+    if (accepted && typeof skdm.kid === 'string') {
+      void replayHeldGmsg(identity, skdm.kid, (r) => gmsgAuthorizer(identity, r.aliasGid))
+        .then(async (msgs) => {
+          for (const m of msgs) {
+            // A held broadcast from a room on another island goes through
+            // the same door as a live one (routeForeignRoomBroadcast).
+            if (m.host) await routeForeignRoomBroadcast(m.senderUIN, m.spub, m.envelope, m.host, m.gid, identity, undefined)
+            else await route(m.senderUIN, undefined, m.envelope, m.gid, identity, { spub: m.spub })
+          }
+        })
+        .catch(() => {})
+    }
+    return 'done'
+  }
+  // A member asking the kid owner to re-distribute. Answered from our own
+  // island's roster only (handleSknack reads it), so only for a room here.
+  if (kind === 'sknack') {
+    const e = envelope as unknown as { gid: number; kid: string }
+    if (room.ctx.host == null && skdmRoomMatches(e.gid, room.ctx.gid)) void handleSknack(identity, senderUIN, e)
+    return 'done'
+  }
+  addGroupIncoming(groupId, senderUIN, envelope, srvAt, {
+    moderator: room.role === 'owner' || room.role === 'admin',
+    self: room.trust === 'self',
+  })
+  return 'done'
+}
+
+/// A 1:1 row.
+async function routeDirect(
+  senderUIN: number,
+  senderHost: string | undefined,
+  envelope: Envelope,
+  identity: WebIdentity,
+  proof: SealProof,
+  srvAt: number | undefined,
+): Promise<RouteResult> {
+  const myUin = identity.uin
+  const ownHost = hostOf(identity.apiBase)
+  const kind = typeof (envelope as { kind?: unknown }).kind === 'string' ? (envelope as { kind: string }).kind : ''
+  const spub = proof.spub
+  const t = await resolveDirectTrust(identity, senderUIN, senderHost, spub, proof.v2)
+  // `from_host` when it names another island, for the two branches that are
+  // ABOUT the claimed address (a contact request, a profile refresh) and do
+  // their own pinned-key checks.
+  const foreign = foreignClaim(senderHost, identity)
+
+  // ⚠⚠ A GUEST CARD the sender handed us, on a closed island. Read before any
+  // decision about whether we want this message: it is what makes "they wrote
+  // to me" into "I can answer them", and the answer path (the delivered
+  // receipt) fires within the same tick. Held even for a message we go on to
+  // quarantine as a stranger's, because the card costs nothing to keep and
+  // the alternative is a person who accepted a request an hour later and then
+  // cannot reply.
+  //
+  // But never on the unsigned number alone: a pinned sender's card is filed
+  // under the row that pinned them, a stranger's only where we hold none yet,
+  // and a forged one not at all. A junk card filed under a contact's number
+  // used to break every key read for them on a closed island.
   //
   // Never from a carbon: a carbon is our own message coming back from another
   // of our devices, and its `card` is OURS.
-  if (envelope.kind !== 'carbon' && senderUIN !== myUin) {
+  if (kind !== 'carbon' && (t.trust === 'pinned' || t.trust === 'unpinned')) {
     const card = (envelope as { card?: unknown }).card
-    if (typeof card === 'string' && card) {
-      rememberTheirCard(senderUIN, senderHost && senderHost !== ownHost ? senderHost : null, card)
+    if (typeof card === 'string' && card && (t.trust === 'pinned' || !theirCard(senderUIN, t.host))) {
+      rememberTheirCard(senderUIN, t.host, card)
     }
   }
-  // Our own signing key, and whether THIS envelope was sealed under it, for the
-  // two places that ask "did WE seal this": the carbon branch here and the
-  // own-number exemption at the cross-island gate further down.
-  //
-  // ⚠⚠ Computed BEFORE the carbon branch (spec 2026-09-15, P0.1). `ownSeal`
-  // used to be worked out below it, next to the gate, so the one branch that
-  // applies an envelope with our own authority was the one that never asked.
-  const ownSigningKey = identity ? bytesToB64(identity.signingPub) : null
-  const ownSeal = senderUIN === myUin && sameSigningKey(senderSigningKey, ownSigningKey)
-  if (envelope.kind === 'carbon') {
+  // Our own signing key, and whether THIS envelope was sealed under it.
+  const ownSigningKey = bytesToB64(identity.signingPub)
+  const ownSeal = senderUIN === myUin && sameSigningKey(spub, ownSigningKey)
+  if (kind === 'carbon') {
     // ⚠⚠ Not on `from` alone: that field is unsigned in v=1, and a carbon's
     // `ciack` pins contact keys, so a forged one would let a stranger pin
     // their own key for a contact of ours and pass every pinned-key check
-    // after it. The whole rule is carbonIsOwn (crossisland-gate.ts), the
-    // TRANSITIONAL one iOS ships too: a carbon that names a key must name OUR
-    // signing key, every inner kind; a `ciack` carbon is taken only under our
-    // own key; a keyless (v=2) carbon is taken for the other kinds, because
-    // Android seals its carbons v=2 until 0.194 has spread, and then the
-    // strict rule (our key, every kind) is to be switched on. The inner kind
-    // is read HERE, before the rule, because the rule depends on it. A
-    // refused carbon applies nothing and falls through to the return below,
-    // so the caller acks it like any other row route() consumed and the
-    // island stops re-serving it.
-    const inner = envelope.env as
+    // after it. Two locks: the verdict is SELF (our key on a v=1 seal, one of
+    // the devices our island publishes for us on a v=2 one), and carbonIsOwn
+    // (crossisland-gate.ts), the TRANSITIONAL rule iOS ships too: a carbon
+    // that names a key must name OUR signing key, every inner kind; a `ciack`
+    // carbon is taken only under our own key; a keyless (v=2) carbon is taken
+    // for the other kinds, because Android seals its carbons v=2 until 0.194
+    // has spread, and then the strict rule (our key, every kind) is to be
+    // switched on. The inner kind is read HERE, before the rule, because the
+    // rule depends on it. A refused carbon applies nothing and returns, so the
+    // caller acks it like any other row route() consumed and the island stops
+    // re-serving it.
+    const inner = (envelope as { env?: unknown }).env as
       | { kind?: string; targetID?: string; text?: string; at?: number }
       | undefined
-    if (carbonIsOwn(senderUIN, myUin, senderHost, ownHost, senderSigningKey, ownSigningKey, typeof groupId === 'number', inner?.kind)) {
+    if (t.trust === 'self' && carbonIsOwn(senderUIN, myUin, senderHost, ownHost, spub, ownSigningKey, false, inner?.kind)) {
+      const carbon = envelope as CarbonEnvelope
       // Control carbons first: an edit/delete made on another of our devices
       // targets a row we already have — filing it as a NEW row (the content
       // path below) would be wrong twice over.
       if (inner?.kind === 'edit' && inner.targetID != null) {
-        const key = carbonThreadKey(envelope)
+        const key = carbonThreadKey(carbon)
         if (key) applyEditToOutgoing(key, inner.targetID, inner.text ?? '')
       } else if (inner?.kind === 'delete' && inner.targetID != null) {
         markDeleted(inner.targetID, { fromSelf: true })
@@ -289,128 +442,92 @@ function route(
         // We read this thread on another device (A2): drop the badge here
         // too, minus anything that arrived after that read. Not a message,
         // so it must never reach fileOutgoingCarbon below.
-        applyRemoteRead(envelope.to ?? null, envelope.gid ?? null, inner.at ?? Date.now())
+        applyRemoteRead(carbon.to ?? null, carbon.gid ?? null, inner.at ?? Date.now())
       } else {
         // With the row's island stamp: a carbon drained from the queue is
         // otherwise filed at the moment of the drain (#1039).
-        fileOutgoingCarbon(envelope, srvAt)
+        fileOutgoingCarbon(carbon, srvAt)
       }
+    } else if (senderUIN === myUin) {
+      console.warn('[sender-auth] carbon not sealed by this account; ignored')
     }
-    return
+    return 'done'
   }
-  // Sender-keys distribution / recovery (never rendered). SKDM stores the
-  // chain bound to its authenticated sender; SKNACK asks the kid owner to
-  // re-distribute. Both ride the per-member sealed path.
-  // Profile key hand-off / ask-back. Same carriers as the room keys below,
-  // and checked first for the same reason: the inner kind decides, not the
-  // outer type. `senderUin` is the SEALED sender the envelope verified under,
-  // so a key can only ever be filed against whoever actually sealed it.
-  const pkKind = (envelope as { kind?: string }).kind
-  if (identity && (pkKind === 'pkey' || pkKind === 'pkeyask')) {
-    void handleProfileKeyEnvelope(identity, senderUIN, envelope as { kind?: string; key?: string })
-    return
+  // Profile key hand-off / ask-back. Both file state under the sender's bare
+  // number in the HOME namespace: the face we show for that number, and the
+  // key to ours. Only a person of our island under the key we hold for them
+  // (or another device of ours) gets either; anyone else could blank a
+  // contact's face, or swap it with the island's help.
+  if (kind === 'pkey' || kind === 'pkeyask') {
+    if (t.trust === 'self' || (t.trust === 'pinned' && t.host == null)) {
+      void handleProfileKeyEnvelope(identity, senderUIN, envelope as { kind?: string; key?: string })
+    }
+    return 'done'
   }
-  // Room state key hand-off / ask-back (stage 6 phase 2). Checked before
-  // skdm because both ride the same outer types; the inner kind decides.
-  if ((envelope as { kind?: string }).kind === 'gskey') {
+  // Room state key hand-off / ask-back (stage 6 phase 2). Sealed 1:1, about a
+  // room of OUR island: taken only from a member of that room under the key
+  // its roster holds for them (or a device of ours), never by bare number.
+  if (kind === 'gskey') {
     const e = envelope as unknown as { gid?: number; ver?: number; key?: string }
-    if (identity && typeof e.gid === 'number' && typeof e.ver === 'number' && typeof e.key === 'string') {
-      const gid = e.gid, ver = e.ver, keyB64 = e.key
-      // Membership gate. ⚠ The home snapshot stores groups WITHOUT members
-      // (the list loads member-less on purpose), so testing it alone
-      // rejected every legitimate key and answered no ask - the wedge
-      // re-run caught the receiver, not the sender. One roster read on
-      // demand; the frames are rare and roster-gated on both ends.
-      void (async () => {
-        const snap = snapshotFor(identity.uin)
-        let g = snap?.groups.find((x) => x.id === gid)
-        if (!g?.members?.length) {
-          g = await Api.groupInfo(identity, gid).catch(() => undefined)
-        }
-        const fromMember = !!g?.members?.some((m) => m.uin === senderUIN)
-        if (fromMember || senderUIN === myUin) {
-          if (putRoomKey(gid, ver, keyB64, { replaceEqual: true })) {
-            window.dispatchEvent(new Event('rcq-room-keys-changed'))
-          }
-        }
-      })()
+    if (!foreign && typeof e.gid === 'number' && e.gid > 0 && typeof e.ver === 'number' && typeof e.key === 'string') {
+      await acceptRoomKey(identity, senderUIN, proof, e.gid, e.ver, e.key)
     }
-    return
+    return 'done'
   }
-  if ((envelope as { kind?: string }).kind === 'gsknack') {
+  if (kind === 'gsknack') {
     const e = envelope as unknown as { gid?: number }
-    if (identity && typeof e.gid === 'number') {
+    if (!foreign && typeof e.gid === 'number' && e.gid > 0) {
       const gid = e.gid
-      void (async () => {
+      const room = await resolveRoomTrust(identity, gid, senderUIN, spub, proof.v2)
+      if (room !== 'retry' && (room.trust === 'pinned' || room.trust === 'self')) {
+        // The answer is sealed to the keys the roster holds for the asker,
+        // read the way it always was. ⚠ The home snapshot stores groups
+        // WITHOUT members (the list loads member-less on purpose), so one
+        // roster read on demand; the frames are rare and roster-gated on
+        // both ends.
         const snap = snapshotFor(identity.uin)
         let g = snap?.groups.find((x) => x.id === gid)
-        if (!g?.members?.length) {
-          g = await Api.groupInfo(identity, gid).catch(() => undefined)
-        }
+        if (!g?.members?.length) g = await Api.groupInfo(identity, gid).catch(() => undefined)
         const asker = g?.members?.find((m) => m.uin === senderUIN)
-        if (asker?.identity_key) {
-          void answerKeyAsk(identity, asker, gid)
-        }
-      })()
-    }
-    return
-  }
-  if ((envelope as { kind?: string }).kind === 'skdm') {
-    // No identity means no account to file the chain under, and a chain filed
-    // under the wrong one is exactly the bug this key shape exists to stop.
-    if (identity) {
-      const skdm = envelope as unknown as { gid: number; kid: string; e: number; i: number; ck: string }
-      const accepted = handleSkdm(identity.uin, senderUIN, senderSigningKey, skdm)
-      // A live gmsg can outrun its own SKDM (a drain cannot: skdm rows are
-      // served first) and used to be lost for good. Replay whatever was held
-      // for this kid through the normal decrypt path, in arrival order; a
-      // copy the queue drain also delivers is absorbed by the chain position
-      // and the envelope-id dedup downstream of route().
-      if (accepted && typeof skdm.kid === 'string') {
-        void replayHeldGmsg(identity, skdm.kid)
-          .then((msgs) => {
-            for (const m of msgs) {
-              // A held broadcast from a room on another island goes through
-              // the same door as a live one (routeForeignRoomBroadcast).
-              if (m.host) routeForeignRoomBroadcast(m.senderUIN, m.envelope, m.host, m.gid, identity, undefined)
-              else route(m.senderUIN, undefined, m.envelope, m.gid, myUin, ownHost, undefined, identity)
-            }
-          })
-          .catch(() => {})
+        if (asker?.identity_key) void answerKeyAsk(identity, asker, gid)
       }
     }
-    return
+    return 'done'
   }
-  if ((envelope as { kind?: string }).kind === 'sknack') {
-    if (identity) void handleSknack(identity, senderUIN, envelope as unknown as { gid: number; kid: string })
-    return
+  // Sender-key traffic rides a room's frames on every client (group-sealed,
+  // with the room's id on the row). One sealed 1:1 is bound to no room, so
+  // there is nothing to check its sender against: dropped.
+  if (kind === 'skdm' || kind === 'sknack') {
+    console.warn('[sender-keys] sender-key traffic outside a room frame; dropped', { senderUIN, kind })
+    return 'done'
   }
   // Federation gossip B1 self-push: a contact handed us their fresh signed
-  // home-island record. Verify it's signed by the SAME key that signed this
-  // envelope (binds the record to its real sender), reject a ts rollback, and
-  // cache their homes for future sends. Never rendered as a message.
-  if ((envelope as { kind?: string }).kind === 'homerec') {
+  // home-island record. Taken only from a sender pinned under the key we hold
+  // for them, and verified against that key (the same bytes, once pinned): a
+  // record signed by whoever sealed the envelope used to repoint where our
+  // messages to that contact go. Reject a ts rollback, cache their homes for
+  // future sends. Never rendered as a message.
+  if (kind === 'homerec') {
     const rec = (envelope as { rec?: unknown }).rec
-    if (senderSigningKey && rec != null) applyPushedRecord(senderUIN, senderSigningKey, rec)
-    return
+    if (t.trust === 'pinned' && spub && rec != null) applyPushedRecord(senderUIN, spub, rec)
+    return 'done'
   }
-  // §5d cross-island call signalling. Sits ABOVE the quarantine for the same
-  // reason §5f does, and one more of its own: a signal is EPHEMERAL. Held as a
-  // message request it would be a call nobody can answer, sitting in a list,
-  // and it must never reach the message store — the conversation gets the
-  // one-line call summary the state machine writes when the call is over, not
-  // the SDP that set it up. A same-island call otherwise rides the plaintext WS
-  // relay; the single envelope that arrives from our own island is the
-  // missed-call marker, which has its own handler and its own gates.
-  if ((envelope as { kind?: string }).kind === 'call') {
-    if (senderUIN !== myUin) {
-      if (senderHost && senderHost !== ownHost) {
-        handleCallSignal(senderUIN, senderHost, envelope as unknown as CallEnvelope, senderSigningKey)
-      } else {
-        handleSameIslandCallEnvelope(myUin, senderUIN, envelope as unknown as CallEnvelope)
-      }
+  // §5d call signalling. Sits ABOVE the quarantine for the same reason §5f
+  // does, and one more of its own: a signal is EPHEMERAL. Held as a message
+  // request it would be a call nobody can answer, sitting in a list, and it
+  // must never reach the message store — the conversation gets the one-line
+  // call summary the state machine writes when the call is over, not the SDP
+  // that set it up. A same-island call otherwise rides the plaintext WS relay;
+  // the single envelope that arrives from our own island is the missed-call
+  // marker, which has its own handler and its own gates. A forged sender
+  // files no missed call and rings nothing.
+  if (kind === 'call') {
+    if (t.trust === 'pinned' && t.host != null) {
+      handleCallSignal(senderUIN, t.host, envelope as unknown as CallEnvelope, spub)
+    } else if ((t.trust === 'pinned' || t.trust === 'unpinned') && t.host == null && !t.unverified) {
+      handleSameIslandCallEnvelope(myUin, senderUIN, envelope as unknown as CallEnvelope)
     }
-    return
+    return 'done'
   }
   // §5f cross-island contact request / accept / decline. MUST sit above the
   // quarantine below: that quarantine swallows everything from an unaccepted
@@ -418,101 +535,109 @@ function route(
   // is the whole point of the envelope — held as a message it would be invisible
   // as the request it is. Consent metadata only: never the message store.
   // Same-island senders are ignored here; they have the server's /contacts flow.
-  if ((envelope as { kind?: string }).kind === 'contactreq') {
-    if (senderHost && senderHost !== ownHost && senderUIN !== myUin) {
-      handleContactReq(senderUIN, senderHost, envelope as ContactReqEnvelope, senderSigningKey)
+  // The ADDRESS is what this envelope is about, so it reads the claimed one;
+  // handleContactReq does its own pinned-key checks against it.
+  if (kind === 'contactreq') {
+    if (foreign && senderUIN !== myUin) {
+      handleContactReq(senderUIN, foreign, envelope as ContactReqEnvelope, spub)
       // §5e: they just accepted us, so from this moment they HOLD us — and all
       // they hold is whatever their key-card fetch caught at add time. Hand
       // them our current name and picture now rather than making them wait for
       // the next time we happen to edit the profile.
       if (
-        identity &&
         (envelope as ContactReqEnvelope).act === 'accept' &&
         // Only the pinned key's accept: our profile goes to the person we
         // pinned, never on the say-so of an unsigned address.
-        getVerifiedCrossIsland(senderUIN, senderHost, senderSigningKey)
+        getVerifiedCrossIsland(senderUIN, foreign, spub)
       ) {
-        void pushProfileTo(identity, senderHost, senderUIN)
+        void pushProfileTo(identity, foreign, senderUIN)
       }
     }
-    return
+    return 'done'
   }
   // §5e cross-island profile refresh: the peer's own name/picture, pushed by
   // them because nothing else can refresh it. Same placement rule as §5f above
   // — ABOVE the quarantine, and never into the message store. Display fields
   // only: `handleProfile` cannot reach a pinned key, and a `profile` from
   // someone we do not hold as an accepted contact is dropped on the floor.
-  if ((envelope as { kind?: string }).kind === 'profile') {
-    if (senderHost && senderHost !== ownHost && senderUIN !== myUin) {
-      handleProfile(senderUIN, senderHost, envelope as ProfileEnvelope, senderSigningKey)
+  if (kind === 'profile') {
+    if (foreign && senderUIN !== myUin) handleProfile(senderUIN, foreign, envelope as ProfileEnvelope, spub)
+    return 'done'
+  }
+
+  // Our own number under our own key: a note to Saved Messages, or a note
+  // retracted on another device of the account.
+  if (t.trust === 'self') {
+    addIncoming(myUin, envelope, srvAt, { self: true })
+    return 'done'
+  }
+  // ⚠⚠ A key is held for this number and the seal was not it (or a contact
+  // whose key nothing here can tell us). Content goes to the requests list,
+  // flagged, so it is seen and never merged into the contact's thread in
+  // silence; an accept there checks the key against the island once more.
+  // Control traffic is dropped: an edit, a delete, a reaction or a receipt in
+  // someone else's name has nothing to belong to.
+  if (t.trust === 'forged' || t.unverified) {
+    if (senderUIN === myUin) {
+      console.warn('[sender-auth] our own number under a key that is not ours; dropped', { kind })
+      return 'done'
     }
-    return
+    const host = t.host ?? ''
+    if (isContentKind(kind)) {
+      holdRequestMessage(senderUIN, host, envelope, { spub, keyMismatch: t.keyChanged })
+    } else {
+      // Dropped, except for what it says about a message we hold from this
+      // very key: a delete for everyone takes that back.
+      const del = envelope as { targetID?: string }
+      if (kind === 'delete' && del.targetID) retractHeldMessage(senderUIN, host, del.targetID, spub ?? '')
+    }
+    console.warn('[sender-auth] envelope under a key that is not the one held for this number', {
+      senderUIN,
+      host: t.host,
+      kind,
+      unverified: t.unverified === true,
+    })
+    return 'done'
   }
-  if (typeof groupId === 'number') {
-    addGroupIncoming(groupId, senderUIN, envelope, srvAt) // groups are single-island
-    return
-  }
-  // Variant A consent: a message from an un-accepted CROSS-ISLAND sender is
-  // quarantined as a "request" instead of landing in the chat list. Accepted
-  // (we proactively added them) → normal ingest. Blocked → dropped, accepted
-  // or not. The rule itself is crossisland-gate.ts.
-  //
-  // ⚠⚠ #985(1): CONTENT only is held. Everyone on a group's island stamps that
-  // island as `from_host`, so a co-member's control traffic to our guest copy
-  // there (a `visit` from opening a profile, and the like) was held too and
-  // surfaced as a request with nothing in it. Every other kind from an
-  // unaccepted sender is DROPPED: not held, and never applied, because a
-  // `delete`, `edit` or `secscreen` from a stranger reaching the stores below
-  // would be the worse bug. The key, contactreq, profile, homerec and call
-  // branches above keep their own gates and never get here.
-  //
-  // ⚠⚠ "Accepted" is the pinned address AND the pinned signing key. The
-  // address on a v=1 seal is unsigned; the key it verified under is not. A
-  // pinned address under another key is handled as a stranger and the request
-  // row says so (`keyMismatch`), so it is never merged into the contact's
-  // thread in silence.
-  //
-  // Our own number is exempt only when the seal is really ours. The number is
-  // per-island: somebody on another island can hold the same digits, and the
-  // old `senderUIN !== myUin` exemption let exactly that stranger past the
-  // gate with any kind at all. (`ownSeal` is computed above the carbon branch.)
-  if (senderHost && senderHost !== ownHost && !ownSeal) {
-    const kind = (envelope as { kind?: string }).kind ?? ''
-    // The row at this exact address decides; without one, the same person
-    // under the same key on another of their islands (sameKeyElsewhere).
-    const pinned = getCrossIsland(senderUIN, senderHost) ?? sameKeyElsewhere(senderUIN, senderSigningKey)
+
+  if (t.host != null) {
+    // Variant A consent: a message from an un-accepted CROSS-ISLAND sender is
+    // quarantined as a "request" instead of landing in the chat list. Accepted
+    // (we proactively added them) → normal ingest. Blocked → dropped, accepted
+    // or not. The rule itself is crossisland-gate.ts.
+    //
+    // ⚠⚠ #985(1): CONTENT only is held. Everyone on a group's island stamps that
+    // island as `from_host`, so a co-member's control traffic to our guest copy
+    // there (a `visit` from opening a profile, and the like) was held too and
+    // surfaced as a request with nothing in it. Every other kind from an
+    // unaccepted sender is DROPPED: not held, and never applied, because a
+    // `delete`, `edit` or `secscreen` from a stranger reaching the stores below
+    // would be the worse bug. The key, contactreq, profile, homerec and call
+    // branches above keep their own gates and never get here.
+    //
+    // "Accepted" is the pinned row senderTrust found under the key the seal
+    // proved; its island is where they live, whatever `from_host` said.
+    const pinned = t.trust === 'pinned' ? getCrossIsland(senderUIN, t.host) : null
     // Blocked by the address or by the key the seal proved, on any of their
     // islands. Asked for an accepted contact too (reports 1064, 1065): the
     // pinned key is who they are, and it is what a block holds against them.
-    const blocked = isBlockedSender(senderUIN, senderHost, senderSigningKey)
-    const verdict = crossIslandGateVerdict(kind, pinned?.signingKey ?? null, senderSigningKey, blocked)
+    const blocked = isBlockedSender(senderUIN, t.host, spub)
+    const verdict = crossIslandGateVerdict(kind, pinned?.signingKey ?? null, spub, blocked)
     if (verdict.action === 'hold') {
       // Returning skips the delivered receipt below, as for every held row:
       // a held message must not confirm to a stranger that it landed.
-      holdRequestMessage(senderUIN, senderHost, envelope, {
-        spub: senderSigningKey,
-        keyMismatch: verdict.keyMismatch,
-      })
-      return
+      holdRequestMessage(senderUIN, t.host, envelope, { spub, keyMismatch: verdict.keyMismatch })
+      return 'done'
     }
     if (verdict.action === 'drop') {
       // Blocked: nothing at all, and no receipt. Their request row went with
       // the block, so there is nothing held to take back either.
-      if (blocked) return
+      if (blocked) return 'done'
       // Dropped, except for what it says about a message we hold from them:
       // a delete for everyone takes that back, or the accept would replay it.
-      const del = envelope as { kind?: string; targetID?: string }
-      if (del.kind === 'delete' && del.targetID) {
-        retractHeldMessage(senderUIN, senderHost, del.targetID, senderSigningKey)
-      }
-      if (verdict.keyMismatch) {
-        console.warn('[crossisland] control envelope under a key that is not the pinned one; dropped', {
-          senderUIN,
-          senderHost,
-          kind,
-        })
-      }
-      return
+      const del = envelope as { targetID?: string }
+      if (kind === 'delete' && del.targetID) retractHeldMessage(senderUIN, t.host, del.targetID, spub)
+      return 'done'
     }
     // Delivered means verified under the pinned key: the person is there,
     // whatever a probe concluded about the address (report 1067). One of the
@@ -520,20 +645,34 @@ function route(
     // under the pinned keys on a send), and never on the number alone: a
     // reissued number writes under another key and is held above.
     if (pinned) notePeerHeardFrom(pinned.uin, pinned.host, srvAt)
+    addIncoming(senderUIN, envelope, srvAt)
+    // From another island (#1062): answered on THEIR island, to the contact
+    // this row was verified as (address and pinned key), never by number. A
+    // stranger's row is held before it gets here, so nobody unaccepted learns
+    // that this device is awake.
+    if (pinned && 'id' in envelope && envelope.id) {
+      const env: Envelope = { kind: 'delivered', targetIDs: [envelope.id] }
+      void flushHistory()
+        .then(() => depositReceiptToContact(identity, pinned, env))
+        .catch(() => {})
+    }
+    return 'done'
   }
-  // The same consent gate for the OWN island, opt-in (Privacy → strangers to
-  // requests). host '' marks a same-island row in the shared store. Returning
-  // here also skips the delivery receipt below on purpose: a held message
-  // must not confirm to a stranger that it landed in front of a human.
-  if ((!senderHost || senderHost === ownHost) && senderUIN !== myUin) {
-    const kind = (envelope as { kind?: string }).kind ?? ''
+
+  // Our island. The same consent gate as above, opt-in (Privacy → strangers
+  // to requests), for a sender we hold no key for. host '' marks a
+  // same-island row in the shared store, and the key the seal proved goes
+  // with it, so an accept can check it against their card. Returning here
+  // also skips the delivery receipt below on purpose: a held message must not
+  // confirm to a stranger that it landed in front of a human.
+  if (t.trust === 'unpinned') {
     if (shouldQuarantineStranger(myUin, senderUIN, kind)) {
-      holdRequestMessage(senderUIN, '', envelope)
-      return
+      holdRequestMessage(senderUIN, '', envelope, { spub })
+      return 'done'
     }
     // A stranger deleting for everyone a message we still hold.
-    const del = envelope as { kind?: string; targetID?: string }
-    if (del.kind === 'delete' && del.targetID && retractHeldMessage(senderUIN, '', del.targetID, '')) return
+    const del = envelope as { targetID?: string }
+    if (kind === 'delete' && del.targetID && retractHeldMessage(senderUIN, '', del.targetID, spub ?? '')) return 'done'
   }
   addIncoming(senderUIN, envelope, srvAt)
   // Tell the sender it ARRIVED.
@@ -555,29 +694,51 @@ function route(
   // is how a fan-out copy vanished for good on 2026-08-20. A failed write keeps
   // the tick back — the sender retries nothing, but nothing was promised.
   //
-  // ⚠⚠ SAME ISLAND ONLY. `sendDeliveredReceipt` seals with a key from OUR
-  // island's /users/{uin}/info, so for a sender on another island it addresses
-  // whoever happens to hold that number HERE: a stranger gets a receipt for a
-  // message they never sent, and the real sender gets no tick. The number is
-  // per-island, and this path never checked which island the number was from.
-  const sameIsland = !senderHost || senderHost === ownHost
-  if (identity && senderUIN !== myUin && groupId == null && sameIsland && 'id' in envelope && envelope.id) {
+  // ⚠⚠ SAME ISLAND ONLY, which this branch is: `sendDeliveredReceipt` seals
+  // with a key from OUR island's /users/{uin}/info, so for a sender on another
+  // island it would address whoever holds that number HERE.
+  if ('id' in envelope && envelope.id) {
     const targetID = envelope.id
     void flushHistory()
       .then(() => sendDeliveredReceipt(identity, senderUIN, targetID))
       .catch(() => {})
-  } else if (identity && senderUIN !== myUin && groupId == null && senderHost && 'id' in envelope && envelope.id) {
-    // From another island (#1062): answered on THEIR island, to the contact
-    // this row was verified as (address and pinned key), never by number. A
-    // stranger's row is held before it gets here, so nobody unaccepted learns
-    // that this device is awake.
-    const ci = getVerifiedCrossIsland(senderUIN, senderHost, senderSigningKey)
-    if (ci) {
-      const env: Envelope = { kind: 'delivered', targetIDs: [envelope.id] }
-      void flushHistory()
-        .then(() => depositReceiptToContact(identity, ci, env))
-        .catch(() => {})
-    }
+  }
+  return 'done'
+}
+
+/// A room state key sealed to us 1:1. Taken only from a member of that room
+/// under the key its roster holds for them, or from another device of ours,
+/// and only within reach of the version we know of. `putRoomKey` is monotonic,
+/// so one envelope carrying an absurd version used to wedge the room for good
+/// (every later legitimate key was "older"), and it was taken from anyone who
+/// wrote the room's number and a member's.
+async function acceptRoomKey(
+  identity: WebIdentity,
+  senderUIN: number,
+  proof: SealProof,
+  gid: number,
+  ver: number,
+  keyB64: string,
+): Promise<void> {
+  const room = await resolveRoomTrust(identity, gid, senderUIN, proof.spub, proof.v2)
+  if (room === 'retry' || (room.trust !== 'self' && room.trust !== 'pinned')) {
+    console.warn('[sender-auth] room key from someone the room does not hold under that key; ignored', { gid, senderUIN })
+    return
+  }
+  const held = roomKey(gid)?.v ?? null
+  const sealedOf = (blob: string | null | undefined) => (blob ? sealedKeyVer(blob) : null)
+  let sealed = sealedOf(room.stateBlob ?? snapshotFor(identity.uin)?.groups.find((g) => g.id === gid)?.state_blob)
+  // The roster this was judged by may have come without the room's blob (a
+  // screen read it): read it once with the blob before refusing a version.
+  if (!roomKeyVersionAllowed(ver, held, sealed) && room.stateBlob == null) {
+    sealed = sealedOf(await refreshRoomRoster(identity, gid))
+  }
+  if (!roomKeyVersionAllowed(ver, held, sealed)) {
+    console.warn('[sender-auth] room key version out of reach; ignored', { gid, ver, held, sealed })
+    return
+  }
+  if (putRoomKey(gid, ver, keyB64, { replaceEqual: true })) {
+    window.dispatchEvent(new Event('rcq-room-keys-changed'))
   }
 }
 
@@ -735,15 +896,23 @@ async function ingestPrimaryRow(
     // the `dev` filter hands out every copy, so this is not dead code.
   } else if (r.envelope_type === 'gmsg' && typeof r.group_id === 'number') {
     // Sender-keys broadcast: not a sealed envelope, decoded via the chain.
-    const got = await handleGmsg(identity, r.payload, r.group_id)
-    if (got) route(got.senderUIN, undefined, got.envelope, r.group_id, identity.uin, hostOf(identity.apiBase), undefined, identity, srvAt)
+    // The room decides whether the chain's owner may still speak there
+    // before the chain moves (gmsgAuthorizer); a roster it cannot read
+    // throws, and the row stays for the next drain.
+    const got = await handleGmsg(identity, r.payload, r.group_id, undefined, gmsgAuthorizer(identity, r.group_id))
+    if (got) await route(got.senderUIN, undefined, got.envelope, r.group_id, identity, { spub: got.spub }, srvAt)
   } else {
     const got = await decryptIncoming(identity, r.payload)
     if (got) {
       // A decrypted envelope proves the sending DEVICE can talk to us:
-      // its silence probe stands down (device-scoped; v=1 names none).
-      if (got.senderUIN !== identity.uin) noteInboundFrom(got.senderUIN, got.senderDeviceId)
-      route(got.senderUIN, got.senderHost, got.envelope, r.group_id, identity.uin, hostOf(identity.apiBase), got.senderSigningKey, identity, srvAt)
+      // its silence probe stands down (device-scoped; v=1 names none). Only
+      // when the island vouches for that device's identity.
+      if (got.senderUIN !== identity.uin && got.senderV2 === 'verified') noteInboundFrom(got.senderUIN, got.senderDeviceId)
+      // A v=1 row that could not be judged yet (a room roster unreadable) is
+      // left in front of the cursor: nothing about it advanced.
+      if ((await route(got.senderUIN, got.senderHost, got.envelope, r.group_id, identity, proofOf(got), srvAt)) === 'retry') {
+        throw new Error('sender not judged yet; left for the next drain')
+      }
     }
   }
 }
@@ -860,11 +1029,12 @@ async function ingestGuestGmsg(
   srvAt: number | undefined,
   swallow: boolean,
 ): Promise<void> {
+  const authorize = gmsgAuthorizer(identity, room.aliasGid)
   const got = swallow
-    ? await handleGmsg(identity, payloadB64, remoteGid, room).catch(() => null)
-    : await handleGmsg(identity, payloadB64, remoteGid, room)
+    ? await handleGmsg(identity, payloadB64, remoteGid, room, authorize).catch(() => null)
+    : await handleGmsg(identity, payloadB64, remoteGid, room, authorize)
   if (!got) return
-  routeForeignRoomBroadcast(got.senderUIN, got.envelope, room.host, room.aliasGid, identity, srvAt)
+  await routeForeignRoomBroadcast(got.senderUIN, got.spub, got.envelope, room.host, room.aliasGid, identity, srvAt)
 }
 
 /// A decoded broadcast from a room on ANOTHER island, into route().
@@ -876,18 +1046,19 @@ async function ingestGuestGmsg(
 /// from member 4242 there looked 4242 up HERE and sealed our profile key to
 /// an unrelated person, a `call` filed a missed call from them, a `card` was
 /// filed under the home number. The host also files a card under (uin, host).
-/// The sender's key is not passed: a broadcast carries none of its own, its
-/// chain vouches only for the number it was handed under.
-function routeForeignRoomBroadcast(
+/// `spub` is the key the broadcast's chain is bound to: the room's roster on
+/// that island is asked whether its owner is a member under that key.
+async function routeForeignRoomBroadcast(
   senderUIN: number,
+  spub: string,
   envelope: Envelope,
   host: string,
   aliasGid: number,
   identity: WebIdentity,
   srvAt: number | undefined,
-): void {
+): Promise<void> {
   if (foreignRoomBroadcastDropped((envelope as { kind?: unknown }).kind)) return
-  route(senderUIN, host, envelope, aliasGid, identity.uin, hostOf(identity.apiBase), undefined, identity, srvAt)
+  await route(senderUIN, host, envelope, aliasGid, identity, { spub }, srvAt)
 }
 
 export function MessageReceiver() {
@@ -1036,7 +1207,10 @@ export function MessageReceiver() {
       // A group row in a BACKUP mailbox = that island also hosts a group we
       // joined (same identity, same mailbox): alias it like the visited poll.
       const gid = typeof row.group_id === 'number' ? aliasFor(host, row.group_id) : row.group_id
-      route(got.senderUIN, got.senderHost, got.envelope, gid, identity.uin, hostOf(identity.apiBase), got.senderSigningKey, identity, serverStampMs(row.received_at))
+      const res = await route(got.senderUIN, got.senderHost, got.envelope, gid, identity, proofOf(got), serverStampMs(row.received_at))
+      // The room log is acked by position: a row that could not be judged yet
+      // stays in front of the cursor. The legacy fetch has already let go.
+      if (res === 'retry' && !swallow) throw new Error('sender not judged yet; left for the next drain')
     }
     const account = failoverAccount(identity)
     const tick = async () => {
@@ -1146,7 +1320,8 @@ export function MessageReceiver() {
         : await decryptIncoming(identity, row.payload)
       if (!got) return
       const gid = typeof row.group_id === 'number' ? aliasFor(host, row.group_id) : row.group_id
-      route(got.senderUIN, got.senderHost, got.envelope, gid, identity.uin, hostOf(identity.apiBase), got.senderSigningKey, identity, serverStampMs(row.received_at))
+      const res = await route(got.senderUIN, got.senderHost, got.envelope, gid, identity, proofOf(got), serverStampMs(row.received_at))
+      if (res === 'retry' && !swallow) throw new Error('sender not judged yet; left for the next drain')
     }
     const tick = async () => {
       if (cancelled || running || isBurning() || listVisitedIslands().length === 0) return
@@ -1212,12 +1387,14 @@ export function MessageReceiver() {
         const got = await decryptIncoming(identity, payload)
         if (got) {
           // Device-scoped liveness for the silence probe (v=1 names no device).
-          if (got.senderUIN !== identity.uin) noteInboundFrom(got.senderUIN, got.senderDeviceId)
+          if (got.senderUIN !== identity.uin && got.senderV2 === 'verified') noteInboundFrom(got.senderUIN, got.senderDeviceId)
           // A live frame carries the island's own `server_time`, which is the
           // same clock the queued copy would have been stamped with. Falling
           // back to nothing (not to Date.now()) keeps the chain honest: no
           // stamp means the row keeps behaving exactly as it did before.
-          route(got.senderUIN, got.senderHost, got.envelope, ev.group_id, identity.uin, hostOf(identity.apiBase), got.senderSigningKey, identity, serverStampMs(ev.server_time))
+          // A 'retry' needs nothing here: the queued copy of the same row is
+          // what the next drain judges.
+          await route(got.senderUIN, got.senderHost, got.envelope, ev.group_id, identity, proofOf(got), serverStampMs(ev.server_time))
         }
       })()
         // No device to open it with yet. The same envelope is in the queue, and
@@ -1242,6 +1419,17 @@ export function MessageReceiver() {
     const SEALED_WS_TYPES = ['message', 'reaction', 'delete', 'edit', 'read', 'system', 'secscreen', 'visit', 'bounce', 'carbon', 'homerec', 'skdm', 'sknack', 'call']
     const offs = SEALED_WS_TYPES.map((tp) => on(tp, handle))
     return () => offs.forEach((off) => off())
+  }, [identity, on])
+
+  // A small room's roster rides its membership change: the receive path's
+  // copy (sender-trust-resolve.ts) is kept current from it, so a member added
+  // or removed is judged by the roster as it is now without a read.
+  useEffect(() => {
+    if (!identity) return
+    return on('group_membership_changed', (ev) => {
+      const change = parseGroupChanged(ev)
+      if (change?.snapshot) noteRoomSnapshot(identity, change.snapshot)
+    })
   }, [identity, on])
 
   // ⚠⚠ The account's random-chat state, watched by a device that HAS no random
@@ -1276,8 +1464,10 @@ export function MessageReceiver() {
         // Same hydration invariant as the sealed live path above: never ingest
         // into a store whose writes are still disabled.
         await ensureHydrated(identity.uin)
-        const { routed: got, held } = await decodeGmsg(identity, payload, gid)
-        if (got) route(got.senderUIN, undefined, got.envelope, gid, identity.uin, hostOf(identity.apiBase), undefined, identity)
+        // A roster that cannot be read throws before the chain moves, and the
+        // frame stays unacked for the drain to judge.
+        const { routed: got, held } = await decodeGmsg(identity, payload, gid, undefined, gmsgAuthorizer(identity, gid))
+        if (got) await route(got.senderUIN, undefined, got.envelope, gid, identity, { spub: got.spub })
         if (typeof seq !== 'number') return
         // ⚠ A broadcast HELD for a missing chain is not acked from here. The
         // hold is in memory (held-gmsg.ts); acking it would tell the island

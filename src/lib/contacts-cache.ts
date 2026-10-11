@@ -15,6 +15,8 @@ import { scopedKey } from './account-scope'
 // A plain store over localStorage, no component / page / context in its import
 // graph — so the cycle rule at the top of this file still holds.
 import { findCrossIslandByUin } from './crossisland-store'
+// Same: a plain localStorage store.
+import { seedSignPins } from './sign-pins'
 
 export interface ContactsSnapshot {
   contacts: Contact[]
@@ -37,6 +39,10 @@ const SNAPSHOT_KEY = 'contacts.snapshot'
 
 export function persistSnapshot(uin: number, snap: ContactsSnapshot) {
   contactsCache.set(uin, snap)
+  // The first key seen for each contact is written down the first time the
+  // roster shows it (sign-pins.ts), so a later swap is a change on screen,
+  // never a silent one. Numbers already pinned are left alone here.
+  seedSignPins(snap.contacts ?? [])
   try {
     localStorage.setItem(scopedKey(SNAPSHOT_KEY), JSON.stringify(snap))
   } catch {

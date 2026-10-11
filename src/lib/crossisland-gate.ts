@@ -158,7 +158,7 @@ export function carbonIsOwn(
 /// case, no default HTTPS port, no trailing dot (the DNS root label).
 /// `API.RCQ.APP`, `api.rcq.app:443` and `api.rcq.app.` are all `api.rcq.app`.
 /// A non-default port stays: `x.example:8443` is a different island address.
-function canonicalHost(host: string): string {
+export function canonicalHost(host: string): string {
   let h = host.trim().toLowerCase()
   if (h.endsWith(':443')) h = h.slice(0, -4)
   return h.replace(/\.+$/, '')

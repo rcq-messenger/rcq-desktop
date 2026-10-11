@@ -211,6 +211,32 @@ export function allOutgoingThreads(): { isGroup: boolean; id: number; rows: Outg
   return out
 }
 
+/// Does the outgoing log at `key` (a `storageKey`) hold a row with this id?
+/// For the receive path's thread checks: a reaction or a moderator's delete
+/// from somebody else may only touch OUR message when it is in the thread the
+/// envelope came through (sender-auth, 11.10).
+export function outgoingHas(key: string, id: string): boolean {
+  return rawRows(key).some((r) => r.id === id)
+}
+
+/// The storage keys of every outgoing log of the active account holding a row
+/// with this id. Group aliases are negative ids, which `allOutgoingThreads`
+/// does not enumerate; this does.
+export function outgoingKeysHolding(id: string): string[] {
+  const prefix = scopedKey('outgoing.')
+  const keys = new Set<string>()
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)
+      if (k && k.startsWith(prefix)) keys.add(k)
+    }
+  } catch {
+    /* storage can be unavailable; mem still serves */
+  }
+  if (mem) for (const k of mem.keys()) if (k.startsWith(prefix)) keys.add(k)
+  return [...keys].filter((k) => outgoingHas(k, id))
+}
+
 export function loadPersisted(key: string): OutgoingRow[] {
   const now = Date.now()
   return (
@@ -393,6 +419,12 @@ export function setReceiptSink(sink: ((ids: string[], state: 'delivered' | 'read
 /// Apply a peer's delivered/read receipt to our outgoing rows in that 1:1
 /// thread — the second tick and the read tint (#637). Storage always, the
 /// open thread additionally via its sink.
+///
+/// ⚠ `peerUin` must be the AUTHENTICATED sender (sender-auth, 11.10): a
+/// receipt only ever moves rows of the thread with the person who sealed it.
+/// The receive path calls this only for a sender senderTrust pinned to that
+/// thread (or a same-island stranger in their own); a forged `from` used to
+/// tick our messages to anyone as read.
 export function applyReceiptToOutgoing(peerUin: number, kind: 'delivered' | 'read', targetIDs: unknown): void {
   const ids = Array.isArray(targetIDs) ? targetIDs.filter((t): t is string => typeof t === 'string') : []
   if (ids.length === 0) return

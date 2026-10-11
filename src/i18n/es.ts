@@ -248,6 +248,7 @@ export const es: Record<string, string> = {
   'chat.blocked.unblock': 'Desbloquear',
   'chat.peer_gone': 'Esta cuenta ya no existe: su isla dice que no hay tal número. Los mensajes no se entregarán.',
   'chat.peer_key_changed': 'Su isla ahora muestra esta dirección con otra clave, así que los mensajes no se envían: podrían llegar a otra persona. Si restableció su cuenta, elimina el contacto y agrégalo de nuevo.',
+  'chat.contact_key_changed': 'La clave de este contacto ha cambiado: nuestra isla ahora muestra una clave nueva para este número. Si no lo esperabas, confírmalo con esa persona por otra vía antes de fiarte de lo que llegue.',
   'chat.peer_remove': 'Eliminar contacto',
   'chat.owner_only.notice': 'Solo el propietario del grupo puede escribir aquí.',
   'chat.attach': 'Adjuntar',

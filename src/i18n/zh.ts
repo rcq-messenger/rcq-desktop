@@ -241,6 +241,7 @@ export const zh: Record<string, string> = {
   'chat.blocked.unblock': '解除拉黑',
   'chat.peer_gone': '这个账号已不存在：对方的岛表示没有这个号码。消息将无法送达。',
   'chat.peer_key_changed': '对方的岛现在用另一个密钥显示这个地址，所以消息不会发出：它们可能会落到别人手里。如果对方重置了账号，请移除这个联系人后重新添加。',
+  'chat.contact_key_changed': '这个联系人的密钥已更换：我们的岛现在为这个号码显示新的密钥。如果你没有预料到，请先通过其他方式与对方确认，再信任新收到的消息。',
   'chat.peer_remove': '移除联系人',
   'chat.owner_only.notice': '这个群组里只有群主可以发言。',
   'chat.attach': '附件',

@@ -935,6 +935,11 @@ interface PeerHomesCacheEntry {
   /// a replayed older push can't downgrade a peer's homes. Absent on legacy
   /// entries → treated as 0 (any record wins).
   recTs?: number
+  /// The signing key the record was verified under. A send to a peer reads
+  /// the entry only when this is the key it holds for them (sender-auth,
+  /// 11.10): an entry cached by number alone was a record any key could
+  /// plant for a contact. Absent on legacy entries, which are read again.
+  sk?: string
 }
 
 function readPeerCache(): Record<string, PeerHomesCacheEntry> {
@@ -956,11 +961,20 @@ function writePeerCache(uin: number, entry: PeerHomesCacheEntry): void {
 /// the envelope it arrived in — proves the sender owns this record), reject a
 /// rollback to an older `ts` than we've already seen, and cache the homes for
 /// future sends. Returns true when the cache was updated. Never throws.
-export function applyPushedRecord(senderUIN: number, senderSigningKey: string, rec: unknown): boolean {
+///
+/// ⚠ `pinnedSigningKey` is the key this device HOLDS for that contact, which
+/// the receive path has already matched with the envelope's seal (route():
+/// a PINNED sender only). The envelope's own key proved nothing about who the
+/// record belongs to, and a record cached by number alone repointed every
+/// later send to that contact (a copy of each message to islands the forger
+/// chose, and their own pushes refused by the rollback guard). The rollback
+/// guard only counts an entry verified under the same key.
+export function applyPushedRecord(senderUIN: number, pinnedSigningKey: string, rec: unknown): boolean {
   const prev = readPeerCache()[String(senderUIN)]
-  const v = verifyHomeIslandRecord(rec, { expectedSk: senderSigningKey, minTs: prev?.recTs ?? undefined })
+  const prevTs = prev && prev.sk === pinnedSigningKey ? prev.recTs : undefined
+  const v = verifyHomeIslandRecord(rec, { expectedSk: pinnedSigningKey, minTs: prevTs ?? undefined })
   if (!v.ok) return false
-  writePeerCache(senderUIN, { homes: v.record.homes, ts: Date.now(), recTs: v.record.ts })
+  writePeerCache(senderUIN, { homes: v.record.homes, ts: Date.now(), recTs: v.record.ts, sk: pinnedSigningKey })
   return true
 }
 
@@ -1010,7 +1024,9 @@ export async function fetchGossipRecord(host: string, signingKey: string): Promi
 /// on other islands. A total miss falls back to the stale cache. No record
 /// caches an empty list so single-homed peers cost one lookup per TTL.
 async function resolvePeerHomesCached(identity: WebIdentity, peer: PeerBundle): Promise<IslandHome[]> {
-  const cached = readPeerCache()[String(peer.uin)]
+  const raw = readPeerCache()[String(peer.uin)]
+  // Only an entry verified under the key we hold for this peer.
+  const cached = raw && raw.sk && peer.signingKey && raw.sk === peer.signingKey ? raw : undefined
   if (cached && Date.now() - cached.ts < PEER_CACHE_TTL_MS) return cached.homes
   const ownHost = hostOfApiBase(identity.apiBase)
   // (1) by-uin owner record on our island.
@@ -1023,7 +1039,7 @@ async function resolvePeerHomesCached(identity: WebIdentity, peer: PeerBundle): 
         // Seed the gossip store so this record is reachable by sk from other
         // islands too (and survives this island losing the by-uin row).
         void mirrorRecord(ownHost, rec)
-        writePeerCache(peer.uin, { homes: v.record.homes, ts: Date.now(), recTs: v.record.ts })
+        writePeerCache(peer.uin, { homes: v.record.homes, ts: Date.now(), recTs: v.record.ts, sk: peer.signingKey })
         return v.record.homes
       }
     } else if (res.status !== 404) {
@@ -1038,7 +1054,7 @@ async function resolvePeerHomesCached(identity: WebIdentity, peer: PeerBundle): 
     if (rec) {
       const v = verifyHomeIslandRecord(rec, { expectedSk: peer.signingKey })
       if (v.ok) {
-        writePeerCache(peer.uin, { homes: v.record.homes, ts: Date.now(), recTs: v.record.ts })
+        writePeerCache(peer.uin, { homes: v.record.homes, ts: Date.now(), recTs: v.record.ts, sk: peer.signingKey })
         return v.record.homes
       }
     }

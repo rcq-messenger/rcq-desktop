@@ -7,6 +7,7 @@
 // disk; the ratchet runs in memory.
 
 import { b64ToBytes, bytesToB64 } from './crypto'
+import { sameSigningKey } from './crossisland-gate'
 import { rekeySenderKeyMaps } from './move-carry'
 import { deriveMessageKey, nextChainKey, newKid, MAX_SKIP } from './sender-keys'
 
@@ -32,6 +33,9 @@ interface OutChainJSON {
 
 interface InChainJSON {
   gid: number
+  /// The room's island, null for a room on ours. Absent on chains filed before
+  /// it was kept, which are bound to `gid` alone.
+  host?: string | null
   senderUin: number
   spub: string // b64 Ed25519 — gmsg sig verifies against this
   e: number
@@ -169,8 +173,21 @@ export function advanceOwn(ownUin: number, gid: number): void {
 }
 
 /// Store (or refresh) an inbound chain handed to us via SKDM. Binds the kid
-/// to the authenticated sender; a second SKDM for a known kid from a
-/// DIFFERENT sender is rejected (returns false).
+/// to the authenticated sender, the key they sealed it under, and the room it
+/// was handed over in; a second SKDM for a known kid that differs in any of
+/// the three is rejected (returns false).
+///
+/// ⚠⚠ The key of an existing chain is NEVER replaced (sender-auth, 11.10). It
+/// used to be: a re-sent SKDM at an older index rewrote `spub`, and `from` is
+/// unsigned in v=1, so any member holding V's chain (everyone V distributed it
+/// to) could re-send it as V under their OWN key. From then on V's real
+/// broadcasts failed the signature here and the member's verified as V. The
+/// caller also checks that the sender is a member of the room under the key
+/// its roster holds (message-receiver); this is the second lock.
+///
+/// `host` is the room's island (null = ours). The gid alone is per island, so
+/// a chain handed over in room 5 over there was otherwise a key for room 5
+/// here.
 export function acceptSkdm(
   ownUin: number,
   kid: string,
@@ -180,21 +197,43 @@ export function acceptSkdm(
   e: number,
   i: number,
   ck: string,
+  host: string | null = null,
 ): boolean {
   const s = load()
   const k = inKey(ownUin, kid)
   const existing = s.in[k]
-  if (existing && existing.senderUin !== senderUin) return false
-  // A resent SKDM for the same kid/epoch at an OLDER index would rewind the
-  // ratchet — keep the most-advanced position we already hold.
-  if (existing && existing.e === e && existing.i >= i) {
-    existing.spub = spub
-    save(s)
-    return true
+  if (existing) {
+    if (existing.senderUin !== senderUin) return false
+    if (!sameSigningKey(existing.spub, spub)) {
+      console.warn('[sender-keys] SKDM for a known kid under another key; refused', { kid, senderUin })
+      return false
+    }
+    if (existing.gid !== gid) return false
+    if (existing.host !== undefined && (existing.host ?? null) !== (host ?? null)) return false
+    // A resent SKDM for the same kid/epoch at an OLDER index would rewind the
+    // ratchet — keep the most-advanced position we already hold.
+    if (existing.e === e && existing.i >= i) {
+      if (existing.host === undefined) {
+        existing.host = host ?? null
+        save(s)
+      }
+      return true
+    }
   }
-  s.in[k] = { gid, senderUin, spub, e, i, ck, skipped: {} }
+  s.in[k] = { gid, host: host ?? null, senderUin, spub, e, i, ck, skipped: {} }
   save(s)
   return true
+}
+
+/// Who a known chain belongs to, without touching its position: the receive
+/// path asks whether that member may still speak in the room BEFORE the chain
+/// is ratcheted, because a ratcheted position cannot be opened twice.
+export function peekInbound(
+  ownUin: number,
+  kid: string,
+): { senderUin: number; spub: string; gid: number; host: string | null | undefined } | null {
+  const c = load().in[inKey(ownUin, kid)]
+  return c ? { senderUin: c.senderUin, spub: c.spub, gid: c.gid, host: c.host } : null
 }
 
 export interface InboundKey {
@@ -207,10 +246,14 @@ export interface InboundKey {
 /// skipped keys for out-of-order delivery. Returns null when the kid is
 /// unknown (caller should NACK), the epoch doesn't match, the index is in
 /// the past with no cached key (replay/dupe), or it's beyond MAX_SKIP.
-export function deriveInbound(ownUin: number, kid: string, e: number, i: number): InboundKey | null {
+///
+/// `gid`, when given, is the room the broadcast arrived in (that island's own
+/// id): a chain filed for another room opens nothing here.
+export function deriveInbound(ownUin: number, kid: string, e: number, i: number, gid?: number): InboundKey | null {
   const s = load()
   const c = s.in[inKey(ownUin, kid)]
   if (!c || c.e !== e) return null
+  if (gid !== undefined && c.gid !== gid) return null
 
   const cached = c.skipped[i]
   if (cached) {

@@ -15,10 +15,11 @@
 //     dead island does, and the line would say two untrue things at once;
 //   * the primary's socket is not open. An open socket has already answered
 //     the question, and a backup pass beside it is only the usual extra copy;
-//   * the primary did not answer `/health` over the route requests take right
-//     now (the front, when it is engaged). A socket killed by the network
-//     while HTTPS still answers is not an island that is down: the HTTP poll
-//     delivers in that case, and the line would be wrong.
+//   * the primary did not answer `/health` over any road requests can take
+//     (on the desktop the flagship is asked through its front as well). A
+//     socket killed by the network while HTTPS still answers is not an island
+//     that is down: the HTTP poll delivers in that case, and the line would be
+//     wrong.
 // Cleared the moment the socket opens, when the browser goes offline, and by
 // any pass that finds one of the above no longer true.
 //
@@ -27,6 +28,7 @@
 // the next one, not even for the moment before its first pass.
 
 import type { WebIdentity } from './crypto'
+import { frontBaseFor } from './front'
 
 export interface FailoverInputs {
   /// At least one backup home answered its queue fetch in this pass.
@@ -81,15 +83,11 @@ export function browserOnline(): boolean {
   return typeof navigator === 'undefined' || navigator.onLine !== false
 }
 
-/// Does the primary answer `/health` over the route requests take right now?
-/// The global `fetch` on purpose: the front layer rewrites it when engaged,
-/// and an island that answers through the front is not down. Same 2xx rule
-/// and the same six seconds as the iOS probe.
-export async function primaryAnswers(apiBase: string, timeoutMs = 6000): Promise<boolean> {
+async function healthOk(base: string, timeoutMs: number): Promise<boolean> {
   const ctl = new AbortController()
   const timer = setTimeout(() => ctl.abort(), timeoutMs)
   try {
-    const res = await fetch(`${apiBase}/health`, { cache: 'no-store', signal: ctl.signal })
+    const res = await fetch(`${base}/health`, { cache: 'no-store', signal: ctl.signal })
     void res.body?.cancel()
     return res.ok
   } catch {
@@ -97,4 +95,19 @@ export async function primaryAnswers(apiBase: string, timeoutMs = 6000): Promise
   } finally {
     clearTimeout(timer)
   }
+}
+
+/// Does the primary answer `/health` over any road requests can take? The
+/// global `fetch` on purpose: the front layer rewrites it when engaged, and an
+/// island that answers through the front is not down. On the desktop the
+/// flagship is also asked through its front EXPLICITLY: front.ts routes direct
+/// while it is still deciding (launch) or re-probing (every socket reconnect
+/// from the second failure on), and a probe that landed in that window would
+/// call an island that answers through the front down. Same 2xx rule and the
+/// same six seconds as the iOS probe.
+export async function primaryAnswers(apiBase: string, timeoutMs = 6000): Promise<boolean> {
+  const front = frontBaseFor(apiBase)
+  if (!front) return healthOk(apiBase, timeoutMs)
+  const [direct, viaFront] = await Promise.all([healthOk(apiBase, timeoutMs), healthOk(front, timeoutMs)])
+  return direct || viaFront
 }

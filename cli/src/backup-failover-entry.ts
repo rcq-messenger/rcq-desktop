@@ -7,6 +7,10 @@ export {
   failoverAccount,
   failoverVerdict,
   isReceivingViaBackup,
+  primaryAnswers,
   setReceivingViaBackup,
   subscribeFailover,
 } from '../../src/lib/backup-failover'
+// The probe asks the front layer which road the flagship has. Exported from
+// THIS bundle so the test drives the same module instance the probe reads.
+export { frontBaseFor, installFrontRouting, setFrontHost } from '../../src/lib/front'

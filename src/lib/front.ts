@@ -53,6 +53,13 @@ export function frontHost(): string {
   return frontHttps.replace(/^https:\/\//, '')
 }
 
+/// The front's base when the desktop front layer could carry `apiBase` (the
+/// flagship, with routing installed); null otherwise (web, other islands).
+/// For probes that must not depend on the routing decision in flight.
+export function frontBaseFor(apiBase: string): string | null {
+  return installed && apiBase.replace(/\/+$/, '') === FLAGSHIP_HTTPS ? frontHttps : null
+}
+
 /// Point the front at a different name. Called with whatever the signed relay
 /// config names; ignored unless it is an https URL, so a malformed payload
 /// leaves the compiled-in name in place rather than breaking the fallback.

@@ -113,6 +113,7 @@ import {
 import { useWS } from '../lib/ws'
 import { ciKey, listCrossIsland, type CrossIslandContact } from '../lib/crossisland-store'
 import { goneCrossIslandKeys, peerLivenessVersion, subscribePeerLiveness } from '../lib/peer-liveness'
+import { isReceivingViaBackup, subscribeFailover } from '../lib/backup-failover'
 import {
   ensureRequestsLoaded,
   isBlockedSender,
@@ -191,6 +192,10 @@ export function Contacts() {
   // A probe in an open chat (report 1067) can mark somebody gone while this
   // list sits mounted underneath it, in another tab or behind the split view.
   useSyncExternalStore(subscribePeerLiveness, peerLivenessVersion)
+  // The primary island is not answering and mail arrives through the backup
+  // (backup-failover.ts). Read for THIS account: the store keys it by island
+  // and number, so a switch never shows the line of the account just left.
+  const viaBackup = useSyncExternalStore(subscribeFailover, () => isReceivingViaBackup(identity))
 
   /// Hand someone the link that adds you. The native share sheet where there
   /// is one, because on a phone the next step is a messenger the person
@@ -1269,6 +1274,21 @@ export function Contacts() {
       )}
 
       <main className="flex-1 min-h-0 overflow-y-auto overscroll-contain w-full max-w-2xl mx-auto px-4 py-4 pt-[calc(3.5rem+1rem)] space-y-4">
+        {/* The primary island is not answering and mail arrives through the
+            backup (the same line as on Android and iOS). Without it a failover
+            is silent: messages keep coming and nothing says the island is
+            down. The whole line opens Backup island in Settings, because the
+            second sentence promises the switch is there. */}
+        {viaBackup && (
+          <button
+            type="button"
+            onClick={() => navigate('/settings', { state: { focus: 'multihome' } })}
+            className="w-full text-left bg-surface rounded-lg p-3 space-y-1 hover:bg-field transition-colors"
+          >
+            <p className="text-sm text-amber-600 dark:text-amber-500">{t('multihome.via_backup')}</p>
+            <p className="text-xs font-semibold text-accent">{t('multihome.via_backup.action')}</p>
+          </button>
+        )}
         {/* Signed in as a guest copy (spec 2026-09-15, 12.1): say what this
             account is, and offer to settle on this island. */}
         {primaryGuest && (

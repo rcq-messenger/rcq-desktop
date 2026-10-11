@@ -726,6 +726,8 @@ export const pt: Record<string, string> = {
   'settings.multihome.error.entry_required': 'Esta ilha só deixa entrar com um código de entrada. Tente outra ilha.',
   'settings.multihome.error.invite_required': 'Esta ilha só deixa entrar por convite. Tente outra ilha.',
   'settings.multihome.error.switch_not_done': 'A troca não aconteceu. Nada mudou.',
+  'multihome.via_backup': 'Sua ilha não está respondendo. As mensagens estão chegando pela ilha de backup.',
+  'multihome.via_backup.action': 'Torná-la sua ilha principal e enviar por ela também',
   'settings.section.danger': 'Queimar conta',
   'settings.danger.body': 'Apaga sua conta na ilha, limpa contatos e mensagens em todos os aparelhos e recomeça com um UIN novo. O número com que você responde volta para o fundo comum, os números que você comprou são destruídos junto com a conta, e os grupos que você criou somem para todo mundo neles. Não dá para desfazer.',
   'settings.danger.cta': 'Queimar conta',

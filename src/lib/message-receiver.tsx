@@ -3,7 +3,7 @@
 // and decrypts each envelope; live WS `message` pushes are decrypted too. Both
 // feed the incoming-store, deduped by envelope id. Renders nothing.
 
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { rememberTheirCard } from './guest-card'
 import { peerSealKeys } from './peer-keys'
 import { useIdentity } from './identity-context'
@@ -27,6 +27,7 @@ import { carbonIsOwn, crossIslandGateVerdict, foreignRoomBroadcastDropped, group
 import type { GuestRoom } from './held-gmsg'
 import { applyRequestAck } from './crossisland-ack'
 import { isBurning } from './burn-cascade'
+import { browserOnline, failoverAccount, failoverVerdict, primaryAnswers, setReceivingViaBackup } from './backup-failover'
 import { pollVisitedPending } from './crossisland-pending-poll'
 import { ensureRequestsLoaded, holdRequestMessage, isBlocked, isBlockedSender, retractHeldMessage } from './crossisland-requests'
 import { isContact, shouldQuarantineStranger } from './stranger-requests'
@@ -892,6 +893,11 @@ function routeForeignRoomBroadcast(
 export function MessageReceiver() {
   const { identity } = useIdentity()
   const { on, connected } = useWS()
+  // The backup poll decides the failover line at the END of a pass, which can
+  // finish long after it started (a slow island, a deep log). A ref, so it
+  // reads the socket as it is then, not as it was when the effect ran.
+  const connectedRef = useRef(connected)
+  connectedRef.current = connected
 
   // Provision (publish our libsignal bundle so peers can reach us, as this
   // account's primary device or as a secondary one alongside the phone) + drain
@@ -1032,12 +1038,18 @@ export function MessageReceiver() {
       const gid = typeof row.group_id === 'number' ? aliasFor(host, row.group_id) : row.group_id
       route(got.senderUIN, got.senderHost, got.envelope, gid, identity.uin, hostOf(identity.apiBase), got.senderSigningKey, identity, serverStampMs(row.received_at))
     }
+    const account = failoverAccount(identity)
     const tick = async () => {
       // Single-flight: a tick that outlives the interval (a slow island, a
       // deep log) must not have the next one fetch the same page beside it.
       // A burn in progress stops this loop before it can re-prove the key on
       // an island the burn is deleting from (spec 2026-09-15, F2).
-      if (cancelled || running || isBurning() || listBackupHomes().length === 0) return
+      if (cancelled || running || isBurning()) return
+      if (listBackupHomes().length === 0) {
+        // The last backup was removed in Settings while the line was up.
+        setReceivingViaBackup(account, false)
+        return
+      }
       running = true
       try {
         await ensureHydrated(identity.uin) // dedup needs the seen-set first
@@ -1046,14 +1058,34 @@ export function MessageReceiver() {
         // mean the outage that makes this loop matter also makes it invisible.
         const catchingUp = firstTick
         firstTick = false
+        // Is the primary down, or is this the usual extra copy beside it?
+        // Asked beside the drain, not before it: while the primary is down
+        // (the one time the answer matters) the probe waits out its timeout,
+        // and the backup's mail should not wait with it. Not asked at all
+        // while the socket is up or the browser is offline (backup-failover.ts).
+        const primary = !connectedRef.current && browserOnline()
+          ? primaryAnswers(identity.apiBase)
+          : Promise.resolve(null)
         if (catchingUp) beginCatchUp()
-        await drainBackupQueues(identity, (row, host) => ingest(row, host, true), {
+        const answered = await drainBackupQueues(identity, (row, host) => ingest(row, host, true), {
           handle: (row, host) => ingest(row, host, false),
           // Stage 5: a backup island that keeps room logs is acked only once
           // the rows it served are on disk here.
           persisted: flushHistory,
         })
         if (catchingUp) endCatchUp()
+        const primaryAnswered = await primary
+        // Torn down while the pass ran (an account switch): the answer is
+        // about the account being left and must not latch onto anything.
+        if (cancelled) return
+        setReceivingViaBackup(account, failoverVerdict({
+          backupAnswered: answered > 0,
+          online: browserOnline(),
+          // Read now, not when the pass began: a socket that came up during
+          // the drain has answered the question the probe was asking.
+          socketUp: connectedRef.current,
+          primaryAnswered,
+        }))
       } finally {
         running = false
       }
@@ -1065,6 +1097,19 @@ export function MessageReceiver() {
       clearInterval(handle)
     }
   }, [identity])
+
+  // The failover line comes down without waiting for the next backup pass when
+  // the primary's socket opens (it answered, whatever the pass thought) and
+  // when the browser loses its network (nothing arrives through anything
+  // then). Both are what Android and iOS clear it on.
+  useEffect(() => {
+    if (!identity) return
+    const account = failoverAccount(identity)
+    if (connected) setReceivingViaBackup(account, false)
+    const onOffline = () => setReceivingViaBackup(account, false)
+    window.addEventListener('offline', onOffline)
+    return () => window.removeEventListener('offline', onOffline)
+  }, [identity, connected])
 
   // Cross-island groups (§5c): poll the guest mailbox on every VISITED island
   // — the group's island spools its fan-out there. Group rows file under the

@@ -835,11 +835,16 @@ export interface QueueRow {
 /// page already). `log.persisted` is awaited before the log ack goes out, so
 /// the ack never vouches for a scheduled write. An island without the
 /// capability is asked nothing new.
+///
+/// Returns how many homes answered their queue fetch. The home screen's
+/// "messages are arriving through your backup island" (backup-failover.ts) is
+/// only true while one of them does.
 export async function drainBackupQueues(
   identity: WebIdentity,
   handle: (row: QueueRow, host: string) => Promise<void>,
   log?: LogDrainHooks,
-): Promise<void> {
+): Promise<number> {
+  let answered = 0
   for (const home of listBackupHomes()) {
     // ⚠ A phantom front home is OUR OWN island: draining it hits the real
     // queue with an unnamed recover token, i.e. the "primary" device cursor —
@@ -860,6 +865,7 @@ export async function drainBackupQueues(
         res = await get(fresh.token)
       }
       if (!res.ok) continue
+      answered++
       const rows = (await res.json()) as QueueRow[]
       for (const r of rows) await handle(r, home.host)
     } catch {
@@ -867,6 +873,7 @@ export async function drainBackupQueues(
     }
     if (log) await drainBackupLog(identity, home.host, log)
   }
+  return answered
 }
 
 /// How a caller takes part in a room-log drain (Stage 5): the ingest for one

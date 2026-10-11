@@ -719,6 +719,8 @@ export const zh: Record<string, string> = {
   'settings.multihome.error.entry_required': '这个岛只凭入场代码才能进入。请换一个岛试试。',
   'settings.multihome.error.invite_required': '这个岛只凭邀请才能进入。请换一个岛试试。',
   'settings.multihome.error.switch_not_done': '切换没有发生。什么都没有改变。',
+  'multihome.via_backup': '你的岛没有响应。消息正在通过备份岛送达。',
+  'multihome.via_backup.action': '把它设为主岛，并从那里发送',
   'settings.section.danger': '销毁账号',
   'settings.danger.body': '删除岛上的账号，抹掉所有设备上的联系人和消息，并用新的 UIN 重新开始。你当前使用的号码会回到公共池，任何人都可以领取；你买下的号码会随账号一起销毁；你创建的群组会对其中所有人消失。此操作无法撤销。',
   'settings.danger.cta': '销毁账号',

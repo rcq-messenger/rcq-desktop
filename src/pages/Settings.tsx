@@ -8,7 +8,7 @@
 import { SettingsSectionIcon } from '../components/SettingsSectionIcon'
 import { BadgeMark } from '../components/BadgeMark'
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { currentRecoveryPhrase, forgetRecoverySeed, revokedAccounts } from '../lib/auth'
 import { myAccountDevices, myDeviceId, splitToOwnSlot } from '../lib/signal-device'
 import { exportBackup, importBackup } from '../lib/backup-data'
@@ -201,7 +201,17 @@ export function Settings() {
   // Deliberately NOT a route: a group is not somewhere you send a link to, and
   // as state the back arrow and the browser's Back button cannot disagree
   // about what "back" means here.
-  const [group, setGroup] = useState<SettingsGroup | null>(null)
+  //
+  // One way in skips the index: the home screen's "your island is not
+  // answering" line, whose second sentence promises the backup can be made
+  // primary here. It lands on Backup island, and its back arrow goes back to
+  // the chat list, like Android's. Latched on mount, so the page does not
+  // change its mind when the location object does.
+  const location = useLocation()
+  const [fromFailover] = useState(() => (location.state as { focus?: unknown } | null)?.focus === 'multihome')
+  const [group, setGroup] = useState<SettingsGroup | null>(() => (fromFailover ? 'account' : null))
+  const multihomeRef = useRef<HTMLElement>(null)
+  const openedAt = useRef(Date.now())
   const fontScalePref = useSyncExternalStore(subscribeFontScale, getFontScale)
   const [backups, setBackups] = useState<BackupHome[]>(() => listBackupHomes())
   const [mhAdding, setMhAdding] = useState(false)
@@ -297,6 +307,15 @@ export function Settings() {
       alive = false
     }
   }, [identity])
+
+  // Arrived from the failover line: bring Backup island into view. Again when
+  // the device list and the account row above it land, since each pushes the
+  // section down, but only in the first seconds: after that the person may be
+  // scrolling, and the page must not pull the view out from under them.
+  useEffect(() => {
+    if (!fromFailover || Date.now() - openedAt.current > 3000) return
+    multihomeRef.current?.scrollIntoView({ block: 'start' })
+  }, [fromFailover, accountDevices, me])
 
   const [keyStatus, setKeyStatus] = useState<RelayKeyStatus | null>(null)
   const [keyInput, setKeyInput] = useState('')
@@ -721,7 +740,13 @@ export function Settings() {
         <div className="max-w-2xl mx-auto px-4 h-14 flex items-center gap-3">
           {/* One arrow, two meanings, and the group is the nearer one: inside a
               group "back" is the index, not the chat list. */}
-          {group ? (
+          {group && fromFailover ? (
+            // Opened at Backup island from the failover line: back is where
+            // that line was, not an index the person never saw.
+            <Link to="/contacts" className="text-fg-secondary hover:text-fg-primary px-2">
+              ←
+            </Link>
+          ) : group ? (
             <button
               type="button"
               onClick={() => setGroup(null)}
@@ -1100,8 +1125,10 @@ export function Settings() {
         </section>
 
         {/* Multihoming (federation v1): this account also registered on a
-            second island, messages get deposited into both mailboxes. */}
-        <section className="bg-surface rounded-lg p-4 space-y-3">
+            second island, messages get deposited into both mailboxes. The
+            scroll margin keeps it clear of the header when the failover line
+            opens the page here. */}
+        <section ref={multihomeRef} className="bg-surface rounded-lg p-4 space-y-3 scroll-mt-20">
           <div className="flex items-center gap-2 text-xs font-semibold text-fg-secondary uppercase tracking-wide">
             <SettingsSectionIcon name="multihome" />
             {t('settings.section.multihome')}

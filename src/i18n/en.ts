@@ -804,6 +804,8 @@ export const en: Record<string, string> = {
   'settings.multihome.error.entry_required': 'This island only lets people in with an entry code. Try another island.',
   'settings.multihome.error.invite_required': 'This island only lets people in by invite. Try another island.',
   'settings.multihome.error.switch_not_done': 'The switch did not happen. Nothing changed.',
+  'multihome.via_backup': 'Your island is not answering. Messages are arriving through your backup island.',
+  'multihome.via_backup.action': 'Make it your primary island and send from it too',
   'settings.section.danger': 'Burn account',
   'settings.danger.body':
     'Deletes your account on the island, wipes contacts and messages on every device, and starts you over with a new UIN. The number you answer as goes back into the pool for anybody to take, numbers you bought are destroyed with the account, and groups you own disappear for everyone in them. This cannot be undone.',

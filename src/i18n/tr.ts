@@ -726,6 +726,8 @@ export const tr: Record<string, string> = {
   'settings.multihome.error.entry_required': 'Bu ada yalnızca giriş koduyla içeri alıyor. Başka bir ada dene.',
   'settings.multihome.error.invite_required': 'Bu ada yalnızca davetle içeri alıyor. Başka bir ada dene.',
   'settings.multihome.error.switch_not_done': 'Geçiş gerçekleşmedi. Hiçbir şey değişmedi.',
+  'multihome.via_backup': 'Adan cevap vermiyor. Mesajlar yedek adandan geliyor.',
+  'multihome.via_backup.action': 'Onu ana ada yap, oradan da gönder',
   'settings.section.danger': 'Hesabı yak',
   'settings.danger.body': 'Adadaki hesabını siler, her cihazdaki kişileri ve mesajları temizler ve yeni bir UIN ile sıfırdan başlatır. Şu anda kullandığın numara havuza geri döner, satın aldığın numaralar hesapla birlikte yok olur ve kurduğun gruplar içindeki herkes için kaybolur. Geri alınamaz.',
   'settings.danger.cta': 'Hesabı yak',

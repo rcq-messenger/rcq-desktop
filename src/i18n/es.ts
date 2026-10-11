@@ -726,6 +726,8 @@ export const es: Record<string, string> = {
   'settings.multihome.error.entry_required': 'Esta isla solo deja entrar con un código de entrada. Prueba con otra isla.',
   'settings.multihome.error.invite_required': 'Esta isla solo deja entrar con invitación. Prueba con otra isla.',
   'settings.multihome.error.switch_not_done': 'El cambio no ocurrió. No cambió nada.',
+  'multihome.via_backup': 'Tu isla no responde. Los mensajes llegan por tu isla de copia.',
+  'multihome.via_backup.action': 'Hacerla tu isla principal y enviar también desde ella',
   'settings.section.danger': 'Destruir cuenta',
   'settings.danger.body': 'Borra tu cuenta en la isla, limpia contactos y mensajes en todos los dispositivos y empiezas de cero con un UIN nuevo. El número con el que respondes vuelve al fondo común, los números que compraste se destruyen con la cuenta y los grupos que creaste desaparecen para todos sus miembros. Esto no se puede deshacer.',
   'settings.danger.cta': 'Destruir cuenta',

@@ -583,17 +583,34 @@ function publishedDevices(identity: WebIdentity, uin: number, fresh: boolean): P
     let list: Map<number, string | undefined>
     try {
       const path = `/keys/${uin}/devices`
-      const body = (await limitPeerLookup(identity.apiBase, 'key', () =>
-        uin === identity.uin ? apiGetAuthed(identity, path) : apiGet(identity, path))) as {
-        devices?: Array<{ device_id: number; signal_identity_key?: string | null }>
+      const read = (authed: boolean) =>
+        limitPeerLookup(identity.apiBase, 'key', () => (authed ? apiGetAuthed(identity, path) : apiGet(identity, path)))
+      let raw: unknown
+      if (uin === identity.uin) raw = await read(true)
+      else {
+        try {
+          raw = await read(false)
+        } catch (e) {
+          // ⚠ A closed island answers an ANONYMOUS list read with the same
+          // 404 as "no such user" (its door refuses an unknown asker). Taken
+          // as an empty list, every v=2 row from a contact there read as
+          // FORGED. Only the session-token read tells the two apart, and a
+          // resident's passes the door. On an open island the read stays
+          // anonymous; where apiGet already sent the token there is no repeat.
+          if (!(e instanceof KeyLookupError && e.status === 404 && (await anonKeyMode(identity)))) throw e
+          raw = await read(true)
+        }
       }
+      const body = raw as { devices?: Array<{ device_id: number; signal_identity_key?: string | null }> }
       list = new Map()
       for (const d of body.devices ?? []) {
         if (typeof d.device_id !== 'number') continue
         list.set(d.device_id, typeof d.signal_identity_key === 'string' ? d.signal_identity_key : undefined)
       }
     } catch (e) {
-      // "No such user" is an answer: nobody is published for that number.
+      // Reached by an authenticated read only (an anonymous 404 is asked
+      // again above): "no such user" is an answer, nobody is published for
+      // that number. Anything else decides nothing; the row waits.
       if (e instanceof KeyLookupError && e.status === 404) list = new Map()
       else throw new IdentityCheckUnavailableError(`device list for ${uin}: ${e instanceof Error ? e.message : e}`)
     }
@@ -612,8 +629,29 @@ export async function verifyV2Identity(identity: WebIdentity, uin: number, devic
   const memory = loadV2Ids(identity.uin)[`${uin}:${deviceId}`]?.ik ?? null
   const decideWith = (list: Map<number, string | undefined>) =>
     v2IdentityDecision(memory, list.has(deviceId) ? list.get(deviceId) : null, ik)
-  // The identity first seen here answers without asking anyone.
-  if (memory && sameSigningKey(memory, ik)) return 'verified'
+  // The identity first seen here answers, unless the island has since
+  // retired that device: a revoked (stolen) install keeps its keys and its
+  // sessions, and /messages/sealed is anonymous, so it went on writing as its
+  // owner (as US, for our own number: carbons, deletes, read marks). Best
+  // effort only: an island that cannot be asked, or that names nobody for the
+  // number (an empty list: 404), leaves the memory standing, so no remembered
+  // peer is held or flagged because a key read failed. One list read per
+  // number per ten minutes, shared with every other check.
+  if (memory && sameSigningKey(memory, ik)) {
+    try {
+      let list = await publishedDevices(identity, uin, false)
+      // A list cached before that device registered (another tab wrote the
+      // memory) earns the same one fresh read a mismatch does.
+      if (list.size > 0 && !list.has(deviceId)) list = await publishedDevices(identity, uin, true)
+      if (list.size > 0 && !list.has(deviceId)) {
+        console.warn(`[v2] ${uin}:${deviceId} is remembered but the island no longer lists it (revoked)`)
+        return 'mismatch'
+      }
+    } catch (e) {
+      if (!(e instanceof IdentityCheckUnavailableError)) throw e
+    }
+    return 'verified'
+  }
   let d = decideWith(await publishedDevices(identity, uin, false))
   if (d.verdict === 'mismatch') d = decideWith(await publishedDevices(identity, uin, true))
   if (d.remember) {

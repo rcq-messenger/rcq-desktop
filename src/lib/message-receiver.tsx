@@ -191,6 +191,10 @@ interface SealProof {
   /// only for a v=1 seal, which nothing advanced. A v=2 row moved its ratchet
   /// and a broadcast its chain, so neither opens a second time.
   retryable?: boolean
+  /// When this device got the row (local clock): a live frame's arrival, or
+  /// the arrival of the page a drain fetched it in. A room roster asked for
+  /// after it is final about the row's sender (resolveRoomTrust).
+  seenAt?: number
 }
 
 /// 'retry': the row could not be judged for now (a room's roster unreadable,
@@ -198,17 +202,18 @@ interface SealProof {
 /// leave it unacked; everything else drops it.
 type RouteResult = 'done' | 'retry'
 
-function proofOf(got: { senderSigningKey?: string; senderV2?: V2Identity }): SealProof {
+function proofOf(got: { senderSigningKey?: string; senderV2?: V2Identity }, seenAt?: number): SealProof {
   return got.senderV2 != null
-    ? { v2: got.senderV2 }
-    : { spub: got.senderSigningKey, retryable: true }
+    ? { v2: got.senderV2, seenAt }
+    : { spub: got.senderSigningKey, retryable: true, seenAt }
 }
 
 /// Answers "may the owner of this chain still speak in the room" for
 /// sender-key-receive, BEFORE the chain is ratcheted (see GmsgAuthorize).
-function gmsgAuthorizer(identity: WebIdentity, localGid: number): GmsgAuthorize {
+/// `seenAt` as in SealProof.
+function gmsgAuthorizer(identity: WebIdentity, localGid: number, seenAt?: number): GmsgAuthorize {
   return async (senderUin, spub) => {
-    const room = await resolveRoomTrust(identity, localGid, senderUin, spub, null)
+    const room = await resolveRoomTrust(identity, localGid, senderUin, spub, null, seenAt)
     // The island did not hand the roster over: nothing about this broadcast,
     // so the drains leave it where it is and count no strike against it.
     if (room === 'retry') throw new NotTheRowsFault('room roster unavailable')
@@ -289,7 +294,7 @@ async function routeRoomFrame(
   srvAt: number | undefined,
 ): Promise<RouteResult> {
   const kind = (envelope as { kind?: unknown }).kind
-  const room = await resolveRoomTrust(identity, groupId, senderUIN, proof.spub, proof.v2)
+  const room = await resolveRoomTrust(identity, groupId, senderUIN, proof.spub, proof.v2, proof.seenAt)
   if (room === 'retry') {
     // The roster could not be read and nothing is cached. A v=1 seal comes
     // back on the next drain; anything else cannot be opened again.
@@ -366,7 +371,12 @@ async function routeDirect(
   const ownHost = hostOf(identity.apiBase)
   const kind = typeof (envelope as { kind?: unknown }).kind === 'string' ? (envelope as { kind: string }).kind : ''
   const spub = proof.spub
-  const t = await resolveDirectTrust(identity, senderUIN, senderHost, spub, proof.v2)
+  const t = await resolveDirectTrust(identity, senderUIN, senderHost, spub, proof.v2, proof.retryable === true)
+  // The sender could not be judged yet: the card a mismatch needed, or our
+  // own roster, could not be read. Flagged only for a row that can wait (a
+  // v=1 seal), which comes back on the next drain; one that cannot was judged
+  // as it always was.
+  if (t.cardUnreachable || t.rosterUnread) return 'retry'
   // `from_host` when it names another island, for the two branches that are
   // ABOUT the claimed address (a contact request, a profile refresh) and do
   // their own pinned-key checks.
@@ -481,7 +491,7 @@ async function routeDirect(
     const e = envelope as unknown as { gid?: number }
     if (!foreign && typeof e.gid === 'number' && e.gid > 0) {
       const gid = e.gid
-      const room = await resolveRoomTrust(identity, gid, senderUIN, spub, proof.v2)
+      const room = await resolveRoomTrust(identity, gid, senderUIN, spub, proof.v2, proof.seenAt)
       if (room !== 'retry' && (room.trust === 'pinned' || room.trust === 'self')) {
         // The answer is sealed to the keys the roster holds for the asker,
         // read the way it always was. ⚠ The home snapshot stores groups
@@ -723,7 +733,7 @@ async function acceptRoomKey(
   ver: number,
   keyB64: string,
 ): Promise<void> {
-  const room = await resolveRoomTrust(identity, gid, senderUIN, proof.spub, proof.v2)
+  const room = await resolveRoomTrust(identity, gid, senderUIN, proof.spub, proof.v2, proof.seenAt)
   if (room === 'retry' || (room.trust !== 'self' && room.trust !== 'pinned')) {
     console.warn('[sender-auth] room key from someone the room does not hold under that key; ignored', { gid, senderUIN })
     return
@@ -893,6 +903,8 @@ async function ingestPrimaryRow(
     /// has no offset (see `serverStampMs`).
     received_at?: string
   },
+  /// When the page carrying the row arrived (see SealProof.seenAt).
+  seenAt: number,
 ): Promise<void> {
   const srvAt = serverStampMs(r.received_at)
   if (typeof r.to_device_id === 'number' && r.to_device_id !== myDev) {
@@ -905,8 +917,8 @@ async function ingestPrimaryRow(
     // The room decides whether the chain's owner may still speak there
     // before the chain moves (gmsgAuthorizer); a roster it cannot read
     // throws, and the row stays for the next drain.
-    const got = await handleGmsg(identity, r.payload, r.group_id, undefined, gmsgAuthorizer(identity, r.group_id))
-    if (got) await route(got.senderUIN, undefined, got.envelope, r.group_id, identity, { spub: got.spub }, srvAt)
+    const got = await handleGmsg(identity, r.payload, r.group_id, undefined, gmsgAuthorizer(identity, r.group_id, seenAt))
+    if (got) await route(got.senderUIN, undefined, got.envelope, r.group_id, identity, { spub: got.spub, seenAt }, srvAt)
   } else {
     const got = await decryptIncoming(identity, r.payload, { holdUnopened: true })
     if (got) {
@@ -916,7 +928,7 @@ async function ingestPrimaryRow(
       if (got.senderUIN !== identity.uin && got.senderV2 === 'verified') noteInboundFrom(got.senderUIN, got.senderDeviceId)
       // A v=1 row that could not be judged yet (a room roster unreadable) is
       // left in front of the cursor: nothing about it advanced.
-      if ((await route(got.senderUIN, got.senderHost, got.envelope, r.group_id, identity, proofOf(got), srvAt)) === 'retry') {
+      if ((await route(got.senderUIN, got.senderHost, got.envelope, r.group_id, identity, proofOf(got, seenAt), srvAt)) === 'retry') {
         throw new NotTheRowsFault('sender not judged yet; left for the next drain')
       }
     }
@@ -956,6 +968,7 @@ async function drainLegacyQueue(identity: WebIdentity, myDev: number): Promise<v
     cls?: number | null
     seq?: number | null
   }>
+  const seenAt = Date.now()
   const directIds: number[] = []
   const groupIds: number[] = []
   const ledger = localStrikeStore(identity.apiBase, identity.uin, 'queue')
@@ -966,7 +979,7 @@ async function drainLegacyQueue(identity: WebIdentity, myDev: number): Promise<v
   for (const r of rows) {
     const key = keyOf(r)
     try {
-      await ingestPrimaryRow(identity, myDev, r)
+      await ingestPrimaryRow(identity, myDev, r, seenAt)
       if (struck[key]) {
         delete struck[key]
         ledgerDirty = true
@@ -1037,7 +1050,8 @@ async function drainRoomLog(identity: WebIdentity, myDev: number): Promise<void>
       identity.apiBase,
       identity.uin,
       logRequestFor(identity),
-      (row) => ingestPrimaryRow(identity, myDev, { envelope_type: row.envelope_type, payload: row.payload, group_id: row.gid, received_at: row.received_at }),
+      (row, fetchedAt) =>
+        ingestPrimaryRow(identity, myDev, { envelope_type: row.envelope_type, payload: row.payload, group_id: row.gid, received_at: row.received_at }, fetchedAt),
       flushHistory,
       // On disk (report 981): a tab opened for a minute at a time still
       // reaches the strike limit, and a stuck row stops holding its room.
@@ -1060,7 +1074,9 @@ async function drainRoomLog(identity: WebIdentity, myDev: number): Promise<void>
 /// drain acks: the hold re-arms from the next copy and the NACK is out. Only a
 /// throw leaves the row in front of the cursor. The legacy guest queue is the
 /// ack-less fetch, so there (`swallow`) a throw is caught instead of losing the
-/// rows behind this one.
+/// rows behind this one, except a NotTheRowsFault (the room's roster could not
+/// be read): the chain did not move, and the poller keeps the row to try again
+/// (see deferUnjudged in the pollers).
 async function ingestGuestGmsg(
   identity: WebIdentity,
   room: GuestRoom,
@@ -1068,13 +1084,17 @@ async function ingestGuestGmsg(
   remoteGid: number,
   srvAt: number | undefined,
   swallow: boolean,
+  seenAt: number,
 ): Promise<void> {
-  const authorize = gmsgAuthorizer(identity, room.aliasGid)
+  const authorize = gmsgAuthorizer(identity, room.aliasGid, seenAt)
   const got = swallow
-    ? await handleGmsg(identity, payloadB64, remoteGid, room, authorize).catch(() => null)
+    ? await handleGmsg(identity, payloadB64, remoteGid, room, authorize).catch((e) => {
+        if (e instanceof NotTheRowsFault) throw e
+        return null
+      })
     : await handleGmsg(identity, payloadB64, remoteGid, room, authorize)
   if (!got) return
-  await routeForeignRoomBroadcast(got.senderUIN, got.spub, got.envelope, room.host, room.aliasGid, identity, srvAt)
+  await routeForeignRoomBroadcast(got.senderUIN, got.spub, got.envelope, room.host, room.aliasGid, identity, srvAt, seenAt)
 }
 
 /// A decoded broadcast from a room on ANOTHER island, into route().
@@ -1096,9 +1116,67 @@ async function routeForeignRoomBroadcast(
   aliasGid: number,
   identity: WebIdentity,
   srvAt: number | undefined,
+  seenAt?: number,
 ): Promise<void> {
   if (foreignRoomBroadcastDropped((envelope as { kind?: unknown }).kind)) return
-  await route(senderUIN, host, envelope, aliasGid, identity, { spub }, srvAt)
+  await route(senderUIN, host, envelope, aliasGid, identity, { spub, seenAt }, srvAt)
+}
+
+/// One row out of a backup home's or a visited island's mailbox.
+type MailboxRow = { envelope_type: string; payload: string; group_id: number | null; received_at?: string }
+
+/// The proof for a decrypted mailbox row. Off the ack-less legacy fetch
+/// (`swallow`) a 1:1 row is never left to come back: a card or a roster that
+/// did not answer takes the verdict as it stands (content held as a request on
+/// a mismatch), which is on disk, rather than a hold in memory that a closed
+/// tab loses. A room row keeps `retryable` and is kept by deferUnjudged.
+function legacyProof(
+  got: { senderSigningKey?: string; senderV2?: V2Identity },
+  gid: unknown,
+  swallow: boolean,
+  seenAt: number,
+): SealProof {
+  const p = proofOf(got, seenAt)
+  return swallow && typeof gid !== 'number' ? { ...p, retryable: false } : p
+}
+
+/// How many rows a poller keeps waiting on a room roster, and how many polls
+/// each one is tried on (a poll every 30 s: about ten minutes).
+const UNJUDGED_MAX = 500
+const UNJUDGED_TRIES = 20
+
+/// Rows off an ack-less legacy fetch (a backup home's queue, a visited
+/// island's guest queue) whose sender could not be judged yet: the room's
+/// roster did not answer. That fetch has already let go of them, so dropping
+/// them was a message lost, and accepting them unjudged would let anyone
+/// speak in the room. Nothing about them advanced (a v=1 seal opens again, a
+/// broadcast's chain did not move), so they are kept here and tried again at
+/// the start of each poll, with the moment they first arrived. In memory, for
+/// one account's poller: bounded in count and in tries, gone with the tab.
+function deferUnjudged(ingest: (row: MailboxRow, host: string, seenAt: number) => Promise<void>, cancelled: () => boolean) {
+  const held: Array<{ row: MailboxRow; host: string; seenAt: number; tries: number }> = []
+  return {
+    legacy: async (row: MailboxRow, host: string, seenAt: number): Promise<void> => {
+      try {
+        await ingest(row, host, seenAt)
+      } catch (e) {
+        if (!(e instanceof NotTheRowsFault)) throw e
+        if (held.length < UNJUDGED_MAX) held.push({ row, host, seenAt, tries: 0 })
+        else console.warn('[sender-auth] too many mailbox rows waiting on a room roster; one dropped', { host })
+      }
+    },
+    replay: async (): Promise<void> => {
+      for (const d of held.splice(0)) {
+        if (cancelled()) return
+        try {
+          await ingest(d.row, d.host, d.seenAt)
+        } catch (e) {
+          if (e instanceof NotTheRowsFault && ++d.tries < UNJUDGED_TRIES) held.push(d)
+          else console.warn('[sender-auth] a mailbox row that could not be judged was given up', { host: d.host, error: String(e) })
+        }
+      }
+    },
+  }
 }
 
 export function MessageReceiver() {
@@ -1229,7 +1307,12 @@ export function MessageReceiver() {
     // session did not open) must THROW so the row stays in front of the
     // cursor and is re-served, and the strike ledger in group-log.ts acks
     // past it only once it has failed its own way on several drains.
-    const ingest = async (row: { envelope_type: string; payload: string; group_id: number | null; received_at?: string }, host: string, swallow: boolean) => {
+    const ingest = async (
+      row: { envelope_type: string; payload: string; group_id: number | null; received_at?: string },
+      host: string,
+      swallow: boolean,
+      seenAt: number,
+    ) => {
       if (cancelled) return
       // A sender-keys broadcast for a room this backup island hosts. Not a
       // sealed envelope: see ingestGuestGmsg.
@@ -1237,7 +1320,7 @@ export function MessageReceiver() {
         const ident = backupIdentityFor(identity, host)
         if (!ident) return
         const room: GuestRoom = { ident, host, aliasGid: aliasFor(host, row.group_id) }
-        await ingestGuestGmsg(identity, room, row.payload, row.group_id, serverStampMs(row.received_at), swallow)
+        await ingestGuestGmsg(identity, room, row.payload, row.group_id, serverStampMs(row.received_at), swallow, seenAt)
         return
       }
       const got = swallow
@@ -1247,11 +1330,13 @@ export function MessageReceiver() {
       // A group row in a BACKUP mailbox = that island also hosts a group we
       // joined (same identity, same mailbox): alias it like the visited poll.
       const gid = typeof row.group_id === 'number' ? aliasFor(host, row.group_id) : row.group_id
-      const res = await route(got.senderUIN, got.senderHost, got.envelope, gid, identity, proofOf(got), serverStampMs(row.received_at))
-      // The room log is acked by position: a row that could not be judged yet
-      // stays in front of the cursor. The legacy fetch has already let go.
-      if (res === 'retry' && !swallow) throw new NotTheRowsFault('sender not judged yet; left for the next drain')
+      const res = await route(got.senderUIN, got.senderHost, got.envelope, gid, identity, legacyProof(got, gid, swallow, seenAt), serverStampMs(row.received_at))
+      // Not judged yet, nothing advanced: the room log keeps it in front of
+      // the cursor; off the ack-less legacy fetch, which has already let go,
+      // the poller keeps it and tries again (deferUnjudged).
+      if (res === 'retry') throw new NotTheRowsFault('sender not judged yet; left for the next drain')
     }
+    const unjudged = deferUnjudged((row: MailboxRow, host: string, seenAt: number) => ingest(row, host, true, seenAt), () => cancelled)
     const account = failoverAccount(identity)
     const tick = async () => {
       // Single-flight: a tick that outlives the interval (a slow island, a
@@ -1267,6 +1352,8 @@ export function MessageReceiver() {
       running = true
       try {
         await ensureHydrated(identity.uin) // dedup needs the seen-set first
+        // What an earlier pass could not judge yet, before anything newer.
+        await unjudged.replay()
         // Only the first sweep is backlog. Every later one IS the live delivery
         // path whenever the primary island is down, and silencing those would
         // mean the outage that makes this loop matter also makes it invisible.
@@ -1281,8 +1368,8 @@ export function MessageReceiver() {
           ? primaryAnswers(identity.apiBase)
           : Promise.resolve(null)
         if (catchingUp) beginCatchUp()
-        const answered = await drainBackupQueues(identity, (row, host) => ingest(row, host, true), {
-          handle: (row, host) => ingest(row, host, false),
+        const answered = await drainBackupQueues(identity, unjudged.legacy, {
+          handle: (row, host, fetchedAt) => ingest(row, host, false, fetchedAt),
           // Stage 5: a backup island that keeps room logs is acked only once
           // the rows it served are on disk here.
           persisted: flushHistory,
@@ -1339,7 +1426,12 @@ export function MessageReceiver() {
     // Same split as the backup poller: the legacy guest queue swallows (the
     // ack-less fetch), the room log throws on a transient failure so the
     // cursor stays in front of the row.
-    const ingest = async (row: { envelope_type: string; payload: string; group_id: number | null; received_at?: string }, host: string, swallow: boolean) => {
+    const ingest = async (
+      row: { envelope_type: string; payload: string; group_id: number | null; received_at?: string },
+      host: string,
+      swallow: boolean,
+      seenAt: number,
+    ) => {
       if (cancelled) return
       // #986(a): a sender-keys broadcast. Once our guest number on that
       // island advertises sender keys (signing in there with the phrase does
@@ -1352,7 +1444,7 @@ export function MessageReceiver() {
         const ident = guestIdentityFor(identity, host)
         if (!ident) return
         const room: GuestRoom = { ident, host, aliasGid: aliasFor(host, row.group_id) }
-        await ingestGuestGmsg(identity, room, row.payload, row.group_id, serverStampMs(row.received_at), swallow)
+        await ingestGuestGmsg(identity, room, row.payload, row.group_id, serverStampMs(row.received_at), swallow, seenAt)
         return
       }
       const got = swallow
@@ -1360,21 +1452,23 @@ export function MessageReceiver() {
         : await decryptIncoming(identity, row.payload, { holdUnopened: true })
       if (!got) return
       const gid = typeof row.group_id === 'number' ? aliasFor(host, row.group_id) : row.group_id
-      const res = await route(got.senderUIN, got.senderHost, got.envelope, gid, identity, proofOf(got), serverStampMs(row.received_at))
-      if (res === 'retry' && !swallow) throw new NotTheRowsFault('sender not judged yet; left for the next drain')
+      const res = await route(got.senderUIN, got.senderHost, got.envelope, gid, identity, legacyProof(got, gid, swallow, seenAt), serverStampMs(row.received_at))
+      if (res === 'retry') throw new NotTheRowsFault('sender not judged yet; left for the next drain')
     }
+    const unjudged = deferUnjudged((row: MailboxRow, host: string, seenAt: number) => ingest(row, host, true, seenAt), () => cancelled)
     const tick = async () => {
       if (cancelled || running || isBurning() || listVisitedIslands().length === 0) return
       running = true
       try {
         await ensureHydrated(identity.uin) // dedup needs the seen-set first
+        await unjudged.replay()
         // Same as the backup poller: the first sweep is a mailbox we have not
         // read yet, everything after it is live.
         const catchingUp = firstTick
         firstTick = false
         if (catchingUp) beginCatchUp()
-        await drainVisitedQueues(identity, (row, host) => ingest(row, host, true), {
-          handle: (row, host) => ingest(row, host, false),
+        await drainVisitedQueues(identity, unjudged.legacy, {
+          handle: (row, host, fetchedAt) => ingest(row, host, false, fetchedAt),
           // Same rule as the backup poll: the room-log ack waits for the write.
           persisted: flushHistory,
         })
@@ -1417,6 +1511,7 @@ export function MessageReceiver() {
       // device is dropped here. It is queued for that device, not for this one.
       const toDevice = ev.to_device_id
       if (typeof toDevice === 'number' && toDevice !== currentDeviceId()) return
+      const seenAt = Date.now()
       void (async () => {
         // The invariant at the top of this file — every receive path waits on
         // the same hydration — held for both drains but not here. A live frame
@@ -1434,7 +1529,7 @@ export function MessageReceiver() {
           // stamp means the row keeps behaving exactly as it did before.
           // A 'retry' needs nothing here: the queued copy of the same row is
           // what the next drain judges.
-          await route(got.senderUIN, got.senderHost, got.envelope, ev.group_id, identity, proofOf(got), serverStampMs(ev.server_time))
+          await route(got.senderUIN, got.senderHost, got.envelope, ev.group_id, identity, proofOf(got, seenAt), serverStampMs(ev.server_time))
         }
       })()
         // No device to open it with yet. The same envelope is in the queue, and
@@ -1500,14 +1595,15 @@ export function MessageReceiver() {
       // Stage 5: the frame carries the row's `seq` when the island logged the
       // post (absent when it did not, or on an older island).
       const seq = ev.seq
+      const seenAt = Date.now()
       void (async () => {
         // Same hydration invariant as the sealed live path above: never ingest
         // into a store whose writes are still disabled.
         await ensureHydrated(identity.uin)
         // A roster that cannot be read throws before the chain moves, and the
         // frame stays unacked for the drain to judge.
-        const { routed: got, held } = await decodeGmsg(identity, payload, gid, undefined, gmsgAuthorizer(identity, gid))
-        if (got) await route(got.senderUIN, undefined, got.envelope, gid, identity, { spub: got.spub })
+        const { routed: got, held } = await decodeGmsg(identity, payload, gid, undefined, gmsgAuthorizer(identity, gid, seenAt))
+        if (got) await route(got.senderUIN, undefined, got.envelope, gid, identity, { spub: got.spub, seenAt })
         if (typeof seq !== 'number') return
         // ⚠ A broadcast HELD for a missing chain is not acked from here. The
         // hold is in memory (held-gmsg.ts); acking it would tell the island

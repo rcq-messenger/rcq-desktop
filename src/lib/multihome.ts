@@ -842,7 +842,8 @@ export interface QueueRow {
 /// only true while one of them does.
 export async function drainBackupQueues(
   identity: WebIdentity,
-  handle: (row: QueueRow, host: string) => Promise<void>,
+  /// The third argument is when the page carrying the row arrived (local clock).
+  handle: (row: QueueRow, host: string, fetchedAt: number) => Promise<void>,
   log?: LogDrainHooks,
 ): Promise<number> {
   let answered = 0
@@ -868,7 +869,8 @@ export async function drainBackupQueues(
       if (!res.ok) continue
       answered++
       const rows = (await res.json()) as QueueRow[]
-      for (const r of rows) await handle(r, home.host)
+      const fetchedAt = Date.now()
+      for (const r of rows) await handle(r, home.host, fetchedAt)
     } catch {
       /* island unreachable — next tick */
     }
@@ -881,7 +883,7 @@ export async function drainBackupQueues(
 /// row, throwing on a TRANSIENT failure so the row stays in front of the
 /// cursor, and what to await before the ack (the history flush).
 export interface LogDrainHooks {
-  handle: (row: QueueRow, host: string) => Promise<void>
+  handle: (row: QueueRow, host: string, fetchedAt: number) => Promise<void>
   persisted?: () => Promise<void>
 }
 
@@ -916,7 +918,7 @@ async function drainBackupLog(identity: WebIdentity, host: string, log: LogDrain
       apiBase,
       identity.uin,
       request,
-      (r) => log.handle({ envelope_type: r.envelope_type, payload: r.payload, group_id: r.gid, cls: r.cls, seq: r.seq }, host),
+      (r, fetchedAt) => log.handle({ envelope_type: r.envelope_type, payload: r.payload, group_id: r.gid, cls: r.cls, seq: r.seq }, host, fetchedAt),
       log.persisted,
       // The strike count survives the tab (report 981): see group-log-strikes.ts.
       localStrikeStore(apiBase, identity.uin),

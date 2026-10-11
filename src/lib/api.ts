@@ -13,7 +13,9 @@ import { ROOM_LINK_KEY, findRoomLinkKey } from './room-link-keys'
 /// nickname store in group-names.ts). Registered, not imported, for the reason
 /// `onAccountWipe` gives in auth.ts: this module is bundled into the console,
 /// and that build must not pull the browser's stores in behind it.
-type RosterListener = (id: WebIdentity, groupId: number, members: GroupMember[]) => void
+/// `askedAt` is when the read went out (local clock): the roster is as of some
+/// moment after it, so anyone who joined or changed key before then is in it.
+type RosterListener = (id: WebIdentity, groupId: number, members: GroupMember[], askedAt: number) => void
 const rosterListeners: RosterListener[] = []
 
 export function onRosterFetched(fn: RosterListener) {
@@ -21,11 +23,11 @@ export function onRosterFetched(fn: RosterListener) {
 }
 
 /// `groupId` is the id on the island `id` talks to, never a local alias.
-function tellRoster(id: WebIdentity, groupId: number, g: RCQGroup | null | undefined) {
+function tellRoster(id: WebIdentity, groupId: number, g: RCQGroup | null | undefined, askedAt: number) {
   if (!g || !Array.isArray(g.members) || g.members.length === 0) return
   for (const fn of rosterListeners) {
     try {
-      fn(id, groupId, g.members)
+      fn(id, groupId, g.members, askedAt)
     } catch {
       /* a listener must never fail the fetch */
     }
@@ -993,8 +995,9 @@ export const Api = {
   /// that genuinely need it — see `ensureRoster`. Older islands ignore the
   /// parameter and answer with the roster anyway, which is the safe direction.
   groups(id: WebIdentity, withMembers = true): Promise<RCQGroup[]> {
+    const askedAt = Date.now()
     return request<RCQGroup[]>(id, 'GET', withMembers ? '/groups' : '/groups?members=0').then((list) => {
-      if (Array.isArray(list)) for (const g of list) tellRoster(id, g.id, g)
+      if (Array.isArray(list)) for (const g of list) tellRoster(id, g.id, g, askedAt)
       return list
     })
   },
@@ -1011,15 +1014,17 @@ export const Api = {
 
   /// One group with its roster - the read half of the 409 retry.
   group(id: WebIdentity, groupId: number): Promise<RCQGroup> {
+    const askedAt = Date.now()
     return request<RCQGroup>(id, 'GET', `/groups/${groupId}`).then((g) => {
-      tellRoster(id, groupId, g)
+      tellRoster(id, groupId, g, askedAt)
       return g
     })
   },
 
   groupInfo(id: WebIdentity, groupId: number): Promise<RCQGroup> {
+    const askedAt = Date.now()
     return request<RCQGroup>(id, 'GET', `/groups/${groupId}`).then((g) => {
-      tellRoster(id, groupId, g)
+      tellRoster(id, groupId, g, askedAt)
       return g
     })
   },

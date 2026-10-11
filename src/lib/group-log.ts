@@ -337,6 +337,8 @@ async function postAck(request: GroupLogRequest, upto: Map<number, number>): Pro
 ///
 /// `ingest` throws on a TRANSIENT failure and returns on anything terminal,
 /// "decrypted to nothing" included: the same contract as a legacy queue row.
+/// Its second argument is when the page carrying the row arrived (local
+/// clock), a moment the row was certainly on the island by.
 /// `persisted` runs between the last ingest of a page and its ack (the web's
 /// coalesced history write; the CLI appends synchronously and passes nothing).
 /// `strikes` is the ledger of rows that threw (see StrikeStore); in memory
@@ -368,7 +370,7 @@ export async function drainGroupLog(
   apiBase: string,
   uin: number,
   request: GroupLogRequest,
-  ingest: (row: GroupLogRow) => Promise<void>,
+  ingest: (row: GroupLogRow, fetchedAt: number) => Promise<void>,
   persisted?: () => Promise<void>,
   strikes?: StrikeStore,
 ): Promise<GroupLogDrainResult> {
@@ -402,6 +404,7 @@ export async function drainGroupLog(
       const res = await request(GROUP_LOG_FETCH, body)
       if (!res.ok) throw new GroupLogHttpError(res.status, GROUP_LOG_FETCH)
       const out = (await res.json()) as Partial<GroupLogPage>
+      const fetchedAt = Date.now()
       const rows = Array.isArray(out.rows) ? out.rows.filter(isRow) : []
       // Where the island says this device stands, rooms with no rows included:
       // a device's first fetch of a room creates its cursor AT THE HEAD, and a
@@ -418,7 +421,7 @@ export async function drainGroupLog(
         result.rows++
         const key = `${r.gid}/${r.seq}`
         try {
-          await ingest(r)
+          await ingest(r, fetchedAt)
           if (struck[key]) {
             delete struck[key]
             ledgerDirty = true

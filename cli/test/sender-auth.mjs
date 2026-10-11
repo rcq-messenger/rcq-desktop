@@ -107,9 +107,13 @@ await check('the forgery this exists for: a contact number, no host, another key
 })
 
 await check('a legitimate reissue: the island vouches for the new key; taken, re-pinned, and said out loud', () => {
-  // The roster already shows it.
-  const r = T.directSenderTrust({ ...base, spub: V_NEW, roster: { key: V_NEW }, pin: V_KEY })
+  // The roster already shows it. Roster and pin disagree, so the card decides.
+  assert.equal(T.directSenderTrust({ ...base, spub: V_NEW, roster: { key: V_NEW }, pin: V_KEY }).needsCard, true)
+  const r = T.directSenderTrust({ ...base, spub: V_NEW, roster: { key: V_NEW }, pin: V_KEY, card: V_NEW })
   assert.deepEqual(r, { trust: 'pinned', host: null, keyChanged: true, repin: V_NEW })
+  // No card to be had (the island said nobody): the roster's word, as before.
+  const n = T.directSenderTrust({ ...base, spub: V_NEW, roster: { key: V_NEW }, pin: V_KEY, card: null })
+  assert.deepEqual(n, { trust: 'pinned', host: null, keyChanged: true, repin: V_NEW })
   // The roster is behind, a fresh card shows it.
   const c = T.directSenderTrust({ ...base, spub: V_NEW, roster: { key: V_KEY }, pin: V_KEY, card: V_NEW })
   assert.equal(c.trust, 'pinned')
@@ -117,6 +121,26 @@ await check('a legitimate reissue: the island vouches for the new key; taken, re
   assert.equal(c.keyChanged, true)
   // The OLD key after the island moved on is not the contact any more.
   assert.equal(T.directSenderTrust({ ...base, spub: V_KEY, roster: { key: V_NEW }, pin: V_KEY, card: V_NEW }).trust, 'forged')
+})
+
+await check('a stale roster never hands a contact back to the key they left behind', () => {
+  // The roster still names V_KEY, a card moved the pin on to V_NEW. Whoever
+  // still holds V_KEY (a leaked phrase) used to pass on the roster's word and
+  // move the pin back to itself.
+  const ask = T.directSenderTrust({ ...base, spub: V_KEY, roster: { key: V_KEY }, pin: V_NEW })
+  assert.equal(ask.needsCard, true, 'roster and pin disagree: the card decides')
+  assert.equal(ask.repin, undefined, 'and nothing is re-pinned before it does')
+  const v = T.directSenderTrust({ ...base, spub: V_KEY, roster: { key: V_KEY }, pin: V_NEW, card: V_NEW })
+  assert.equal(v.trust, 'forged')
+  assert.equal(v.keyChanged, true)
+  assert.equal(v.repin, undefined)
+  assert.equal(T.directControlAllowed(v), false)
+  // The contact under the key the card names: theirs, through the card.
+  const ok = T.directSenderTrust({ ...base, spub: V_NEW, roster: { key: V_KEY }, pin: V_NEW, card: V_NEW })
+  assert.equal(ok.trust, 'pinned')
+  assert.equal(ok.keyChanged, false, 'the pin already holds it')
+  // Roster and pin agreeing costs no card read at all.
+  assert.deepEqual(T.directSenderTrust({ ...base, spub: V_KEY, roster: { key: V_KEY }, pin: V_KEY }), { trust: 'pinned', host: null, keyChanged: false })
 })
 
 await check('a roster row without a key: the pin, else the card, else held as unverified', () => {
@@ -156,12 +180,44 @@ await check('a stranger on our island: UNPINNED, under the stranger rules (contr
   assert.equal(T.directControlAllowed(T.directSenderTrust({ ...base, spub: EVIL, claimedHost: 'b.example' })), false)
 })
 
+await check('not a contact, but a key is pinned for the number (room member, accepted request, removed contact): only that key', () => {
+  // Under the pinned key: unpinned as before, no new rights (no pkey, no homerec).
+  assert.deepEqual(T.directSenderTrust({ ...base, spub: V_KEY, pin: V_KEY }), { trust: 'unpinned', host: null, keyChanged: false })
+  // Another key: one card read first, so a reissue is not called a forgery.
+  const ask = T.directSenderTrust({ ...base, spub: EVIL, pin: V_KEY })
+  assert.equal(ask.trust, 'forged')
+  assert.equal(ask.needsCard, true)
+  // The island still vouches for the pinned key: whoever sealed this is not them.
+  const f = T.directSenderTrust({ ...base, spub: EVIL, pin: V_KEY, card: V_KEY })
+  assert.equal(f.trust, 'forged')
+  assert.equal(f.keyChanged, true)
+  assert.equal(f.needsCard, undefined)
+  assert.equal(T.directControlAllowed(f), false)
+  // No card to be had: still not the key held for them.
+  assert.equal(T.directSenderTrust({ ...base, spub: EVIL, pin: V_KEY, card: null }).trust, 'forged')
+  // A reissue (or a number the island reassigned) the island vouches for:
+  // taken, re-pinned, said out loud.
+  const r = T.directSenderTrust({ ...base, spub: V_NEW, pin: V_KEY, card: V_NEW })
+  assert.equal(r.trust, 'unpinned')
+  assert.equal(r.repin, V_NEW)
+  assert.equal(r.keyChanged, true)
+  // Another island's number with the same digits is somebody else, unaffected.
+  const away = T.directSenderTrust({ ...base, spub: EVIL, pin: V_KEY, claimedHost: 'b.example' })
+  assert.equal(away.trust, 'unpinned')
+  assert.equal(away.host, 'b.example')
+})
+
 await check('v=2: the identity check is the proof; a number whose thread is a cross-island contact never lands there', () => {
   assert.equal(T.directSenderTrust({ ...base, v2: 'verified', roster: { key: V_KEY } }).trust, 'pinned')
   assert.equal(T.directSenderTrust({ ...base, v2: 'verified' }).trust, 'unpinned')
   const m = T.directSenderTrust({ ...base, v2: 'mismatch', roster: { key: V_KEY } })
   assert.equal(m.trust, 'forged')
   assert.equal(m.keyChanged, true)
+  // Not a contact either: still flagged, so the requests list will not
+  // release it into that number's thread on an accept (no key to check).
+  const s = T.directSenderTrust({ ...base, v2: 'mismatch' })
+  assert.equal(s.trust, 'forged')
+  assert.equal(s.keyChanged, true)
   assert.equal(T.directSenderTrust({ ...base, v2: 'verified', crossIsland: [{ host: 'b.example', signingKey: V_KEY }] }).trust, 'forged')
 })
 

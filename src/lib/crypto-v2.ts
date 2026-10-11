@@ -163,9 +163,11 @@ export interface OuterKey {
 /// place of libsignal's own error, which the WASM build reduces to "Operation
 /// failed" whatever the cause, so the cause has to be told apart from here.
 ///
-/// `opened`: this very message already decrypted on this device during this
-/// page life. A re-served copy (an ack that was lost, a row behind a stalled
-/// one fetched again), whose content arrived the first time. Anything else is
+/// `opened`: this very message already decrypted on this device, in this page
+/// life or an earlier one (the fingerprints are saved with the ratchet that
+/// used up their keys, see DeviceBlob.opened). A re-served copy (an ack that
+/// was lost, a row behind a stalled one fetched again, after a reload too),
+/// whose content arrived the first time. Anything else is
 /// a session that cannot open it here and now: a ratchet another tab of this
 /// account moved on and persisted, a session lost before it reached the disk.
 /// Neither is the row being unreadable, and acking it away is a message gone
@@ -184,6 +186,9 @@ export class V2SessionError extends Error {
 /// of the room log is 500 rows and the legacy queue re-serves everything above
 /// a hole, so this covers a drain's re-served copies several times over.
 const OPENED_MAX = 4096
+/// How many of them are saved with the device: still two room-log pages, and
+/// the blob is written after every decrypt.
+const OPENED_SAVED = 1024
 
 // -----------------------------------------------------------
 // Per-device session/store manager.
@@ -218,7 +223,11 @@ export class WebSignalDevice {
   /// The bundle this device published, kept so a republish is the SAME bundle.
   private bundle?: BundleUpload
   /// Fingerprints of the libsignal messages this device has opened, oldest
-  /// first. In memory only: see V2SessionError.
+  /// first: see V2SessionError. The newest OPENED_SAVED are saved with the
+  /// device (serialize), in the same write as the ratchet that opened them,
+  /// so "the session on disk refuses it as a duplicate" and "it is known to
+  /// have been opened" are never apart. Kept only in memory, a reload made
+  /// every re-served copy behind a stuck row a new hole of its own.
   private opened = new Set<string>()
 
   private constructor(uin: number, deviceId: number, outerPriv: Uint8Array, idkp?: WasmIdentityKeyPair, regId?: number) {
@@ -548,6 +557,7 @@ export class WebSignalDevice {
       prekeys: this.prekeyRecs,
       bundle: this.bundle,
       sessions,
+      opened: [...this.opened].slice(-OPENED_SAVED),
     }
   }
 
@@ -570,6 +580,7 @@ export class WebSignalDevice {
     dev.kyberRec = blob.kyber
     dev.prekeyRecs = blob.prekeys
     dev.bundle = blob.bundle
+    if (Array.isArray(blob.opened)) dev.opened = new Set(blob.opened.filter((x) => typeof x === 'string').slice(-OPENED_MAX))
     return dev
   }
 }
@@ -592,4 +603,7 @@ export interface DeviceBlob {
   /// this device only ever received on — a send to those resolves the bundle
   /// once, as it always did.
   sessions: Array<{ uin: number; device: number; rec: Uint8Array; outer?: Uint8Array; outerAt?: number }>
+  /// Fingerprints of the libsignal messages this device opened (see
+  /// V2SessionError), oldest first. Absent in blobs written before it was kept.
+  opened?: string[]
 }

@@ -90,4 +90,21 @@ assert.equal((await bob.decrypt(p1)).envelope.text, 'pre')
 await assert.rejects(bob.decrypt(p1), (e) => e instanceof V2SessionError && e.opened === true)
 console.log('  ok  a PreKey message opened before reads as already opened')
 
-console.log('v2 unopened ok: stale session held, reload opens it, re-served copy, other device, prekey repeat')
+// 6. A reload in between. The legacy queue and a room log re-serve every row
+// behind a stuck one, and after a reload each of those used to read as never
+// opened: a new hole of its own, holding the cursor for several drains. The
+// fingerprints are saved with the ratchet that used up their keys.
+const reloadedBob = await WebSignalDevice.restore(await bob.serialize())
+await assert.rejects(reloadedBob.decrypt(m2), (e) => e instanceof V2SessionError && e.opened === true)
+await assert.rejects(reloadedBob.decrypt(p1), (e) => e instanceof V2SessionError && e.opened === true)
+// What a reload cannot open and never opened is still a hole: the stale tab's
+// blob, saved before anything was opened, knows nothing of m2.
+const staleAgain = await WebSignalDevice.restore(await staleTab.serialize())
+await assert.rejects(staleAgain.decrypt(m2), (e) => e instanceof V2SessionError && e.opened === false)
+// A blob written before the field existed restores as it always did.
+const older = await bob.serialize()
+delete older.opened
+await assert.rejects((await WebSignalDevice.restore(older)).decrypt(m2), (e) => e instanceof V2SessionError && e.opened === false)
+console.log('  ok  a copy opened before a reload still reads as opened after it')
+
+console.log('v2 unopened ok: stale session held, reload opens it, re-served copy, other device, prekey repeat, opened across a reload')

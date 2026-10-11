@@ -405,7 +405,8 @@ export interface GuestQueueRow {
 /// asked nothing new. `log.persisted` is awaited before the log ack.
 export async function drainVisitedQueues(
   identity: WebIdentity,
-  handle: (row: GuestQueueRow, host: string) => Promise<void>,
+  /// The third argument is when the page carrying the row arrived (local clock).
+  handle: (row: GuestQueueRow, host: string, fetchedAt: number) => Promise<void>,
   log?: GuestLogDrainHooks,
   opts: {
     /// An island the caller's trust layer has refused: nothing is sent to
@@ -429,7 +430,8 @@ export async function drainVisitedQueues(
       }
       if (!res.ok) continue
       const rows = (await res.json()) as GuestQueueRow[]
-      for (const r of rows) await handle(r, v.host)
+      const fetchedAt = Date.now()
+      for (const r of rows) await handle(r, v.host, fetchedAt)
     } catch {
       /* island unreachable — next tick */
     }
@@ -439,7 +441,7 @@ export async function drainVisitedQueues(
 
 /// The caller's half of a guest room-log drain: see multihome.ts LogDrainHooks.
 export interface GuestLogDrainHooks {
-  handle: (row: GuestQueueRow, host: string) => Promise<void>
+  handle: (row: GuestQueueRow, host: string, fetchedAt: number) => Promise<void>
   persisted?: () => Promise<void>
 }
 
@@ -474,7 +476,7 @@ async function drainVisitedLog(identity: WebIdentity, host: string, log: GuestLo
       apiBase,
       v.uin,
       request,
-      (r) => log.handle({ envelope_type: r.envelope_type, payload: r.payload, group_id: r.gid, cls: r.cls, seq: r.seq }, host),
+      (r, fetchedAt) => log.handle({ envelope_type: r.envelope_type, payload: r.payload, group_id: r.gid, cls: r.cls, seq: r.seq }, host, fetchedAt),
       log.persisted,
       // The strike count survives the tab (report 981): see group-log-strikes.ts.
       localStrikeStore(apiBase, v.uin),

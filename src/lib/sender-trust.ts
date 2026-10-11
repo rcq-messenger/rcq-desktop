@@ -24,8 +24,10 @@
 //  * PINNED   the key is the one held for that number: our island's roster
 //             row, a cross-island contact, or a room's member row. The island
 //             and the thread come from THAT row, never from `from_host`;
-//  * UNPINNED nothing here holds a key for this number: a stranger, under the
-//             stranger rules that already exist for their island;
+//  * UNPINNED nothing here holds this number as a contact: a stranger, under
+//             the stranger rules that already exist for their island. A key
+//             pinned for them here all the same (a room member who wrote, a
+//             request accepted, a contact since removed) still has to match;
 //  * FORGED   a key IS held for this number (or the number is ours) and the
 //             seal was made with another one. Content goes to the requests
 //             list flagged as a changed key, control traffic is dropped.
@@ -85,6 +87,16 @@ export interface TrustVerdict {
   /// A contact whose key nothing on this device can learn. Content is held as
   /// a request, nothing is applied.
   unverified?: boolean
+  /// needsCard was set and the island could not be asked (the network, 429,
+  /// 5xx, a cutoff): no answer, not a "no". Not a verdict: the row is judged
+  /// again on a later drain. Set by the resolver, for a row that can wait
+  /// only (one that cannot is judged as if no card came back), never by the
+  /// rule.
+  cardUnreachable?: boolean
+  /// Our own roster could not be read (a fresh browser, /contacts failing),
+  /// so a contact cannot be told from a stranger: the same "not yet", on the
+  /// same terms.
+  rosterUnread?: boolean
 }
 
 const pinned = (host: string | null, extra: Partial<TrustVerdict> = {}): TrustVerdict => ({
@@ -93,7 +105,7 @@ const pinned = (host: string | null, extra: Partial<TrustVerdict> = {}): TrustVe
   keyChanged: false,
   ...extra,
 })
-const forged = (host: string | null, keyChanged = true): TrustVerdict => ({ trust: 'forged', host, keyChanged })
+const forged = (host: string | null): TrustVerdict => ({ trust: 'forged', host, keyChanged: true })
 const unpinned = (host: string | null, extra: Partial<TrustVerdict> = {}): TrustVerdict => ({
   trust: 'unpinned',
   host,
@@ -120,8 +132,11 @@ export function directSenderTrust(i: DirectTrustInput): TrustVerdict {
 
   if (!v1) {
     // v=2 is same-island only, and names no signing key: the identity check
-    // is the whole of the proof.
-    if (i.v2 !== 'verified') return forged(null, i.roster != null || i.crossIsland.length > 0)
+    // is the whole of the proof. The island does not vouch for this identity,
+    // contact or not: the held row must say so (a changed key), or an accept
+    // in the requests list releases it into that number's thread unchecked
+    // (PendingRequests refuses a keyMismatch row that names no key).
+    if (i.v2 !== 'verified') return forged(null)
     if (i.roster) return pinned(null)
     // The island's holder of this number is a real person, but this device
     // files the number's thread under a contact on another island (threads
@@ -135,10 +150,19 @@ export function directSenderTrust(i: DirectTrustInput): TrustVerdict {
   // sender, and the row says where they live.
   const rk = i.roster?.key ?? null
   if (i.roster && rk && sameSigningKey(spub, rk)) {
-    // The key our island holds for them. A different first-seen key means the
-    // island changed it since then: taken, and said out loud.
-    if (i.pin && !sameSigningKey(i.pin, rk)) return pinned(null, { keyChanged: true, repin: rk })
-    return pinned(null)
+    // The key our island holds for them.
+    if (!i.pin || sameSigningKey(i.pin, rk)) return pinned(null)
+    // Roster and pin disagree, and either may be the stale one: the roster
+    // may name a key the island changed since (the pin then moved on with
+    // a card), or the pin the key before a change the roster shows. Their
+    // island's card decides. Taken on the roster's word alone, a contact's
+    // OLD key (a leaked phrase, a reissue) spoke as them again and moved the
+    // pin back to itself.
+    if (i.card === undefined) return { ...forged(null), needsCard: true }
+    if (i.card && !sameSigningKey(i.card, spub)) return forged(null)
+    // The card agrees with the seal, or the island gave none: the roster's
+    // word, as before. A change, and said out loud.
+    return pinned(null, { keyChanged: true, repin: rk })
   }
   if (i.roster && !rk && i.pin && sameSigningKey(spub, i.pin)) return pinned(null)
   const ci = i.crossIsland.find((c) => sameSigningKey(c.signingKey, spub))
@@ -165,6 +189,19 @@ export function directSenderTrust(i: DirectTrustInput): TrustVerdict {
   // Not a contact here, but this device files the number's thread under a
   // contact on another island.
   if (i.crossIsland.length > 0) return forged(null)
+  // Not a contact here, but a key IS held for this number on our island
+  // (sign-pins: a room member's verified row, an accepted request, a contact
+  // since removed), and their thread is on this device. Same rule as a
+  // contact's: the pinned key, or one the island vouches for now (taken with
+  // the banner); anyone else is FORGED. Without this, anybody holding our
+  // open card wrote, edited and deleted in that thread under the number.
+  if (i.pin && !sameSigningKey(spub, i.pin)) {
+    if (i.card === undefined) return { ...forged(null), needsCard: true }
+    if (typeof i.card === 'string' && i.card && sameSigningKey(spub, i.card)) {
+      return unpinned(null, { keyChanged: true, repin: i.card })
+    }
+    return forged(null)
+  }
   return unpinned(null)
 }
 

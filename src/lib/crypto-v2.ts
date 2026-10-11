@@ -158,6 +158,33 @@ export interface OuterKey {
   ik?: string
 }
 
+/// The inner (libsignal) half of a v=2 message did not open, although its
+/// outer layer was sealed to this device. Thrown by WebSignalDevice.decrypt in
+/// place of libsignal's own error, which the WASM build reduces to "Operation
+/// failed" whatever the cause, so the cause has to be told apart from here.
+///
+/// `opened`: this very message already decrypted on this device during this
+/// page life. A re-served copy (an ack that was lost, a row behind a stalled
+/// one fetched again), whose content arrived the first time. Anything else is
+/// a session that cannot open it here and now: a ratchet another tab of this
+/// account moved on and persisted, a session lost before it reached the disk.
+/// Neither is the row being unreadable, and acking it away is a message gone
+/// for good (report 981).
+export class V2SessionError extends Error {
+  constructor(
+    readonly opened: boolean,
+    cause: unknown,
+  ) {
+    super(`v2 session did not open the message${opened ? ' (already opened here)' : ''}: ${cause instanceof Error ? cause.message : String(cause)}`)
+    this.name = 'V2SessionError'
+  }
+}
+
+/// How many opened messages a device remembers (see V2SessionError). A page
+/// of the room log is 500 rows and the legacy queue re-serves everything above
+/// a hole, so this covers a drain's re-served copies several times over.
+const OPENED_MAX = 4096
+
 // -----------------------------------------------------------
 // Per-device session/store manager.
 // -----------------------------------------------------------
@@ -190,6 +217,9 @@ export class WebSignalDevice {
   private sessionPeers = new Map<string, OuterKey | undefined>() // "uin:device" -> outer key
   /// The bundle this device published, kept so a republish is the SAME bundle.
   private bundle?: BundleUpload
+  /// Fingerprints of the libsignal messages this device has opened, oldest
+  /// first. In memory only: see V2SessionError.
+  private opened = new Set<string>()
 
   private constructor(uin: number, deviceId: number, outerPriv: Uint8Array, idkp?: WasmIdentityKeyPair, regId?: number) {
     this.uin = uin
@@ -393,6 +423,11 @@ export class WebSignalDevice {
   ///    in-memory store remembers (a reinstall the island has taken) rebuilds
   ///    that store first, which is otherwise a decrypt that fails until the
   ///    next reload.
+  ///
+  /// Throws V2SessionError when the outer layer opened (the message IS sealed
+  /// to this device) and the session we hold did not open the rest. Anything
+  /// else thrown means what it always meant: an outer layer that is not this
+  /// device's, a sandboxed PreKey message that did not open, `verify`'s own.
   async decrypt(
     payloadB64: string,
     senderUin?: number,
@@ -428,15 +463,24 @@ export class WebSignalDevice {
     } else {
       const run = () =>
         decryptMessage(msg, type, addr, this.localAddr, this.sessionStore, this.identityStore, this.preKeyStore, this.signedStore, this.kyberStore)
+      const fp = bytesToB64(sha256(msg)).slice(0, 22)
       try {
-        plaintext = await run()
+        try {
+          plaintext = await run()
+        } catch (e) {
+          if (!(type === 3 && identity === 'verified')) throw e
+          // The island vouches for this identity; the store refusing it only
+          // remembers the one before (see establishSession for the same rebuild).
+          this.resetIdentityStore()
+          plaintext = await run()
+        }
       } catch (e) {
-        if (!(type === 3 && identity === 'verified')) throw e
-        // The island vouches for this identity; the store refusing it only
-        // remembers the one before (see establishSession for the same rebuild).
-        this.resetIdentityStore()
-        plaintext = await run()
+        // Sealed to this device and still not opened: say which of the two
+        // cases it is (see V2SessionError) instead of the WASM's blank error.
+        throw new V2SessionError(this.opened.has(fp), e)
       }
+      this.opened.add(fp)
+      if (this.opened.size > OPENED_MAX) this.opened.delete(this.opened.values().next().value as string)
       this.markSession(from, fromDevice)
       if (verify && type === 2) {
         const after = await this.sessionStore.export_session(addr)

@@ -32,6 +32,7 @@ import { verifySigned } from './signing-keys'
 import { scopedKey } from './account-scope'
 import { isFrontHost } from './front'
 import { drainGroupLog, islandHasGroupLog, type GroupLogRequest } from './group-log'
+import { localStrikeStore } from './group-log-strikes'
 import {
   INFO_BODY_CAP,
   hostVerdict,
@@ -917,6 +918,8 @@ async function drainBackupLog(identity: WebIdentity, host: string, log: LogDrain
       request,
       (r) => log.handle({ envelope_type: r.envelope_type, payload: r.payload, group_id: r.gid, cls: r.cls, seq: r.seq }, host),
       log.persisted,
+      // The strike count survives the tab (report 981): see group-log-strikes.ts.
+      localStrikeStore(apiBase, identity.uin),
     )
   } catch {
     /* island unreachable, or the log answered an error: next tick */

@@ -29,6 +29,7 @@ import { announceRotatedElsewhere } from './rotated-signal'
 import { scopedKey } from './account-scope'
 import { isBurning } from './burn-cascade'
 import { drainGroupLog, islandHasGroupLog, type GroupLogRequest } from './group-log'
+import { localStrikeStore } from './group-log-strikes'
 
 export interface VisitedIsland {
   host: string
@@ -475,6 +476,8 @@ async function drainVisitedLog(identity: WebIdentity, host: string, log: GuestLo
       request,
       (r) => log.handle({ envelope_type: r.envelope_type, payload: r.payload, group_id: r.gid, cls: r.cls, seq: r.seq }, host),
       log.persisted,
+      // The strike count survives the tab (report 981): see group-log-strikes.ts.
+      localStrikeStore(apiBase, v.uin),
     )
   } catch {
     /* island unreachable, or the log answered an error: next tick */

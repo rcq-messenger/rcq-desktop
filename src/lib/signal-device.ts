@@ -31,7 +31,7 @@
 //     read from the envelope itself (sealed sender).
 //   - sendV2(identity, peer, env): fan-out send to all of a peer's devices.
 
-import { PRIMARY_DEVICE_ID, WebSignalDevice, type SignalBundle, type DeviceBlob } from './crypto-v2'
+import { PRIMARY_DEVICE_ID, V2SessionError, WebSignalDevice, type SignalBundle, type DeviceBlob } from './crypto-v2'
 import { decryptV1, b64ToBytes, bytesToB64, messageClass, type Envelope, type WebIdentity } from './crypto'
 import { idbDel, idbGet, idbGetFlat, idbSet } from './signal-persist'
 import { clientLabel } from './client-name'
@@ -487,13 +487,28 @@ function wireVersion(payloadB64: string): number {
 /// ⚠ Not the same as undecryptable, and the difference is a whole backlog: a
 /// caller that acks what it merely failed to READ tells the island to let go of
 /// it, and it is gone. Everything here comes back on a later drain.
-export class DeviceUnavailableError extends Error {}
+///
+/// `notTheRow`: a drain's strike ledger (group-log.ts) never counts it against
+/// the row. Three boots without a device are not three failures of a message.
+export class DeviceUnavailableError extends Error {
+  readonly notTheRow = true
+  constructor(message: string) {
+    super(message)
+    this.name = 'DeviceUnavailableError'
+  }
+}
 
 /// Thrown when a v=2 payload was not attempted because the island could not be
 /// asked whose identity is behind it (verifyV2Identity). Nothing was
 /// decrypted, no ratchet moved: like DeviceUnavailableError, the row stays
-/// where it is and a later drain opens it.
-export class IdentityCheckUnavailableError extends Error {}
+/// where it is and a later drain opens it, and no strike is counted.
+export class IdentityCheckUnavailableError extends Error {
+  readonly notTheRow = true
+  constructor(message: string) {
+    super(message)
+    this.name = 'IdentityCheckUnavailableError'
+  }
+}
 
 // ---- Who is behind a v=2 session (sender-auth, 11.10). ----
 //
@@ -613,9 +628,18 @@ export async function verifyV2Identity(identity: WebIdentity, uin: number, devic
 /// can't read (e.g. a ciphertext fanned out to a DIFFERENT device) so callers
 /// can silently skip them; throws DeviceUnavailableError for the ones it could
 /// not try, which must be left where they are.
+///
+/// `holdUnopened`: a v=2 message sealed to THIS install's device whose session
+/// did not open it, and which this device has not opened before, throws its
+/// V2SessionError instead of reading as null (report 981). Only for a caller
+/// that can leave a row where it is AND gives up on it after a few drains: the
+/// room-log and queue drains with a strike ledger (group-log.ts). Everywhere
+/// else a null is what it always was, since a throw there is a row lost
+/// anyway (an ack-less fetch) or retried for ever.
 export async function decryptIncoming(
   identity: WebIdentity,
   payloadB64: string,
+  opts: { holdUnopened?: boolean } = {},
 ): Promise<{
   senderUIN: number
   senderDeviceId?: number
@@ -651,22 +675,33 @@ export async function decryptIncoming(
       // row stays for the next drain.
       if (e instanceof IdentityCheckUnavailableError) throw e
       // Not ours to read — or ours to read with the identity this install
-      // published before it became a secondary. Logged, never thrown: the
-      // caller treats null as terminal and acks the row away, and a silent
-      // null here is how a swallowed decrypt failure erases a message with
-      // no trace to debug from (2026-08-20).
+      // published before it became a secondary. Logged, never swallowed in
+      // silence: a null is terminal to the caller, which acks the row away,
+      // and a silent null here is how a swallowed decrypt failure erases a
+      // message with no trace to debug from (2026-08-20).
       console.warn('v2 decrypt failed (current device):', e instanceof Error ? e.message : e)
       const prev = await previousDevice(identity)
-      if (!prev) return null
-      try {
-        const out = await prev.decrypt(payloadB64, undefined, undefined, verify)
-        await persist(identity, prev, prevKey(identity.uin)) // its ratchet advanced too
-        return shaped(out)
-      } catch (e2) {
-        if (e2 instanceof IdentityCheckUnavailableError) throw e2
-        console.warn('v2 decrypt failed (previous device):', e2 instanceof Error ? e2.message : e2)
-        return null
+      if (prev) {
+        try {
+          const out = await prev.decrypt(payloadB64, undefined, undefined, verify)
+          await persist(identity, prev, prevKey(identity.uin)) // its ratchet advanced too
+          return shaped(out)
+        } catch (e2) {
+          if (e2 instanceof IdentityCheckUnavailableError) throw e2
+          console.warn('v2 decrypt failed (previous device):', e2 instanceof Error ? e2.message : e2)
+        }
       }
+      // ⚠ Sealed to the device this install IS, and the session here did not
+      // open it: not "somebody else's copy" but our own message, unread. Acked
+      // as null it was gone for good, for every tab of this install, since
+      // they all read through one cursor (report 981). Held where the caller
+      // can hold it: another tab, or this one reloaded, may hold the session.
+      // Only the CURRENT device's failure: the previous one shares the account
+      // key with whichever install took the primary slot since, so what fails
+      // to open there is that install's mail. A copy this device already opened
+      // was delivered and stays a null.
+      if (opts.holdUnopened && e instanceof V2SessionError && !e.opened) throw e
+      return null
     }
   }
   if (v === 1) {

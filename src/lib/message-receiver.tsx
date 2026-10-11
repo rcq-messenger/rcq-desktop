@@ -40,7 +40,8 @@ import { deliverCrossIslandCallSignal } from './call'
 import { myCallPolicy } from './call-privacy'
 import { handleProfile, pushProfileTo } from './crossisland-profile'
 import { decodeGmsg, handleGmsg, handleSkdm, handleSknack, replayHeldGmsg, type GmsgAuthorize } from './sender-key-receive'
-import { ackLiveGroupRow, drainGroupLog, forgetVouched, islandHasGroupLog, type GroupLogRequest } from './group-log'
+import { ackLiveGroupRow, drainGroupLog, forgetVouched, islandHasGroupLog, NotTheRowsFault, strikeRow, type GroupLogRequest } from './group-log'
+import { localStrikeStore } from './group-log-strikes'
 import { Api, peerBundleFrom } from './api'
 import { bytesToB64, encryptV1 } from './crypto'
 import type { CallEnvelope, CarbonEnvelope, ContactReqEnvelope, Envelope, ProfileEnvelope, WebIdentity } from './crypto'
@@ -208,7 +209,9 @@ function proofOf(got: { senderSigningKey?: string; senderV2?: V2Identity }): Sea
 function gmsgAuthorizer(identity: WebIdentity, localGid: number): GmsgAuthorize {
   return async (senderUin, spub) => {
     const room = await resolveRoomTrust(identity, localGid, senderUin, spub, null)
-    if (room === 'retry') throw new Error('room roster unavailable')
+    // The island did not hand the roster over: nothing about this broadcast,
+    // so the drains leave it where it is and count no strike against it.
+    if (room === 'retry') throw new NotTheRowsFault('room roster unavailable')
     if (room.trust === 'self' || room.trust === 'pinned') return true
     console.warn('[sender-auth] broadcast under a chain whose owner the room does not hold; dropped', { localGid, senderUin })
     return false
@@ -874,6 +877,9 @@ function drainPrimaryQueue(identity: WebIdentity, catchUp: boolean): Promise<voi
 // has not arrived yet, see handleGmsg); everything else is a sealed envelope.
 // Throws only on a TRANSIENT failure, which the caller answers by leaving the
 // row unacked; everything terminal, "decrypted to nothing" included, returns.
+// A v=2 row sealed to this device that its session did not open is one of
+// those (decryptIncoming's `holdUnopened`): both callers keep a strike ledger
+// that writes it off after a few drains.
 async function ingestPrimaryRow(
   identity: WebIdentity,
   myDev: number,
@@ -902,7 +908,7 @@ async function ingestPrimaryRow(
     const got = await handleGmsg(identity, r.payload, r.group_id, undefined, gmsgAuthorizer(identity, r.group_id))
     if (got) await route(got.senderUIN, undefined, got.envelope, r.group_id, identity, { spub: got.spub }, srvAt)
   } else {
-    const got = await decryptIncoming(identity, r.payload)
+    const got = await decryptIncoming(identity, r.payload, { holdUnopened: true })
     if (got) {
       // A decrypted envelope proves the sending DEVICE can talk to us:
       // its silence probe stands down (device-scoped; v=1 names none). Only
@@ -911,16 +917,23 @@ async function ingestPrimaryRow(
       // A v=1 row that could not be judged yet (a room roster unreadable) is
       // left in front of the cursor: nothing about it advanced.
       if ((await route(got.senderUIN, got.senderHost, got.envelope, r.group_id, identity, proofOf(got), srvAt)) === 'retry') {
-        throw new Error('sender not judged yet; left for the next drain')
+        throw new NotTheRowsFault('sender not judged yet; left for the next drain')
       }
     }
   }
 }
 
-// The legacy `/messages/queue` drain, exactly as it has always run (see the
-// notes above drainPrimaryQueue). Untouched by Stage 5: it keeps serving 1:1
-// rows, and whatever legacy group rows the island wrote for this account
-// before its first room-log fetch.
+// The legacy `/messages/queue` drain, as it has always run (see the notes
+// above drainPrimaryQueue). Untouched by Stage 5: it keeps serving 1:1 rows,
+// and whatever legacy group rows the island wrote for this account before its
+// first room-log fetch.
+//
+// One addition (report 981): the strike ledger the room log keeps, here keyed
+// by queue id. A row that throws its OWN way on enough consecutive drains is
+// acked past instead of holding the cursor for ever, and that is what lets a
+// v=2 row this device's session did not open be held at all, rather than
+// acked away as null on the spot. A failure that is not the row's (no device,
+// the network, a roster not read) holds the row as before and counts nothing.
 async function drainLegacyQueue(identity: WebIdentity, myDev: number): Promise<void> {
   const res = await fetchWithTimeout(`${identity.apiBase}/messages/queue?ack=1&dev=${myDev}`, {
     headers: { Authorization: `Bearer ${identity.jwt}` },
@@ -945,17 +958,41 @@ async function drainLegacyQueue(identity: WebIdentity, myDev: number): Promise<v
   }>
   const directIds: number[] = []
   const groupIds: number[] = []
+  const ledger = localStrikeStore(identity.apiBase, identity.uin, 'queue')
+  const struck = ledger.read()
+  let ledgerDirty = false
+  // 1:1 and group rows are numbered by two different tables.
+  const keyOf = (r: { id: number; group_id: number | null }) => `${typeof r.group_id === 'number' ? 'g' : 'd'}${r.id}`
   for (const r of rows) {
+    const key = keyOf(r)
     try {
       await ingestPrimaryRow(identity, myDev, r)
-      // Processed to its end, including "decrypted to nothing", which is
-      // terminal. Only a THROW leaves a row unacked: the cursor then stops
-      // in front of it and the island redelivers from there next time.
-      ;(typeof r.group_id === 'number' ? groupIds : directIds).push(r.id)
-    } catch {
-      /* transient failure: leave unacked for redelivery */
+      if (struck[key]) {
+        delete struck[key]
+        ledgerDirty = true
+      }
+    } catch (e) {
+      // Only a THROW leaves a row unacked: the cursor then stops in front of
+      // it and the island redelivers from there next time. Until the row has
+      // failed its own way on enough drains: then it is acked past.
+      const verdict = strikeRow(struck, key, e)
+      if (verdict !== 'wait') ledgerDirty = true
+      if (verdict !== 'writeOff') continue
+    }
+    // Processed to its end, including "decrypted to nothing", which is
+    // terminal, or written off as unreadable here.
+    ;(typeof r.group_id === 'number' ? groupIds : directIds).push(r.id)
+  }
+  // The fetch hands over every row above this device's cursor, so an entry
+  // for a row it did not hand over was acked or reaped: dead weight.
+  const served = new Set(rows.map(keyOf))
+  for (const key of Object.keys(struck)) {
+    if (!served.has(key)) {
+      delete struck[key]
+      ledgerDirty = true
     }
   }
+  if (ledgerDirty) ledger.write(struck)
   if (directIds.length || groupIds.length) {
     // ⚠ Before the ack, not after. An ack tells the island it may let go of
     // these rows, and history writes are coalesced: promising that while
@@ -1002,6 +1039,9 @@ async function drainRoomLog(identity: WebIdentity, myDev: number): Promise<void>
       logRequestFor(identity),
       (row) => ingestPrimaryRow(identity, myDev, { envelope_type: row.envelope_type, payload: row.payload, group_id: row.gid, received_at: row.received_at }),
       flushHistory,
+      // On disk (report 981): a tab opened for a minute at a time still
+      // reaches the strike limit, and a stuck row stops holding its room.
+      localStrikeStore(identity.apiBase, identity.uin),
     )
   } catch {
     /* nothing was acked for the page that failed; the next drain re-serves it */
@@ -1185,10 +1225,10 @@ export function MessageReceiver() {
     // legacy queue's rule: that fetch is the ack-less one, so the island has
     // already let go of the whole page, and a throw would abandon the rows
     // behind this one for good. The room log is acked by position, the other
-    // way round: a transient failure (no libsignal device yet, say) must
-    // THROW so the row stays in front of the cursor and is re-served, and
-    // the strike ledger in group-log.ts acks past it only once it has failed
-    // the same way on several drains.
+    // way round: a transient failure (no libsignal device yet, a v=2 row our
+    // session did not open) must THROW so the row stays in front of the
+    // cursor and is re-served, and the strike ledger in group-log.ts acks
+    // past it only once it has failed its own way on several drains.
     const ingest = async (row: { envelope_type: string; payload: string; group_id: number | null; received_at?: string }, host: string, swallow: boolean) => {
       if (cancelled) return
       // A sender-keys broadcast for a room this backup island hosts. Not a
@@ -1202,7 +1242,7 @@ export function MessageReceiver() {
       }
       const got = swallow
         ? await decryptIncoming(identity, row.payload).catch(() => null)
-        : await decryptIncoming(identity, row.payload)
+        : await decryptIncoming(identity, row.payload, { holdUnopened: true })
       if (!got) return
       // A group row in a BACKUP mailbox = that island also hosts a group we
       // joined (same identity, same mailbox): alias it like the visited poll.
@@ -1210,7 +1250,7 @@ export function MessageReceiver() {
       const res = await route(got.senderUIN, got.senderHost, got.envelope, gid, identity, proofOf(got), serverStampMs(row.received_at))
       // The room log is acked by position: a row that could not be judged yet
       // stays in front of the cursor. The legacy fetch has already let go.
-      if (res === 'retry' && !swallow) throw new Error('sender not judged yet; left for the next drain')
+      if (res === 'retry' && !swallow) throw new NotTheRowsFault('sender not judged yet; left for the next drain')
     }
     const account = failoverAccount(identity)
     const tick = async () => {
@@ -1317,11 +1357,11 @@ export function MessageReceiver() {
       }
       const got = swallow
         ? await decryptIncoming(identity, row.payload).catch(() => null)
-        : await decryptIncoming(identity, row.payload)
+        : await decryptIncoming(identity, row.payload, { holdUnopened: true })
       if (!got) return
       const gid = typeof row.group_id === 'number' ? aliasFor(host, row.group_id) : row.group_id
       const res = await route(got.senderUIN, got.senderHost, got.envelope, gid, identity, proofOf(got), serverStampMs(row.received_at))
-      if (res === 'retry' && !swallow) throw new Error('sender not judged yet; left for the next drain')
+      if (res === 'retry' && !swallow) throw new NotTheRowsFault('sender not judged yet; left for the next drain')
     }
     const tick = async () => {
       if (cancelled || running || isBurning() || listVisitedIslands().length === 0) return

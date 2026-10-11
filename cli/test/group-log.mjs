@@ -3,15 +3,43 @@
 // The island half is a few lines of in-memory model written to the server's
 // contract (rcq-server-ref, test_stage5_group_log_local.py): rows above this
 // device's cursor per room, `more` when the page was cut, an ack that moves a
-// cursor forward only. Everything driven against it is production code from
+// cursor forward only, `rooms` naming which rooms to read and `after` reading
+// one from a given seq without moving its cursor. It fills a page room by
+// room in the order asked, as every island did before the fair page (and a
+// third-party island may still): the order that let one stuck room starve
+// the rest (report 981). Everything driven against it is production code from
 // src/lib/group-log.ts: the page loop, the ack after the persist, the
-// contiguous-prefix rule, the strike ledger, the head seeding of a complete
-// drain, and the live-frame ack. No socket, no network.
+// contiguous-prefix rule, the strike ledger, the held-room paging, the head
+// seeding of a complete drain, and the live-frame ack. No socket, no network.
 //
 // Run: npm run cli:test   (builds first; this imports the BUILT bundle)
 
 import assert from 'node:assert/strict'
-import { ackLiveGroupRow, drainGroupLog, forgetVouched, MAX_STRIKES, vouchedSeq } from '../dist/group-v1.mjs'
+// localStorage for the web's on-disk ledger, before anything loads.
+const ls = new Map()
+globalThis.localStorage = {
+  get length() {
+    return ls.size
+  },
+  key: (i) => [...ls.keys()][i] ?? null,
+  getItem: (k) => (ls.has(k) ? ls.get(k) : null),
+  setItem: (k, v) => void ls.set(k, String(v)),
+  removeItem: (k) => void ls.delete(k),
+  clear: () => ls.clear(),
+}
+
+const {
+  ackLiveGroupRow,
+  drainGroupLog,
+  forgetVouched,
+  localStrikeStore,
+  MAX_ANY_STRIKES,
+  MAX_STRIKES,
+  NotTheRowsFault,
+  notTheRowsFault,
+  strikeRow,
+  vouchedSeq,
+} = await import('../dist/group-v1.mjs')
 
 const API = 'https://island.test'
 const UIN = 100001
@@ -27,12 +55,18 @@ function island(logs) {
     const heads = {}
     const out = {}
     let more = false
-    for (const gid of [...logs.keys()].sort((a, b) => a - b)) {
+    // Every room in gid order, or the rooms named, in the order named (a room
+    // the account is not in is skipped).
+    const wanted = body.rooms
+      ? body.rooms.filter((r) => logs.has(r.gid)).map((r) => [r.gid, r.after])
+      : [...logs.keys()].sort((a, b) => a - b).map((gid) => [gid, undefined])
+    for (const [gid, after] of wanted) {
       heads[gid] = head(gid)
       // A device's first read of a room starts at the head: no backlog.
       if (!cursors.has(gid)) cursors.set(gid, head(gid))
       out[gid] = cursors.get(gid)
-      const above = logs.get(gid).filter((r) => r.seq > cursors.get(gid))
+      const start = after ?? cursors.get(gid)
+      const above = logs.get(gid).filter((r) => r.seq > start)
       const room = above.slice(0, Math.max(0, limit - rows.length))
       if (above.length > room.length) more = true
       rows.push(...room)
@@ -147,21 +181,39 @@ function rowsOf(isl, gid, n) {
   assert.equal(isl.cursors.get(21), 4)
 }
 
-// --- 4. A page where nothing could be processed ends the drain rather than
-// spinning on it (the fetch reads from the stored cursor, so a re-fetch
-// without an ack would serve the same page forever).
+// --- 4. A room that stalls is held: its tail is read from the last row
+// served (`after`, which moves no cursor), nothing is acked in it, and a page
+// that moves nothing ends the drain rather than spinning on it (an island
+// that ignores `after` serves the same page again).
 {
   forgetVouched(API, UIN)
   const isl = island(new Map([[21, []]]))
   await drainGroupLog(API, UIN, isl.request, async () => {})
   for (let i = 0; i < 700; i++) isl.post(21, 'gmsg', `p${i}`)
   isl.calls.length = 0
+  let n = 0
   const r = await drainGroupLog(API, UIN, isl.request, async () => {
+    n++
     throw new Error('nothing opens')
   })
-  assert.equal(isl.calls.length, 1, 'one fetch, no ack, no second fetch')
+  assert.equal(n, 700, 'every row was tried, the tail behind the first page too')
+  assert.deepEqual(
+    isl.calls.map((c) => c.body),
+    [{ limit: 500 }, { limit: 500, rooms: [{ gid: 21, after: 500 }] }],
+    'the second page reads the tail, and nothing is acked',
+  )
   assert.equal(r.acked.size, 0)
   assert.equal(isl.cursors.get(21), 0, 'the cursor did not move')
+  // An island that serves from the cursor whatever it is asked: the second
+  // page is the first one again, nothing moved, and the drain stops there.
+  forgetVouched(API, UIN)
+  const deaf = async (path, body) => isl.request(path, path === '/messages/group-log/fetch' ? { limit: body.limit } : body)
+  isl.calls.length = 0
+  await drainGroupLog(API, UIN, deaf, async () => {
+    throw new Error('nothing opens')
+  })
+  assert.equal(isl.calls.length, 2, 'two fetches, no ack, no third')
+  assert.equal(isl.cursors.get(21), 0)
 }
 
 // --- 5. An ack that fails ends the loop without throwing: the rows are
@@ -316,25 +368,47 @@ function rowsOf(isl, gid, n) {
   isl.post(21, 'gmsg', 'bad')
   isl.post(21, 'gmsg', 'fine')
   for (let i = 0; i < 600; i++) isl.post(22, 'gmsg', `p${i}`)
-  class NoDevice extends Error {
+  class Unopened extends Error {
     constructor() {
-      super('no libsignal device')
-      this.name = 'DeviceUnavailableError'
+      super('v2 session did not open the message')
+      this.name = 'V2SessionError'
     }
   }
   let fails = 0
   const ingest = async (row) => {
     if (row.gid === 21 && row.seq === 1) {
       fails++
-      throw new NoDevice()
+      throw new Unopened()
     }
   }
-  // Drain 1: two pages (room 22 is 600 deep), room 21's hole is served on
-  // both, counted once.
+  // Drain 1: two pages (room 22 is 600 deep). Room 21 is held from the
+  // hole on: the second page reads it from the last row served, so the hole
+  // is not served again, and room 22 is read whole.
   await drainGroupLog(API, UIN, isl.request, ingest)
-  assert.equal(fails, 2, 'the hole was re-served on the second page')
+  assert.equal(fails, 1, 'the hole was served once')
   assert.equal(isl.cursors.get(21), 0)
   assert.equal(isl.cursors.get(22), 600)
+  // The same row served twice in one drain (an island that ignores `after`)
+  // is still one strike.
+  {
+    forgetVouched(API, UIN + 7)
+    const twice = island(new Map([[21, []], [22, []]]))
+    await drainGroupLog(API, UIN + 7, twice.request, async () => {})
+    twice.post(21, 'gmsg', 'bad')
+    for (let i = 0; i < 600; i++) twice.post(22, 'gmsg', `p${i}`)
+    const deaf = async (path, body) => twice.request(path, path === '/messages/group-log/fetch' ? { limit: body.limit } : body)
+    let stored = {}
+    const store = { read: () => ({ ...stored }), write: (s) => void (stored = s) }
+    let tries = 0
+    await drainGroupLog(API, UIN + 7, deaf, async (row) => {
+      if (row.gid === 21) {
+        tries++
+        throw new Unopened()
+      }
+    }, undefined, store)
+    assert.equal(tries, 2, 'served on both pages')
+    assert.deepEqual(stored, { '21/1': { sig: 'V2SessionError', n: 1, any: 1 } }, 'and counted once')
+  }
   for (let k = 2; k < MAX_STRIKES; k++) {
     await drainGroupLog(API, UIN, isl.request, ingest)
     assert.equal(isl.cursors.get(21), 0, `still in front of the cursor after drain ${k}`)
@@ -342,17 +416,32 @@ function rowsOf(isl, gid, n) {
   await drainGroupLog(API, UIN, isl.request, ingest)
   assert.equal(isl.cursors.get(21), 2, `acked past on drain ${MAX_STRIKES}, the row behind it too`)
   assert.equal(vouchedSeq(API, UIN, 21), 2)
-  // A different failure each time never reaches the limit.
+  // A different failure each time never reaches MAX_STRIKES, and is
+  // written off on MAX_ANY_STRIKES consecutive drains instead.
   forgetVouched(API, UIN)
   const isl2 = island(new Map([[21, []]]))
   await drainGroupLog(API, UIN, isl2.request, async () => {})
   isl2.post(21, 'gmsg', 'bad')
   let n = 0
   const varying = async () => {
-    throw new Error(`reason ${n++ % 2}`)
+    throw new Error(`reason ${'ab'[n++ % 2]}`)
   }
-  for (let k = 0; k < MAX_STRIKES + 2; k++) await drainGroupLog(API, UIN, isl2.request, varying)
-  assert.equal(isl2.cursors.get(21), 0, 'alternating failures keep stalling')
+  for (let k = 1; k < MAX_ANY_STRIKES; k++) await drainGroupLog(API, UIN, isl2.request, varying)
+  assert.ok(MAX_ANY_STRIKES > MAX_STRIKES)
+  assert.equal(isl2.cursors.get(21), 0, 'alternating failures stall past MAX_STRIKES')
+  await drainGroupLog(API, UIN, isl2.request, varying)
+  assert.equal(isl2.cursors.get(21), 1, `and are written off on drain ${MAX_ANY_STRIKES}`)
+  // A message that differs only in its numbers is the same failure.
+  forgetVouched(API, UIN)
+  const isl2b = island(new Map([[21, []]]))
+  await drainGroupLog(API, UIN, isl2b.request, async () => {})
+  isl2b.post(21, 'gmsg', 'bad')
+  let t = 15000
+  const timedOut = async () => {
+    throw new Error(`gave up after ${t++} ms`)
+  }
+  for (let k = 0; k < MAX_STRIKES; k++) await drainGroupLog(API, UIN, isl2b.request, timedOut)
+  assert.equal(isl2b.cursors.get(21), 1, 'digits do not make a new failure')
   // The same failure, interrupted by a success, starts over.
   forgetVouched(API, UIN)
   const isl3 = island(new Map([[21, []]]))
@@ -378,11 +467,207 @@ function rowsOf(isl, gid, n) {
     throw new Error('busy')
   }
   await drainGroupLog(API, UIN, isl4.request, busy, undefined, store)
-  assert.deepEqual(stored, { '21/1': { sig: 'Error: busy', n: 1 } })
+  assert.deepEqual(stored, { '21/1': { sig: 'Error: busy', n: 1, any: 1 } })
+  // An entry written before `any` was kept reads it as `n`.
   stored = { '21/1': { sig: 'Error: busy', n: MAX_STRIKES - 1 } }
   await drainGroupLog(API, UIN, isl4.request, busy, undefined, store)
   assert.equal(isl4.cursors.get(21), 1, 'the count carried over from the file')
   assert.deepEqual(stored, {}, 'and the entry is gone once the cursor passed it')
 }
 
-console.log('group log ok: head start, page loop, contiguous prefix, no spin, ack failure, malformed rows, live ack, persist gate, head seeding, strikes')
+// --- 11. Report 981: one stuck room does not starve the others. Room 21
+// (the flagship's gid) has a row that does not open and 1200 rows behind it,
+// more than two pages; rooms 22 and 23 have a little each. The island fills
+// pages in room order, so before, every page was room 21 from its cursor,
+// rooms 22 and 23 got `more` and nothing else, and the drain stopped on a
+// page that moved nothing. Now the drain goes on naming the rooms: 22 and 23
+// from their cursors, 21 from the last row served. Everything is ingested in
+// ONE drain, 22 and 23 are acked, 21 stays in front of its hole.
+{
+  forgetVouched(API, UIN)
+  const isl = island(new Map([[21, []], [22, []], [23, []]]))
+  await drainGroupLog(API, UIN, isl.request, async () => {})
+  isl.post(21, 'gmsg', 'stuck')
+  for (let i = 0; i < 1200; i++) isl.post(21, 'gmsg', `t${i}`)
+  rowsOf(isl, 22, 5)
+  rowsOf(isl, 23, 2)
+  isl.calls.length = 0
+  const seen = new Map()
+  const ingest = async (row) => {
+    seen.set(row.gid, (seen.get(row.gid) ?? 0) + 1)
+    if (row.gid === 21 && row.seq === 1) throw new Error('does not open')
+  }
+  const r = await drainGroupLog(API, UIN, isl.request, ingest)
+  assert.equal(seen.get(22), 5, 'room 22 delivered in the same drain')
+  assert.equal(seen.get(23), 2, 'room 23 too')
+  assert.equal(seen.get(21), 1201, 'and room 21 whole, its tail read past the page')
+  assert.deepEqual([...r.acked].sort(), [[22, 5], [23, 2]])
+  assert.equal(isl.cursors.get(21), 0, 'the stuck room keeps its cursor in front of the hole')
+  assert.equal(vouchedSeq(API, UIN, 21), 0, 'and nothing live is acked past it')
+  assert.equal(vouchedSeq(API, UIN, 22), 5)
+  const fetches = isl.calls.filter((c) => c.path === '/messages/group-log/fetch')
+  assert.deepEqual(fetches[0].body, { limit: 500 }, 'the first page names nothing')
+  assert.deepEqual(
+    fetches[1].body.rooms,
+    [{ gid: 22 }, { gid: 23 }, { gid: 21, after: 500 }],
+    'then the other rooms first, the stuck one from its tail',
+  )
+  assert.ok(fetches.length <= 4)
+  // The next drains do the same; on the last strike the hole is written off
+  // and room 21 is acked to its end in that drain.
+  for (let k = 2; k <= MAX_STRIKES; k++) await drainGroupLog(API, UIN, isl.request, ingest)
+  assert.equal(isl.cursors.get(21), 1201, `acked to the end on drain ${MAX_STRIKES}`)
+  assert.equal(vouchedSeq(API, UIN, 21), 1201)
+}
+
+// --- 12. A failure that is not the row's fault never counts: no libsignal
+// device, an island that could not be asked, the network, storage refusing.
+// The row waits in front of the cursor, for as many drains as it takes, and
+// is acked like any other once it opens.
+{
+  class NoDevice extends Error {
+    notTheRow = true
+    constructor() {
+      super('no libsignal device: island unreachable')
+      this.name = 'DeviceUnavailableError'
+    }
+  }
+  const httpError = (status) => Object.assign(new Error(`${status}: upstream`), { status })
+  const domError = (name) => Object.assign(new Error(name), { name })
+  const kinds = [
+    new NoDevice(),
+    new NotTheRowsFault('room roster unavailable'),
+    new TypeError('Failed to fetch'),
+    new TypeError('NetworkError when attempting to fetch resource.'),
+    new TypeError('Load failed'),
+    new TypeError('fetch failed'),
+    domError('AbortError'),
+    domError('TimeoutError'),
+    domError('QuotaExceededError'),
+    domError('TransactionInactiveError'),
+    httpError(503),
+    httpError(429),
+    httpError(401),
+    httpError(0),
+  ]
+  for (const k of kinds) assert.equal(notTheRowsFault(k), true, `${k.name}: ${k.message}`)
+  // And what IS the row's: its own decrypt, a bug it trips, an answer.
+  assert.equal(notTheRowsFault(Object.assign(new Error('v2'), { name: 'V2SessionError' })), false)
+  assert.equal(notTheRowsFault(new TypeError("Cannot read properties of undefined (reading 'kind')")), false)
+  assert.equal(notTheRowsFault(new TypeError('x.fetchCard is not a function')), false, 'a bug that names fetch is still a bug')
+  assert.equal(notTheRowsFault(new SyntaxError('Unexpected token')), false)
+  assert.equal(notTheRowsFault(httpError(404)), false)
+  assert.equal(notTheRowsFault('SignalError: Operation failed'), false)
+
+  forgetVouched(API, UIN)
+  const isl = island(new Map([[21, []]]))
+  await drainGroupLog(API, UIN, isl.request, async () => {})
+  isl.post(21, 'gmsg', 'waits')
+  isl.post(21, 'gmsg', 'behind')
+  let stored = {}
+  let writes = 0
+  const store = { read: () => ({ ...stored }), write: (x) => void (writes++, (stored = x)) }
+  let i = 0
+  for (let k = 0; k < MAX_ANY_STRIKES * 2; k++) {
+    forgetVouched(API, UIN) // a reload between drains: only the store remembers
+    await drainGroupLog(API, UIN, isl.request, async (row) => {
+      if (row.seq === 1) throw kinds[i++ % kinds.length]
+    }, undefined, store)
+    assert.equal(isl.cursors.get(21), 0, `still waiting after drain ${k + 1}`)
+  }
+  assert.deepEqual(stored, {}, 'nothing was ever counted')
+  assert.equal(writes, 0, 'nor written')
+  await drainGroupLog(API, UIN, isl.request, async () => {}, undefined, store)
+  assert.equal(isl.cursors.get(21), 2, 'it opened, and was acked with the row behind it')
+  // A count already running is neither reset nor advanced by such a drain.
+  stored = { '21/3': { sig: 'V2SessionError', n: MAX_STRIKES - 1, any: MAX_STRIKES - 1 } }
+  isl.post(21, 'gmsg', 'third')
+  await drainGroupLog(API, UIN, isl.request, async () => {
+    throw new NoDevice()
+  }, undefined, store)
+  assert.deepEqual(stored['21/3'], { sig: 'V2SessionError', n: MAX_STRIKES - 1, any: MAX_STRIKES - 1 })
+}
+
+// --- 13. The web's ledger on disk (group-log-strikes.ts). It is what makes
+// a tab opened for a minute at a time reach the limit: the count survives
+// the reload. One ledger per (island, number, lane), all in one per-account
+// key that is removed when it empties; storage that will not read or write
+// falls back to the copy in memory, i.e. the old behaviour.
+{
+  ls.clear()
+  forgetVouched(API, UIN)
+  const isl = island(new Map([[21, []]]))
+  await drainGroupLog(API, UIN, isl.request, async () => {}, undefined, localStrikeStore(API, UIN))
+  isl.post(21, 'gmsg', 'bad')
+  const bad = async (row) => {
+    if (row.seq === 1) throw Object.assign(new Error('v2'), { name: 'V2SessionError' })
+  }
+  for (let k = 1; k < MAX_STRIKES; k++) {
+    forgetVouched(API, UIN) // the reload: memory gone, the disk is not
+    await drainGroupLog(API, UIN, isl.request, bad, undefined, localStrikeStore(API, UIN))
+    assert.equal(isl.cursors.get(21), 0)
+  }
+  const key = 'rcq.web.glstrikes.v1'
+  const disk = JSON.parse(ls.get(key))
+  assert.deepEqual(disk, { [`${API}#${UIN}#log`]: { '21/1': { sig: 'V2SessionError', n: MAX_STRIKES - 1, any: MAX_STRIKES - 1 } } })
+  // Another lane and another island keep their own counts.
+  assert.deepEqual(localStrikeStore(API, UIN, 'queue').read(), {})
+  assert.deepEqual(localStrikeStore('https://other.test', UIN).read(), {})
+  forgetVouched(API, UIN)
+  await drainGroupLog(API, UIN, isl.request, bad, undefined, localStrikeStore(API, UIN))
+  assert.equal(isl.cursors.get(21), 1, `written off on the ${MAX_STRIKES}rd boot`)
+  assert.equal(ls.has(key), false, 'and the key is gone once the ledger is empty')
+  // Garbage on disk reads as an empty ledger and is written over.
+  ls.set(key, '{not json')
+  const st = localStrikeStore(API, UIN)
+  assert.deepEqual(st.read(), {})
+  st.write({ '21/9': { sig: 'X', n: 1, any: 1 } })
+  assert.deepEqual(JSON.parse(ls.get(key))[`${API}#${UIN}#log`], { '21/9': { sig: 'X', n: 1, any: 1 } })
+  // Entries that are not entries are dropped on read.
+  ls.set(key, JSON.stringify({ [`${API}#${UIN}#log`]: { a: { sig: 1, n: 'x' }, b: null, '21/9': { sig: 'X', n: 2 } } }))
+  assert.deepEqual(st.read(), { '21/9': { sig: 'X', n: 2 } })
+  // A store that refuses the write: this page keeps counting in memory.
+  const setItem = globalThis.localStorage.setItem
+  globalThis.localStorage.setItem = () => {
+    throw Object.assign(new Error('quota'), { name: 'QuotaExceededError' })
+  }
+  st.write({ '21/9': { sig: 'X', n: 2, any: 2 } })
+  assert.deepEqual(st.read(), { '21/9': { sig: 'X', n: 2, any: 2 } }, 'read back from memory')
+  globalThis.localStorage.setItem = setItem
+  ls.clear()
+}
+
+// --- 14. The ledger forgets rooms the account is no longer in: the island
+// reports a cursor for every room it is in, and an entry for any other room
+// is dead weight that would otherwise sit on disk for ever.
+{
+  forgetVouched(API, UIN)
+  const isl = island(new Map([[21, []]]))
+  rowsOf(isl, 21, 6)
+  // This device already acked through 2 (on another tab, say): 21/2 is a
+  // count the cursor has since passed. Room 99 is a room it has left.
+  isl.cursors.set(21, 2)
+  let stored = { '99/4': { sig: 'X', n: 1, any: 1 }, '21/2': { sig: 'Y', n: 1, any: 1 } }
+  const store = { read: () => ({ ...stored }), write: (x) => void (stored = x) }
+  await drainGroupLog(API, UIN, isl.request, async (row) => {
+    if (row.seq === 6) throw Object.assign(new Error('v2'), { name: 'V2SessionError' })
+  }, undefined, store)
+  assert.deepEqual(Object.keys(stored), ['21/6'], 'room 99 dropped, 21/2 passed by the cursor, 21/6 counted')
+  assert.equal(isl.cursors.get(21), 5)
+}
+
+// --- 15. strikeRow on its own, the way the legacy queue drain uses it (one
+// fetch per drain, keyed by queue id).
+{
+  const struck = {}
+  const own = Object.assign(new Error('v2'), { name: 'V2SessionError' })
+  assert.equal(strikeRow(struck, 'd7', new NotTheRowsFault('no roster')), 'wait')
+  assert.deepEqual(struck, {})
+  for (let k = 1; k < MAX_STRIKES; k++) assert.equal(strikeRow(struck, 'd7', own), 'stall')
+  assert.equal(strikeRow(struck, 'd7', own, true), 'stall', 'again in the same drain counts nothing')
+  assert.deepEqual(struck.d7, { sig: 'V2SessionError', n: MAX_STRIKES - 1, any: MAX_STRIKES - 1 })
+  assert.equal(strikeRow(struck, 'd7', own), 'writeOff')
+  assert.deepEqual(struck, {}, 'a written-off row leaves the ledger')
+}
+
+console.log('group log ok: head start, page loop, contiguous prefix, held rooms, ack failure, malformed rows, live ack, persist gate, head seeding, strikes, no starvation, not the row, ledger on disk, ledger pruning')

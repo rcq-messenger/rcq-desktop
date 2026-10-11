@@ -847,7 +847,9 @@ function strikeFile(uin: number): StrikeStore {
         const raw = JSON.parse(fs.readFileSync(path, 'utf8')) as Record<string, Partial<StrikeEntry>>
         const out: Record<string, StrikeEntry> = {}
         for (const [k, v] of Object.entries(raw)) {
-          if (v && typeof v.sig === 'string' && typeof v.n === 'number') out[k] = { sig: v.sig, n: v.n }
+          if (v && typeof v.sig === 'string' && typeof v.n === 'number') {
+            out[k] = typeof v.any === 'number' ? { sig: v.sig, n: v.n, any: v.any } : { sig: v.sig, n: v.n }
+          }
         }
         return out
       } catch {

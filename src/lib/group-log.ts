@@ -37,6 +37,24 @@
 // good (a v=2 row this install's device cannot open, say): it is acked past,
 // so one bad row never silences a room either.
 //
+// ⚠ Report 981, the client half. The count of those drains has to survive the
+// process, or a tab opened for two minutes at a time (one or two drains each)
+// never reaches the limit and the room waits for the log's 30-day TTL: the web
+// hands in a ledger on disk (group-log-strikes.ts), the CLI a file. And on
+// disk it may count only what is the ROW's fault. No libsignal device, an
+// island that could not be asked, a network that dropped, storage that
+// refused: none of that says anything about the row, and counted across
+// boots it would write off live messages after three bad starts. Those leave
+// the row where it is without a strike (`notTheRowsFault`).
+//
+// ⚠ One stuck room must not starve the others. An island fills a page in room
+// order, so a room with a long tail behind its stuck row was the whole page,
+// every page, and every room after it got `more` and nothing else. Once a room
+// stalls, the rest of the drain names the rooms: every other room from its
+// cursor, the stalled one from the last row already served (`after`, which
+// never moves the cursor), so its tail is read too. Its cursor stays in front
+// of the hole until the hole opens or is written off.
+//
 // ⚠ ONE seq axis per room, shared by broadcasts and by rows addressed to
 // OTHER members (a reaction, an skdm, a read receipt sealed to somebody
 // else). Those rows are invisible to this member: the island never serves
@@ -95,12 +113,17 @@ const MAX_PAGES = 20
 
 /// How many CONSECUTIVE drains a row may throw the same way before it is
 /// treated as unreadable on this device and acked past. Three: a transient
-/// failure (the ratchet store busy, the libsignal device not provisioned
-/// because the island was unreachable for a moment) clears well within that;
-/// a row that is still failing identically on the third drain is not going
-/// to open on the fourth, and leaving it in front of the cursor would hold
-/// every later post in the room hostage to it.
+/// failure of the row's own (a session another tab has moved on, say) clears
+/// well within that; a row that is still failing identically on the third
+/// drain is not going to open on the fourth, and leaving it in front of the
+/// cursor would hold every later post in the room hostage to it. Failures that
+/// are not the row's fault never count (see notTheRowsFault).
 export const MAX_STRIKES = 3
+
+/// The same, whatever the failures were: a row that fails a DIFFERENT way on
+/// every drain never repeats one signature MAX_STRIKES times, and was held for
+/// ever. Six drains in a row of failures of its own, of any kind, and it goes.
+export const MAX_ANY_STRIKES = 6
 
 /// A log fetch that came back with an HTTP error. Carries the status so a
 /// caller can say so in its own words (the CLI prints it, the web stays quiet).
@@ -118,20 +141,97 @@ export interface GroupLogDrainResult {
 }
 
 /// The strike ledger: per "gid/seq", how the row last failed and on how many
-/// consecutive drains. Kept per (island, account). In memory by default,
-/// which is right for a tab and for `rcq watch`; a short-lived CLI run hands
-/// in a file-backed one, or a row that fails identically on every run would
-/// never reach the strike limit there.
+/// consecutive drains. Kept per (island, account). In memory by default, which
+/// is right for `rcq watch` and for tests; the web hands in one on disk
+/// (group-log-strikes.ts) and a short-lived CLI run a file, or a row that fails
+/// identically on every run or tab would never reach the strike limit there.
 export interface StrikeStore {
   read(): Record<string, StrikeEntry>
   write(strikes: Record<string, StrikeEntry>): void
 }
 
 export interface StrikeEntry {
-  /// Signature of the failure: the error's class, or its message for a
-  /// plain Error. A row that fails DIFFERENTLY starts counting again.
+  /// Signature of the failure: the error's class, or its message (digits
+  /// blanked) for a plain Error. A row that fails DIFFERENTLY starts `n` again.
   sig: string
   n: number
+  /// Consecutive drains with a failure of the row's own, whatever the
+  /// signature (MAX_ANY_STRIKES). Absent in entries written before it was
+  /// kept, which read it as `n`.
+  any?: number
+}
+
+/// An ingest failure that says nothing about the row: the row is left in front
+/// of the cursor and NO strike is counted. Throw this (or any error carrying
+/// `notTheRow: true`, as DeviceUnavailableError does) for "could not be judged
+/// right now": a roster the island did not hand over, a device not provisioned.
+export class NotTheRowsFault extends Error {
+  readonly notTheRow = true
+  constructor(message: string) {
+    super(message)
+    this.name = 'NotTheRowsFault'
+  }
+}
+
+/// DOMException names that are the browser's storage or network refusing, and
+/// fetch's abort and timeout: about this device and this moment, never the row.
+const NOT_THE_ROW_NAMES = new Set([
+  'AbortError',
+  'TimeoutError',
+  'NetworkError',
+  'QuotaExceededError',
+  'InvalidStateError',
+  'UnknownError',
+  'TransactionInactiveError',
+  'ReadOnlyError',
+  'VersionError',
+])
+
+/// fetch's own TypeError when the network failed, as each engine words it
+/// (Chrome, Firefox, Safari, Node). Any other TypeError is a bug the row trips.
+const FETCH_FAILED = /^(failed to fetch|fetch failed|load failed|networkerror|the network connection|the internet connection)/i
+
+/// Did ingest fail for a reason that is not the row's? See NotTheRowsFault.
+/// Also: fetch's own network failure, and an HTTP answer that is the island
+/// being unavailable or our token being stale, not a verdict (an error
+/// carrying `status`: 0, 401, 408, 425, 429, 5xx).
+export function notTheRowsFault(e: unknown): boolean {
+  if (!e || typeof e !== 'object') return false
+  const o = e as { notTheRow?: unknown; name?: unknown; message?: unknown; status?: unknown }
+  if (o.notTheRow === true) return true
+  if (typeof o.name === 'string' && NOT_THE_ROW_NAMES.has(o.name)) return true
+  if (e instanceof TypeError && FETCH_FAILED.test(String(o.message))) return true
+  if (e instanceof Error && typeof o.status === 'number') {
+    const st = o.status
+    return st === 0 || st === 401 || st === 408 || st === 425 || st === 429 || st >= 500
+  }
+  return false
+}
+
+/// What a drain does with a row whose ingest threw.
+///  * 'wait': not the row's fault; left where it is, nothing counted.
+///  * 'stall': counted; left in front of the cursor for the next drain.
+///  * 'writeOff': failed its own way on enough consecutive drains; unreadable
+///    here for good, to be acked past like a row that decrypted to nothing.
+export type StrikeVerdict = 'wait' | 'stall' | 'writeOff'
+
+/// Count one failure of the row `key` into `struck` and say what to do with
+/// it. `again`: this row already failed earlier in the SAME drain (served on a
+/// second page), which is one strike, not two. Exported for the legacy queue
+/// drain, which keeps a ledger of its own the same way.
+export function strikeRow(struck: Record<string, StrikeEntry>, key: string, e: unknown, again = false): StrikeVerdict {
+  if (notTheRowsFault(e)) return 'wait'
+  const sig = failureSig(e)
+  const prev = struck[key]
+  const n = prev && prev.sig === sig ? (again ? prev.n : prev.n + 1) : 1
+  const any = prev ? (prev.any ?? prev.n) + (again ? 0 : 1) : 1
+  if (n >= MAX_STRIKES || any >= MAX_ANY_STRIKES) {
+    delete struck[key]
+    console.warn('[group-log] row failed on too many drains in a row; acked past as unreadable here', { key, sig, n, any })
+    return 'writeOff'
+  }
+  struck[key] = { sig, n, any }
+  return 'stall'
 }
 
 /// Does this island keep a log per room? Reads `capabilities.group_log` off
@@ -192,13 +292,16 @@ function memoryStrikes(apiBase: string, uin: number): StrikeStore {
   }
 }
 
-/// How a thrown ingest failed, for the strike ledger. The class when it has
-/// one of its own (DeviceUnavailableError, TimeoutError), the message for a
-/// plain Error, so "ratchet store busy" and "no libsignal device" are two
-/// different failures and a row that alternates between them keeps stalling.
+/// How a thrown ingest failed, for the strike ledger. The class when it has a
+/// name of its own (V2SessionError, SyntaxError), the message for a plain
+/// Error, so "ratchet store busy" and "bad envelope" are two different
+/// failures. Digits are blanked: a message that carries a status, a count or
+/// an id is the same failure every time, and counting it as a new one each
+/// drain kept the row from ever reaching the limit.
 function failureSig(e: unknown): string {
-  if (e instanceof Error) return e.name && e.name !== 'Error' ? e.name : `Error: ${e.message}`
-  return String(e)
+  if (e instanceof Error && e.name && e.name !== 'Error') return e.name
+  const text = e instanceof Error ? `Error: ${e.message}` : String(e)
+  return text.replace(/\d+/g, '#').slice(0, 200)
 }
 
 function isRow(r: unknown): r is GroupLogRow {
@@ -246,12 +349,17 @@ async function postAck(request: GroupLogRequest, upto: Map<number, number>): Pro
 /// on the island stays at the last row processed: rows between it and the
 /// head were addressed to other members and were never served here.
 ///
+/// A room that stalls is HELD for the rest of the drain: nothing more is acked
+/// in it, and the pages after name the rooms (see the header): the others from
+/// their cursors, the held one from the last of its rows served so far. While
+/// nothing stalls the fetch names no rooms and no `after`, exactly as before.
+///
 /// Throws on a fetch that did not answer or answered with an error (nothing
 /// was acked for that page; the next drain re-serves it). An ack that fails
 /// ends the drain without throwing: the rows are on disk, the island
 /// re-serves them once, and the dedup absorbs the repeat. Looping on without
-/// the ack would re-fetch the same page forever, since the normal fetch reads
-/// from the island's stored cursor and never passes an explicit `after`.
+/// the ack would re-fetch the same page forever, since a room's fetch reads
+/// from the island's stored cursor unless it is held.
 ///
 /// ⚠ Run this in the same serialised path as the legacy queue drain, never
 /// concurrently with it or with itself: two drains racing double-fetch the
@@ -271,87 +379,124 @@ export async function drainGroupLog(
   // room moved nothing for this one) is one strike, not one per page.
   const struckNow = new Set<string>()
   let ledgerDirty = false
-  for (let page = 0; page < MAX_PAGES; page++) {
-    const res = await request(GROUP_LOG_FETCH, { limit: PAGE_LIMIT })
-    if (!res.ok) throw new GroupLogHttpError(res.status, GROUP_LOG_FETCH)
-    const body = (await res.json()) as Partial<GroupLogPage>
-    const rows = Array.isArray(body.rows) ? body.rows.filter(isRow) : []
-    // Where the island says this device stands, rooms with no rows included:
-    // a device's first fetch of a room creates its cursor AT THE HEAD, and a
-    // live frame for the next seq can then be acked without a round trip.
-    for (const [gid, seq] of readSeqs(body.cursors)) noteVouched(apiBase, uin, gid, seq)
-    const upto = new Map<number, number>()
-    const stalled = new Set<number>()
-    for (const r of rows) {
-      result.rows++
-      const key = `${r.gid}/${r.seq}`
-      try {
-        await ingest(r)
-        if (struck[key]) {
-          delete struck[key]
-          ledgerDirty = true
+  // Every room the island reported a cursor for: all of the account's rooms,
+  // since the first page names none.
+  const rooms = new Set<number>()
+  // The rooms that stalled in this drain, and the last of each one's rows
+  // served so far: where its tail is read from on the next page.
+  const held = new Map<number, number>()
+  try {
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const body =
+        held.size === 0
+          ? { limit: PAGE_LIMIT }
+          : {
+              limit: PAGE_LIMIT,
+              // The rooms that move first: an island that fills a page in the
+              // order it is asked serves them before the held tails.
+              rooms: [
+                ...[...rooms].filter((gid) => !held.has(gid)).map((gid) => ({ gid })),
+                ...[...held].map(([gid, after]) => ({ gid, after })),
+              ],
+            }
+      const res = await request(GROUP_LOG_FETCH, body)
+      if (!res.ok) throw new GroupLogHttpError(res.status, GROUP_LOG_FETCH)
+      const out = (await res.json()) as Partial<GroupLogPage>
+      const rows = Array.isArray(out.rows) ? out.rows.filter(isRow) : []
+      // Where the island says this device stands, rooms with no rows included:
+      // a device's first fetch of a room creates its cursor AT THE HEAD, and a
+      // live frame for the next seq can then be acked without a round trip.
+      for (const [gid, seq] of readSeqs(out.cursors)) {
+        rooms.add(gid)
+        noteVouched(apiBase, uin, gid, seq)
+      }
+      const upto = new Map<number, number>()
+      // Whether the next page would differ from this one: a cursor acked
+      // forward, a room newly held, a held room's tail read further.
+      let moved = false
+      for (const r of rows) {
+        result.rows++
+        const key = `${r.gid}/${r.seq}`
+        try {
+          await ingest(r)
+          if (struck[key]) {
+            delete struck[key]
+            ledgerDirty = true
+          }
+        } catch (e) {
+          const verdict = strikeRow(struck, key, e, struckNow.has(key))
+          if (verdict !== 'wait') {
+            struckNow.add(key)
+            ledgerDirty = true
+          }
+          // Written off: acked past like a row that decrypted to nothing, so
+          // the room moves on. (It stays on the island for its window; the
+          // other devices of the account have their own cursors.) Otherwise
+          // left in front of the cursor on purpose: the island re-serves it.
+          if (verdict !== 'writeOff' && !held.has(r.gid)) {
+            held.set(r.gid, r.seq)
+            moved = true
+          }
         }
-      } catch (e) {
-        const sig = failureSig(e)
-        const prev = struck[key]
-        const n = prev && prev.sig === sig ? (struckNow.has(key) ? prev.n : prev.n + 1) : 1
-        struckNow.add(key)
-        if (n >= MAX_STRIKES) {
-          // Failed the same way on MAX_STRIKES consecutive drains: unreadable
-          // here for good. Acked past like a row that decrypted to nothing,
-          // so the room moves on. (It stays on the island for its window;
-          // the other devices of the account have their own cursors.)
-          delete struck[key]
-          ledgerDirty = true
-        } else {
-          // Left in front of the cursor on purpose: the island re-serves it.
-          struck[key] = { sig, n }
-          ledgerDirty = true
-          stalled.add(r.gid)
+        const tail = held.get(r.gid)
+        if (tail !== undefined) {
+          // Behind a hole in this room: processed now, vouched for never in
+          // this drain. Its seq is where the room's next page starts.
+          if (r.seq > tail) {
+            held.set(r.gid, r.seq)
+            moved = true
+          }
           continue
         }
+        upto.set(r.gid, r.seq)
       }
-      if (!stalled.has(r.gid)) upto.set(r.gid, r.seq)
+      if (upto.size > 0) {
+        // ⚠ Before the ack, not after. The ack tells the island this device has
+        // these rows; promising that while their only copy is a scheduled write
+        // is how a crash in between loses messages for good.
+        if (persisted) await persisted()
+        let ok = false
+        try {
+          ok = await postAck(request, upto)
+        } catch {
+          ok = false
+        }
+        if (!ok) break
+        moved = true
+        for (const [gid, seq] of upto) {
+          noteVouched(apiBase, uin, gid, seq)
+          const prev = result.acked.get(gid)
+          if (prev === undefined || seq > prev) result.acked.set(gid, seq)
+        }
+      }
+      if (!out.more) {
+        // The last page: every room not held has been read to the head the
+        // island reported (see the note above). A held room keeps its vouched
+        // seq at the hole, so no live frame is acked past it.
+        for (const [gid, head] of readSeqs(out.heads)) {
+          if (!held.has(gid)) noteVouched(apiBase, uin, gid, head)
+        }
+        break
+      }
+      // A page that moved nothing, with more behind it: stop rather than spin
+      // (the next fetch would serve the same page again).
+      if (!moved) break
     }
-    if (upto.size > 0) {
-      // ⚠ Before the ack, not after. The ack tells the island this device has
-      // these rows; promising that while their only copy is a scheduled write
-      // is how a crash in between loses messages for good.
-      if (persisted) await persisted()
-      let ok = false
-      try {
-        ok = await postAck(request, upto)
-      } catch {
-        ok = false
-      }
-      if (!ok) break
-      for (const [gid, seq] of upto) {
-        noteVouched(apiBase, uin, gid, seq)
-        const prev = result.acked.get(gid)
-        if (prev === undefined || seq > prev) result.acked.set(gid, seq)
-      }
-    }
-    if (!body.more) {
-      // The last page: every room not stalled on has been read to the head
-      // the island reported (see the note above). A stalled room keeps its
-      // vouched seq at the hole, so no live frame is acked past it.
-      for (const [gid, head] of readSeqs(body.heads)) {
-        if (!stalled.has(gid)) noteVouched(apiBase, uin, gid, head)
-      }
-      break
-    }
-    // A page where nothing could be processed, with more behind it: stop
-    // rather than spin (the next fetch would serve the same page again).
-    if (upto.size === 0) break
-  }
-  if (ledgerDirty) {
-    // Entries for rows the cursor has moved past are dead weight.
+  } finally {
+    // Written whatever ended the drain: a fetch or a history write that threw
+    // must not take the counts of the rows already tried with it. Less what
+    // the ledger no longer needs: rows the cursor has moved past, and rows of
+    // rooms this account is not in any more (the island reports a cursor for
+    // every room it is in).
     for (const key of Object.keys(struck)) {
       const [g, s] = key.split('/').map(Number)
       const last = vouchedSeq(apiBase, uin, g)
-      if (last !== undefined && s <= last) delete struck[key]
+      if ((last !== undefined && s <= last) || (rooms.size > 0 && !rooms.has(g))) {
+        delete struck[key]
+        ledgerDirty = true
+      }
     }
-    ledger.write(struck)
+    if (ledgerDirty) ledger.write(struck)
   }
   return result
 }
